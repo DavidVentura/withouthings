@@ -2,100 +2,17 @@
 //!
 //! Usage: wppsignal <btsnoop_hci.log> [--out-dir DIR]
 //!
-//! A signal arrives as a StoredSignalMeta describing the encoding, a
-//! StoredSignalMetaExtend giving its total length, then StoredSignalData
-//! chunks. Samples are signed 16-bit little-endian ADC counts, interleaved
-//! across the leads the signal type includes.
+//! Reassembly and sample decoding live in `wpp::signal`; this is only the file
+//! and CSV handling around it.
 
-use std::collections::BTreeMap;
 use std::process::ExitCode;
 
+use wpp::analysis::detect_r_peaks;
 use wpp::capture::{frames, StreamItem};
-use wpp::objects::{
-    StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend, UnitConversionParameters,
-};
+use wpp::signal::{Lead, Signal, SignalCollector};
 use wpp::WppObject;
 
-/// Leads interleaved in a signal, from EcgSignalType.includedLeads in the app.
-fn leads(signal_type: u16) -> Option<&'static [&'static str]> {
-    match signal_type {
-        1 => Some(&["DI"]),
-        6 => Some(&["DII", "DIII"]),
-        7 => Some(&["DI_FILTERED"]),
-        8 => Some(&["DII", "DII_FILTERED", "DIII", "DIII_FILTERED"]),
-        13 => Some(&["DI", "DI_FILTERED"]),
-        _ => None,
-    }
-}
-
-fn signal_type_name(signal_type: u16) -> &'static str {
-    match signal_type {
-        1 => "DI",
-        6 => "DII_DIII",
-        7 => "DI_FILTERED",
-        8 => "DII_DIII_FILTERED",
-        13 => "DI_DI_FILTERED",
-        _ => "UNKNOWN",
-    }
-}
-
-#[derive(Default)]
-struct Pending {
-    meta: Option<StoredSignalMeta>,
-    extend: Option<StoredSignalMetaExtend>,
-    units: Option<UnitConversionParameters>,
-    measure: Option<StoredMeasureMeta>,
-    data: Vec<u8>,
-}
-
-impl Pending {
-    fn ready(&self) -> bool {
-        match (&self.meta, &self.extend) {
-            (Some(_), Some(extend)) => {
-                !self.data.is_empty() && self.data.len() >= extend.total_size as usize
-            }
-            _ => false,
-        }
-    }
-}
-
-struct Signal {
-    meta: StoredSignalMeta,
-    extend: StoredSignalMetaExtend,
-    units: Option<UnitConversionParameters>,
-    measure: Option<StoredMeasureMeta>,
-    data: Vec<u8>,
-}
-
-/// Split interleaved samples into one column per lead.
-fn split_leads(data: &[u8], lead_count: usize) -> Vec<Vec<i16>> {
-    let mut columns = vec![Vec::new(); lead_count];
-    for (index, pair) in data.chunks_exact(2).enumerate() {
-        let sample = i16::from_le_bytes([pair[0], pair[1]]);
-        columns[index % lead_count].push(sample);
-    }
-    columns
-}
-
-fn write_csv(dir: &str, index: usize, signal: &Signal) -> std::io::Result<String> {
-    let names = leads(signal.meta.r#type).unwrap_or(&["CH0"]);
-    let lead_count = signal.meta.channel.max(1) as usize;
-    let names: Vec<String> = (0..lead_count)
-        .map(|i| {
-            names
-                .get(i)
-                .map(|s| s.to_string())
-                .unwrap_or(format!("CH{i}"))
-        })
-        .collect();
-    let columns = split_leads(&signal.data, lead_count);
-
-    let time = signal.measure.as_ref().map(|m| m.time).unwrap_or(0);
-    let path = format!(
-        "{dir}/ecg_{time}_{}_{index}.csv",
-        signal_type_name(signal.meta.r#type).to_lowercase()
-    );
-
+fn csv_for(signal: &Signal) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "# sampling_freq_hz={} resolution_bits={} sample_bytes={} channels={} duration_s={} total_size={}\n",
@@ -108,24 +25,109 @@ fn write_csv(dir: &str, index: usize, signal: &Signal) -> std::io::Result<String
     ));
     if let Some(units) = &signal.units {
         out.push_str(&format!(
-            "# offset={} gain={} qfix={} (raw counts; conversion is done in the app's native filter)\n",
+            "# offset={} gain={} qfix={}\n\
+             # values are raw ADC counts; the counts-to-millivolt conversion is\n\
+             # done inside the app's native libecg and is not reproduced here\n",
             units.offset, units.gain, units.qfix
         ));
     }
+
+    let columns = signal.leads();
+    let names: Vec<String> = columns
+        .iter()
+        .enumerate()
+        .map(|(i, (lead, _))| {
+            lead.map(|l| l.name().to_string())
+                .unwrap_or(format!("CH{i}"))
+        })
+        .collect();
     out.push_str(&format!("sample_index,time_s,{}\n", names.join(",")));
 
-    let rows = columns.iter().map(|c| c.len()).min().unwrap_or(0);
-    let freq = signal.meta.sampling_freq.max(1) as f64;
+    let rows = columns.iter().map(|(_, c)| c.len()).min().unwrap_or(0);
+    let freq = signal.sampling_freq().max(1) as f64;
     for row in 0..rows {
-        let values: Vec<String> = columns.iter().map(|c| c[row].to_string()).collect();
+        let values: Vec<String> = columns.iter().map(|(_, c)| c[row].to_string()).collect();
         out.push_str(&format!(
             "{row},{:.6},{}\n",
             row as f64 / freq,
             values.join(",")
         ));
     }
-    std::fs::write(&path, out)?;
-    Ok(path)
+    out
+}
+
+/// Rate derived from the waveform, next to the rate the watch itself reported
+/// over the same window, so the two can be compared.
+fn report_heart_rate(signal: &Signal, reported: &[u16]) {
+    let columns = signal.leads();
+    // Prefer a filtered lead; it is what the device already cleaned up.
+    let lead = columns
+        .iter()
+        .find(|(lead, _)| matches!(lead, Some(Lead::DiFiltered | Lead::DiiFiltered)))
+        .or_else(|| columns.first());
+    let Some((lead, samples)) = lead else { return };
+
+    let peaks = detect_r_peaks(samples, signal.sampling_freq());
+    let name = lead.map(|l| l.name()).unwrap_or("lead 0");
+    match peaks.heart_rate() {
+        Some(bpm) => {
+            let spread = peaks
+                .rr_stddev()
+                .map(|s| format!("{:.0} ms", s.0))
+                .unwrap_or_else(|| "n/a".to_string());
+            println!(
+                "  {name}: {} R peaks -> {} bpm (RR sd {spread})",
+                peaks.indices.len(),
+                bpm.0
+            );
+        }
+        None => println!("  {name}: no R peaks detected"),
+    }
+    if !reported.is_empty() {
+        let mut sorted = reported.to_vec();
+        sorted.sort_unstable();
+        println!(
+            "  watch reported: {} bpm median over {} LIVE_HR samples ({}-{})",
+            sorted[sorted.len() / 2],
+            sorted.len(),
+            sorted[0],
+            sorted[sorted.len() - 1]
+        );
+    }
+}
+
+fn report(index: usize, signal: &Signal) {
+    let kind = signal.kind().map(|k| k.name()).unwrap_or("UNKNOWN");
+    let leads: Vec<&str> = signal
+        .leads()
+        .iter()
+        .enumerate()
+        .map(|(i, (lead, _))| {
+            lead.map(|l| l.name())
+                .unwrap_or_else(|| ["CH0", "CH1", "CH2", "CH3"][i.min(3)])
+        })
+        .collect();
+    println!(
+        "signal {index}: type {} ({kind}), {} Hz, {}-bit, {} lead(s) [{}]",
+        signal.meta.r#type,
+        signal.sampling_freq(),
+        signal.meta.resolution,
+        signal.lead_count(),
+        leads.join(", ")
+    );
+    println!(
+        "  bytes {}/{} {}, {} samples/lead = {:.2}s (declared {}s)",
+        signal.data.len(),
+        signal.declared_size(),
+        if signal.is_complete() {
+            "COMPLETE"
+        } else {
+            "INCOMPLETE"
+        },
+        signal.samples_per_lead(),
+        signal.duration_secs(),
+        signal.extend.duration
+    );
 }
 
 fn main() -> ExitCode {
@@ -154,122 +156,62 @@ fn main() -> ExitCode {
         }
     };
 
-    let mut pending = Pending::default();
-    let mut signals: Vec<Signal> = Vec::new();
-    let mut live_ecg: Vec<u8> = Vec::new();
-
-    let flush = |pending: &mut Pending, signals: &mut Vec<Signal>| {
-        if let (Some(meta), Some(extend)) = (pending.meta.clone(), pending.extend.clone()) {
-            if !pending.data.is_empty() {
-                signals.push(Signal {
-                    meta,
-                    extend,
-                    units: pending.units.clone(),
-                    measure: pending.measure.clone(),
-                    data: std::mem::take(&mut pending.data),
-                });
-            }
-        }
-        pending.data.clear();
-    };
-
+    let mut collector = SignalCollector::new();
+    let mut reported_hr: Vec<u16> = Vec::new();
     for (_, _, item) in &items {
-        let StreamItem::Frame { frame, .. } = item else {
-            continue;
-        };
-        for object in &frame.objects {
-            match object {
-                WppObject::StoredSignalMeta(meta) => {
-                    // The descriptor is repeated during a transfer; only a
-                    // different one starts a new signal.
-                    if pending.meta.as_ref() != Some(meta) {
-                        flush(&mut pending, &mut signals);
-                        pending.meta = Some(meta.clone());
-                        pending.extend = None;
-                        pending.units = None;
-                    }
+        if let StreamItem::Frame { frame, .. } = item {
+            for object in &frame.objects {
+                collector.observe(object);
+                if let WppObject::LiveHr(live) = object {
+                    reported_hr.push(live.heart_rate().0);
                 }
-                WppObject::StoredSignalMetaExtend(extend) => pending.extend = Some(extend.clone()),
-                WppObject::UnitConversionParameters(units) => pending.units = Some(units.clone()),
-                WppObject::StoredMeasureMeta(measure) => pending.measure = Some(measure.clone()),
-                WppObject::StoredSignalData(chunk) => {
-                    pending.data.extend_from_slice(&chunk.samples);
-                    if pending.ready() {
-                        flush(&mut pending, &mut signals);
-                    }
-                }
-                WppObject::MeasureLiveEcg(chunk) => live_ecg.extend_from_slice(&chunk.samples),
-                _ => {}
             }
         }
     }
-    flush(&mut pending, &mut signals);
+    let (signals, live) = collector.finish();
 
-    if signals.is_empty() && live_ecg.is_empty() {
-        println!("no stored signals in {path}");
+    if signals.is_empty() && live.is_empty() {
+        println!("no signals in {path}");
         return ExitCode::SUCCESS;
     }
 
     let mut failures = 0;
     for (index, signal) in signals.iter().enumerate() {
-        let expected = signal.extend.total_size as usize;
-        let got = signal.data.len();
-        let lead_count = signal.meta.channel.max(1) as usize;
-        let samples = got / signal.meta.size.max(1) as usize;
-        let per_lead = samples / lead_count;
-        let seconds = per_lead as f64 / signal.meta.sampling_freq.max(1) as f64;
-
-        println!(
-            "signal {index}: type {} ({}), {} Hz, {}-bit, {} lead(s) [{}]",
-            signal.meta.r#type,
-            signal_type_name(signal.meta.r#type),
-            signal.meta.sampling_freq,
-            signal.meta.resolution,
-            lead_count,
-            leads(signal.meta.r#type).unwrap_or(&["?"]).join(", ")
-        );
-        println!(
-            "  bytes {got}/{expected} {}, {samples} samples, {per_lead}/lead = {seconds:.2}s (declared {}s)",
-            if got == expected { "COMPLETE" } else { "INCOMPLETE" },
-            signal.extend.duration
-        );
-        if got != expected {
+        report(index, signal);
+        report_heart_rate(signal, &reported_hr);
+        if !signal.is_complete() {
             failures += 1;
         }
-        match write_csv(&out_dir, index, signal) {
-            Ok(path) => println!("  wrote {path}"),
+        let time = signal.measure.as_ref().map(|m| m.time).unwrap_or(0);
+        let kind = signal
+            .kind()
+            .map(|k| k.name())
+            .unwrap_or("unknown")
+            .to_lowercase();
+        let path = format!("{out_dir}/ecg_{time}_{kind}_{index}.csv");
+        match std::fs::write(&path, csv_for(signal)) {
+            Ok(()) => println!("  wrote {path}"),
             Err(err) => {
-                eprintln!("  writing csv: {err}");
+                eprintln!("  writing {path}: {err}");
                 failures += 1;
             }
         }
     }
 
-    if !live_ecg.is_empty() {
-        let samples = split_leads(&live_ecg, 1).remove(0);
+    if !live.is_empty() {
         let path = format!("{out_dir}/ecg_live.csv");
         let mut out = String::from("sample_index,raw\n");
-        for (i, sample) in samples.iter().enumerate() {
+        for (i, sample) in live.iter().enumerate() {
             out.push_str(&format!("{i},{sample}\n"));
         }
         match std::fs::write(&path, out) {
-            Ok(()) => println!(
-                "live stream: {} bytes, {} samples -> {path}",
-                live_ecg.len(),
-                samples.len()
-            ),
+            Ok(()) => println!("live stream: {} samples -> {path}", live.len()),
             Err(err) => {
                 eprintln!("writing {path}: {err}");
                 failures += 1;
             }
         }
     }
-
-    let mut by_type: BTreeMap<u16, usize> = BTreeMap::new();
-    for signal in &signals {
-        *by_type.entry(signal.meta.r#type).or_default() += 1;
-    }
-    println!("\n{} stored signal(s): {:?}", signals.len(), by_type);
 
     if failures == 0 {
         ExitCode::SUCCESS

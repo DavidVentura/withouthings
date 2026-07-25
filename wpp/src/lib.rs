@@ -4,16 +4,22 @@
 //! [`commands`] are generated from the Withings Android app by
 //! `tools/extract_wpp.py`; see `tools/wpp.json` for the extracted description.
 
+pub mod analysis;
 pub mod capture;
 pub mod codec;
 pub mod commands;
 pub mod frame;
 pub mod objects;
+pub mod signal;
+pub mod units;
 
+pub use analysis::{detect_r_peaks, RPeaks};
 pub use codec::{ParseError, Reader, WppObjectCodec, Writer};
 pub use commands::Command;
 pub use frame::{Channel, Frame, FrameError, PROTOCOL_VERSION};
 pub use objects::WppObject;
+pub use signal::{Lead, SampleFormat, Signal, SignalCollector, SignalKind};
+pub use units::{Bpm, Celsius, Millis, Millivolts, UnixTime};
 
 #[cfg(test)]
 mod generated_tests;
