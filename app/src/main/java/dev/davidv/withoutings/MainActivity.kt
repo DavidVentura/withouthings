@@ -51,6 +51,11 @@ import androidx.lifecycle.lifecycleScope
 import dev.davidv.withoutings.ui.theme.WithoutingsTheme
 import kotlinx.coroutines.launch
 import java.util.UUID
+import kotlin.reflect.KClass
+import kotlin.reflect.full.primaryConstructor
+import kotlin.reflect.full.findAnnotation
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 enum class BleState {
     DISCOVER,
@@ -62,6 +67,168 @@ enum class BleState {
 enum class ProtocolState {
     UNAUTHENTICATED,
     AUTHENTICATED
+}
+
+// Annotations for field types
+@Target(AnnotationTarget.VALUE_PARAMETER)
+annotation class U8
+@Target(AnnotationTarget.VALUE_PARAMETER) 
+annotation class U16
+@Target(AnnotationTarget.VALUE_PARAMETER)
+annotation class U32
+@Target(AnnotationTarget.VALUE_PARAMETER)
+annotation class U64
+@Target(AnnotationTarget.VALUE_PARAMETER)
+annotation class Str
+
+// Binary parser
+object BinaryParser {
+    inline fun <reified T : Any> parse(data: ByteArray): T {
+        return parse(data, T::class)
+    }
+    
+    fun <T : Any> parse(data: ByteArray, clazz: KClass<T>): T {
+        val buffer = ByteBuffer.wrap(data).order(ByteOrder.BIG_ENDIAN)
+        val constructor = clazz.primaryConstructor 
+            ?: throw IllegalArgumentException("Class must have a primary constructor")
+        
+        val args = constructor.parameters.map { param ->
+            when {
+                param.findAnnotation<U8>() != null -> {
+                    buffer.get().toUByte()
+                }
+                param.findAnnotation<U16>() != null -> {
+                    buffer.short.toUShort()
+                }
+                param.findAnnotation<U32>() != null -> {
+                    buffer.int.toUInt()
+                }
+                param.findAnnotation<U64>() != null -> {
+                    buffer.long.toULong()
+                }
+                param.findAnnotation<Str>() != null -> {
+                    // Length-prefixed string: 2 bytes (BE) length + content
+                    val length = buffer.short.toInt() and 0xFFFF // unsigned
+                    val stringBytes = ByteArray(length)
+                    buffer.get(stringBytes)
+                    String(stringBytes, Charsets.UTF_8)
+                }
+                else -> throw IllegalArgumentException("Unsupported type: ${param.type}")
+            }
+        }
+        
+        return constructor.call(*args.toTypedArray())
+    }
+}
+
+// Base command interface
+interface Command {
+    val commandId: UShort
+}
+
+// Example command: Probe
+data class CommandProbe(
+    @U16 val vid: UShort,
+    @U16 val pid: UShort,
+    @Str val deviceString: String
+) : Command {
+    override val commandId: UShort = 0x101u
+}
+
+// Registry of all commands
+object CommandRegistry {
+    private val commands = mapOf<UShort, KClass<out Command>>(
+        0x101u to CommandProbe::class
+        // Add more commands here
+    )
+    
+    fun getCommandClass(commandId: UShort): KClass<out Command>? = commands[commandId]
+    
+    fun getAllCommands(): Map<UShort, KClass<out Command>> = commands
+    
+    fun parseCommand(commandId: UShort, data: ByteArray): Command? {
+        val commandClass = getCommandClass(commandId) ?: return null
+        return try {
+            BinaryParser.parse(data, commandClass)
+        } catch (e: Exception) {
+            Log.e("PARSER", "Failed to parse command $commandId: ${e.message}")
+            null
+        }
+    }
+}
+
+// Parsed message structure
+data class ParsedMessage(
+    val protocolVersion: UByte,
+    val messageCommand: UShort,
+    val commands: List<Command>
+)
+
+// Message parser using reflection-based binary parser
+object MessageParser {
+    fun parse(data: ByteArray): ParsedMessage? {
+        try {
+            Log.d("PARSER", "Parsing ${data.size} bytes: ${data.joinToString("") { "%02x".format(it) }}")
+            
+            if (data.size < 5) {
+                Log.e("PARSER", "Message too short for header")
+                return null
+            }
+            
+            val buffer = ByteBuffer.wrap(data).order(ByteOrder.BIG_ENDIAN)
+            
+            // Parse header: version (1) + command (2) + payload length (2)
+            val protocolVersion = buffer.get().toUByte()
+            val messageCommand = buffer.short.toUShort()
+            val payloadLength = buffer.short.toUShort()
+            
+            Log.d("PARSER", "Header: version=$protocolVersion, command=$messageCommand, payloadLength=$payloadLength")
+            
+            // Parse commands from payload
+            val commands = parseCommands(buffer, payloadLength.toInt())
+            
+            return ParsedMessage(protocolVersion, messageCommand, commands)
+        } catch (e: Exception) {
+            Log.e("PARSER", "Failed to parse message: ${e.message}")
+            return null
+        }
+    }
+    
+    private fun parseCommands(buffer: ByteBuffer, payloadLength: Int): List<Command> {
+        val commands = mutableListOf<Command>()
+        val payloadStart = buffer.position()
+        
+        while (buffer.position() - payloadStart < payloadLength && buffer.remaining() >= 4) {
+            try {
+                // Parse command: id (2) + length (2) + data
+                val commandId = buffer.short.toUShort()
+                val commandLength = buffer.short.toUShort()
+                
+                if (buffer.remaining() < commandLength.toInt()) {
+                    Log.e("PARSER", "Not enough data for command $commandId (need ${commandLength}, have ${buffer.remaining()})")
+                    break
+                }
+                
+                val commandData = ByteArray(commandLength.toInt())
+                buffer.get(commandData)
+                
+                Log.d("PARSER", "Parsing command $commandId with ${commandLength} bytes")
+                
+                val command = CommandRegistry.parseCommand(commandId, commandData)
+                if (command != null) {
+                    commands.add(command)
+                    Log.d("PARSER", "Successfully parsed command: $command")
+                } else {
+                    Log.w("PARSER", "Unknown or failed to parse command $commandId")
+                }
+            } catch (e: Exception) {
+                Log.e("PARSER", "Error parsing command: ${e.message}")
+                break
+            }
+        }
+        
+        return commands
+    }
 }
 
 data class BleDevice(
@@ -361,17 +528,56 @@ class MainActivity : ComponentActivity() {
         val hexData = data.joinToString("") { "%02x".format(it) }
         Log.d("PROTOCOL", "Processing message in state ${currentProtocolState}: $hexData")
         
+        // Try to parse the message using the new framework
+        val parsedMessage = MessageParser.parse(data)
+        
+        if (parsedMessage != null) {
+            Log.d("PROTOCOL", "Parsed message: protocol=${parsedMessage.protocolVersion}, command=${parsedMessage.messageCommand}, ${parsedMessage.commands.size} commands")
+            
+            // Handle parsed commands
+            parsedMessage.commands.forEach { command ->
+                handleCommand(command)
+            }
+        } else {
+            // Fallback to old parsing logic until binary parser is implemented
+            Log.d("PROTOCOL", "Using fallback message handling")
+            handleUnparsedMessage(data)
+        }
+    }
+    
+    private fun handleCommand(command: Command) {
+        Log.d("PROTOCOL", "Handling command: ${command.commandId}")
+        
+        when (command) {
+            is CommandProbe -> {
+                Log.d("PROTOCOL", "Probe command: vid=${command.vid}, pid=${command.pid}, device='${command.deviceString}'")
+                // Handle probe command based on current state
+                when (currentProtocolState) {
+                    ProtocolState.UNAUTHENTICATED -> {
+                        // Probe response received, transition to authenticated
+                        onProtocolStateChanged(ProtocolState.AUTHENTICATED)
+                    }
+                    ProtocolState.AUTHENTICATED -> {
+                        // Handle probe in authenticated state
+                        Log.d("PROTOCOL", "Probe received while authenticated")
+                    }
+                }
+            }
+            else -> {
+                Log.d("PROTOCOL", "Unknown command type: ${command.commandId}")
+            }
+        }
+    }
+    
+    private fun handleUnparsedMessage(data: ByteArray) {
+        // Legacy handling until binary parser is ready
         when (currentProtocolState) {
             ProtocolState.UNAUTHENTICATED -> {
-                // TODO: Parse authentication response and transition to AUTHENTICATED if successful
-                Log.d("PROTOCOL", "Received message while UNAUTHENTICATED - checking for auth response")
-                
+                Log.d("PROTOCOL", "Received message while UNAUTHENTICATED - assuming auth response")
                 // For now, assume any response means authentication succeeded
-                // In real implementation, you'd parse the response to check if auth was successful
                 onProtocolStateChanged(ProtocolState.AUTHENTICATED)
             }
             ProtocolState.AUTHENTICATED -> {
-                // TODO: Handle authenticated messages (data, commands, etc.)
                 Log.d("PROTOCOL", "Received message while AUTHENTICATED - processing as data")
             }
         }
@@ -399,9 +605,39 @@ class MainActivity : ComponentActivity() {
                 Log.d("PROTOCOL", "Sending probe message")
                 val hexString = "0101010010012a00060101006b93d9092800020023"
                 val data = hexString.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                
+                // Log the framework status
+                logFrameworkStatus()
+                
                 writeToHandle4(gatt, characteristic, data)
             }
         }
+    }
+    
+    private fun logFrameworkStatus() {
+        Log.d("FRAMEWORK", "=== Message Parsing Framework Status ===")
+        Log.d("FRAMEWORK", "Registered commands: ${CommandRegistry.getAllCommands().size}")
+        
+        CommandRegistry.getAllCommands().forEach { (id, commandClass) ->
+            Log.d("FRAMEWORK", "Command 0x${id.toString(16)}: ${commandClass.simpleName}")
+            
+            // Log constructor parameters with annotations
+            commandClass.primaryConstructor?.parameters?.forEach { param ->
+                val annotation = when {
+                    param.findAnnotation<U8>() != null -> "@U8"
+                    param.findAnnotation<U16>() != null -> "@U16"
+                    param.findAnnotation<U32>() != null -> "@U32"
+                    param.findAnnotation<U64>() != null -> "@U64"
+                    param.findAnnotation<Str>() != null -> "@Str"
+                    else -> "Unknown"
+                }
+                Log.d("FRAMEWORK", "  - ${param.name}: $annotation")
+            }
+        }
+        
+        Log.d("FRAMEWORK", "Current protocol state: $currentProtocolState")
+        Log.d("FRAMEWORK", "Binary parser: REFLECTION-BASED IMPLEMENTATION")
+        Log.d("FRAMEWORK", "==========================================")
     }
     
     private fun findAndSubscribeToHandle4(gatt: BluetoothGatt) {
