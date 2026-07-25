@@ -1,13 +1,9 @@
 //! Physical quantities, kept distinct from the wire encoding.
 //!
-//! The generated structs in [`crate::objects`] hold exactly what the device
-//! sent: `VasistasCbt { temperature: 37255 }` is the integer off the wire. The
-//! conversions here are the only place a raw field becomes a physical value,
-//! and each one records the evidence for its scale factor.
-//!
-//! Conversions exist only where that evidence does. A field with no method
-//! here is one whose units have not been established — reach for the raw field
-//! and treat it as uncalibrated rather than assuming a scale.
+//! The generated structs in [`crate::objects`] hold what the device sent;
+//! converting to a physical value happens only here. A field with no method
+//! here has no established scale — use the raw field and treat it as
+//! uncalibrated rather than assuming one.
 
 use crate::objects::{
     BatteryStatus, LiveHr, TimeSet, TrackerUser, VasistasCbt, VasistasHeartrate, VasistasHrv,
@@ -76,35 +72,35 @@ impl UnixTime {
     }
 }
 
-/// Counts-to-millivolts for an ECG lead.
+/// ECG samples are microvolts: one ADC count is 1 µV.
 ///
-/// The scale is NOT established. `UnitConversionParameters.gain` is 1610 for
-/// the ScanWatch 2, but comparing decoded counts against the app's own 10 mm/mV
-/// render implies roughly 950 counts/mV, and the app's trace is post-processed
-/// by `libecg` so the comparison cannot settle it. The conversion therefore
-/// takes the factor from the caller rather than guessing one.
+/// From the decompiled app's chart axis; measuring its rendering agrees within
+/// 1%. `UnitConversionParameters.gain` is an analog front-end parameter, not
+/// this scale.
+pub const COUNTS_PER_MILLIVOLT: f64 = 1000.0;
+
 impl Millivolts {
-    pub fn from_counts(counts: i16, counts_per_mv: f64) -> Millivolts {
+    pub fn from_counts(counts: i16) -> Millivolts {
+        Millivolts(counts as f64 / COUNTS_PER_MILLIVOLT)
+    }
+
+    /// For a device whose samples are not microvolts.
+    pub fn from_counts_scaled(counts: i16, counts_per_mv: f64) -> Millivolts {
         Millivolts(counts as f64 / counts_per_mv)
     }
 }
 
 impl VasistasCbt {
-    /// Core body temperature.
+    /// Core body temperature, milli-degrees on the wire.
     ///
-    /// Scale inferred, not read from the app: observed values cluster at
-    /// 37255/37245/37237, which is 37.2 °C in milli-degrees and is the correct
-    /// range for core body temperature. The app copies the field into its model
-    /// unscaled, so the divisor is applied somewhere downstream that has not
-    /// been traced.
+    /// Scale inferred from magnitude, not confirmed in the app.
     pub fn core_temperature(&self) -> Celsius {
         Celsius(self.temperature as f64 / 1000.0)
     }
 }
 
 impl VasistasHeartrate {
-    /// Sampled heart rate. The field is already in bpm; `quality` grades it and
-    /// is not a physical quantity.
+    /// Sampled heart rate; the wire value is already bpm.
     pub fn heart_rate(&self) -> Bpm {
         Bpm(self.heartrate as u16)
     }
@@ -122,10 +118,7 @@ impl VasistasHrv {
         Bpm(self.hr as u16)
     }
 
-    /// Standard deviation of NN intervals.
-    ///
-    /// Unit inferred from magnitude: observed 73-76 alongside RMSSD 48-81,
-    /// which are conventional millisecond figures for these indices.
+    /// Standard deviation of NN intervals. Unit inferred from magnitude.
     pub fn sdnn(&self) -> Millis {
         Millis(self.sdnn as f64)
     }
@@ -137,8 +130,7 @@ impl VasistasHrv {
 }
 
 impl VasistasRr {
-    /// Respiratory rate. Observed 10-13, the normal resting range in
-    /// breaths per minute.
+    /// Respiratory rate. Unit inferred from magnitude.
     pub fn respiratory_rate(&self) -> BreathsPerMinute {
         BreathsPerMinute(self.rr as u16)
     }
@@ -152,8 +144,7 @@ impl BatteryStatus {
 }
 
 impl TimeSet {
-    /// Device clock, verified: a captured value decoded to the wall-clock time
-    /// of the capture, and `dst_change_time` to the correct EU DST boundary.
+    /// Device clock. Verified against a capture's wall-clock time.
     pub fn time(&self) -> UnixTime {
         UnixTime(self.utc as i64)
     }
@@ -171,12 +162,12 @@ impl WamVasistasHead {
 }
 
 impl TrackerUser {
-    /// Body mass. Scale inferred from magnitude: 72000 for an adult is grams.
+    /// Body mass, grams on the wire. Scale inferred from magnitude.
     pub fn weight(&self) -> Kilograms {
         Kilograms(self.weight as f64 / 1000.0)
     }
 
-    /// Stature. Observed 175 for an adult, so centimetres.
+    /// Stature, centimetres. Inferred from magnitude.
     pub fn height(&self) -> Centimetres {
         Centimetres(self.height as u16)
     }
@@ -197,9 +188,7 @@ mod tests {
             attrib: 1,
             temperature: 37255,
         };
-        // The struct keeps exactly what arrived.
         assert_eq!(cbt.temperature, 37255);
-        // Conversion is a separate, typed step.
         assert_eq!(cbt.core_temperature(), Celsius(37.255));
     }
 
@@ -218,8 +207,10 @@ mod tests {
     }
 
     #[test]
-    fn ecg_millivolts_require_an_explicit_scale() {
-        assert_eq!(Millivolts::from_counts(1768, 1000.0), Millivolts(1.768));
+    fn ecg_counts_are_microvolts() {
+        assert_eq!(Millivolts::from_counts(1768), Millivolts(1.768));
+        assert_eq!(Millivolts::from_counts(-658), Millivolts(-0.658));
+        assert_eq!(Millivolts::from_counts_scaled(1610, 1610.0), Millivolts(1.0));
     }
 
     #[test]

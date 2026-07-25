@@ -19,7 +19,7 @@ pub use commands::Command;
 pub use frame::{Channel, Frame, FrameError, PROTOCOL_VERSION};
 pub use objects::WppObject;
 pub use signal::{Lead, SampleFormat, Signal, SignalCollector, SignalKind};
-pub use units::{Bpm, Celsius, Millis, Millivolts, UnixTime};
+pub use units::{Bpm, Celsius, Millis, Millivolts, UnixTime, COUNTS_PER_MILLIVOLT};
 
 #[cfg(test)]
 mod generated_tests;

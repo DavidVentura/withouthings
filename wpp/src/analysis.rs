@@ -98,8 +98,7 @@ pub fn detect_r_peaks(samples: &[i16], sampling_freq: u16) -> RPeaks {
         };
     }
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    // QRS energy sits far above the bulk of the signal; the upper decile is a
-    // stable starting point where a fraction of the maximum is not.
+    // QRS energy sits far above the bulk of the signal.
     let threshold = sorted[sorted.len() * 9 / 10] * 0.5;
 
     let mut indices: Vec<usize> = Vec::new();
@@ -162,7 +161,6 @@ mod tests {
         let samples = synthetic(75.0, 30.0, 300);
         let peaks = detect_r_peaks(&samples, 300);
         assert_eq!(peaks.heart_rate(), Some(Bpm(75)));
-        // A clean rhythm should show essentially no interval spread.
         assert!(peaks.rr_stddev().unwrap().0 < 5.0);
     }
 

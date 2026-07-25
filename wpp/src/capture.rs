@@ -198,8 +198,7 @@ impl FrameReassembler {
                     items.push(StreamItem::Frame { frame, bytes });
                 }
                 Err(cause) => {
-                    // A plausible header that did not describe a frame; step
-                    // over it rather than trusting its length field.
+                    // A plausible header that did not describe a frame.
                     let dropped = self.buf.remove(0);
                     items.push(StreamItem::Desync {
                         bytes: vec![dropped],

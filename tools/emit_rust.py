@@ -399,8 +399,7 @@ def main():
         written.append(path)
         print('%s: %d lines' % (path, text.count('\n')))
 
-    # Format here so that regenerating is idempotent; otherwise rustfmt running
-    # over the tree afterwards makes every later regeneration look like a diff.
+    # Format here so regenerating is idempotent against a rustfmt'd tree.
     try:
         subprocess.run(['rustfmt', '--edition', '2021', *written], check=True)
     except FileNotFoundError:

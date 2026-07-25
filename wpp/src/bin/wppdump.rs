@@ -83,8 +83,7 @@ struct Summary {
 impl Summary {
     fn record(&mut self, frame: &Frame, bytes: &[u8]) {
         self.frames += 1;
-        // Re-encoding must reproduce the captured bytes exactly; anything else
-        // means we could decode the frame but could not have produced it.
+        // Decoding a frame we could not have produced means the spec is wrong.
         let reencoded = frame.to_bytes();
         if reencoded != bytes {
             self.reencode_mismatches.push((

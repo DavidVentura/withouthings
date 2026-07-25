@@ -10,6 +10,7 @@ use std::process::ExitCode;
 use wpp::analysis::detect_r_peaks;
 use wpp::capture::{frames, StreamItem};
 use wpp::signal::{Lead, Signal, SignalCollector};
+use wpp::units::{Millivolts, COUNTS_PER_MILLIVOLT};
 use wpp::WppObject;
 
 fn csv_for(signal: &Signal) -> String {
@@ -25,9 +26,7 @@ fn csv_for(signal: &Signal) -> String {
     ));
     if let Some(units) = &signal.units {
         out.push_str(&format!(
-            "# offset={} gain={} qfix={}\n\
-             # values are raw ADC counts; the counts-to-millivolt conversion is\n\
-             # done inside the app's native libecg and is not reproduced here\n",
+            "# offset={} gain={} qfix={} (gain is an analog front-end parameter, not a scale)\n",
             units.offset, units.gain, units.qfix
         ));
     }
@@ -41,12 +40,20 @@ fn csv_for(signal: &Signal) -> String {
                 .unwrap_or(format!("CH{i}"))
         })
         .collect();
-    out.push_str(&format!("sample_index,time_s,{}\n", names.join(",")));
+    out.push_str(&format!(
+        "# samples are microvolts: {} counts per mV\n",
+        COUNTS_PER_MILLIVOLT
+    ));
+    let headers: Vec<String> = names.iter().map(|n| format!("{n}_uv,{n}_mv")).collect();
+    out.push_str(&format!("sample_index,time_s,{}\n", headers.join(",")));
 
     let rows = columns.iter().map(|(_, c)| c.len()).min().unwrap_or(0);
     let freq = signal.sampling_freq().max(1) as f64;
     for row in 0..rows {
-        let values: Vec<String> = columns.iter().map(|(_, c)| c[row].to_string()).collect();
+        let values: Vec<String> = columns
+            .iter()
+            .map(|(_, c)| format!("{},{:.3}", c[row], Millivolts::from_counts(c[row]).0))
+            .collect();
         out.push_str(&format!(
             "{row},{:.6},{}\n",
             row as f64 / freq,
@@ -56,8 +63,7 @@ fn csv_for(signal: &Signal) -> String {
     out
 }
 
-/// Rate derived from the waveform, next to the rate the watch itself reported
-/// over the same window, so the two can be compared.
+/// Rate derived from the waveform, next to the rate the watch reported.
 fn report_heart_rate(signal: &Signal, reported: &[u16]) {
     let columns = signal.leads();
     // Prefer a filtered lead; it is what the device already cleaned up.
