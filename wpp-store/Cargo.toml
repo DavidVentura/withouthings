@@ -1,0 +1,8 @@
+[package]
+name = "wpp-store"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wpp = { path = "../wpp" }
+rusqlite = { version = "0.32", features = ["bundled"] }

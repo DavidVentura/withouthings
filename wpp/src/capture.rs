@@ -4,7 +4,12 @@
 //! carry an L2CAP packet, and a WPP frame can span several ATT notifications.
 
 use crate::frame::{Frame, FrameError, PROTOCOL_VERSION};
+use crate::units::UnixMillis;
 use std::collections::HashMap;
+
+/// btsnoop stamps records in microseconds since 0000-01-01; this is the Unix
+/// epoch on that scale.
+const BTSNOOP_EPOCH_US: i64 = 0x00dc_ddb3_0f2f_8000;
 
 const BTSNOOP_MAGIC: &[u8] = b"btsnoop\0";
 const BTSNOOP_HEADER_LEN: usize = 16;
@@ -53,10 +58,11 @@ impl core::fmt::Display for CaptureError {
 impl std::error::Error for CaptureError {}
 
 /// One ATT payload carrying protocol bytes.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AttPacket {
     pub direction: Direction,
     pub att_handle: u16,
+    pub received_at: UnixMillis,
     pub value: Vec<u8>,
 }
 
@@ -80,6 +86,8 @@ pub fn att_packets(file: &[u8]) -> Result<Vec<AttPacket>, CaptureError> {
         }
         let included = u32::from_be_bytes(file[pos + 4..pos + 8].try_into().unwrap()) as usize;
         let flags = u32::from_be_bytes(file[pos + 8..pos + 12].try_into().unwrap());
+        let stamp = i64::from_be_bytes(file[pos + 16..pos + 24].try_into().unwrap());
+        let received_at = UnixMillis((stamp - BTSNOOP_EPOCH_US) / 1_000);
         let start = pos + RECORD_HEADER_LEN;
         if start + included > file.len() {
             return Err(CaptureError::Truncated { at: start });
@@ -138,6 +146,7 @@ pub fn att_packets(file: &[u8]) -> Result<Vec<AttPacket>, CaptureError> {
         packets.push(AttPacket {
             direction,
             att_handle: u16::from_le_bytes([l2cap_payload[1], l2cap_payload[2]]),
+            received_at,
             value: l2cap_payload[3..].to_vec(),
         });
     }
@@ -210,15 +219,30 @@ impl FrameReassembler {
     }
 }
 
+/// A stream item with the context needed to attribute and time it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Captured {
+    pub direction: Direction,
+    pub att_handle: u16,
+    /// When the host saw the last fragment of this item.
+    pub received_at: UnixMillis,
+    pub item: StreamItem,
+}
+
 /// Decode every WPP frame in a btsnoop file, keyed by stream.
-pub fn frames(file: &[u8]) -> Result<Vec<(Direction, u16, StreamItem)>, CaptureError> {
+pub fn frames(file: &[u8]) -> Result<Vec<Captured>, CaptureError> {
     let mut streams: HashMap<(Direction, u16), FrameReassembler> = HashMap::new();
     let mut out = Vec::new();
     for packet in att_packets(file)? {
         let key = (packet.direction, packet.att_handle);
         let reassembler = streams.entry(key).or_insert_with(FrameReassembler::new);
         for item in reassembler.push(&packet.value) {
-            out.push((key.0, key.1, item));
+            out.push(Captured {
+                direction: key.0,
+                att_handle: key.1,
+                received_at: packet.received_at,
+                item,
+            });
         }
     }
     Ok(out)

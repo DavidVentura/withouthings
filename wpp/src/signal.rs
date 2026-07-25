@@ -240,6 +240,20 @@ impl SignalCollector {
         self.pending.data.clear();
     }
 
+    /// Signals finished so far, leaving any transfer still in progress alone.
+    /// A signal spans many frames, so draining must not disturb the pending one.
+    pub fn take_completed(&mut self) -> Vec<Signal> {
+        std::mem::take(&mut self.signals)
+    }
+
+    /// Live samples received so far, clearing them from the collector.
+    pub fn take_live(&mut self) -> Vec<i16> {
+        std::mem::take(&mut self.live_ecg)
+            .chunks_exact(2)
+            .map(|p| i16::from_le_bytes([p[0], p[1]]))
+            .collect()
+    }
+
     /// Completed signals, plus the live ECG stream if the capture held one.
     pub fn finish(mut self) -> (Vec<Signal>, Vec<i16>) {
         self.close();

@@ -164,8 +164,8 @@ fn main() -> ExitCode {
 
     let mut collector = SignalCollector::new();
     let mut reported_hr: Vec<u16> = Vec::new();
-    for (_, _, item) in &items {
-        if let StreamItem::Frame { frame, .. } = item {
+    for captured in &items {
+        if let StreamItem::Frame { frame, .. } = &captured.item {
             for object in &frame.objects {
                 collector.observe(object);
                 if let WppObject::LiveHr(live) = object {

@@ -1,0 +1,318 @@
+//! SQLite persistence for [`wpp::Record`].
+//!
+//! The write path is idempotent: re-syncing a window that was already stored
+//! is a no-op, which the paged history walk guarantees will happen.
+
+use rusqlite::{params, Connection, OptionalExtension};
+use wpp::client::{Category, Record};
+use wpp::signal::Signal;
+use wpp::units::UnixTime;
+
+pub use rusqlite::Error;
+
+pub struct Store {
+    conn: Connection,
+}
+
+impl Store {
+    pub fn open(path: &str) -> Result<Store, Error> {
+        let conn = Connection::open(path)?;
+        Store::prepare(conn)
+    }
+
+    pub fn open_in_memory() -> Result<Store, Error> {
+        Store::prepare(Connection::open_in_memory()?)
+    }
+
+    fn prepare(conn: Connection) -> Result<Store, Error> {
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        conn.execute_batch(include_str!("schema.sql"))?;
+        Ok(Store { conn })
+    }
+
+    pub fn device(&self, mac: &str) -> Result<i64, Error> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO device (mac) VALUES (?1)",
+            params![mac],
+        )?;
+        self.conn
+            .query_row("SELECT id FROM device WHERE mac = ?1", params![mac], |r| {
+                r.get(0)
+            })
+    }
+
+    /// Persist a batch atomically. Only after this returns may the caller tell
+    /// the client the data is durable, and only then may anything be deleted
+    /// from the watch.
+    pub fn store(&mut self, device_id: i64, records: &[Record]) -> Result<(), Error> {
+        let tx = self.conn.transaction()?;
+        for record in records {
+            match record {
+                Record::Sample {
+                    measured_at,
+                    kind,
+                    value,
+                    quality,
+                    source,
+                } => {
+                    tx.execute(
+                        "INSERT INTO sample (device_id, measured_at, kind, source, value, quality)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                         ON CONFLICT DO NOTHING",
+                        params![
+                            device_id,
+                            measured_at.0,
+                            kind.id(),
+                            source.id(),
+                            value,
+                            quality
+                        ],
+                    )?;
+                }
+                Record::WorkoutStarted {
+                    started_at,
+                    subcategory,
+                } => {
+                    tx.execute(
+                        "INSERT INTO workout (device_id, started_at, subcategory)
+                         VALUES (?1, ?2, ?3)
+                         ON CONFLICT DO NOTHING",
+                        params![device_id, started_at.0, subcategory],
+                    )?;
+                }
+                Record::WorkoutEnded {
+                    started_at,
+                    ended_at,
+                    paused_secs,
+                } => {
+                    // The stop message may arrive without a start having been
+                    // seen, so insert rather than assume the row exists.
+                    tx.execute(
+                        "INSERT INTO workout (device_id, started_at, ended_at, subcategory, paused_secs)
+                         VALUES (?1, ?2, ?3, 0, ?4)
+                         ON CONFLICT (device_id, started_at)
+                         DO UPDATE SET ended_at = ?3, paused_secs = ?4",
+                        params![device_id, started_at.0, ended_at.0, paused_secs],
+                    )?;
+                }
+                Record::Ecg(signal) => store_ecg(&tx, device_id, signal)?,
+            }
+        }
+        tx.commit()
+    }
+
+    /// Watermarks to resume from, one per category the watch serves.
+    pub fn watermarks(
+        &self,
+        device_id: i64,
+        categories: &[Category],
+    ) -> Result<Vec<(Category, UnixTime)>, Error> {
+        categories
+            .iter()
+            .map(|category| {
+                let at: Option<i64> = self
+                    .conn
+                    .query_row(
+                        "SELECT synced_through FROM sync_state
+                          WHERE device_id = ?1 AND category = ?2",
+                        params![device_id, category.0],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                Ok((*category, UnixTime(at.unwrap_or(0))))
+            })
+            .collect()
+    }
+
+    pub fn set_watermark(
+        &self,
+        device_id: i64,
+        category: Category,
+        through: UnixTime,
+    ) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT INTO sync_state (device_id, category, synced_through)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT (device_id, category)
+             DO UPDATE SET synced_through = max(synced_through, ?3)",
+            params![device_id, category.0, through.0],
+        )?;
+        Ok(())
+    }
+
+    pub fn count(&self, table: &str) -> Result<i64, Error> {
+        self.conn
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+    }
+
+    pub fn connection(&self) -> &Connection {
+        &self.conn
+    }
+}
+
+fn store_ecg(tx: &rusqlite::Transaction<'_>, device_id: i64, signal: &Signal) -> Result<(), Error> {
+    let measured_at = signal.measure.as_ref().map(|m| m.time as i64).unwrap_or(0);
+    let (offset, gain, qfix) = match &signal.units {
+        Some(u) => (Some(u.offset), Some(u.gain), Some(u.qfix)),
+        None => (None, None, None),
+    };
+    tx.execute(
+        "INSERT INTO ecg (device_id, measured_at, signal_type, sampling_hz, lead_count,
+                          resolution_bits, format, unit_offset, gain, qfix,
+                          declared_bytes, samples)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+         ON CONFLICT DO NOTHING",
+        params![
+            device_id,
+            measured_at,
+            signal.meta.r#type,
+            signal.meta.sampling_freq,
+            signal.lead_count() as i64,
+            signal.meta.resolution,
+            signal.meta.format,
+            offset,
+            gain,
+            qfix,
+            signal.declared_size() as i64,
+            signal.data,
+        ],
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wpp::client::{SampleKind, Source};
+    use wpp::units::UnixMillis;
+
+    fn sample(at: i64, value: i64, source: Source) -> Record {
+        Record::Sample {
+            measured_at: UnixMillis(at),
+            kind: SampleKind::HeartRate,
+            value,
+            quality: Some(4),
+            source,
+        }
+    }
+
+    #[test]
+    fn re_storing_the_same_window_does_not_duplicate() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let batch = vec![
+            sample(1000, 62, Source::Stored),
+            sample(1060, 65, Source::Stored),
+        ];
+        store.store(device, &batch).unwrap();
+        store.store(device, &batch).unwrap();
+        assert_eq!(store.count("sample").unwrap(), 2);
+    }
+
+    /// The same instant seen live and in the stored series are two different
+    /// observations, not a duplicate.
+    #[test]
+    fn live_and_stored_samples_coexist() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[
+                    sample(1000, 62, Source::Stored),
+                    sample(1000, 63, Source::Live),
+                ],
+            )
+            .unwrap();
+        assert_eq!(store.count("sample").unwrap(), 2);
+    }
+
+    #[test]
+    fn a_workout_stop_completes_the_row_its_start_created() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[Record::WorkoutStarted {
+                    started_at: UnixTime(1784998983),
+                    subcategory: 16,
+                }],
+            )
+            .unwrap();
+        store
+            .store(
+                device,
+                &[Record::WorkoutEnded {
+                    started_at: UnixTime(1784998983),
+                    ended_at: UnixTime(1784999069),
+                    paused_secs: 0,
+                }],
+            )
+            .unwrap();
+        let (ended, subcategory): (i64, i64) = store
+            .connection()
+            .query_row("SELECT ended_at, subcategory FROM workout", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(store.count("workout").unwrap(), 1);
+        assert_eq!(ended, 1784999069);
+        assert_eq!(subcategory, 16, "the stop must not clobber the category");
+    }
+
+    #[test]
+    fn samples_inside_a_workout_are_found_by_time_alone() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[
+                    Record::WorkoutStarted {
+                        started_at: UnixTime(1000),
+                        subcategory: 16,
+                    },
+                    Record::WorkoutEnded {
+                        started_at: UnixTime(1000),
+                        ended_at: UnixTime(1100),
+                        paused_secs: 0,
+                    },
+                    // milliseconds, against a workout spanning 1000..1100 s
+                    sample(999_000, 60, Source::Live),
+                    sample(1_050_000, 120, Source::Live),
+                    sample(1_200_000, 61, Source::Live),
+                ],
+            )
+            .unwrap();
+        let inside: i64 = store
+            .connection()
+            .query_row("SELECT count(*) FROM workout_sample", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(inside, 1, "only the sample within the workout window");
+    }
+
+    #[test]
+    fn foreign_keys_are_enforced() {
+        let mut store = Store::open_in_memory().unwrap();
+        let err = store.store(999, &[sample(1000, 62, Source::Stored)]);
+        assert!(err.is_err(), "an unknown device must be rejected");
+    }
+
+    #[test]
+    fn a_watermark_never_moves_backwards() {
+        let store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .set_watermark(device, Category(8), UnixTime(5000))
+            .unwrap();
+        store
+            .set_watermark(device, Category(8), UnixTime(4000))
+            .unwrap();
+        assert_eq!(
+            store.watermarks(device, &[Category(8)]).unwrap(),
+            vec![(Category(8), UnixTime(5000))]
+        );
+    }
+}

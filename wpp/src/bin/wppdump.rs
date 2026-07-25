@@ -11,7 +11,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::process::ExitCode;
 
-use wpp::capture::{frames, Direction, StreamItem};
+use wpp::capture::{frames, Captured, Direction, StreamItem};
 use wpp::{Frame, WppObject};
 
 fn hex(bytes: &[u8]) -> String {
@@ -177,7 +177,7 @@ impl Summary {
     }
 }
 
-type Decoded = Vec<(Direction, u16, StreamItem)>;
+type Decoded = Vec<Captured>;
 
 fn decode(path: &str) -> Result<Decoded, String> {
     let file = std::fs::read(path).map_err(|err| format!("{path}: {err}"))?;
@@ -189,8 +189,8 @@ fn decode(path: &str) -> Result<Decoded, String> {
 fn wpp_handles(items: &Decoded) -> BTreeSet<u16> {
     items
         .iter()
-        .filter(|(_, _, item)| matches!(item, StreamItem::Frame { .. }))
-        .map(|(_, att_handle, _)| *att_handle)
+        .filter(|c| matches!(c.item, StreamItem::Frame { .. }))
+        .map(|c| c.att_handle)
         .collect()
 }
 
@@ -201,12 +201,13 @@ fn consume(
     quiet: bool,
     summary: &mut Summary,
 ) {
-    for (direction, att_handle, item) in &items[from..] {
+    for captured in &items[from..] {
+        let (direction, att_handle) = (&captured.direction, &captured.att_handle);
         if !handles.contains(att_handle) {
             summary.ignored_handles.insert(*att_handle);
             continue;
         }
-        match item {
+        match &captured.item {
             StreamItem::Frame { frame, bytes } => {
                 summary.record(frame, bytes);
                 if !quiet {

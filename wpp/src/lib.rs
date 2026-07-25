@@ -6,6 +6,7 @@
 
 pub mod analysis;
 pub mod capture;
+pub mod client;
 pub mod codec;
 pub mod commands;
 pub mod frame;
@@ -14,6 +15,7 @@ pub mod signal;
 pub mod units;
 
 pub use analysis::{detect_r_peaks, RPeaks};
+pub use client::{Action, Category, Client, Credentials, Event, Record, SampleKind, Source};
 pub use codec::{ParseError, Reader, WppObjectCodec, Writer};
 pub use commands::Command;
 pub use frame::{Channel, Frame, FrameError, PROTOCOL_VERSION};

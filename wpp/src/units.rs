@@ -60,8 +60,16 @@ quantity!(
     u16
 );
 quantity!(
-    /// Seconds since the Unix epoch, UTC.
+    /// Seconds since the Unix epoch, UTC. What the protocol carries.
     UnixTime,
+    i64
+);
+quantity!(
+    /// Milliseconds since the Unix epoch, UTC.
+    ///
+    /// Live pushes arrive faster than the protocol's one-second timestamps can
+    /// distinguish, so stored measurement times use this instead.
+    UnixMillis,
     i64
 );
 
@@ -69,6 +77,16 @@ impl UnixTime {
     /// Offset from UTC in seconds, as carried alongside device timestamps.
     pub fn with_offset(self, seconds: i32) -> UnixTime {
         UnixTime(self.0 + seconds as i64)
+    }
+
+    pub fn to_millis(self) -> UnixMillis {
+        UnixMillis(self.0 * 1000)
+    }
+}
+
+impl UnixMillis {
+    pub fn to_seconds(self) -> UnixTime {
+        UnixTime(self.0.div_euclid(1000))
     }
 }
 
@@ -210,7 +228,10 @@ mod tests {
     fn ecg_counts_are_microvolts() {
         assert_eq!(Millivolts::from_counts(1768), Millivolts(1.768));
         assert_eq!(Millivolts::from_counts(-658), Millivolts(-0.658));
-        assert_eq!(Millivolts::from_counts_scaled(1610, 1610.0), Millivolts(1.0));
+        assert_eq!(
+            Millivolts::from_counts_scaled(1610, 1610.0),
+            Millivolts(1.0)
+        );
     }
 
     #[test]
