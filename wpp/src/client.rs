@@ -9,12 +9,30 @@
 //! durable via [`Event::Stored`].
 
 use crate::objects::{
-    AppProbe, AppProbeOsVersion, Id, ProbeChallenge, ProbeChallengeResponse, StoredSignalMeta,
-    VasistasType, WamVasistasGet,
+    AppProbe, AppProbeOsVersion, FeatureTagsDeprecated, Id, InfoType, Null, ProbeChallenge,
+    ProbeChallengeResponse, StoredSignalMeta, TrackerWearPos, VasistasType, WamScreensList,
+    WamVasistasGet, WorkoutScreenList,
 };
 use crate::signal::{Signal, SignalCollector};
 use crate::units::{UnixMillis, UnixTime};
 use crate::{Command, Frame, WppObject};
+
+/// `TYPE_CMDERROR_ERR_DEVBUSY`: the watch is busy, not refusing.
+const ERR_DEVBUSY: i32 = -2;
+
+/// Does this error frame refuse the probe, rather than something asked
+/// alongside it? `Cmderror.cmd` names the command that was rejected.
+fn rejects_probe(frame: &Frame) -> bool {
+    frame.objects.iter().any(|o| {
+        matches!(o, WppObject::Cmderror(e)
+            if e.cmd == Command::CMD_PROBE.0 || e.cmd == Command::CMD_PROBE_CHALLENGE.0)
+    })
+}
+const MAX_BUSY_RETRIES: u32 = 20;
+/// `WAM_SCREEN_MAX_NUMBER`: the screen list is this many slots, zero-padded.
+const SCREEN_SLOTS: usize = 24;
+/// The quick-launch menu holds this many activities, zero-padded.
+const ACTIVITY_SLOTS: usize = 8;
 
 /// Shared secret established at association, and the watch's address.
 ///
@@ -39,8 +57,16 @@ impl Credentials {
 
 /// Which historical series to walk. The watch keeps them separately and each
 /// needs its own watermark.
+///
+/// Category 0 is the body stream, fetched with `CMD_BODY_VASISTAS_GET` and no
+/// type selector; it is the one carrying heart rate. Every other value is a
+/// `VasistasType` fetched with `CMD_VASISTAS_GET`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Category(pub u8);
+
+impl Category {
+    pub const BODY: Category = Category(0);
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
@@ -147,34 +173,60 @@ pub enum Phase {
     /// Walking one category's history forward.
     Syncing,
     Finished,
+    /// The watch refused the challenge answer. The association secret is wrong
+    /// or no longer the one the watch holds.
+    NotAuthenticated,
 }
 
 pub struct Client {
     credentials: Credentials,
     phase: Phase,
-    /// Categories still to walk, and where each has been read up to.
+    /// Categories still to walk this pass, and where each has been read up to.
     queue: Vec<(Category, UnixTime)>,
     current: Option<(Category, UnixTime)>,
+    /// Streams finished this pass, kept so their watermarks survive and the
+    /// walk can be run again without being reconstructed from storage.
+    done: Vec<(Category, UnixTime)>,
     /// Timestamp of the newest record seen in the batch being collected.
     batch_high_water: Option<UnixTime>,
     signals: SignalCollector,
     next_token: u64,
     /// Deletes held back until the matching Store is confirmed durable.
     pending_deletes: Vec<(u64, Frame)>,
+    /// Watermark the current category started from, for progress reporting.
+    walk_started_from: Option<UnixTime>,
+    busy_retries: u32,
+    stream_total: u32,
+    /// Screens the watch reports it is showing, in its own order.
+    screens: Option<Vec<u8>>,
+    /// Activities in the watch's quick-launch menu, in order.
+    activities: Option<Vec<u32>>,
+    /// Where the watch says it is worn.
+    wear_position: Option<u8>,
+    records_emitted: u64,
     app_probe: AppProbe,
 }
 
 impl Client {
     pub fn new(credentials: Credentials, watermarks: Vec<(Category, UnixTime)>) -> Client {
+        let stream_total = watermarks.len() as u32;
         Client {
             credentials,
             phase: Phase::Idle,
             queue: watermarks,
             current: None,
+            done: Vec::new(),
             batch_high_water: None,
             signals: SignalCollector::new(),
             next_token: 1,
             pending_deletes: Vec::new(),
+            walk_started_from: None,
+            busy_retries: 0,
+            stream_total,
+            screens: None,
+            activities: None,
+            wear_position: None,
+            records_emitted: 0,
             app_probe: AppProbe {
                 os: 1,
                 app: 1,
@@ -187,11 +239,34 @@ impl Client {
     /// corresponding records are durable, so a crash re-reads rather than skips.
     pub fn watermarks(&self) -> Vec<(Category, UnixTime)> {
         let mut all = self.queue.clone();
+        all.extend(self.done.iter().copied());
         if let Some(current) = self.current {
             all.push(current);
         }
         all.sort_by_key(|(c, _)| *c);
         all
+    }
+
+    /// Walk every stream again from where it left off.
+    ///
+    /// A finished sync is only current as of the moment it finished; the watch
+    /// keeps sampling, so the walk has to be repeated to stay up to date.
+    pub fn sync_now(&mut self) -> Vec<Action> {
+        if self.phase != Phase::Finished && self.phase != Phase::Syncing {
+            return Vec::new();
+        }
+        if self.current.is_some() {
+            return Vec::new();
+        }
+        // Reversed so the queue pops in the same priority order as the first
+        // pass, body stream first.
+        self.queue
+            .extend(std::mem::take(&mut self.done).into_iter().rev());
+        if self.queue.is_empty() {
+            return Vec::new();
+        }
+        self.phase = Phase::Syncing;
+        self.request_next()
     }
 
     pub fn phase(&self) -> Phase {
@@ -208,6 +283,33 @@ impl Client {
         self.pending_deletes.len()
     }
 
+    /// How far the history walk has come: where it started and where it is.
+    /// The caller supplies the end point, since the client holds no clock.
+    pub fn walk_span(&self) -> Option<(UnixTime, UnixTime)> {
+        Some((self.walk_started_from?, self.current?.1))
+    }
+
+    /// Bytes received and expected for a signal transfer in progress.
+    pub fn transfer_progress(&self) -> Option<(usize, usize)> {
+        self.signals.transfer_progress()
+    }
+
+    /// Records handed over for storage since this client was created.
+    pub fn records_emitted(&self) -> u64 {
+        self.records_emitted
+    }
+
+    /// Position in the walk, as (streams finished, streams total). A fraction
+    /// within one stream restarts at every stream boundary, so on its own it
+    /// looks like the sync keeps starting over.
+    pub fn stream_position(&self) -> (u32, u32) {
+        let remaining = self.queue.len() + usize::from(self.current.is_some());
+        (
+            (self.stream_total as usize - remaining) as u32,
+            self.stream_total,
+        )
+    }
+
     pub fn handle(&mut self, event: Event) -> Vec<Action> {
         match event {
             Event::Connected => self.on_connected(),
@@ -218,6 +320,7 @@ impl Client {
 
     fn on_connected(&mut self) -> Vec<Action> {
         self.phase = Phase::Probing;
+        self.busy_retries = 0;
         vec![Action::Send(Frame::new(
             Command::CMD_PROBE,
             vec![
@@ -246,6 +349,7 @@ impl Client {
         }
         let token = self.next_token;
         self.next_token += 1;
+        self.records_emitted += records.len() as u64;
         Some(Action::Store { token, records })
     }
 
@@ -281,18 +385,48 @@ impl Client {
                     )));
                 }
             }
+            // A rejected probe is terminal: without the right secret nothing
+            // else will be answered, and waiting forever looks identical to a
+            // watch that is merely slow. It has to be the probe that was
+            // rejected, though — everything else asked before the handshake
+            // finishes draws ERR_NOT_AUTH by design.
+            (Phase::Probing | Phase::Authenticating, c)
+                if c == Command::CMD_ERROR.0 && rejects_probe(&frame) =>
+            {
+                self.phase = Phase::NotAuthenticated;
+            }
             (Phase::Authenticating, c) if c == Command::CMD_PROBE.0 => {
                 self.phase = Phase::Syncing;
                 actions.extend(self.request_next());
             }
+            (Phase::Finished, c) if c == Command::CMD_SYNC_REQUEST.0 => {
+                // The watch asks for a sync when it has data to hand over.
+                actions.extend(self.sync_now());
+            }
+            (Phase::Syncing, c) if c == Command::CMD_ERROR.0 => {
+                let busy = frame
+                    .objects
+                    .iter()
+                    .any(|o| matches!(o, WppObject::Cmderror(e) if e.err == ERR_DEVBUSY));
+                // The watch rejects requests it is too busy to serve; the data
+                // is still there, so ask again rather than skipping the window.
+                if busy && self.busy_retries < MAX_BUSY_RETRIES {
+                    self.busy_retries += 1;
+                    actions.extend(self.request_current());
+                }
+            }
             (Phase::Syncing, _) => {
+                self.busy_retries = 0;
                 let empty = frame
                     .objects
                     .iter()
                     .any(|o| matches!(o, WppObject::Null(_)));
                 if empty {
-                    // Nothing left in this category; move on.
-                    self.current = None;
+                    // Nothing left in this category; keep its watermark and
+                    // move on.
+                    if let Some(finished) = self.current.take() {
+                        self.done.push(finished);
+                    }
                     actions.extend(self.request_next());
                 } else if let Some(high) = self.batch_high_water.take() {
                     if let Some((category, _)) = self.current {
@@ -342,6 +476,50 @@ impl Client {
         for object in &frame.objects {
             self.signals.observe(object);
             match object {
+                WppObject::WorkoutScreenList(list) => {
+                    self.activities = Some(
+                        list.screen_nb
+                            .iter()
+                            .copied()
+                            .filter(|id| *id != 0)
+                            .collect(),
+                    );
+                }
+                WppObject::TrackerWearPos(pos) => {
+                    self.wear_position = Some(pos.value);
+                }
+                WppObject::WamScreensList(list) => {
+                    // Fixed 24 slots, zero-padded; 0 means an empty slot.
+                    self.screens = Some(
+                        list.screen_numbers
+                            .iter()
+                            .copied()
+                            .filter(|id| *id != 0)
+                            .collect(),
+                    );
+                }
+                WppObject::Steps(steps) => {
+                    // The watch reports the running total for the day. Stamping
+                    // it with the day would keep one row that only ever shows
+                    // the latest figure; stamping it with the observation keeps
+                    // the accumulation through the day.
+                    records.push(Record::Sample {
+                        measured_at: received_at,
+                        kind: SampleKind::Steps,
+                        value: steps.value as i64,
+                        quality: None,
+                        source: Source::Live,
+                    });
+                }
+                WppObject::BatteryStatus(battery) => {
+                    records.push(Record::Sample {
+                        measured_at: received_at,
+                        kind: SampleKind::BatteryPercent,
+                        value: battery.battery_percent as i64,
+                        quality: None,
+                        source: Source::Live,
+                    });
+                }
                 WppObject::LiveHr(live) if live.hr > 0 => {
                     records.push(Record::Sample {
                         measured_at: received_at,
@@ -463,15 +641,140 @@ impl Client {
         }
     }
 
+    /// The screens the watch is currently showing, in order, once it has said.
+    pub fn screens(&self) -> Option<Vec<u8>> {
+        self.screens.clone()
+    }
+
+    /// Ask the watch which screens it shows.
+    pub fn request_screens(&self) -> Vec<Action> {
+        vec![Action::Send(Frame::new(
+            Command::CMD_WAM_SCREENS_LIST_GET,
+            Vec::new(),
+        ))]
+    }
+
+    /// Replace the watch's screen list. Order is the order it cycles them in.
+    ///
+    /// The list is a fixed number of slots; a short one silently drops screens,
+    /// so it is padded back out to full length with empty slots.
+    pub fn set_screens(&self, ids: &[u8]) -> Vec<Action> {
+        let mut slots = ids.to_vec();
+        slots.truncate(SCREEN_SLOTS);
+        slots.resize(SCREEN_SLOTS, 0);
+        vec![
+            Action::Send(Frame::new(
+                Command::CMD_WAM_SCREENS_LIST,
+                vec![WppObject::WamScreensList(WamScreensList {
+                    screen_numbers: slots,
+                })],
+            )),
+            // Read back rather than assume: the watch may reject or reorder.
+            Action::Send(Frame::new(Command::CMD_WAM_SCREENS_LIST_GET, Vec::new())),
+        ]
+    }
+
+    pub fn activities(&self) -> Option<Vec<u32>> {
+        self.activities.clone()
+    }
+
+    pub fn wear_position(&self) -> Option<u8> {
+        self.wear_position
+    }
+
+    /// Read the quick-launch activity menu and where the watch is worn.
+    pub fn request_device_config(&self) -> Vec<Action> {
+        vec![
+            Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_LIST_GET, Vec::new())),
+            Action::Send(Frame::new(Command::CMD_GET_TRACKER_WEAR_POS, Vec::new())),
+        ]
+    }
+
+    /// Replace the quick-launch activity menu, in the order given.
+    pub fn set_activities(&self, ids: &[u32]) -> Vec<Action> {
+        let mut slots = ids.to_vec();
+        slots.truncate(ACTIVITY_SLOTS);
+        slots.resize(ACTIVITY_SLOTS, 0);
+        vec![
+            Action::Send(Frame::new(
+                Command::CMD_WORKOUT_SCREEN_SET,
+                vec![WppObject::WorkoutScreenList(WorkoutScreenList {
+                    screen_nb: slots,
+                })],
+            )),
+            Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_LIST_GET, Vec::new())),
+        ]
+    }
+
+    pub fn set_wear_position(&self, position: u8) -> Vec<Action> {
+        vec![
+            Action::Send(Frame::new(
+                Command::CMD_SET_TRACKER_WEAR_POS,
+                vec![WppObject::TrackerWearPos(TrackerWearPos {
+                    value: position,
+                })],
+            )),
+            Action::Send(Frame::new(Command::CMD_GET_TRACKER_WEAR_POS, Vec::new())),
+        ]
+    }
+
+    /// Replace the set of enabled health features.
+    ///
+    /// The watch has no read side for this, and the message carries the whole
+    /// set: anything left out is switched off. Callers must send every feature
+    /// they want kept, including ones they do not understand.
+    pub fn set_features(&self, features: &[(u16, u32, u32)]) -> Vec<Action> {
+        let mut objects: Vec<WppObject> = vec![WppObject::Id(Id { value: 0 })];
+        objects.extend(features.iter().map(|(id, start, end)| {
+            WppObject::FeatureTagsDeprecated(FeatureTagsDeprecated {
+                id: *id,
+                start_time: *start,
+                end_time: *end,
+            })
+        }));
+        objects.push(WppObject::Null(Null {}));
+        vec![Action::Send(Frame::new(
+            Command::CMD_FEATURE_TAGS_SET_DEPRECATED_V2,
+            objects,
+        ))]
+    }
+
+    /// Daily totals and battery are not pushed; they have to be asked for.
+    ///
+    /// Asking before the handshake finishes does not merely fail: the watch
+    /// answers ERR_NOT_AUTH, which is indistinguishable on the wire from a
+    /// refused probe.
+    pub fn refresh(&self) -> Vec<Action> {
+        if matches!(
+            self.phase,
+            Phase::Idle | Phase::Probing | Phase::Authenticating
+        ) {
+            return Vec::new();
+        }
+        vec![
+            Action::Send(Frame::new(
+                Command::CMD_DISPLAYED_INFO_GET,
+                vec![WppObject::InfoType(InfoType { value: 4 })],
+            )),
+            Action::Send(Frame::new(Command::CMD_BATTERY_STATUS, Vec::new())),
+        ]
+    }
+
     fn request_next(&mut self) -> Vec<Action> {
         match self.queue.pop() {
             Some(next) => {
+                self.walk_started_from = Some(next.1);
                 self.current = Some(next);
                 self.request_current()
             }
             None => {
                 self.phase = Phase::Finished;
-                vec![Action::Send(Frame::new(Command::CMD_SYNC_OK, Vec::new()))]
+                // Asking for the daily totals while the walk is running gets
+                // ERR_DEVBUSY, and a busy reply to them is never retried. They
+                // are also freshest here, once the history is in.
+                let mut actions = vec![Action::Send(Frame::new(Command::CMD_SYNC_OK, Vec::new()))];
+                actions.extend(self.refresh());
+                actions
             }
         }
     }
@@ -480,18 +783,24 @@ impl Client {
         let Some((category, from)) = self.current else {
             return Vec::new();
         };
-        vec![Action::Send(Frame::new(
-            Command::CMD_VASISTAS_GET,
-            vec![
-                WppObject::WamVasistasGet(WamVasistasGet {
-                    utc_start: from.0 as u32,
-                    max: 0,
-                }),
-                WppObject::VasistasType(VasistasType {
-                    value: category.0 as i32,
-                }),
-            ],
-        ))]
+        let window = WppObject::WamVasistasGet(WamVasistasGet {
+            utc_start: from.0 as u32,
+            max: 0,
+        });
+        let frame = if category == Category::BODY {
+            Frame::new(Command::CMD_BODY_VASISTAS_GET, vec![window])
+        } else {
+            Frame::new(
+                Command::CMD_VASISTAS_GET,
+                vec![
+                    window,
+                    WppObject::VasistasType(VasistasType {
+                        value: category.0 as i32,
+                    }),
+                ],
+            )
+        };
+        vec![Action::Send(frame)]
     }
 }
 
@@ -768,6 +1077,68 @@ mod tests {
         ));
     }
 
+    /// An ECG spans hundreds of frames, so the transfer is the one part of a
+    /// sync that can report exact progress rather than an estimate.
+    #[test]
+    fn a_signal_transfer_reports_bytes_against_the_declared_total() {
+        use crate::objects::{StoredSignalData, StoredSignalMetaExtend};
+        let mut client = authenticated();
+        assert_eq!(client.transfer_progress(), None);
+
+        let meta = StoredSignalMeta {
+            r#type: 7,
+            sampling_freq: 300,
+            format: 0,
+            size: 2,
+            resolution: 14,
+            channel: 1,
+        };
+        client.handle(frame(
+            Command::CMD_STORED_MEASURE_SIGNAL_GET,
+            vec![
+                WppObject::StoredSignalMeta(meta),
+                WppObject::StoredSignalMetaExtend(StoredSignalMetaExtend {
+                    duration: 30,
+                    total_size: 100,
+                    filter_bank: 0,
+                }),
+                WppObject::StoredSignalData(StoredSignalData {
+                    samples: vec![0; 40],
+                }),
+            ],
+        ));
+        assert_eq!(client.transfer_progress(), Some((40, 100)));
+
+        client.handle(frame(
+            Command::CMD_STORED_MEASURE_SIGNAL_GET,
+            vec![WppObject::StoredSignalData(StoredSignalData {
+                samples: vec![0; 20],
+            })],
+        ));
+        assert_eq!(client.transfer_progress(), Some((60, 100)));
+    }
+
+    #[test]
+    fn the_history_walk_reports_where_it_started_and_where_it_is() {
+        use crate::objects::{VasistasHeartrate, WamVasistasHead};
+        let mut client = authenticated();
+        assert_eq!(client.walk_span(), Some((UnixTime(1000), UnixTime(1000))));
+
+        client.handle(frame(
+            Command::CMD_VASISTAS_GET,
+            vec![
+                WppObject::WamVasistasHead(WamVasistasHead { utc: 5000 }),
+                WppObject::VasistasHeartrate(VasistasHeartrate {
+                    heartrate: 62,
+                    quality: 4,
+                    temperature: 0,
+                }),
+            ],
+        ));
+        assert_eq!(client.walk_span(), Some((UnixTime(1000), UnixTime(5001))));
+        assert_eq!(client.records_emitted(), 1);
+    }
+
     fn frame(command: Command, objects: Vec<WppObject>) -> Event {
         Event::Frame {
             frame: Frame::new(command, objects),
@@ -794,6 +1165,318 @@ mod tests {
             })
             .flatten()
             .collect()
+    }
+
+    /// Heart rate lives behind CMD_BODY_VASISTAS_GET, which takes no type
+    /// selector; the typed streams carry SpO2 and AHI instead.
+    #[test]
+    fn the_body_stream_uses_its_own_command_and_no_type() {
+        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(4000))]);
+        client.handle(Event::Connected);
+        client.handle(frame(
+            Command::CMD_PROBE_CHALLENGE,
+            vec![WppObject::ProbeChallenge(ProbeChallenge {
+                mac: "a4:7e:fa:44:d6:10".to_string(),
+                challenge: vec![1; 16],
+            })],
+        ));
+        let actions = client.handle(frame(Command::CMD_PROBE, vec![]));
+        let requests: Vec<&Frame> = actions
+            .iter()
+            .filter_map(|a| match a {
+                Action::Send(f) => Some(f),
+                _ => None,
+            })
+            .collect();
+        let body = requests
+            .iter()
+            .find(|f| f.command == Command::CMD_BODY_VASISTAS_GET)
+            .expect("body stream requested");
+        assert!(
+            !body
+                .objects
+                .iter()
+                .any(|o| matches!(o, WppObject::VasistasType(_))),
+            "the body stream takes no type selector"
+        );
+        // The daily totals wait for the walk; asking now draws ERR_DEVBUSY.
+        assert!(!requests
+            .iter()
+            .any(|f| f.command == Command::CMD_BATTERY_STATUS));
+    }
+
+    #[test]
+    fn nothing_is_asked_for_before_the_probe_completes() {
+        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(0))]);
+        let actions = client.handle(Event::Connected);
+        assert_eq!(sent(&actions), vec![Command::CMD_PROBE]);
+    }
+
+    /// DEVBUSY means "ask again", not "skip this window".
+    #[test]
+    fn a_busy_watch_is_asked_again_for_the_same_window() {
+        use crate::objects::Cmderror;
+        let mut client = authenticated();
+        let before = client.current();
+        let actions = client.handle(frame(
+            Command::CMD_ERROR,
+            vec![WppObject::Cmderror(Cmderror { cmd: 2424, err: -2 })],
+        ));
+        assert_eq!(
+            sent(&actions),
+            vec![Command::CMD_VASISTAS_GET],
+            "the same window is requested again"
+        );
+        assert_eq!(client.current(), before, "and the watermark does not move");
+    }
+
+    /// A finished sync goes stale the moment it finishes; the walk has to be
+    /// repeatable without losing where each stream got to.
+    #[test]
+    fn a_finished_sync_can_be_run_again_from_where_it_left_off() {
+        use crate::objects::{Null, VasistasHeartrate, WamVasistasHead};
+        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(4000))]);
+        client.handle(Event::Connected);
+        client.handle(frame(
+            Command::CMD_PROBE_CHALLENGE,
+            vec![WppObject::ProbeChallenge(ProbeChallenge {
+                mac: "a4:7e:fa:44:d6:10".to_string(),
+                challenge: vec![1; 16],
+            })],
+        ));
+        client.handle(frame(Command::CMD_PROBE, vec![]));
+        client.handle(frame(
+            Command::CMD_BODY_VASISTAS_GET,
+            vec![
+                WppObject::WamVasistasHead(WamVasistasHead { utc: 5000 }),
+                WppObject::VasistasHeartrate(VasistasHeartrate {
+                    heartrate: 62,
+                    quality: 4,
+                    temperature: 0,
+                }),
+            ],
+        ));
+        client.handle(frame(
+            Command::CMD_BODY_VASISTAS_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+        assert_eq!(client.phase(), Phase::Finished);
+        assert_eq!(
+            client.watermarks(),
+            vec![(Category::BODY, UnixTime(5001))],
+            "a finished stream keeps its watermark"
+        );
+
+        let actions = client.sync_now();
+        assert_eq!(sent(&actions), vec![Command::CMD_BODY_VASISTAS_GET]);
+        assert_eq!(client.current(), Some((Category::BODY, UnixTime(5001))));
+    }
+
+    /// The watch asks for a sync when it has something; that is the cue.
+    #[test]
+    fn a_sync_request_from_the_watch_restarts_the_walk() {
+        use crate::objects::{Null, SyncRequest};
+        let mut client = authenticated();
+        client.handle(frame(
+            Command::CMD_VASISTAS_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+        assert_eq!(client.phase(), Phase::Finished);
+
+        let actions = client.handle(frame(
+            Command::CMD_SYNC_REQUEST,
+            vec![WppObject::SyncRequest(SyncRequest {
+                r#type: 0,
+                reserved: 0,
+            })],
+        ));
+        assert!(
+            sent(&actions).contains(&Command::CMD_VASISTAS_GET),
+            "the walk starts again"
+        );
+    }
+
+    /// The quick-launch menu is eight slots, zero-padded, like the screen list.
+    #[test]
+    fn the_activity_menu_is_padded_and_empty_slots_are_not_activities() {
+        use crate::objects::WorkoutScreenList;
+        let mut client = authenticated();
+        client.handle(frame(
+            Command::CMD_WORKOUT_SCREEN_LIST_GET,
+            vec![WppObject::WorkoutScreenList(WorkoutScreenList {
+                screen_nb: vec![16, 2, 36, 28, 0, 0, 0, 0],
+            })],
+        ));
+        assert_eq!(client.activities(), Some(vec![16, 2, 36, 28]));
+
+        let actions = client.set_activities(&[2, 16]);
+        let Action::Send(frame) = &actions[0] else {
+            panic!()
+        };
+        let WppObject::WorkoutScreenList(list) = &frame.objects[0] else {
+            panic!()
+        };
+        assert_eq!(list.screen_nb, vec![2, 16, 0, 0, 0, 0, 0, 0]);
+    }
+
+    /// Features are write-only and the message carries the whole set, so a
+    /// write must name everything that should stay on.
+    #[test]
+    fn a_feature_write_carries_the_whole_set() {
+        let client = authenticated();
+        let actions = client.set_features(&[(14, 0, 0), (17, 0, 0), (9, 100, 200)]);
+        let Action::Send(frame) = &actions[0] else {
+            panic!()
+        };
+        let ids: Vec<u16> = frame
+            .objects
+            .iter()
+            .filter_map(|o| match o {
+                WppObject::FeatureTagsDeprecated(t) => Some(t.id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids, vec![14, 17, 9]);
+        assert!(matches!(frame.objects.last(), Some(WppObject::Null(_))));
+    }
+
+    #[test]
+    fn the_wear_position_round_trips() {
+        use crate::objects::TrackerWearPos;
+        let mut client = authenticated();
+        client.handle(frame(
+            Command::CMD_GET_TRACKER_WEAR_POS,
+            vec![WppObject::TrackerWearPos(TrackerWearPos { value: 2 })],
+        ));
+        assert_eq!(
+            client.wear_position(),
+            Some(TrackerWearPos::VALUE_LEFT_WRIST)
+        );
+    }
+
+    /// The list is fixed-length and zero-padded; a short write drops screens.
+    #[test]
+    fn a_screen_list_is_padded_and_empty_slots_are_not_screens() {
+        use crate::objects::WamScreensList;
+        let mut client = authenticated();
+        client.handle(frame(
+            Command::CMD_WAM_SCREENS_LIST_GET,
+            vec![WppObject::WamScreensList(WamScreensList {
+                screen_numbers: vec![
+                    6, 16, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                ],
+            })],
+        ));
+        assert_eq!(
+            client.screens(),
+            Some(vec![6, 16, 4]),
+            "empty slots are not screens"
+        );
+
+        let actions = client.set_screens(&[4, 6]);
+        let Action::Send(frame) = &actions[0] else {
+            panic!()
+        };
+        let WppObject::WamScreensList(list) = &frame.objects[0] else {
+            panic!()
+        };
+        assert_eq!(list.screen_numbers.len(), 24, "padded back to full length");
+        assert_eq!(&list.screen_numbers[..2], &[4, 6]);
+        assert!(list.screen_numbers[2..].iter().all(|s| *s == 0));
+    }
+
+    /// A rejected handshake has to be visible; the alternative is a spinner
+    /// that never resolves.
+    #[test]
+    fn a_refused_challenge_ends_in_not_authenticated() {
+        use crate::objects::Cmderror;
+        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(0))]);
+        client.handle(Event::Connected);
+        client.handle(frame(
+            Command::CMD_PROBE_CHALLENGE,
+            vec![WppObject::ProbeChallenge(ProbeChallenge {
+                mac: "a4:7e:fa:44:d6:10".to_string(),
+                challenge: vec![1; 16],
+            })],
+        ));
+        assert_eq!(client.phase(), Phase::Authenticating);
+
+        client.handle(frame(
+            Command::CMD_ERROR,
+            vec![WppObject::Cmderror(Cmderror { cmd: 257, err: -5 })],
+        ));
+        assert_eq!(client.phase(), Phase::NotAuthenticated);
+    }
+
+    /// Everything asked before the handshake finishes is refused with the same
+    /// code the watch uses to refuse a probe. Reading those as a refused probe
+    /// makes the client ignore the challenge it is waiting for.
+    #[test]
+    fn not_auth_for_another_command_does_not_abort_the_handshake() {
+        use crate::objects::Cmderror;
+        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(0))]);
+        client.handle(Event::Connected);
+
+        // CMD_BATTERY_STATUS, asked while the probe was still in flight.
+        client.handle(frame(
+            Command::CMD_ERROR,
+            vec![WppObject::Cmderror(Cmderror { cmd: 1284, err: -5 })],
+        ));
+        assert_eq!(client.phase(), Phase::Probing);
+
+        let actions = client.handle(frame(
+            Command::CMD_PROBE_CHALLENGE,
+            vec![WppObject::ProbeChallenge(ProbeChallenge {
+                mac: "a4:7e:fa:44:d6:10".to_string(),
+                challenge: vec![1; 16],
+            })],
+        ));
+        assert_eq!(client.phase(), Phase::Authenticating);
+        let Action::Send(reply) = &actions[0] else {
+            panic!()
+        };
+        assert_eq!(reply.command.opcode(), Command::CMD_PROBE_CHALLENGE.0);
+    }
+
+    /// The daily totals are not part of the walk and have to be asked for, but
+    /// the watch answers ERR_DEVBUSY while a walk is running and nothing
+    /// retries them. They belong at the end.
+    #[test]
+    fn the_daily_totals_are_asked_for_once_the_walk_is_done() {
+        use crate::objects::Null;
+        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(0))]);
+        client.handle(Event::Connected);
+        client.handle(frame(
+            Command::CMD_PROBE_CHALLENGE,
+            vec![WppObject::ProbeChallenge(ProbeChallenge {
+                mac: "a4:7e:fa:44:d6:10".to_string(),
+                challenge: vec![1; 16],
+            })],
+        ));
+
+        let started = client.handle(frame(Command::CMD_PROBE, Vec::new()));
+        let sent = |actions: &[Action]| -> Vec<u16> {
+            actions
+                .iter()
+                .map(|a| match a {
+                    Action::Send(f) => f.command.opcode(),
+                    _ => 0,
+                })
+                .collect()
+        };
+        assert!(
+            !sent(&started).contains(&Command::CMD_DISPLAYED_INFO_GET.0),
+            "the walk has the watch busy"
+        );
+
+        let done = client.handle(frame(
+            Command::CMD_BODY_VASISTAS_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+        assert_eq!(client.phase(), Phase::Finished);
+        let commands = sent(&done);
+        assert!(commands.contains(&Command::CMD_DISPLAYED_INFO_GET.0));
+        assert!(commands.contains(&Command::CMD_BATTERY_STATUS.0));
     }
 
     /// A whole session driven message by message, asserting what the client
@@ -834,20 +1517,25 @@ mod tests {
             }
         )));
 
-        // 3. the watch accepts -> we start asking for history from the watermark
+        // 3. the watch accepts -> the history walk starts, which is the first
+        //    thing the watch would have answered at all
         let actions = client.handle(frame(Command::CMD_PROBE, vec![]));
         assert_eq!(sent(&actions), vec![Command::CMD_VASISTAS_GET]);
         assert_eq!(client.phase(), Phase::Syncing);
         assert_eq!(client.current(), Some((Category(8), UnixTime(4000))));
-        let Action::Send(request) = &actions[0] else {
-            panic!()
-        };
-        assert!(request.objects.contains(&WppObject::WamVasistasGet(
-            WamVasistasGet {
+        let request = actions
+            .iter()
+            .find_map(|a| match a {
+                Action::Send(f) if f.command == Command::CMD_VASISTAS_GET => Some(f),
+                _ => None,
+            })
+            .expect("history requested");
+        assert!(request
+            .objects
+            .contains(&WppObject::WamVasistasGet(WamVasistasGet {
                 utc_start: 4000,
                 max: 0,
-            }
-        )));
+            })));
 
         // 4. a window of samples -> stored, and the next request moves past it
         let actions = client.handle(frame(
@@ -888,13 +1576,26 @@ mod tests {
         );
         assert_eq!(client.current(), Some((Category(8), UnixTime(5001))));
 
-        // 5. nothing left -> the sync closes out
-        let actions = client.handle(frame(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]));
-        assert_eq!(sent(&actions), vec![Command::CMD_SYNC_OK]);
+        // 5. nothing left -> the sync closes out and the daily totals, which
+        //    the walk kept the watch too busy to answer, are asked for
+        let actions = client.handle(frame(
+            Command::CMD_VASISTAS_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+        assert_eq!(
+            sent(&actions),
+            vec![
+                Command::CMD_SYNC_OK,
+                Command::CMD_DISPLAYED_INFO_GET,
+                Command::CMD_BATTERY_STATUS,
+            ]
+        );
 
         assert_eq!(client.phase(), Phase::Finished);
         assert_eq!(client.current(), None);
         assert_eq!(client.pending_deletes(), 0);
-        assert_eq!(client.watermarks(), vec![]);
+        // Finishing must not discard where the walk got to; the next pass
+        // resumes from here rather than replaying the history.
+        assert_eq!(client.watermarks(), vec![(Category(8), UnixTime(5001))]);
     }
 }

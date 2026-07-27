@@ -1,0 +1,15 @@
+[package]
+name = "wpp-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "wpp_ffi"
+
+[dependencies]
+wpp = { path = "../wpp" }
+wpp-store = { path = "../wpp-store" }
+uniffi = { version = "0.28", features = ["cli"] }
+thiserror = "1"
+

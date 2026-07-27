@@ -240,6 +240,17 @@ impl SignalCollector {
         self.pending.data.clear();
     }
 
+    /// Bytes received and expected for a transfer in progress, if one is.
+    /// A signal spans hundreds of frames, so this is the one place a sync has
+    /// an exact completion figure rather than an estimate.
+    pub fn transfer_progress(&self) -> Option<(usize, usize)> {
+        let declared = self.pending.extend.as_ref()?.total_size as usize;
+        if self.pending.data.is_empty() {
+            return None;
+        }
+        Some((self.pending.data.len(), declared))
+    }
+
     /// Signals finished so far, leaving any transfer still in progress alone.
     /// A signal spans many frames, so draining must not disturb the pending one.
     pub fn take_completed(&mut self) -> Vec<Signal> {

@@ -16,3 +16,19 @@ local.properties
 *.apk
 *.log
 target/*
+
+# Rust
+/target
+
+# Built by cargo-ndk, not source
+/app/src/main/jniLibs
+
+# Captures contain the device MAC and association secret
+*.pcap
+btsnoop_hci.log
+capture-decoded.log
+withings.apk
+*.db
+*.db-wal
+*.db-shm
+healthmate-backup/

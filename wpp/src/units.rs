@@ -111,7 +111,7 @@ impl Millivolts {
 impl VasistasCbt {
     /// Core body temperature, milli-degrees on the wire.
     ///
-    /// Scale inferred from magnitude, not confirmed in the app.
+    /// Confirmed against the watch's own display.
     pub fn core_temperature(&self) -> Celsius {
         Celsius(self.temperature as f64 / 1000.0)
     }

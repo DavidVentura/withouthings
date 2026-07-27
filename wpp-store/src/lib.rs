@@ -56,6 +56,8 @@ impl Store {
                     quality,
                     source,
                 } => {
+                    // Every sample is an observation at an instant, so a
+                    // repeat of one is a duplicate.
                     tx.execute(
                         "INSERT INTO sample (device_id, measured_at, kind, source, value, quality)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -139,6 +141,156 @@ impl Store {
             params![device_id, category.0, through.0],
         )?;
         Ok(())
+    }
+
+    /// Most recent value of a kind, as (measured_at_ms, value).
+    pub fn latest(&self, device_id: i64, kind: i64) -> Result<Option<(i64, i64)>, Error> {
+        self.conn
+            .query_row(
+                "SELECT measured_at, value FROM sample
+                  WHERE device_id = ?1 AND kind = ?2
+                  ORDER BY measured_at DESC LIMIT 1",
+                params![device_id, kind],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+    }
+
+    /// One kind of sample over a window, reduced to at most `max_points`.
+    ///
+    /// Reduction keeps the minimum and maximum of each bucket rather than an
+    /// average: averaging flattens the recovery dips between sets, which is
+    /// what the trace is being read for.
+    pub fn series(
+        &self,
+        device_id: i64,
+        kind: i64,
+        from_ms: i64,
+        to_ms: i64,
+        max_points: u32,
+    ) -> Result<Vec<(i64, i64, i64)>, Error> {
+        let total: i64 = self.conn.query_row(
+            "SELECT count(*) FROM sample
+              WHERE device_id = ?1 AND kind = ?4 AND measured_at BETWEEN ?2 AND ?3",
+            params![device_id, from_ms, to_ms, kind],
+            |r| r.get(0),
+        )?;
+
+        let max_points = max_points.max(2) as i64;
+        if total <= max_points {
+            let mut stmt = self.conn.prepare(
+                "SELECT measured_at, value, source FROM sample
+                  WHERE device_id = ?1 AND kind = ?4 AND measured_at BETWEEN ?2 AND ?3
+                  ORDER BY measured_at",
+            )?;
+            let rows = stmt.query_map(params![device_id, from_ms, to_ms, kind], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })?;
+            return rows.collect();
+        }
+
+        let buckets = max_points / 2;
+        let width = ((to_ms - from_ms) / buckets).max(1);
+        let mut stmt = self.conn.prepare(
+            "SELECT measured_at, value, source FROM sample
+              WHERE device_id = ?1 AND kind = ?5 AND measured_at BETWEEN ?2 AND ?3
+                AND (measured_at, value) IN (
+                    SELECT measured_at, min(value) FROM sample
+                     WHERE device_id = ?1 AND kind = ?5 AND measured_at BETWEEN ?2 AND ?3
+                     GROUP BY (measured_at - ?2) / ?4
+                    UNION ALL
+                    SELECT measured_at, max(value) FROM sample
+                     WHERE device_id = ?1 AND kind = ?5 AND measured_at BETWEEN ?2 AND ?3
+                     GROUP BY (measured_at - ?2) / ?4
+                )
+              ORDER BY measured_at",
+        )?;
+        let rows = stmt.query_map(params![device_id, from_ms, to_ms, width, kind], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?;
+        rows.collect()
+    }
+
+    /// Oldest and newest sample of a kind, for framing an initial window.
+    pub fn extent(&self, device_id: i64, kind: i64) -> Result<Option<(i64, i64)>, Error> {
+        self.conn
+            .query_row(
+                "SELECT min(measured_at), max(measured_at) FROM sample
+                  WHERE device_id = ?1 AND kind = ?2",
+                params![device_id, kind],
+                |r| Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, Option<i64>>(1)?)),
+            )
+            .map(|(lo, hi)| match (lo, hi) {
+                (Some(lo), Some(hi)) => Some((lo, hi)),
+                _ => None,
+            })
+    }
+
+    /// Workouts newest first, as (id, started_at, ended_at, subcategory).
+    pub fn workouts(
+        &self,
+        device_id: i64,
+        limit: u32,
+    ) -> Result<Vec<(i64, i64, Option<i64>, i64)>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, started_at, ended_at, subcategory FROM workout
+              WHERE device_id = ?1 ORDER BY started_at DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![device_id, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?;
+        rows.collect()
+    }
+
+    /// The workout still running, if any.
+    pub fn active_workout(&self, device_id: i64) -> Result<Option<(i64, i64, i64)>, Error> {
+        self.conn
+            .query_row(
+                "SELECT id, started_at, subcategory FROM workout
+                  WHERE device_id = ?1 AND ended_at IS NULL
+                  ORDER BY started_at DESC LIMIT 1",
+                params![device_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+    }
+
+    pub fn mark_set(&self, device_id: i64, at_ms: i64, edge: i64) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT INTO marker (device_id, at_ms, edge) VALUES (?1, ?2, ?3)
+             ON CONFLICT DO NOTHING",
+            params![device_id, at_ms, edge],
+        )?;
+        Ok(())
+    }
+
+    /// Set boundaries inside a window, as (at_ms, edge).
+    pub fn markers(
+        &self,
+        device_id: i64,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<Vec<(i64, i64)>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT at_ms, edge FROM marker
+              WHERE device_id = ?1 AND at_ms BETWEEN ?2 AND ?3 ORDER BY at_ms",
+        )?;
+        let rows = stmt.query_map(params![device_id, from_ms, to_ms], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?;
+        rows.collect()
+    }
+
+    /// One recording: metadata plus its interleaved samples.
+    pub fn ecg(&self, id: i64) -> Result<Option<(i64, i64, i64, i64, Vec<u8>)>, Error> {
+        self.conn
+            .query_row(
+                "SELECT measured_at, signal_type, sampling_hz, lead_count, samples
+                   FROM ecg WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .optional()
     }
 
     pub fn count(&self, table: &str) -> Result<i64, Error> {

@@ -91,3 +91,12 @@ SELECT w.id AS workout_id, s.*
     ON s.device_id   = w.device_id
    AND s.measured_at >= w.started_at * 1000
    AND s.measured_at <= COALESCE(w.ended_at * 1000, 9223372036854775807);
+
+-- Set boundaries a user marks with the stopwatch. Not protocol data; it is
+-- what makes a workout trace legible as sets rather than one long line.
+CREATE TABLE IF NOT EXISTS marker (
+    device_id INTEGER NOT NULL REFERENCES device(id),
+    at_ms     INTEGER NOT NULL,
+    edge      INTEGER NOT NULL,
+    PRIMARY KEY (device_id, at_ms)
+) STRICT, WITHOUT ROWID;

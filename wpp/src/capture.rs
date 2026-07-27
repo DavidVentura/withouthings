@@ -179,6 +179,14 @@ impl FrameReassembler {
         self.buf.len()
     }
 
+    /// Drop a partial frame.
+    ///
+    /// A link that goes away mid-frame leaves bytes that will never be
+    /// completed; keeping them corrupts the first frame of the next link.
+    pub fn reset(&mut self) {
+        self.buf.clear();
+    }
+
     pub fn push(&mut self, bytes: &[u8]) -> Vec<StreamItem> {
         self.buf.extend_from_slice(bytes);
         let mut items = Vec::new();
