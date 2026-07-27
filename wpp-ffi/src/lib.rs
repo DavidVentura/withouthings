@@ -136,6 +136,9 @@ pub struct WorkoutSummary {
     /// Absent while the workout is still running.
     pub ended_at_ms: Option<i64>,
     pub subcategory: i32,
+    /// The sport, named. Unknown ids keep their number rather than being
+    /// hidden — the watch may know activities this build does not.
+    pub activity: String,
 }
 
 /// Where the watch is worn, from `TYPE_TRACKER_WEAR_POS`.
@@ -364,8 +367,8 @@ impl WatchService {
     pub fn request_refresh(&self) -> Result<(), WatchError> {
         let actions = {
             let mut inner = self.inner.lock().unwrap();
-            let mut actions = inner.client.refresh();
-            actions.extend(inner.client.sync_now());
+            let mut actions = inner.client.force_refresh();
+            actions.extend(inner.client.walk_now());
             actions
         };
         self.dispatch(actions)
@@ -434,6 +437,7 @@ impl WatchService {
                     started_at_ms: start * 1000,
                     ended_at_ms: None,
                     subcategory: sub as i32,
+                    activity: activity_name(sub as u32),
                 }),
             pending_deletes: pending,
             sync: progress,
@@ -520,6 +524,7 @@ impl WatchService {
                 started_at_ms: start * 1000,
                 ended_at_ms: end.map(|e| e * 1000),
                 subcategory: sub as i32,
+                activity: activity_name(sub as u32),
             })
             .collect())
     }

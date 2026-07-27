@@ -29,6 +29,14 @@ fn rejects_probe(frame: &Frame) -> bool {
     })
 }
 const MAX_BUSY_RETRIES: u32 = 20;
+/// The watch asks for a sync every few seconds, and each one ends with a
+/// refresh. The daily totals do not change fast enough to be worth a request
+/// at that rate.
+const MIN_REFRESH_INTERVAL_MS: i64 = 300_000;
+/// The watch asks for a sync every few seconds. Walking every stream that
+/// often keeps its radio busy for no gain — it buffers, so a later walk
+/// collects exactly the same records in one pass.
+const MIN_WALK_INTERVAL_MS: i64 = 900_000;
 /// `WAM_SCREEN_MAX_NUMBER`: the screen list is this many slots, zero-padded.
 const SCREEN_SLOTS: usize = 24;
 /// The quick-launch menu holds this many activities, zero-padded.
@@ -127,6 +135,13 @@ pub enum SampleKind {
     RespiratoryRate,
     BatteryPercent,
     Steps,
+    /// `BatteryStatus.battery_state`: 0 charging, 1 low, 2 ok, 3 critical.
+    /// Stored as its own series because a charge is only visible as a change
+    /// in it, and nothing on the wire announces one.
+    BatteryState,
+    /// Cell voltage. It moves as soon as a charger is attached, well before
+    /// the percentage the gauge reports catches up.
+    BatteryMillivolts,
 }
 
 impl SampleKind {
@@ -139,6 +154,8 @@ impl SampleKind {
             SampleKind::RespiratoryRate => 5,
             SampleKind::BatteryPercent => 6,
             SampleKind::Steps => 7,
+            SampleKind::BatteryState => 8,
+            SampleKind::BatteryMillivolts => 9,
         }
     }
 }
@@ -205,6 +222,11 @@ pub struct Client {
     wear_position: Option<u8>,
     records_emitted: u64,
     app_probe: AppProbe,
+    /// Latest frame timestamp seen. The client holds no clock of its own, so
+    /// this is the only sense of "now" it has.
+    now: Option<UnixMillis>,
+    last_refresh: Option<UnixMillis>,
+    last_walk: Option<UnixMillis>,
 }
 
 impl Client {
@@ -227,6 +249,9 @@ impl Client {
             activities: None,
             wear_position: None,
             records_emitted: 0,
+            now: None,
+            last_refresh: None,
+            last_walk: None,
             app_probe: AppProbe {
                 os: 1,
                 app: 1,
@@ -252,6 +277,16 @@ impl Client {
     /// A finished sync is only current as of the moment it finished; the watch
     /// keeps sampling, so the walk has to be repeated to stay up to date.
     pub fn sync_now(&mut self) -> Vec<Action> {
+        if let (Some(now), Some(last)) = (self.now, self.last_walk) {
+            if now.0 - last.0 < MIN_WALK_INTERVAL_MS {
+                return Vec::new();
+            }
+        }
+        self.walk_now()
+    }
+
+    /// The same walk, ignoring the rate limit.
+    pub fn walk_now(&mut self) -> Vec<Action> {
         if self.phase != Phase::Finished && self.phase != Phase::Syncing {
             return Vec::new();
         }
@@ -266,6 +301,7 @@ impl Client {
             return Vec::new();
         }
         self.phase = Phase::Syncing;
+        self.last_walk = self.now;
         self.request_next()
     }
 
@@ -356,6 +392,7 @@ impl Client {
     fn on_frame(&mut self, frame: Frame, received_at: UnixMillis) -> Vec<Action> {
         let mut actions = Vec::new();
         let mut records = Vec::new();
+        self.now = Some(received_at);
 
         // Decoding does not depend on who asked for the data; the phase below
         // only decides what to send next. This also lets a captured session be
@@ -397,6 +434,13 @@ impl Client {
             }
             (Phase::Authenticating, c) if c == Command::CMD_PROBE.0 => {
                 self.phase = Phase::Syncing;
+                // A workout that began while nothing was connected is only
+                // discoverable by asking: CMD_WORKOUT_START is pushed once and
+                // not replayed. The official app asks on every connect too.
+                actions.push(Action::Send(Frame::new(
+                    Command::CMD_WORKOUT_STATUS,
+                    Vec::new(),
+                )));
                 actions.extend(self.request_next());
             }
             (Phase::Finished, c) if c == Command::CMD_SYNC_REQUEST.0 => {
@@ -519,6 +563,20 @@ impl Client {
                         quality: None,
                         source: Source::Live,
                     });
+                    records.push(Record::Sample {
+                        measured_at: received_at,
+                        kind: SampleKind::BatteryState,
+                        value: battery.battery_state as i64,
+                        quality: None,
+                        source: Source::Live,
+                    });
+                    records.push(Record::Sample {
+                        measured_at: received_at,
+                        kind: SampleKind::BatteryMillivolts,
+                        value: battery.battery_mv as i64,
+                        quality: None,
+                        source: Source::Live,
+                    });
                 }
                 WppObject::LiveHr(live) if live.hr > 0 => {
                     records.push(Record::Sample {
@@ -527,6 +585,26 @@ impl Client {
                         value: live.hr as i64,
                         quality: None,
                         source: Source::Live,
+                    });
+                }
+                WppObject::StartTime(start)
+                    if frame.command.opcode() == Command::CMD_WORKOUT_STATUS.0
+                        && frame
+                            .objects
+                            .iter()
+                            .any(|o| matches!(o, WppObject::Status(s) if s.value == 1)) =>
+                {
+                    let subcategory = frame
+                        .objects
+                        .iter()
+                        .find_map(|o| match o {
+                            WppObject::ActivitySubcategory(a) => Some(a.value),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
+                    records.push(Record::WorkoutStarted {
+                        started_at: UnixTime(start.value as i64),
+                        subcategory,
                     });
                 }
                 WppObject::StartTime(start)
@@ -744,13 +822,30 @@ impl Client {
     /// Asking before the handshake finishes does not merely fail: the watch
     /// answers ERR_NOT_AUTH, which is indistinguishable on the wire from a
     /// refused probe.
-    pub fn refresh(&self) -> Vec<Action> {
+    pub fn refresh(&mut self) -> Vec<Action> {
         if matches!(
             self.phase,
             Phase::Idle | Phase::Probing | Phase::Authenticating
         ) {
             return Vec::new();
         }
+        if let (Some(now), Some(last)) = (self.now, self.last_refresh) {
+            if now.0 - last.0 < MIN_REFRESH_INTERVAL_MS {
+                return Vec::new();
+            }
+        }
+        self.force_refresh()
+    }
+
+    /// The same request, ignoring the rate limit: someone asked for it.
+    pub fn force_refresh(&mut self) -> Vec<Action> {
+        if matches!(
+            self.phase,
+            Phase::Idle | Phase::Probing | Phase::Authenticating
+        ) {
+            return Vec::new();
+        }
+        self.last_refresh = self.now;
         vec![
             Action::Send(Frame::new(
                 Command::CMD_DISPLAYED_INFO_GET,
@@ -1479,6 +1574,118 @@ mod tests {
         assert!(commands.contains(&Command::CMD_BATTERY_STATUS.0));
     }
 
+    /// The watch asks for a sync every few seconds and each one ends with a
+    /// refresh, so without a limit the daily totals are re-requested at that
+    /// rate and every one of them writes a row.
+    #[test]
+    fn the_automatic_refresh_is_rate_limited_but_an_explicit_one_is_not() {
+        let mut client = authenticated();
+        let at = |ms: i64| Event::Frame {
+            frame: Frame::new(Command::CMD_SYNC_REQUEST, Vec::new()),
+            received_at: UnixMillis(ms),
+        };
+
+        client.handle(at(0));
+        assert!(!client.refresh().is_empty(), "the first one goes out");
+        client.handle(at(MIN_REFRESH_INTERVAL_MS / 2));
+        assert!(client.refresh().is_empty(), "half an interval is too soon");
+        client.handle(at(MIN_REFRESH_INTERVAL_MS + 1));
+        assert!(
+            !client.refresh().is_empty(),
+            "an interval on it is due again"
+        );
+
+        // The button in the UI means "now", whatever the limit says.
+        client.handle(at(MIN_REFRESH_INTERVAL_MS + 2));
+        assert!(client.refresh().is_empty());
+        assert!(!client.force_refresh().is_empty());
+    }
+
+    /// A walk of every stream for each of the watch's sync requests is what
+    /// held its radio at a 100% duty cycle, and most of the replies were empty.
+    #[test]
+    fn the_stream_walk_is_rate_limited_but_an_explicit_one_is_not() {
+        let mut client = authenticated();
+        // Ends the pass in progress, and carries the clock forward with it.
+        let done = |ms: i64| Event::Frame {
+            frame: Frame::new(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]),
+            received_at: UnixMillis(ms),
+        };
+        // Advances the clock without asking for anything.
+        let idle = |ms: i64| Event::Frame {
+            frame: Frame::new(Command::CMD_BATTERY_STATUS, Vec::new()),
+            received_at: UnixMillis(ms),
+        };
+
+        client.handle(done(0));
+        assert_eq!(client.phase(), Phase::Finished);
+        client.handle(idle(1_000));
+        assert!(
+            !client.sync_now().is_empty(),
+            "the first walk is not limited"
+        );
+
+        client.handle(done(2_000));
+        assert!(client.sync_now().is_empty(), "seconds later is too soon");
+
+        client.handle(idle(MIN_WALK_INTERVAL_MS + 2_000));
+        assert!(!client.sync_now().is_empty(), "an interval on it is due");
+
+        client.handle(done(MIN_WALK_INTERVAL_MS + 3_000));
+        assert!(client.sync_now().is_empty());
+        assert!(!client.walk_now().is_empty(), "the button still means now");
+    }
+
+    /// `CMD_WORKOUT_START` is pushed once, to whoever is connected at the time.
+    /// Connecting midway through a workout has to recover it by asking, or the
+    /// live trace is attributed to nothing.
+    #[test]
+    fn a_workout_already_running_at_connect_is_picked_up() {
+        use crate::objects::{ActivitySubcategory, StartTime, Status};
+        let mut client = authenticated();
+
+        let records = |actions: &[Action]| -> Vec<Record> {
+            actions
+                .iter()
+                .find_map(|a| match a {
+                    Action::Store { records, .. } => Some(records.clone()),
+                    _ => None,
+                })
+                .unwrap_or_default()
+        };
+
+        let running = client.handle(frame(
+            Command::CMD_WORKOUT_STATUS,
+            vec![
+                WppObject::Status(Status { value: 1 }),
+                WppObject::ActivitySubcategory(ActivitySubcategory { value: 16 }),
+                WppObject::StartTime(StartTime {
+                    value: 1_785_000_000,
+                }),
+            ],
+        ));
+        assert_eq!(
+            records(&running),
+            vec![Record::WorkoutStarted {
+                started_at: UnixTime(1_785_000_000),
+                subcategory: 16,
+            }]
+        );
+
+        // Status 0 is the ordinary case — nothing is running, and reporting a
+        // workout then would invent one on every connect.
+        let idle = client.handle(frame(
+            Command::CMD_WORKOUT_STATUS,
+            vec![
+                WppObject::Status(Status { value: 0 }),
+                WppObject::StartTime(StartTime {
+                    value: 1_785_000_000,
+                }),
+            ],
+        ));
+        assert!(records(&idle).is_empty(), "no workout, no record");
+    }
+
     /// A whole session driven message by message, asserting what the client
     /// sends at each step and the state it ends in.
     #[test]
@@ -1517,10 +1724,13 @@ mod tests {
             }
         )));
 
-        // 3. the watch accepts -> the history walk starts, which is the first
-        //    thing the watch would have answered at all
+        // 3. the watch accepts -> ask whether a workout is already running,
+        //    then start the history walk
         let actions = client.handle(frame(Command::CMD_PROBE, vec![]));
-        assert_eq!(sent(&actions), vec![Command::CMD_VASISTAS_GET]);
+        assert_eq!(
+            sent(&actions),
+            vec![Command::CMD_WORKOUT_STATUS, Command::CMD_VASISTAS_GET]
+        );
         assert_eq!(client.phase(), Phase::Syncing);
         assert_eq!(client.current(), Some((Category(8), UnixTime(4000))));
         let request = actions

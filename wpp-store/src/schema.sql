@@ -22,7 +22,9 @@ INSERT OR IGNORE INTO sample_kind (id, name, unit) VALUES
     (4, 'hrv_rmssd',        'ms'),
     (5, 'respiratory_rate', 'breaths_per_minute'),
     (6, 'battery',          'percent'),
-    (7, 'steps',            'count');
+    (7, 'steps',            'count'),
+    (8, 'battery_state',    'battery_state'),
+    (9, 'battery_mv',       'millivolts');
 
 CREATE TABLE IF NOT EXISTS workout (
     id          INTEGER PRIMARY KEY,

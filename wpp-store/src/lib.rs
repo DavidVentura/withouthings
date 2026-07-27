@@ -186,7 +186,8 @@ impl Store {
             let rows = stmt.query_map(params![device_id, from_ms, to_ms, kind], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?))
             })?;
-            return rows.collect();
+            let inside = rows.collect::<Result<Vec<_>, _>>()?;
+            return self.with_neighbours(device_id, kind, from_ms, to_ms, inside);
         }
 
         let buckets = max_points / 2;
@@ -208,7 +209,49 @@ impl Store {
         let rows = stmt.query_map(params![device_id, from_ms, to_ms, width, kind], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         })?;
-        rows.collect()
+        let inside = rows.collect::<Result<Vec<_>, _>>()?;
+        self.with_neighbours(device_id, kind, from_ms, to_ms, inside)
+    }
+
+    /// The same series with the nearest sample on each side of the window.
+    ///
+    /// Without them the trace starts and stops at the edges of the plot, so
+    /// panning makes the ends jump as points cross the boundary. The extra
+    /// points are drawn off-screen and only exist to carry the line out there.
+    fn with_neighbours(
+        &self,
+        device_id: i64,
+        kind: i64,
+        from_ms: i64,
+        to_ms: i64,
+        inside: Vec<(i64, i64, i64)>,
+    ) -> Result<Vec<(i64, i64, i64)>, Error> {
+        let before = self
+            .conn
+            .query_row(
+                "SELECT measured_at, value, source FROM sample
+                  WHERE device_id = ?1 AND kind = ?2 AND measured_at < ?3
+                  ORDER BY measured_at DESC LIMIT 1",
+                params![device_id, kind, from_ms],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let after = self
+            .conn
+            .query_row(
+                "SELECT measured_at, value, source FROM sample
+                  WHERE device_id = ?1 AND kind = ?2 AND measured_at > ?3
+                  ORDER BY measured_at ASC LIMIT 1",
+                params![device_id, kind, to_ms],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+
+        let mut out = Vec::with_capacity(inside.len() + 2);
+        out.extend(before);
+        out.extend(inside);
+        out.extend(after);
+        Ok(out)
     }
 
     /// Oldest and newest sample of a kind, for framing an initial window.
@@ -443,6 +486,44 @@ mod tests {
             .query_row("SELECT count(*) FROM workout_sample", [], |r| r.get(0))
             .unwrap();
         assert_eq!(inside, 1, "only the sample within the workout window");
+    }
+
+    /// The points on either side are off-screen; without them the trace stops
+    /// at the edge of the plot and panning makes the ends jump.
+    #[test]
+    fn a_series_reaches_one_point_past_each_end_of_the_window() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[
+                    sample(1_000, 60, Source::Stored),
+                    sample(2_000, 61, Source::Stored),
+                    sample(3_000, 62, Source::Stored),
+                    sample(4_000, 63, Source::Stored),
+                    sample(5_000, 64, Source::Stored),
+                ],
+            )
+            .unwrap();
+
+        let kind = wpp::client::SampleKind::HeartRate.id();
+        let series = store.series(device, kind, 2_500, 3_500, 100).unwrap();
+        let times: Vec<i64> = series.iter().map(|(t, _, _)| *t).collect();
+        assert_eq!(times, vec![2_000, 3_000, 4_000], "one either side of 3000");
+
+        // At the ends of the data there is nothing to reach for, and asking
+        // must not invent a point or fail.
+        let head = store.series(device, kind, 0, 1_500, 100).unwrap();
+        assert_eq!(
+            head.iter().map(|(t, _, _)| *t).collect::<Vec<_>>(),
+            vec![1_000, 2_000]
+        );
+        let tail = store.series(device, kind, 4_500, 9_000, 100).unwrap();
+        assert_eq!(
+            tail.iter().map(|(t, _, _)| *t).collect::<Vec<_>>(),
+            vec![4_000, 5_000]
+        );
     }
 
     #[test]
