@@ -93,14 +93,18 @@ class WatchConnectionService : Service() {
      */
     @SuppressLint("MissingPermission")
     private fun connect(adapter: BluetoothAdapter, mac: String) {
+        // Both of these are transient — the adapter comes back — so they have
+        // to leave a retry behind. Returning bare strands the service for good.
         if (!adapter.isEnabled) {
             WatchRepository.setLink(LinkState.Disconnected)
             Log.e(TAG, "bluetooth is off")
+            retryLater("bluetooth is off")
             return
         }
         val scanner = adapter.bluetoothLeScanner
         if (scanner == null) {
             Log.e(TAG, "no BLE scanner")
+            retryLater("no BLE scanner")
             return
         }
         Log.i(TAG, "scanning for a device named $DEVICE_NAME_PREFIX (identity $mac)")
@@ -112,7 +116,8 @@ class WatchConnectionService : Service() {
             ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),
             scanCallback,
         )
-        heartbeat()
+        handler.removeCallbacks(heartbeat)
+        handler.postDelayed(heartbeat, HEARTBEAT_MS)
     }
 
     /**
@@ -125,17 +130,21 @@ class WatchConnectionService : Service() {
     }
 
     /**
-     * The handshake is two round trips and has no timeout of its own, so a
-     * dropped frame leaves the link up and the protocol waiting forever. Give
-     * it a deadline and start over from the scan.
+     * Everything between deciding to connect and having a working protocol
+     * link, on one deadline.
+     *
+     * A connection attempt at the edge of range can produce no GATT callback
+     * at all — neither connected nor disconnected — and the handshake that
+     * follows has no timeout of its own either. Both failures look identical
+     * from outside: "connecting", forever, until the app is restarted.
      */
-    private fun watchHandshake() {
-        handler.postDelayed({
-            val progress = runCatching { service?.snapshot()?.progress }.getOrNull()
-            if (progress == Progress.CONNECTING) {
-                retryLater("handshake did not complete within ${HANDSHAKE_MS / 1000}s")
-            }
-        }, HANDSHAKE_MS)
+    private fun armLinkWatchdog() {
+        handler.removeCallbacks(linkWatchdog)
+        handler.postDelayed(linkWatchdog, LINK_TIMEOUT_MS)
+    }
+
+    private val linkWatchdog = Runnable {
+        retryLater("no working link within ${LINK_TIMEOUT_MS / 1000}s")
     }
 
     private val resync = object : Runnable {
@@ -162,15 +171,14 @@ class WatchConnectionService : Service() {
      * else on the air is what distinguishes "the watch is quiet" from "we are
      * deaf".
      */
-    private fun heartbeat() {
-        handler.postDelayed({
-            if (scanning) {
-                Log.i(TAG, "still scanning, heard ${heard.size} other devices" +
-                    if (heard.isEmpty()) " - receiver may be the problem, not the watch" else "")
-                heard.clear()
-                heartbeat()
-            }
-        }, HEARTBEAT_MS)
+    private val heartbeat = object : Runnable {
+        override fun run() {
+            if (!scanning) return
+            Log.i(TAG, "still scanning, heard ${heard.size} other devices" +
+                if (heard.isEmpty()) " - receiver may be the problem, not the watch" else "")
+            heard.clear()
+            handler.postDelayed(this, HEARTBEAT_MS)
+        }
     }
 
     private val heard = HashSet<String>()
@@ -190,6 +198,7 @@ class WatchConnectionService : Service() {
             gatt = result.device.connectGatt(
                 this@WatchConnectionService, false, callback, BluetoothDevice.TRANSPORT_LE
             )
+            armLinkWatchdog()
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -202,6 +211,7 @@ class WatchConnectionService : Service() {
     @SuppressLint("MissingPermission")
     private fun retryLater(reason: String) {
         Log.w(TAG, "reconnecting: $reason")
+        handler.removeCallbacks(linkWatchdog)
         stopScan()
         gatt?.close()
         gatt = null
@@ -270,7 +280,6 @@ class WatchConnectionService : Service() {
             // Only now will the watch's replies actually reach us.
             runCatching { service?.onConnected() }
                 .onFailure { Log.e(TAG, "onConnected", it) }
-            watchHandshake()
         }
 
         override fun onCharacteristicChanged(
@@ -284,6 +293,10 @@ class WatchConnectionService : Service() {
                 if (progress != lastProgress) {
                     lastProgress = progress
                     Log.i(TAG, "progress=$progress")
+                }
+                // The link is doing its job; stop counting against it.
+                if (progress != null && progress != Progress.CONNECTING) {
+                    handler.removeCallbacks(linkWatchdog)
                 }
             }.onFailure { Log.e(TAG, "onBytes", it) }
         }
@@ -369,7 +382,7 @@ class WatchConnectionService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val MTU = 512
         private const val RETRY_MS = 10_000L
-        private const val HANDSHAKE_MS = 20_000L
+        private const val LINK_TIMEOUT_MS = 25_000L
         private const val DEVICE_NAME_PREFIX = "ScanWatch"
         private const val HEARTBEAT_MS = 65_000L
         private const val RESYNC_MS = 60_000L

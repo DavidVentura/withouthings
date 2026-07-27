@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -14,6 +15,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -33,6 +37,7 @@ import dev.davidv.withoutings.ui.theme.WithoutingsTheme
 
 private object Routes {
     const val HOME = "home"
+    const val WORKOUT = "workout"
     const val WORKOUTS = "workouts"
     const val SCREENS = "screens"
     const val DEVICE = "device"
@@ -83,6 +88,17 @@ private fun App(model: WatchViewModel = viewModel()) {
         return
     }
 
+    // The background cadence is deliberately slow, so what is on screen would
+    // otherwise be up to a quarter of an hour old whenever you looked at it.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) model.requestRefresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     Navigation(model, rememberNavController())
 }
 
@@ -93,39 +109,45 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
     val startedAt by model.stopwatchStartedAt.collectAsState()
     val elapsed by model.elapsed.collectAsState()
     val metricWindow by model.metricWindow.collectAsState()
+    val selected by model.selectedWorkout.collectAsState()
+
+    // A workout is a place you go, not a state the home screen turns into:
+    // taking over the start destination left nowhere for Back to go.
+    val activeStartedAt = state.snapshot?.activeWorkout?.startedAtMs
+    LaunchedEffect(activeStartedAt) {
+        if (activeStartedAt != null) nav.navigate(Routes.WORKOUT)
+    }
 
     NavHost(nav, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
-            // A running workout takes over: the 1 Hz trace only exists while it
-            // lasts, so it is what you want in front of you.
-            val active = state.snapshot?.activeWorkout
-            if (active != null || window != null) {
-                WorkoutScreen(
-                    state = state,
-                    window = window ?: (active!!.startedAtMs..System.currentTimeMillis()),
-                    elapsedMs = elapsed,
-                    running = startedAt != null,
-                    following = window == null,
-                    onWindowChange = { model.zoom(it) },
-                    onFollowLive = { model.zoom(null) },
-                    onToggleStopwatch = { model.toggleStopwatch() },
-                )
-            } else {
-                IdleScreen(
-                    state = state,
-                    onOpenWorkouts = { nav.navigate(Routes.WORKOUTS) },
-                    onOpenScreens = {
-                        model.requestScreens()
-                        nav.navigate(Routes.SCREENS)
-                    },
-                    onOpenMetric = { nav.navigate(Routes.metric(it)) },
-                    onOpenDevice = {
-                        model.requestDeviceConfig()
-                        nav.navigate(Routes.DEVICE)
-                    },
-                    onRefresh = { model.requestRefresh() },
-                )
-            }
+            IdleScreen(
+                state = state,
+                onOpenWorkouts = { nav.navigate(Routes.WORKOUTS) },
+                onOpenScreens = {
+                    model.requestScreens()
+                    nav.navigate(Routes.SCREENS)
+                },
+                onOpenMetric = { nav.navigate(Routes.metric(it)) },
+                onOpenDevice = {
+                    model.requestDeviceConfig()
+                    nav.navigate(Routes.DEVICE)
+                },
+                onRefresh = { model.requestRefresh() },
+            )
+        }
+
+        composable(Routes.WORKOUT) {
+            WorkoutScreen(
+                state = state,
+                workout = state.snapshot?.activeWorkout ?: selected,
+                window = state.hrWindow,
+                elapsedMs = elapsed,
+                running = startedAt != null,
+                following = window == null,
+                onWindowChange = { model.zoom(it) },
+                onFollowLive = { model.followLive() },
+                onToggleStopwatch = { model.toggleStopwatch() },
+            )
         }
 
         composable(Routes.METRIC) { entry ->
@@ -147,10 +169,8 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
             WorkoutsScreen(
                 workouts = state.workouts,
                 onSelect = { workout ->
-                    model.zoom(
-                        workout.startedAtMs..(workout.endedAtMs ?: System.currentTimeMillis())
-                    )
-                    nav.popBackStack()
+                    model.showWorkout(workout)
+                    nav.navigate(Routes.WORKOUT)
                 },
             )
         }

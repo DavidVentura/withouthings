@@ -16,24 +16,25 @@ import androidx.compose.ui.unit.dp
 import java.util.Locale
 import uniffi.wpp_ffi.Metric
 
-/** How each series is drawn: its unit, precision, and a sensible axis floor. */
+/** How each series is drawn: its unit, precision, and the range it lives in. */
 enum class MetricStyle(
     val metric: Metric,
     val label: String,
     val unit: String,
     val decimals: Int,
-    val minSpan: Double,
+    /// Fixed y-axis for this series, in its own units.
+    val axis: ClosedFloatingPointRange<Double>,
     /// Window to open on. A daily total needs weeks to show anything; a 1 Hz
     /// series needs hours.
     val defaultSpan: Long,
 ) {
-    HeartRate(Metric.HEART_RATE, "Heart rate", "bpm", 0, 30.0, DAY),
-    Temperature(Metric.TEMPERATURE, "Temperature", "°C", 2, 1.0, DAY),
-    HrvSdnn(Metric.HRV_SDNN, "HRV (SDNN)", "ms", 0, 20.0, 7 * DAY),
-    HrvRmssd(Metric.HRV_RMSSD, "HRV (RMSSD)", "ms", 0, 20.0, 7 * DAY),
-    Respiratory(Metric.RESPIRATORY_RATE, "Respiratory", "breaths/min", 0, 6.0, DAY),
-    Battery(Metric.BATTERY, "Battery", "%", 0, 20.0, 7 * DAY),
-    Steps(Metric.STEPS, "Steps", "per day", 0, 1000.0, 30 * DAY);
+    HeartRate(Metric.HEART_RATE, "Heart rate", "bpm", 0, 30.0..200.0, DAY),
+    Temperature(Metric.TEMPERATURE, "Temperature", "°C", 2, 35.0..40.0, DAY),
+    HrvSdnn(Metric.HRV_SDNN, "HRV (SDNN)", "ms", 0, 0.0..200.0, 7 * DAY),
+    HrvRmssd(Metric.HRV_RMSSD, "HRV (RMSSD)", "ms", 0, 0.0..200.0, 7 * DAY),
+    Respiratory(Metric.RESPIRATORY_RATE, "Respiratory", "breaths/min", 0, 0.0..30.0, DAY),
+    Battery(Metric.BATTERY, "Battery", "%", 0, 0.0..100.0, 7 * DAY),
+    Steps(Metric.STEPS, "Steps", "per day", 0, 0.0..15000.0, 30 * DAY);
 
     companion object {
         fun of(metric: Metric) = entries.first { it.metric == metric }
@@ -65,12 +66,15 @@ fun MetricScreen(
     ) {
         Text(style.label, style = MaterialTheme.typography.headlineMedium)
 
-        val latest = points.maxByOrNull { it.atMs }?.value
-        val summary = if (points.isEmpty()) "no data in this window" else {
-            val min = points.minOf { it.value }
-            val max = points.maxOf { it.value }
-            val mean = points.sumOf { it.value } / points.size
-            "${points.size} points · " +
+        // The series carries a point beyond each edge so the line can leave the
+        // plot; they are not part of what is being shown.
+        val visible = points.filter { it.atMs in window }
+        val latest = visible.maxByOrNull { it.atMs }?.value
+        val summary = if (visible.isEmpty()) "no data in this window" else {
+            val min = visible.minOf { it.value }
+            val max = visible.maxOf { it.value }
+            val mean = visible.sumOf { it.value } / visible.size
+            "${visible.size} points · " +
                 "min ${format(min, style)} · " +
                 "mean ${format(mean, style)} · " +
                 "max ${format(max, style)}"
@@ -86,7 +90,7 @@ fun MetricScreen(
             markers = emptyList(),
             window = window,
             onWindowChange = onWindowChange,
-            minSpan = style.minSpan,
+            axis = style.axis,
             decimals = style.decimals,
             lineColor = MaterialTheme.colorScheme.primary,
             gridColor = MaterialTheme.colorScheme.outlineVariant,

@@ -35,6 +35,7 @@ import uniffi.wpp_ffi.Snapshot
 import uniffi.wpp_ffi.WorkoutSummary
 
 private val clock = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+private val hourMinute = SimpleDateFormat("HH:mm", Locale.getDefault())
 private val stamp = SimpleDateFormat("d MMM HH:mm", Locale.getDefault())
 
 /**
@@ -154,6 +155,9 @@ fun IdleScreen(
 @Composable
 fun WorkoutScreen(
     state: UiState,
+    /// The workout being looked at: the running one, or one picked from the
+    /// list. Reading the live one only left a finished workout unlabelled.
+    workout: WorkoutSummary?,
     window: LongRange,
     elapsedMs: Long,
     running: Boolean,
@@ -163,27 +167,48 @@ fun WorkoutScreen(
     onFollowLive: () -> Unit,
     onToggleStopwatch: () -> Unit,
 ) {
-    val workout = state.snapshot?.activeWorkout
+    // A finished workout is a closed interval; a running one keeps growing.
+    val workoutLimit = workout?.let {
+        it.startedAtMs..(it.endedAtMs ?: System.currentTimeMillis())
+    }
+    // Only a running workout has a "now" to jump to or a rest to time.
+    val live = workout != null && workout.endedAtMs == null
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Workout", style = MaterialTheme.typography.headlineMedium)
         Text(
-            workout?.let { "since ${clock.format(Date(it.startedAtMs))}" } ?: "no active workout",
+            workout?.activity ?: "Workout",
+            style = MaterialTheme.typography.headlineMedium,
+        )
+        Text(
+            workout?.let {
+                val until = it.endedAtMs ?: System.currentTimeMillis()
+                "Start: ${hourMinute.format(Date(it.startedAtMs))} · " +
+                    "Duration: ${formatElapsed(until - it.startedAtMs)}"
+            } ?: "no workout selected",
             style = MaterialTheme.typography.bodySmall,
         )
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Stat("Now", state.hr.lastOrNull()?.bpm?.toString() ?: "—", "bpm", Modifier.weight(1f))
-            Stat("Peak", state.hr.maxOfOrNull { it.bpm }?.toString() ?: "—", "bpm", Modifier.weight(1f))
-            Stat("Samples", state.hr.size.toString(), "", Modifier.weight(1f))
+            Stat("Latest HR", state.hr.lastOrNull()?.bpm?.toString() ?: "—", "bpm", Modifier.weight(1f))
+            Stat("Peak HR", state.hr.maxOfOrNull { it.bpm }?.toString() ?: "—", "bpm", Modifier.weight(1f))
+            Stat(
+                "Latest temp",
+                state.workoutTemp.lastOrNull()?.let { String.format(Locale.US, "%.2f", it.value) }
+                    ?: "—",
+                "°C",
+                Modifier.weight(1f),
+            )
         }
 
+        Text("Heart rate", style = MaterialTheme.typography.labelSmall)
         ValueChart(
             points = state.hr.map { ChartPoint(it.atMs, it.bpm.toDouble()) },
             markers = state.markers,
             window = window,
             onWindowChange = onWindowChange,
-            minSpan = 30.0,
+            axis = 30.0..200.0,
             decimals = 0,
+            limit = workoutLimit,
+            height = 190.dp,
             lineColor = MaterialTheme.colorScheme.primary,
             gridColor = MaterialTheme.colorScheme.outlineVariant,
             axisColor = MaterialTheme.colorScheme.outline,
@@ -191,16 +216,35 @@ fun WorkoutScreen(
             setColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
         )
 
+        // Stacked under the trace on the same window, so the two read as one
+        // picture: panning or zooming either moves both.
+        Text("Temperature", style = MaterialTheme.typography.labelSmall)
+        ValueChart(
+            points = state.workoutTemp,
+            markers = state.markers,
+            window = window,
+            onWindowChange = onWindowChange,
+            axis = 36.0..38.5,
+            decimals = 2,
+            limit = workoutLimit,
+            height = 150.dp,
+            lineColor = MaterialTheme.colorScheme.tertiary,
+            gridColor = MaterialTheme.colorScheme.outlineVariant,
+            axisColor = MaterialTheme.colorScheme.outline,
+            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            setColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f),
+        )
+
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Marking sets only means anything while a workout is running.
-            if (workout != null) {
+            // Timing the rest only means anything while a workout is running.
+            if (live) {
                 Button(onClick = onToggleStopwatch, modifier = Modifier.weight(1f)) {
-                    Text(if (running) "Stop  ${formatElapsed(elapsedMs)}" else "Start set")
+                    Text(if (running) "End rest  ${formatElapsed(elapsedMs)}" else "Start rest")
                 }
             }
             // The chart follows the live edge until panned away; this is the
-            // way back, and is pointless while already following.
-            if (!following) {
+            // way back, and there is no live edge on a finished workout.
+            if (live && !following) {
                 Button(onClick = onFollowLive, modifier = Modifier.weight(1f)) {
                     Text("Jump to now")
                 }
@@ -217,7 +261,11 @@ fun WorkoutsScreen(workouts: List<WorkoutSummary>, onSelect: (WorkoutSummary) ->
             items(workouts) { workout ->
                 Card(Modifier.fillMaxWidth().clickable { onSelect(workout) }) {
                     Column(Modifier.padding(12.dp)) {
-                        Text(stamp.format(Date(workout.startedAtMs)))
+                        Text(workout.activity, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            stamp.format(Date(workout.startedAtMs)),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                         Text(
                             workout.endedAtMs?.let {
                                 "duration ${formatElapsed(it - workout.startedAtMs)}"

@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import uniffi.wpp_ffi.HrPoint
 import uniffi.wpp_ffi.Marker
+import uniffi.wpp_ffi.Metric
 import uniffi.wpp_ffi.Snapshot
 import uniffi.wpp_ffi.Activity
 import uniffi.wpp_ffi.HealthFeature
@@ -33,6 +34,12 @@ data class UiState(
     val wearPosition: WearPosition = WearPosition.NOT_SET,
     val activities: List<Activity> = emptyList(),
     val features: List<HealthFeature> = emptyList(),
+    /// The window the heart-rate trace was actually fetched over, so the chart
+    /// draws the same range the data came from.
+    val hrWindow: LongRange = 0L..0L,
+    /// Core temperature across the workout. Shown as a rise from where it
+    /// started rather than an absolute, which is the part that carries meaning.
+    val workoutTemp: List<ChartPoint> = emptyList(),
 )
 
 /** Seconds of workout history the chart shows before the user zooms. */
@@ -46,6 +53,14 @@ class WatchViewModel : ViewModel() {
     /** Chart viewport; null means "follow the live edge". */
     private val _window = MutableStateFlow<LongRange?>(null)
     val window: StateFlow<LongRange?> = _window.asStateFlow()
+
+    /// The finished workout being looked at, if one was picked from the list.
+    private val _selectedWorkout = MutableStateFlow<WorkoutSummary?>(null)
+    val selectedWorkout: StateFlow<WorkoutSummary?> = _selectedWorkout.asStateFlow()
+
+    /// How wide the view was when it was last set by hand. Returning to the
+    /// live edge keeps this rather than snapping back to the whole workout.
+    private var followSpanMs: Long? = null
 
     /// Which series the detail screen is showing, and over what window.
     private val _metricStyle = MutableStateFlow(MetricStyle.HeartRate)
@@ -89,14 +104,20 @@ class WatchViewModel : ViewModel() {
                     val snapshot = service.snapshot()
                     val active = snapshot.activeWorkout
                     val now = System.currentTimeMillis()
-                    val range = _window.value ?: run {
+                    val range = _window.value ?: followSpanMs?.let { (now - it)..now } ?: run {
                         val from = active?.startedAtMs ?: (now - DEFAULT_WINDOW_MS)
                         from..now
                     }
                     UiState(
                         link = WatchRepository.link.value,
                         snapshot = snapshot,
+                        hrWindow = range,
                         hr = service.hrSeries(range.first, range.last, MAX_CHART_POINTS),
+                        // Over the same window as the trace, so a past workout
+                        // opened from the list carries its temperature too.
+                        workoutTemp = service
+                            .series(Metric.TEMPERATURE, range.first, range.last, MAX_CHART_POINTS)
+                            .map { p: Point -> ChartPoint(p.atMs, p.value) },
                         markers = service.markers(range.first, range.last),
                         workouts = service.workouts(50u),
                         screens = service.screens(),
@@ -149,7 +170,20 @@ class WatchViewModel : ViewModel() {
     }
 
     fun zoom(range: LongRange?) {
+        if (range != null) followSpanMs = range.last - range.first
         _window.value = range
+        refresh()
+    }
+
+    /// Show one workout from the list: its own span, and its own heading.
+    fun showWorkout(workout: WorkoutSummary) {
+        _selectedWorkout.value = workout
+        zoom(workout.startedAtMs..(workout.endedAtMs ?: System.currentTimeMillis()))
+    }
+
+    /// Back to following the live edge, at the zoom level already in use.
+    fun followLive() {
+        _window.value = null
         refresh()
     }
 
