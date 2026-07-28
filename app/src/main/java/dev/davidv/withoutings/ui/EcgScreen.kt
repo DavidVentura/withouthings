@@ -3,14 +3,10 @@ package dev.davidv.withoutings.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,12 +22,12 @@ import uniffi.wpp_ffi.EcgSummary
 private val ecgStamp = SimpleDateFormat("d MMM HH:mm:ss", Locale.getDefault())
 
 @Composable
-fun EcgListScreen(recordings: List<EcgSummary>, onSelect: (EcgSummary) -> Unit) {
-    Column(
-        Modifier.fillMaxSize().statusBarsPadding().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text("ECG", style = MaterialTheme.typography.headlineMedium)
+fun EcgListScreen(
+    recordings: List<EcgSummary>,
+    onSelect: (EcgSummary) -> Unit,
+    onBack: () -> Unit,
+) {
+    Page("ECG", onBack) {
         if (recordings.isEmpty()) {
             Text(
                 "No recordings. Start one from the watch; it transfers on the " +
@@ -72,20 +68,16 @@ fun EcgDetailScreen(
     recording: EcgRecording?,
     window: LongRange,
     onWindowChange: (LongRange) -> Unit,
+    onBack: () -> Unit,
 ) {
-    Column(
-        Modifier.fillMaxSize().statusBarsPadding().padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    Page(
+        recording?.let { ecgStamp.format(Date(it.measuredAtMs)) } ?: "ECG",
+        onBack,
     ) {
         if (recording == null) {
-            Text("Recording not found", style = MaterialTheme.typography.headlineMedium)
-            return@Column
+            Text("Recording not found", style = MaterialTheme.typography.bodyLarge)
+            return@Page
         }
-        Text(
-            ecgStamp.format(Date(recording.measuredAtMs)),
-            style = MaterialTheme.typography.headlineMedium,
-        )
         Text(
             "${recording.samplingHz} Hz · 25 mm/s · 10 mm/mV",
             style = MaterialTheme.typography.bodySmall,
@@ -145,15 +137,9 @@ fun LiveEcgScreen(
     recording: Boolean,
     window: LongRange?,
     onWindowChange: (LongRange) -> Unit,
+    onBack: () -> Unit,
 ) {
-    Column(
-        Modifier.fillMaxSize().statusBarsPadding().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            if (recording) "Recording" else "Recording complete",
-            style = MaterialTheme.typography.headlineMedium,
-        )
+    Page(if (recording) "Recording" else "Recording complete", onBack) {
         val seconds = millivolts.size.toDouble() / samplingHz
         Text(
             String.format(

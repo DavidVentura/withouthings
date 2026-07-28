@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -42,7 +41,7 @@ private val ROW_HEIGHT = 56.dp
  * watch, and write down what it was.
  */
 @Composable
-fun ScreensScreen(
+fun ScreenOrderSettings(
     screens: List<WatchScreen>,
     onRefresh: () -> Unit,
     onApply: (ByteArray) -> Unit,
@@ -58,10 +57,9 @@ fun ScreensScreen(
     val rowPx = with(LocalDensity.current) { ROW_HEIGHT.toPx() }
 
     Column(
-        Modifier.fillMaxSize().statusBarsPadding().padding(16.dp),
+        Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Watch screens", style = MaterialTheme.typography.headlineMedium)
         Text(
             "Long-press to drag. Enabled screens appear on the watch in this order.",
             style = MaterialTheme.typography.bodySmall,

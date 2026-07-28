@@ -7,17 +7,26 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,7 +38,9 @@ import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 import dev.davidv.withoutings.LinkState
+import uniffi.wpp_ffi.EcgSummary
 import uniffi.wpp_ffi.Progress
 import uniffi.wpp_ffi.Snapshot
 import uniffi.wpp_ffi.WorkoutSummary
@@ -91,78 +102,131 @@ fun SetupScreen(onSave: (String, String) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IdleScreen(
     state: UiState,
     onOpenWorkouts: () -> Unit,
     onOpenEcgs: () -> Unit,
-    onOpenScreens: () -> Unit,
     onOpenMetric: (MetricStyle) -> Unit,
-    onOpenDevice: () -> Unit,
+    onOpenSettings: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     val snapshot = state.snapshot
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Withoutings", style = MaterialTheme.typography.headlineMedium)
-        Text(statusLine(state.link, snapshot), style = MaterialTheme.typography.bodySmall)
-        // Only while a charger is actually delivering, and only from a reading
-        // recent enough to describe now: a stale "charging" would assert the
-        // very thing you came here to check.
-        if (snapshot?.battery?.charging == true) {
-            Text(
-                "charging",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        snapshot?.let { SyncProgressRow(it) }
+    // The spinner belongs to the gesture, not to the link: the app syncs on its
+    // own several times a minute, and spinning for that would be reporting
+    // someone else's work as the answer to a pull nobody made.
+    var pulled by remember { mutableStateOf(false) }
+    val syncing = snapshot?.progress == Progress.SYNCING
+    LaunchedEffect(pulled, syncing) {
+        if (!pulled) return@LaunchedEffect
+        // Held while the sync the pull asked for runs; the delay is what covers
+        // a refresh the watch declines to make, which reports nothing at all.
+        if (syncing) return@LaunchedEffect
+        delay(PULL_SETTLE_MS)
+        pulled = false
+    }
 
-        val now = System.currentTimeMillis()
-        // A daily total belongs to its day; a reading belongs to its instant.
-        // Neither says anything about now once it is old enough.
-        val steps = snapshot?.steps?.takeIf { it.dayStartMs >= todayStartMs() }
-
-        MetricStyle.entries.chunked(2).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                row.forEach { style ->
-                    val reading = state.latest[style]
-                    val fresh = when (style) {
-                        MetricStyle.Steps -> steps != null
-                        else -> reading != null && now - reading.atMs < STALE_AFTER_MS
-                    }
-                    val shown = when (style) {
-                        MetricStyle.Steps -> steps?.count?.toString()
-                        else -> reading?.let { format(it.value, style) }
-                    }
-                    Stat(
-                        style.label,
-                        if (fresh) shown ?: "—" else "—",
-                        when {
-                            fresh -> "${style.unit} · ${age(reading?.atMs ?: now)}"
-                            reading != null -> "last ${age(reading.atMs)}"
-                            else -> style.unit
-                        },
-                        Modifier.weight(1f),
-                    ) { onOpenMetric(style) }
-                }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
+    Page(
+        title = "Withoutings",
+        actions = {
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Filled.Settings, "Watch settings")
             }
-        }
+        },
+    ) {
+        PullToRefreshBox(
+            isRefreshing = pulled,
+            onRefresh = {
+                pulled = true
+                onRefresh()
+            },
+            modifier = Modifier.weight(1f),
+        ) {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                val (linkText, tone) = linkChip(state.link, snapshot?.progress)
+                StatusRow {
+                    StatusChip(linkText, tone)
+                    syncLabel(snapshot)?.let { StatusChip(it, Tone.Working) }
+                    // The battery says something about the watch rather than
+                    // about you, so it belongs beside the link rather than
+                    // among the day's readings. Charging is only ever claimed
+                    // from a reading recent enough to describe now: a stale one
+                    // would assert the very thing you came here to check.
+                    snapshot?.battery?.let { battery ->
+                        val charging = battery.charging == true
+                        StatusChip(
+                            if (charging) "${battery.percent}% · charging"
+                            else "${battery.percent}% charge",
+                            if (charging) Tone.Good else Tone.Quiet,
+                        ) { onOpenMetric(MetricStyle.Battery) }
+                    }
+                }
 
-        Button(onClick = onRefresh) { Text("Refresh from watch") }
-        Button(onClick = onOpenWorkouts) { Text("Workouts (${state.workouts.size})") }
-        Button(onClick = onOpenEcgs) { Text("ECG (${state.ecgs.size})") }
-        Button(onClick = onOpenScreens) { Text("Watch screens") }
-        Button(onClick = onOpenDevice) { Text("Watch settings") }
+                val now = System.currentTimeMillis()
+                // A daily total belongs to its day; a reading belongs to its
+                // instant. Neither says anything about now once it is old enough.
+                val steps = snapshot?.steps?.takeIf { it.dayStartMs >= todayStartMs() }
 
-        if (snapshot != null && snapshot.pendingDeletes > 0u) {
-            Text(
-                "${snapshot.pendingDeletes} measurement(s) read but not yet committed",
-                style = MaterialTheme.typography.labelSmall,
-            )
+                // The battery has its own pill above; the grid is what the
+                // watch measured about you.
+                MetricStyle.entries.filter { it != MetricStyle.Battery }.chunked(2).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { style ->
+                            val reading = state.latest[style]
+                            val fresh = when (style) {
+                                MetricStyle.Steps -> steps != null
+                                else -> reading != null && now - reading.atMs < STALE_AFTER_MS
+                            }
+                            val shown = when (style) {
+                                MetricStyle.Steps -> steps?.count?.toString()
+                                else -> reading?.let { format(it.value, style) }
+                            }
+                            Stat(
+                                style.label,
+                                if (fresh) shown ?: "—" else "—",
+                                when {
+                                    fresh -> "${style.unit} · ${age(reading?.atMs ?: now)}"
+                                    reading != null -> "last ${age(reading.atMs)}"
+                                    else -> style.unit
+                                },
+                                Modifier.weight(1f),
+                            ) { onOpenMetric(style) }
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+
+                NavRow("Workouts", workoutsDetail(state.workouts), onOpenWorkouts)
+                NavRow("ECG", ecgsDetail(state.ecgs), onOpenEcgs)
+
+                if (snapshot != null && snapshot.pendingDeletes > 0u) {
+                    Text(
+                        "${snapshot.pendingDeletes} measurement(s) read but not yet committed",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+            }
         }
     }
 }
+
+private fun workoutsDetail(workouts: List<WorkoutSummary>): String {
+    val latest = workouts.maxByOrNull { it.startedAtMs } ?: return "none recorded"
+    return "${workouts.size} · latest ${latest.activity}, ${age(latest.startedAtMs)}"
+}
+
+private fun ecgsDetail(recordings: List<EcgSummary>): String {
+    val latest = recordings.maxByOrNull { it.measuredAtMs } ?: return "none recorded"
+    return "${recordings.size} · latest ${age(latest.measuredAtMs)}"
+}
+
+/** How long a pull keeps the spinner once nothing is syncing. */
+private const val PULL_SETTLE_MS = 800L
 
 @Composable
 fun WorkoutScreen(
@@ -178,6 +242,7 @@ fun WorkoutScreen(
     onWindowChange: (LongRange) -> Unit,
     onFollowLive: () -> Unit,
     onToggleStopwatch: () -> Unit,
+    onBack: () -> Unit,
 ) {
     // A finished workout is a closed interval; a running one keeps growing.
     val workoutLimit = workout?.let {
@@ -185,11 +250,7 @@ fun WorkoutScreen(
     }
     // Only a running workout has a "now" to jump to or a rest to time.
     val live = workout != null && workout.endedAtMs == null
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            workout?.activity ?: "Workout",
-            style = MaterialTheme.typography.headlineMedium,
-        )
+    Page(workout?.activity ?: "Workout", onBack) {
         Text(
             workout?.let {
                 val until = it.endedAtMs ?: System.currentTimeMillis()
@@ -266,9 +327,19 @@ fun WorkoutScreen(
 }
 
 @Composable
-fun WorkoutsScreen(workouts: List<WorkoutSummary>, onSelect: (WorkoutSummary) -> Unit) {
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Workouts", style = MaterialTheme.typography.headlineMedium)
+fun WorkoutsScreen(
+    workouts: List<WorkoutSummary>,
+    onSelect: (WorkoutSummary) -> Unit,
+    onBack: () -> Unit,
+) {
+    Page("Workouts", onBack) {
+        if (workouts.isEmpty()) {
+            Text(
+                "No workouts yet. Start one on the watch; it appears here once " +
+                    "the watch has been synced.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(workouts) { workout ->
                 Card(Modifier.fillMaxWidth().clickable { onSelect(workout) }) {
@@ -292,57 +363,22 @@ fun WorkoutsScreen(workouts: List<WorkoutSummary>, onSelect: (WorkoutSummary) ->
 }
 
 /**
- * A transfer reports exact bytes; the history walk can only estimate, so it is
- * labelled rather than dressed up as a percentage.
+ * What the sync is doing, short enough to sit beside the link state.
+ *
+ * A transfer reports exact bytes; the history walk can only estimate, so the
+ * stream count leads and the fraction is only ever a hint alongside it.
  */
-@Composable
-private fun SyncProgressRow(snapshot: Snapshot) {
-    val sync = snapshot.sync
+private fun syncLabel(snapshot: Snapshot?): String? {
+    val sync = snapshot?.sync ?: return null
     val received = sync.transferReceived
     val total = sync.transferTotal
-    when {
-        received != null && total != null && total > 0u -> {
-            val fraction = received.toFloat() / total.toFloat()
-            Column {
-                Text(
-                    "measurement transfer  ${received / 1024u} of ${total / 1024u} KiB",
-                    style = MaterialTheme.typography.labelSmall,
-                )
-                LinearProgressIndicator(
-                    progress = { fraction },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-
-        snapshot.progress == Progress.SYNCING -> Column {
-            val fraction = sync.historyFraction
-            // The fraction covers the stream in progress only, so it is shown
-            // next to the stream count rather than as overall progress.
-            val stream = "stream ${sync.streamsDone + 1u} of ${sync.streamsTotal}"
-            Text(
-                if (fraction != null) "catching up  $stream  ${(fraction * 100).toInt()}%"
-                else "catching up  $stream",
-                style = MaterialTheme.typography.labelSmall,
-            )
-            if (fraction != null) {
-                LinearProgressIndicator(
-                    progress = { fraction.toFloat() },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } else {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-            }
-        }
-
-        else -> {}
+    if (received != null && total != null && total > 0u) {
+        return "transfer ${received * 100u / total}%"
     }
-    if (sync.recordsStored > 0uL) {
-        Text(
-            "${sync.recordsStored} records stored this session",
-            style = MaterialTheme.typography.labelSmall,
-        )
-    }
+    if (snapshot.progress != Progress.SYNCING) return null
+    val stream = "syncing ${sync.streamsDone + 1u}/${sync.streamsTotal}"
+    val fraction = sync.historyFraction ?: return stream
+    return "$stream · ${(fraction * 100).toInt()}%"
 }
 
 @Composable
@@ -365,24 +401,23 @@ fun Stat(
     }
 }
 
-/**
- * Link state and sync phase are different things: the watch can be connected
- * while nothing is syncing, and the old wording hid a link that never came up.
- */
 private fun format(value: Double, style: MetricStyle): String =
     if (style.decimals == 0) value.toInt().toString()
     else String.format(Locale.US, "%.${style.decimals}f", value)
 
-private fun statusLine(link: LinkState, snapshot: Snapshot?): String = when (link) {
-    LinkState.Disconnected -> "not connected"
-    LinkState.Connecting -> "connecting to watch"
-    LinkState.Connected -> "connected, subscribing"
-    LinkState.Ready -> when (snapshot?.progress) {
-        null, Progress.IDLE -> "connected"
-        Progress.CONNECTING -> "connected, authenticating"
-        Progress.SYNCING -> "connected, syncing"
-        Progress.FINISHED -> "connected, synced"
-        Progress.NOT_AUTHENTICATED -> "connected, but the watch refused the secret"
+/**
+ * Link state and sync phase are different things: the watch can be connected
+ * while nothing is syncing. Only the link belongs here; what the sync is doing
+ * gets its own chip, so neither has to summarise the other.
+ */
+private fun linkChip(link: LinkState, progress: Progress?): Pair<String, Tone> = when (link) {
+    LinkState.Disconnected -> "not connected" to Tone.Quiet
+    LinkState.Connecting -> "connecting" to Tone.Working
+    LinkState.Connected -> "subscribing" to Tone.Working
+    LinkState.Ready -> when (progress) {
+        Progress.NOT_AUTHENTICATED -> "secret refused" to Tone.Bad
+        Progress.CONNECTING -> "authenticating" to Tone.Working
+        else -> "connected" to Tone.Good
     }
 }
 

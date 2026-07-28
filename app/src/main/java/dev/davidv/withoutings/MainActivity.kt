@@ -25,14 +25,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dev.davidv.withoutings.ble.WatchConnectionService
 import dev.davidv.withoutings.ui.IdleScreen
-import dev.davidv.withoutings.ui.DeviceScreen
 import dev.davidv.withoutings.ui.EcgDetailScreen
 import dev.davidv.withoutings.ui.EcgListScreen
 import dev.davidv.withoutings.ui.LiveEcgScreen
 import dev.davidv.withoutings.ui.MetricScreen
 import dev.davidv.withoutings.ui.MetricStyle
-import dev.davidv.withoutings.ui.ScreensScreen
 import dev.davidv.withoutings.ui.SetupScreen
+import dev.davidv.withoutings.ui.WatchSettingsScreen
 import dev.davidv.withoutings.ui.WatchViewModel
 import dev.davidv.withoutings.ui.WorkoutScreen
 import dev.davidv.withoutings.ui.WorkoutsScreen
@@ -48,8 +47,7 @@ private object Routes {
     const val ECGS = "ecgs"
     const val ECG = "ecg"
     const val LIVE_ECG = "live-ecg"
-    const val SCREENS = "screens"
-    const val DEVICE = "device"
+    const val SETTINGS = "settings"
     const val METRIC = "metric/{metric}"
 
     fun metric(style: MetricStyle) = "metric/${style.name}"
@@ -150,14 +148,11 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
                 state = state,
                 onOpenWorkouts = { nav.navigate(Routes.WORKOUTS) },
                 onOpenEcgs = { nav.navigate(Routes.ECGS) },
-                onOpenScreens = {
-                    model.requestScreens()
-                    nav.navigate(Routes.SCREENS)
-                },
                 onOpenMetric = { nav.navigate(Routes.metric(it)) },
-                onOpenDevice = {
+                onOpenSettings = {
                     model.requestDeviceConfig()
-                    nav.navigate(Routes.DEVICE)
+                    model.requestScreens()
+                    nav.navigate(Routes.SETTINGS)
                 },
                 onRefresh = { model.requestRefresh() },
             )
@@ -174,6 +169,7 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
                 onWindowChange = { model.zoom(it) },
                 onFollowLive = { model.followLive() },
                 onToggleStopwatch = { model.toggleStopwatch() },
+                onBack = { nav.popBackStack() },
             )
         }
 
@@ -190,6 +186,7 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
                 window = metricWindow ?: ((now - style.defaultSpan)..now),
                 onWindowChange = { model.metricZoom(it) },
                 onRange = { model.metricRangeSpan(it) },
+                onBack = { nav.popBackStack() },
             )
         }
 
@@ -200,6 +197,7 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
                     model.showWorkout(workout)
                     nav.navigate(Routes.WORKOUT)
                 },
+                onBack = { nav.popBackStack() },
             )
         }
 
@@ -210,6 +208,7 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
                 recording = state.snapshot?.measuring == true,
                 window = liveWindow,
                 onWindowChange = { model.liveEcgZoom(it) },
+                onBack = { nav.popBackStack() },
             )
         }
 
@@ -220,6 +219,7 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
                     model.showEcg(it.id)
                     nav.navigate(Routes.ECG)
                 },
+                onBack = { nav.popBackStack() },
             )
         }
 
@@ -228,26 +228,23 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
                 recording = ecg,
                 window = ecgWindow ?: 0L..1L,
                 onWindowChange = { model.ecgZoom(it) },
+                onBack = { nav.popBackStack() },
             )
         }
 
-        composable(Routes.DEVICE) {
-            DeviceScreen(
+        composable(Routes.SETTINGS) {
+            WatchSettingsScreen(
                 wearPosition = state.wearPosition,
                 activities = state.activities,
                 features = state.features,
+                screens = state.screens,
                 onWearPosition = { model.setWearPosition(it) },
                 onActivities = { model.setActivities(it) },
                 onFeature = { id, on -> model.setFeature(id, on) },
-                onReload = { model.requestDeviceConfig() },
-            )
-        }
-
-        composable(Routes.SCREENS) {
-            ScreensScreen(
-                screens = state.screens,
-                onRefresh = { model.requestScreens() },
-                onApply = { model.applyScreens(it) },
+                onReloadDevice = { model.requestDeviceConfig() },
+                onReloadScreens = { model.requestScreens() },
+                onApplyScreens = { model.applyScreens(it) },
+                onBack = { nav.popBackStack() },
             )
         }
     }
