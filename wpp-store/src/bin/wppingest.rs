@@ -81,7 +81,7 @@ fn main() -> ExitCode {
             match action {
                 Action::Send(_) => sends += 1,
                 Action::Delete(_) => deletes += 1,
-                Action::Finished => {}
+                Action::Finished | Action::Reconnect => {}
                 Action::Store {
                     token,
                     records: batch,

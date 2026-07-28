@@ -5,12 +5,15 @@ import androidx.lifecycle.viewModelScope
 import dev.davidv.withoutings.LinkState
 import dev.davidv.withoutings.WatchRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import uniffi.wpp_ffi.EcgRecording
+import uniffi.wpp_ffi.EcgSummary
 import uniffi.wpp_ffi.HrPoint
 import uniffi.wpp_ffi.Marker
 import uniffi.wpp_ffi.Metric
@@ -40,10 +43,20 @@ data class UiState(
     /// Core temperature across the workout. Shown as a rise from where it
     /// started rather than an absolute, which is the part that carries meaning.
     val workoutTemp: List<ChartPoint> = emptyList(),
+    val ecgs: List<EcgSummary> = emptyList(),
+    val liveEcg: List<Double> = emptyList(),
+    /// Charging periods over the metric window, shaded behind the battery.
+    val charging: List<Marker> = emptyList(),
 )
 
 /** Seconds of workout history the chart shows before the user zooms. */
 private const val DEFAULT_WINDOW_MS = 10 * 60 * 1000L
+
+/// Six seconds is what a clinical strip shows on one line at 25 mm/s.
+private const val INITIAL_ECG_SPAN_MS = 6_000L
+
+/// Frequent enough that unplugging shows up before you look away.
+private const val CHARGE_POLL_MS = 8_000L
 
 class WatchViewModel : ViewModel() {
 
@@ -53,6 +66,18 @@ class WatchViewModel : ViewModel() {
     /** Chart viewport; null means "follow the live edge". */
     private val _window = MutableStateFlow<LongRange?>(null)
     val window: StateFlow<LongRange?> = _window.asStateFlow()
+
+    /// The recording open in the ECG viewer, with its samples.
+    private val _ecg = MutableStateFlow<EcgRecording?>(null)
+    val ecg: StateFlow<EcgRecording?> = _ecg.asStateFlow()
+
+    private val _ecgWindow = MutableStateFlow<LongRange?>(null)
+    val ecgWindow: StateFlow<LongRange?> = _ecgWindow.asStateFlow()
+
+    /// Null while a recording is in progress, when the view follows the newest
+    /// sample instead of staying where it was put.
+    private val _liveWindow = MutableStateFlow<LongRange?>(null)
+    val liveWindow: StateFlow<LongRange?> = _liveWindow.asStateFlow()
 
     /// The finished workout being looked at, if one was picked from the list.
     private val _selectedWorkout = MutableStateFlow<WorkoutSummary?>(null)
@@ -85,7 +110,8 @@ class WatchViewModel : ViewModel() {
                 _stopwatchStartedAt.value?.let { _elapsed.value = System.currentTimeMillis() - it }
                 // A live workout keeps producing samples without any protocol
                 // event to hang a refresh on, so the chart polls while running.
-                if (_state.value.snapshot?.activeWorkout != null) refresh()
+                val live = _state.value.snapshot
+                if (live?.activeWorkout != null || live?.measuring == true) refresh()
             }
         }
     }
@@ -120,6 +146,15 @@ class WatchViewModel : ViewModel() {
                             .map { p: Point -> ChartPoint(p.atMs, p.value) },
                         markers = service.markers(range.first, range.last),
                         workouts = service.workouts(50u),
+                        ecgs = service.ecgs(),
+                        // The client holds the samples until the next
+                        // recording starts, so a finished one stays readable;
+                        // refetching it forever would just copy it again.
+                        liveEcg = if (snapshot.measuring) {
+                            service.liveEcg()
+                        } else {
+                            _state.value.liveEcg
+                        },
                         screens = service.screens(),
                         wearPosition = service.wearPosition(),
                         activities = service.activities(),
@@ -132,6 +167,11 @@ class WatchViewModel : ViewModel() {
                                 MAX_CHART_POINTS,
                             )
                             .map { p: Point -> ChartPoint(p.atMs, p.value) },
+                        charging = if (_metricStyle.value == MetricStyle.Battery) {
+                            service.charging(metricRange().first, metricRange().last)
+                        } else {
+                            emptyList()
+                        },
                         latest = MetricStyle.entries.mapNotNull { style ->
                             service.latestValue(style.metric)
                                 ?.let { style to ChartPoint(it.atMs, it.value) }
@@ -175,6 +215,27 @@ class WatchViewModel : ViewModel() {
         refresh()
     }
 
+    /// Load a recording and frame it on its first few seconds, which is as
+    /// much as fits at a readable scale.
+    fun showEcg(id: Long) {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch {
+            val loaded = withContext(Dispatchers.IO) { runCatching { service.ecg(id) }.getOrNull() }
+            _ecg.value = loaded
+            _ecgWindow.value = loaded?.let {
+                it.measuredAtMs..(it.measuredAtMs + INITIAL_ECG_SPAN_MS)
+            }
+        }
+    }
+
+    fun ecgZoom(range: LongRange) {
+        _ecgWindow.value = range
+    }
+
+    fun liveEcgZoom(range: LongRange) {
+        _liveWindow.value = range
+    }
+
     /// Show one workout from the list: its own span, and its own heading.
     fun showWorkout(workout: WorkoutSummary) {
         _selectedWorkout.value = workout
@@ -206,6 +267,25 @@ class WatchViewModel : ViewModel() {
         }
         _stopwatchStartedAt.value = if (started == null) now else null
         _elapsed.value = 0
+    }
+
+    /// Poll the battery while the app is in front.
+    ///
+    /// The charging indicator is only as truthful as its last reading, and
+    /// between the background polls a reading is recent but out of date — it
+    /// would go on claiming a charger works seconds after it was pulled out.
+    private var chargeWatch: Job? = null
+
+    fun watchCharging(on: Boolean) {
+        chargeWatch?.cancel()
+        chargeWatch = if (!on) null else viewModelScope.launch {
+            while (true) {
+                withContext(Dispatchers.IO) {
+                    runCatching { WatchRepository.get()?.pollBattery() }
+                }
+                delay(CHARGE_POLL_MS)
+            }
+        }
     }
 
     fun requestScreens() {

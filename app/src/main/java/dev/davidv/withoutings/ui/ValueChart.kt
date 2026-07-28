@@ -40,10 +40,26 @@ import uniffi.wpp_ffi.SetEdge
 /** A value at a time, whatever the series. */
 data class ChartPoint(val atMs: Long, val value: Double)
 
+/**
+ * How the background is ruled.
+ *
+ * A trend line wants readable round numbers wherever the axis happens to land.
+ * An ECG wants the paper it has always been printed on — 25 mm/s and 10 mm/mV,
+ * so a large square is 0.2 s by 0.5 mV — because that is what makes an interval
+ * measurable by eye.
+ */
+enum class GridStyle { Time, EcgPaper }
+
 private val TICK_SECONDS = listOf(
     10, 30, 60, 120, 300, 600, 1800, 3600, 7200, 21600, 43200,
     86400, 2 * 86400, 7 * 86400, 30 * 86400,
 )
+
+/// ECG paper at 25 mm/s and 10 mm/mV: a large square is 5 mm each way.
+private const val ECG_MS_PER_LARGE_SQUARE = 200L
+private const val ECG_MS_PER_SMALL_SQUARE = 40L
+private const val ECG_MV_PER_LARGE_SQUARE = 0.5
+private const val ECG_MV_PER_SMALL_SQUARE = 0.1
 
 /** Axis steps that read cleanly, scaled by powers of ten to fit any range. */
 private val NICE_STEPS = listOf(1.0, 2.0, 5.0)
@@ -70,6 +86,7 @@ fun ValueChart(
     /// different depending on where you scrolled from.
     axis: ClosedFloatingPointRange<Double>,
     decimals: Int,
+    grid: GridStyle = GridStyle.Time,
     /// How far the view may be panned. A finished workout is bounded at both
     /// ends by its own extent; an open-ended series only by the present.
     limit: LongRange? = null,
@@ -152,7 +169,7 @@ fun ValueChart(
             val plotHeight = size.height - gutterBottom
             if (plotWidth <= 0 || plotHeight <= 0) return@Canvas
 
-            val (lo, hi) = bounds(points.filter { it.atMs in window }, axis)
+            val (lo, hi) = bounds(points.filter { it.atMs in window }, axis, grid)
             val spanMs = (window.last - window.first).coerceAtLeast(1L)
 
             fun x(at: Long) = gutterLeft + ((at - window.first).toFloat() / spanMs) * plotWidth
@@ -182,7 +199,24 @@ fun ValueChart(
                 )
             }
 
-            val step = niceStep(hi - lo)
+            val step = when (grid) {
+                GridStyle.Time -> niceStep(hi - lo)
+                GridStyle.EcgPaper -> ECG_MV_PER_LARGE_SQUARE
+            }
+            if (grid == GridStyle.EcgPaper) {
+                // Minor ruling carries no labels; it is there to be counted.
+                var minor = ceil(lo / ECG_MV_PER_SMALL_SQUARE) * ECG_MV_PER_SMALL_SQUARE
+                while (minor <= hi) {
+                    val at = y(minor)
+                    drawLine(
+                        gridColor.copy(alpha = 0.35f),
+                        Offset(gutterLeft, at),
+                        Offset(size.width, at),
+                        hairline,
+                    )
+                    minor += ECG_MV_PER_SMALL_SQUARE
+                }
+            }
             var value = ceil(lo / step) * step
             while (value <= hi + step / 1000) {
                 val at = y(value)
@@ -202,21 +236,48 @@ fun ValueChart(
             // put while panning instead of sliding with the data.
             // Falling back to an hour put 168 gridlines on a week; fall back to
             // the coarsest step instead.
-            val tickSeconds =
-                TICK_SECONDS.firstOrNull { spanMs / 1000 / it <= 6 } ?: TICK_SECONDS.last()
-            val tickMs = tickSeconds * 1000L
+            val tickMs = when (grid) {
+                GridStyle.EcgPaper -> ECG_MS_PER_LARGE_SQUARE
+                GridStyle.Time ->
+                    (TICK_SECONDS.firstOrNull { spanMs / 1000 / it <= 6 }
+                        ?: TICK_SECONDS.last()) * 1000L
+            }
+            if (grid == GridStyle.EcgPaper) {
+                var minor = (window.first / ECG_MS_PER_SMALL_SQUARE) * ECG_MS_PER_SMALL_SQUARE
+                while (minor <= window.last) {
+                    val at = x(minor)
+                    drawLine(
+                        gridColor.copy(alpha = 0.35f),
+                        Offset(at, 0f),
+                        Offset(at, plotHeight),
+                        hairline,
+                    )
+                    minor += ECG_MS_PER_SMALL_SQUARE
+                }
+            }
             val format = when {
                 spanMs > 36 * 3600_000L -> dm
                 spanMs > 30 * 60_000L -> hm
                 else -> hms
             }
+            val origin = limit?.first ?: window.first
+            val labelEvery = if (grid == GridStyle.EcgPaper) 1_000L else tickMs
             var tick = (window.first / tickMs) * tickMs
             if (tick < window.first) tick += tickMs
             while (tick <= window.last) {
                 val at = x(tick)
                 drawLine(gridColor, Offset(at, 0f), Offset(at, plotHeight), hairline)
+                if ((tick - origin) % labelEvery != 0L) {
+                    tick += tickMs
+                    continue
+                }
+                val text = if (grid == GridStyle.EcgPaper) {
+                    "${(tick - origin) / 1000}s"
+                } else {
+                    format.format(Date(tick))
+                }
                 val label = measurer.measure(
-                    format.format(Date(tick)),
+                    text,
                     TextStyle(fontSize = 9.sp, color = labelColor),
                 )
                 val left = (at - label.size.width / 2)
@@ -292,7 +353,11 @@ fun ValueChart(
 private fun bounds(
     points: List<ChartPoint>,
     axis: ClosedFloatingPointRange<Double>,
+    grid: GridStyle,
 ): Pair<Double, Double> {
+    // Ruled paper means fixed squares. Growing the axis to swallow an outlier
+    // would leave a grid that no longer measures anything.
+    if (grid == GridStyle.EcgPaper) return axis.start to axis.endInclusive
     var lo = axis.start
     var hi = axis.endInclusive
     if (points.isNotEmpty()) {

@@ -26,6 +26,9 @@ import androidx.navigation.compose.rememberNavController
 import dev.davidv.withoutings.ble.WatchConnectionService
 import dev.davidv.withoutings.ui.IdleScreen
 import dev.davidv.withoutings.ui.DeviceScreen
+import dev.davidv.withoutings.ui.EcgDetailScreen
+import dev.davidv.withoutings.ui.EcgListScreen
+import dev.davidv.withoutings.ui.LiveEcgScreen
 import dev.davidv.withoutings.ui.MetricScreen
 import dev.davidv.withoutings.ui.MetricStyle
 import dev.davidv.withoutings.ui.ScreensScreen
@@ -35,10 +38,16 @@ import dev.davidv.withoutings.ui.WorkoutScreen
 import dev.davidv.withoutings.ui.WorkoutsScreen
 import dev.davidv.withoutings.ui.theme.WithoutingsTheme
 
+/// The rate the watch streams a live ECG at, and records one at.
+private const val LIVE_ECG_HZ = 300
+
 private object Routes {
     const val HOME = "home"
     const val WORKOUT = "workout"
     const val WORKOUTS = "workouts"
+    const val ECGS = "ecgs"
+    const val ECG = "ecg"
+    const val LIVE_ECG = "live-ecg"
     const val SCREENS = "screens"
     const val DEVICE = "device"
     const val METRIC = "metric/{metric}"
@@ -110,6 +119,9 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
     val elapsed by model.elapsed.collectAsState()
     val metricWindow by model.metricWindow.collectAsState()
     val selected by model.selectedWorkout.collectAsState()
+    val ecg by model.ecg.collectAsState()
+    val ecgWindow by model.ecgWindow.collectAsState()
+    val liveWindow by model.liveWindow.collectAsState()
 
     // A workout is a place you go, not a state the home screen turns into:
     // taking over the start destination left nowhere for Back to go.
@@ -118,11 +130,26 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
         if (activeStartedAt != null) nav.navigate(Routes.WORKOUT)
     }
 
+    // The waveform is only sent while something is showing it, so the screen
+    // has to be up for the recording to be captured at all.
+    val measuring = state.snapshot?.measuring == true
+    LaunchedEffect(measuring) {
+        if (measuring) nav.navigate(Routes.LIVE_ECG)
+    }
+
     NavHost(nav, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
+            // The charging state is only shown here, so it is only worth
+            // asking for here — not behind a workout, which is exactly when
+            // the extra traffic would cost something.
+            DisposableEffect(Unit) {
+                model.watchCharging(true)
+                onDispose { model.watchCharging(false) }
+            }
             IdleScreen(
                 state = state,
                 onOpenWorkouts = { nav.navigate(Routes.WORKOUTS) },
+                onOpenEcgs = { nav.navigate(Routes.ECGS) },
                 onOpenScreens = {
                     model.requestScreens()
                     nav.navigate(Routes.SCREENS)
@@ -159,6 +186,7 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
             MetricScreen(
                 style = style,
                 points = state.metric,
+                markers = state.charging,
                 window = metricWindow ?: ((now - style.defaultSpan)..now),
                 onWindowChange = { model.metricZoom(it) },
                 onRange = { model.metricRangeSpan(it) },
@@ -172,6 +200,34 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
                     model.showWorkout(workout)
                     nav.navigate(Routes.WORKOUT)
                 },
+            )
+        }
+
+        composable(Routes.LIVE_ECG) {
+            LiveEcgScreen(
+                millivolts = state.liveEcg,
+                samplingHz = LIVE_ECG_HZ,
+                recording = state.snapshot?.measuring == true,
+                window = liveWindow,
+                onWindowChange = { model.liveEcgZoom(it) },
+            )
+        }
+
+        composable(Routes.ECGS) {
+            EcgListScreen(
+                recordings = state.ecgs,
+                onSelect = {
+                    model.showEcg(it.id)
+                    nav.navigate(Routes.ECG)
+                },
+            )
+        }
+
+        composable(Routes.ECG) {
+            EcgDetailScreen(
+                recording = ecg,
+                window = ecgWindow ?: 0L..1L,
+                onWindowChange = { model.ecgZoom(it) },
             )
         }
 

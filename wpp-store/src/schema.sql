@@ -24,7 +24,8 @@ INSERT OR IGNORE INTO sample_kind (id, name, unit) VALUES
     (6, 'battery',          'percent'),
     (7, 'steps',            'count'),
     (8, 'battery_state',    'battery_state'),
-    (9, 'battery_mv',       'millivolts');
+    (9, 'battery_mv',       'millivolts'),
+    (10, 'sleep_level',     'sleep_level');
 
 CREATE TABLE IF NOT EXISTS workout (
     id          INTEGER PRIMARY KEY,
@@ -66,8 +67,12 @@ CREATE TABLE IF NOT EXISTS ecg (
     UNIQUE (device_id, measured_at, signal_type)
 ) STRICT;
 
--- Advanced only once the records behind it are committed, so a crash re-reads
--- a window rather than skipping it.
+-- ECG timestamps were once written in seconds while the rest of the schema
+-- used milliseconds. Anything below this is a date in 1970, so it is the old
+-- form; the correction is idempotent because it leaves no such values behind.
+UPDATE ecg SET measured_at = measured_at * 1000
+ WHERE measured_at > 0 AND measured_at < 100000000000;
+
 CREATE TABLE IF NOT EXISTS sync_state (
     device_id      INTEGER NOT NULL REFERENCES device(id),
     category       INTEGER NOT NULL,

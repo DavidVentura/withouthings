@@ -10,6 +10,10 @@ use wpp::units::UnixTime;
 
 pub use rusqlite::Error;
 
+/// `sample_kind.battery_state`, and the value meaning a charger is attached.
+const CHARGING_KIND: i64 = 8;
+const CHARGING_STATE: i64 = 0;
+
 pub struct Store {
     conn: Connection,
 }
@@ -325,6 +329,79 @@ impl Store {
     }
 
     /// One recording: metadata plus its interleaved samples.
+    /// When the watch was on a charger, as (start, end) with an open end for a
+    /// charge still running.
+    ///
+    /// Derived from the `battery_state` series rather than stored separately:
+    /// the watch reports a state, and a charge is the stretch over which that
+    /// state was CHARGING. The sample before the window is included so a charge
+    /// already under way is not missed.
+    pub fn charge_periods(
+        &self,
+        device_id: i64,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<Vec<(i64, Option<i64>)>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT measured_at, value FROM sample
+              WHERE device_id = ?1 AND kind = ?2
+                AND measured_at <= ?4
+                AND measured_at >= COALESCE(
+                    (SELECT max(measured_at) FROM sample
+                      WHERE device_id = ?1 AND kind = ?2 AND measured_at < ?3), ?3)
+              ORDER BY measured_at",
+        )?;
+        let rows = stmt.query_map(params![device_id, CHARGING_KIND, from_ms, to_ms], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+        })?;
+
+        let mut periods: Vec<(i64, Option<i64>)> = Vec::new();
+        let mut open: Option<i64> = None;
+        let mut last_at = from_ms;
+        for row in rows {
+            let (at, state) = row?;
+            match (open, state == CHARGING_STATE) {
+                (None, true) => open = Some(at.max(from_ms)),
+                (Some(start), false) => {
+                    periods.push((start, Some(at)));
+                    open = None;
+                }
+                _ => {}
+            }
+            last_at = at;
+        }
+        // Still charging at the last reading: leave it open rather than
+        // inventing an end the data does not support.
+        if let Some(start) = open {
+            periods.push((
+                start,
+                if last_at >= to_ms {
+                    None
+                } else {
+                    Some(last_at)
+                },
+            ));
+        }
+        Ok(periods)
+    }
+
+    /// Recordings the app can draw, newest first.
+    ///
+    /// Only signal types with a known lead layout: the same transfer path also
+    /// carries other stored measurements, which are not waveforms.
+    pub fn ecgs(&self, device_id: i64) -> Result<Vec<(i64, i64, i64, i64, i64)>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, measured_at, signal_type, sampling_hz, length(samples)
+               FROM ecg
+              WHERE device_id = ?1 AND signal_type IN (1, 6, 7, 8, 13)
+              ORDER BY measured_at DESC",
+        )?;
+        let rows = stmt.query_map(params![device_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })?;
+        rows.collect()
+    }
+
     pub fn ecg(&self, id: i64) -> Result<Option<(i64, i64, i64, i64, Vec<u8>)>, Error> {
         self.conn
             .query_row(
@@ -347,7 +424,12 @@ impl Store {
 }
 
 fn store_ecg(tx: &rusqlite::Transaction<'_>, device_id: i64, signal: &Signal) -> Result<(), Error> {
-    let measured_at = signal.measure.as_ref().map(|m| m.time as i64).unwrap_or(0);
+    // Protocol timestamps are Unix seconds; every table here is milliseconds.
+    let measured_at = signal
+        .measure
+        .as_ref()
+        .map(|m| m.time as i64 * 1000)
+        .unwrap_or(0);
     let (offset, gain, qfix) = match &signal.units {
         Some(u) => (Some(u.offset), Some(u.gain), Some(u.qfix)),
         None => (None, None, None),
@@ -523,6 +605,47 @@ mod tests {
         assert_eq!(
             tail.iter().map(|(t, _, _)| *t).collect::<Vec<_>>(),
             vec![4_000, 5_000]
+        );
+    }
+
+    /// A charge is a stretch of the state series, not an event, so it has to
+    /// survive a window that starts or ends in the middle of one.
+    #[test]
+    fn charging_periods_come_out_of_the_state_series() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let state = |at: i64, v: i64| Record::Sample {
+            measured_at: wpp::units::UnixMillis(at),
+            kind: wpp::client::SampleKind::BatteryState,
+            value: v,
+            quality: None,
+            source: Source::Live,
+        };
+        // ok, ok, charging, charging, ok, then charging to the end
+        store
+            .store(
+                device,
+                &[
+                    state(1_000, 2),
+                    state(2_000, 0),
+                    state(3_000, 0),
+                    state(4_000, 2),
+                    state(5_000, 0),
+                    state(6_000, 0),
+                ],
+            )
+            .unwrap();
+
+        assert_eq!(
+            store.charge_periods(device, 0, 6_000).unwrap(),
+            vec![(2_000, Some(4_000)), (5_000, None)],
+            "the last charge is still running, so it has no end"
+        );
+
+        // A window opening mid-charge still shows one, from its own start.
+        assert_eq!(
+            store.charge_periods(device, 2_500, 4_500).unwrap(),
+            vec![(2_500, Some(4_000))]
         );
     }
 

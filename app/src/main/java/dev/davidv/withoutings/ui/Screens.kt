@@ -95,6 +95,7 @@ fun SetupScreen(onSave: (String, String) -> Unit) {
 fun IdleScreen(
     state: UiState,
     onOpenWorkouts: () -> Unit,
+    onOpenEcgs: () -> Unit,
     onOpenScreens: () -> Unit,
     onOpenMetric: (MetricStyle) -> Unit,
     onOpenDevice: () -> Unit,
@@ -104,6 +105,16 @@ fun IdleScreen(
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Withoutings", style = MaterialTheme.typography.headlineMedium)
         Text(statusLine(state.link, snapshot), style = MaterialTheme.typography.bodySmall)
+        // Only while a charger is actually delivering, and only from a reading
+        // recent enough to describe now: a stale "charging" would assert the
+        // very thing you came here to check.
+        if (snapshot?.battery?.charging == true) {
+            Text(
+                "charging",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
         snapshot?.let { SyncProgressRow(it) }
 
         val now = System.currentTimeMillis()
@@ -140,6 +151,7 @@ fun IdleScreen(
 
         Button(onClick = onRefresh) { Text("Refresh from watch") }
         Button(onClick = onOpenWorkouts) { Text("Workouts (${state.workouts.size})") }
+        Button(onClick = onOpenEcgs) { Text("ECG (${state.ecgs.size})") }
         Button(onClick = onOpenScreens) { Text("Watch screens") }
         Button(onClick = onOpenDevice) { Text("Watch settings") }
 

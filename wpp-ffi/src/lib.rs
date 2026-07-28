@@ -207,6 +207,13 @@ pub struct Temperature {
 pub struct Battery {
     pub percent: u32,
     pub at_ms: i64,
+    /// Whether a charger is attached, or `None` when the last state reading is
+    /// too old to answer for the present.
+    ///
+    /// The distinction matters: reporting "not charging" from a stale reading
+    /// and reporting "we do not know" look the same on screen, but claiming
+    /// "charging" from one would assert the very thing being checked.
+    pub charging: Option<bool>,
 }
 
 /// Daily totals belong to the day the watch counted them, which is not
@@ -252,6 +259,8 @@ pub struct Snapshot {
     /// Data read from the watch but not yet committed here.
     pub pending_deletes: u32,
     pub sync: SyncProgress,
+    /// True while the watch is taking an ECG and streaming the waveform.
+    pub measuring: bool,
 }
 
 /// One lead of a recording, already converted to millivolts.
@@ -259,6 +268,18 @@ pub struct Snapshot {
 pub struct EcgLead {
     pub name: String,
     pub millivolts: Vec<f64>,
+}
+
+/// A recording as listed, without carrying its samples across the boundary.
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct EcgSummary {
+    pub id: i64,
+    pub measured_at_ms: i64,
+    pub seconds: f64,
+    pub leads: u32,
+    /// Median rate over the recording, from its own R waves. Absent when too
+    /// few beats were found to be worth quoting.
+    pub heart_rate: Option<u32>,
 }
 
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
@@ -276,6 +297,8 @@ pub trait Transport: Send + Sync {
     fn write(&self, bytes: Vec<u8>);
     /// Something the UI displays has changed; re-query.
     fn changed(&self);
+    /// Drop the link and establish it again.
+    fn reconnect(&self);
 }
 
 struct Inner {
@@ -329,6 +352,39 @@ impl WatchService {
         self.dispatch(actions)
     }
 
+    /// Ask the watch for its own account of recent nights.
+    pub fn request_sleep(&self, since_ms: i64) -> Result<(), WatchError> {
+        let actions = {
+            let mut inner = self.inner.lock().unwrap();
+            inner
+                .client
+                .request_sleep(wpp::units::UnixTime(since_ms / 1000))
+        };
+        self.dispatch(actions)
+    }
+
+    /// Ask only for the battery. Cheap enough to run while the charging state
+    /// is on screen, where a reading minutes old is worse than none.
+    pub fn poll_battery(&self) -> Result<(), WatchError> {
+        let actions = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.client.poll_battery()
+        };
+        self.dispatch(actions)
+    }
+
+    /// The host's clock, on a timer. This is the client's only way to notice
+    /// that time has passed without the watch saying anything.
+    pub fn tick(&self) -> Result<(), WatchError> {
+        let actions = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.client.handle(Event::Tick {
+                now: wpp::units::UnixMillis(now_ms()),
+            })
+        };
+        self.dispatch(actions)
+    }
+
     /// Feed one GATT notification. Frames span several of these.
     pub fn on_bytes(&self, bytes: Vec<u8>, received_at_ms: i64) -> Result<(), WatchError> {
         let mut pending = Vec::new();
@@ -376,7 +432,7 @@ impl WatchService {
 
     pub fn snapshot(&self) -> Result<Snapshot, WatchError> {
         let store = self.store.lock().unwrap();
-        let (phase, pending, progress) = {
+        let (phase, pending, progress, measuring) = {
             let inner = self.inner.lock().unwrap();
             let now = now_ms();
             let transfer = inner.client.transfer_progress();
@@ -406,6 +462,7 @@ impl WatchService {
                     streams_done: inner.client.stream_position().0,
                     streams_total: inner.client.stream_position().1,
                 },
+                inner.client.measuring().is_some(),
             )
         };
         let progress_phase = phase;
@@ -414,6 +471,12 @@ impl WatchService {
             battery: store.latest(self.device_id, 6)?.map(|(at, value)| Battery {
                 percent: value as u32,
                 at_ms: at,
+                charging: store
+                    .latest(self.device_id, 8)
+                    .ok()
+                    .flatten()
+                    .filter(|(state_at, _)| now_ms() - state_at < CHARGE_STATE_FRESH_MS)
+                    .map(|(_, state)| state == CHARGING_STATE),
             }),
             latest_hr: store.latest(self.device_id, 1)?.map(|(at, value)| HrPoint {
                 at_ms: at,
@@ -441,6 +504,7 @@ impl WatchService {
                 }),
             pending_deletes: pending,
             sync: progress,
+            measuring,
         })
     }
 
@@ -676,6 +740,26 @@ impl WatchService {
         Ok(())
     }
 
+    /// Charging periods over a window, as the same start/end markers a chart
+    /// shades. An open period runs to the end of the window.
+    pub fn charging(&self, from_ms: i64, to_ms: i64) -> Result<Vec<Marker>, WatchError> {
+        let store = self.store.lock().unwrap();
+        let mut out = Vec::new();
+        for (start, end) in store.charge_periods(self.device_id, from_ms, to_ms)? {
+            out.push(Marker {
+                at_ms: start,
+                edge: SetEdge::Start,
+            });
+            if let Some(end) = end {
+                out.push(Marker {
+                    at_ms: end,
+                    edge: SetEdge::End,
+                });
+            }
+        }
+        Ok(out)
+    }
+
     pub fn markers(&self, from_ms: i64, to_ms: i64) -> Result<Vec<Marker>, WatchError> {
         let store = self.store.lock().unwrap();
         Ok(store
@@ -694,6 +778,43 @@ impl WatchService {
 
     /// A whole recording in one call; crossing per-sample would be absurd at
     /// 300 Hz across two leads.
+    /// Every recording held, newest first.
+    /// The waveform of the measurement in progress, oldest sample first.
+    ///
+    /// Live samples are never stored on the watch, so this is the only place
+    /// they exist until the recording finishes and transfers.
+    pub fn live_ecg(&self) -> Vec<f64> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .client
+            .live_samples()
+            .iter()
+            .map(|c| Millivolts::from_counts(*c).0)
+            .collect()
+    }
+
+    pub fn ecgs(&self) -> Result<Vec<EcgSummary>, WatchError> {
+        let store = self.store.lock().unwrap();
+        Ok(store
+            .ecgs(self.device_id)?
+            .into_iter()
+            .map(|(id, measured_at, signal_type, hz, bytes)| {
+                let leads = wpp::signal::SignalKind::from_type_id(signal_type as u16)
+                    .map(|k| k.leads().len())
+                    .unwrap_or(1);
+                // Two bytes a sample, shared out between the leads.
+                let per_lead = bytes / 2 / leads.max(1) as i64;
+                EcgSummary {
+                    id,
+                    measured_at_ms: measured_at,
+                    seconds: per_lead as f64 / (hz.max(1) as f64),
+                    leads: leads as u32,
+                    heart_rate: rate_of(&store, id, hz as u16, leads),
+                }
+            })
+            .collect())
+    }
+
     pub fn ecg(&self, id: i64) -> Result<Option<EcgRecording>, WatchError> {
         let store = self.store.lock().unwrap();
         let Some((measured_at, signal_type, hz, lead_count, samples)) = store.ecg(id)? else {
@@ -717,12 +838,44 @@ impl WatchService {
         }
         Ok(Some(EcgRecording {
             id,
-            measured_at_ms: measured_at * 1000,
+            measured_at_ms: measured_at,
             sampling_hz: hz as u32,
             leads,
         }))
     }
 }
+
+/// Rate read out of a recording's own waveform.
+///
+/// Measured on the filtered channel where there is one: the raw lead carries
+/// baseline wander that the detector would count as beats.
+fn rate_of(store: &wpp_store::Store, id: i64, hz: u16, leads: usize) -> Option<u32> {
+    let (_, signal_type, _, _, samples) = store.ecg(id).ok().flatten()?;
+    let names: Vec<&'static str> = wpp::signal::SignalKind::from_type_id(signal_type as u16)
+        .map(|k| k.leads().iter().map(|l| l.name()).collect())
+        .unwrap_or_default();
+    let channel = names
+        .iter()
+        .position(|n| n.ends_with("FILTERED"))
+        .unwrap_or(0);
+    let lane: Vec<i16> = samples
+        .chunks_exact(2)
+        .skip(channel)
+        .step_by(leads.max(1))
+        .map(|p| i16::from_le_bytes([p[0], p[1]]))
+        .collect();
+    wpp::analysis::detect_r_peaks(&lane, hz)
+        .heart_rate()
+        .map(|bpm| bpm.0 as u32)
+}
+
+/// `BatteryStatus.battery_state` when a charger is attached.
+const CHARGING_STATE: i64 = 0;
+
+/// How recent a state reading has to be to describe the present. The watch is
+/// polled every few minutes in the background, and bringing the app to the
+/// front forces one, so anything older than this means nobody has looked.
+const CHARGE_STATE_FRESH_MS: i64 = 180_000;
 
 /// `WAM_SCREEN_MAX_NUMBER` from the app.
 const MAX_SCREEN_ID: u8 = 24;
@@ -761,7 +914,17 @@ fn screen_name(id: u8) -> String {
 /// What the official app had enabled on this watch, read out of its
 /// `PlatformFeature` table. Used as the starting set because the watch will not
 /// say what it currently has.
-const DEFAULT_FEATURES: &[u16] = &[3, 5, 9, 10, 11, 14, 17, 19, 20, 27, 53, 71, 88, 113];
+/// The set the watch had enabled when it was first read, including the four
+/// ids this APK version has no constant for.
+///
+/// There is no read side: the message carries the whole enabled set, so an id
+/// left out is switched off. Omitting 100 and 105 — which nothing in the app
+/// names, and which no user-facing setting corresponds to — coincided with the
+/// activity stream going silent, so they are carried whether or not we can say
+/// what they do.
+const DEFAULT_FEATURES: &[u16] = &[
+    3, 5, 9, 10, 11, 14, 17, 19, 20, 27, 53, 71, 88, 100, 105, 113,
+];
 
 /// User-facing features, named from `ConstantsWs.FEATURE_ID_*`.
 const HEALTH_FEATURES: &[(u16, &str, &str)] = &[
@@ -876,6 +1039,7 @@ impl WatchService {
             match action {
                 Action::Send(frame) | Action::Delete(frame) => self.write(&frame),
                 Action::Finished => changed = true,
+                Action::Reconnect => self.transport.reconnect(),
                 Action::Store { token, records } => {
                     self.store.lock().unwrap().store(self.device_id, &records)?;
                     changed = true;

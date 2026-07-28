@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import java.util.Locale
+import uniffi.wpp_ffi.Marker
 import uniffi.wpp_ffi.Metric
 
 /** How each series is drawn: its unit, precision, and the range it lives in. */
@@ -56,6 +57,8 @@ private val RANGES = listOf(
 fun MetricScreen(
     style: MetricStyle,
     points: List<ChartPoint>,
+    /// Shaded behind the trace: for the battery, when it was on a charger.
+    markers: List<Marker>,
     window: LongRange,
     onWindowChange: (LongRange) -> Unit,
     onRange: (Long) -> Unit,
@@ -80,6 +83,9 @@ fun MetricScreen(
                 "max ${format(max, style)}"
         }
         Text(summary, style = MaterialTheme.typography.bodySmall)
+        if (markers.isNotEmpty()) {
+            Text("shaded while charging", style = MaterialTheme.typography.labelSmall)
+        }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Stat("Latest", latest?.let { format(it, style) } ?: "—", style.unit, Modifier.weight(1f))
@@ -87,7 +93,7 @@ fun MetricScreen(
 
         ValueChart(
             points = points,
-            markers = emptyList(),
+            markers = markers,
             window = window,
             onWindowChange = onWindowChange,
             axis = style.axis,

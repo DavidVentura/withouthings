@@ -107,6 +107,27 @@ class WatchConnectionService : Service() {
             retryLater("no BLE scanner")
             return
         }
+        // Android rejects a second scan on the same callback, and the refusal
+        // arrives as a failure that looks like the first scan dying.
+        if (scanning) {
+            Log.i(TAG, "already scanning")
+            return
+        }
+
+        // A connected peripheral does not advertise, so if anything still holds
+        // the link — including a GATT client left behind by a killed process —
+        // scanning can never find it. Bonded devices can be reached directly.
+        val bonded = runCatching {
+            adapter.bondedDevices.firstOrNull { it.name?.startsWith(DEVICE_NAME_PREFIX) == true }
+        }.getOrNull()
+        if (bonded != null) {
+            Log.i(TAG, "connecting directly to bonded '${bonded.name}' at ${bonded.address}")
+            WatchRepository.setLink(LinkState.Connecting)
+            gatt?.close()
+            gatt = bonded.connectGatt(this, false, callback, BluetoothDevice.TRANSPORT_LE)
+            armLinkWatchdog()
+            return
+        }
         Log.i(TAG, "scanning for a device named $DEVICE_NAME_PREFIX (identity $mac)")
         WatchRepository.setLink(LinkState.Connecting)
 
@@ -147,6 +168,19 @@ class WatchConnectionService : Service() {
         retryLater("no working link within ${LINK_TIMEOUT_MS / 1000}s")
     }
 
+    /**
+     * The client has no clock of its own; every interval it enforces is
+     * measured against the last thing it heard. Without this it cannot tell a
+     * quiet watch from a stopped one, and its own rate limits freeze exactly
+     * when the link goes wrong.
+     */
+    private val tick = object : Runnable {
+        override fun run() {
+            runCatching { service?.tick() }.onFailure { Log.e(TAG, "tick", it) }
+            handler.postDelayed(this, TICK_MS)
+        }
+    }
+
     private val resync = object : Runnable {
         override fun run() {
             runCatching { service?.syncNow() }
@@ -157,7 +191,8 @@ class WatchConnectionService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun stopScan() {
-        if (!scanning) return
+        // Unconditional: the flag tracks our intent, not what the Bluetooth
+        // stack has registered, and those disagree after a failed start.
         scanning = false
         runCatching {
             (getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager)
@@ -212,6 +247,7 @@ class WatchConnectionService : Service() {
     private fun retryLater(reason: String) {
         Log.w(TAG, "reconnecting: $reason")
         handler.removeCallbacks(linkWatchdog)
+        handler.removeCallbacks(tick)
         stopScan()
         gatt?.close()
         gatt = null
@@ -278,6 +314,8 @@ class WatchConnectionService : Service() {
             WatchRepository.setLink(LinkState.Ready)
             scheduleResync()
             // Only now will the watch's replies actually reach us.
+            handler.removeCallbacks(tick)
+            handler.postDelayed(tick, TICK_MS)
             runCatching { service?.onConnected() }
                 .onFailure { Log.e(TAG, "onConnected", it) }
         }
@@ -331,6 +369,12 @@ class WatchConnectionService : Service() {
         override fun changed() {
             WatchRepository.invalidate()
         }
+
+        // The client decided the watch has stopped answering; only the shell
+        // can do anything about it.
+        override fun reconnect() {
+            handler.post { retryLater("the watch stopped answering") }
+        }
     }
 
     /**
@@ -383,6 +427,7 @@ class WatchConnectionService : Service() {
         private const val MTU = 512
         private const val RETRY_MS = 10_000L
         private const val LINK_TIMEOUT_MS = 25_000L
+        private const val TICK_MS = 30_000L
         private const val DEVICE_NAME_PREFIX = "ScanWatch"
         private const val HEARTBEAT_MS = 65_000L
         private const val RESYNC_MS = 60_000L

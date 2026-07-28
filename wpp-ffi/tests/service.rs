@@ -7,6 +7,7 @@ use wpp_ffi::{SetEdge, Transport, WatchService};
 struct Recorder {
     written: Mutex<Vec<Vec<u8>>>,
     changes: Mutex<u32>,
+    reconnects: Mutex<u32>,
 }
 
 struct Handle(Arc<Recorder>);
@@ -17,6 +18,9 @@ impl Transport for Handle {
     }
     fn changed(&self) {
         *self.0.changes.lock().unwrap() += 1;
+    }
+    fn reconnect(&self) {
+        *self.0.reconnects.lock().unwrap() += 1;
     }
 }
 
