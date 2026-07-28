@@ -40,8 +40,6 @@ data class UiState(
     /// The window the heart-rate trace was actually fetched over, so the chart
     /// draws the same range the data came from.
     val hrWindow: LongRange = 0L..0L,
-    /// Core temperature across the workout. Shown as a rise from where it
-    /// started rather than an absolute, which is the part that carries meaning.
     val workoutTemp: List<ChartPoint> = emptyList(),
     val ecgs: List<EcgSummary> = emptyList(),
     val liveEcg: List<Double> = emptyList(),
@@ -49,7 +47,6 @@ data class UiState(
     val charging: List<Marker> = emptyList(),
 )
 
-/** Seconds of workout history the chart shows before the user zooms. */
 private const val DEFAULT_WINDOW_MS = 10 * 60 * 1000L
 
 /// Six seconds is what a clinical strip shows on one line at 25 mm/s.
@@ -183,15 +180,12 @@ class WatchViewModel : ViewModel() {
         }
     }
 
-    /// Defaults to the last day, or the whole series if it is shorter.
     private fun metricRange(): LongRange {
         _metricWindow.value?.let { return it }
         val now = System.currentTimeMillis()
         return (now - _metricStyle.value.defaultSpan)..now
     }
 
-    /// Opening a series frames it on its own default window: a daily total
-    /// needs weeks, a 1 Hz series needs hours.
     fun showMetric(style: MetricStyle) {
         _metricStyle.value = style
         _metricWindow.value = null
@@ -215,8 +209,6 @@ class WatchViewModel : ViewModel() {
         refresh()
     }
 
-    /// Load a recording and frame it on its first few seconds, which is as
-    /// much as fits at a readable scale.
     fun showEcg(id: Long) {
         val service = WatchRepository.get() ?: return
         viewModelScope.launch {
@@ -236,13 +228,11 @@ class WatchViewModel : ViewModel() {
         _liveWindow.value = range
     }
 
-    /// Show one workout from the list: its own span, and its own heading.
     fun showWorkout(workout: WorkoutSummary) {
         _selectedWorkout.value = workout
         zoom(workout.startedAtMs..(workout.endedAtMs ?: System.currentTimeMillis()))
     }
 
-    /// Back to following the live edge, at the zoom level already in use.
     fun followLive() {
         _window.value = null
         refresh()

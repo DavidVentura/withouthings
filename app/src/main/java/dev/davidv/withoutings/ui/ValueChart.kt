@@ -67,6 +67,15 @@ private val NICE_STEPS = listOf(1.0, 2.0, 5.0)
 private val hms = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 private val hm = SimpleDateFormat("HH:mm", Locale.getDefault())
 private val dm = SimpleDateFormat("d MMM", Locale.getDefault())
+private val dmhm = SimpleDateFormat("d MMM HH:mm", Locale.getDefault())
+
+/** A tick on an earlier day needs its date: nothing else on screen says which day it is. */
+private fun timeLabel(at: Long, spanMs: Long, todayStart: Long): String = when {
+    spanMs > 2 * 24 * 3600_000L -> dm.format(Date(at))
+    at < todayStart -> dmhm.format(Date(at))
+    spanMs > 30 * 60_000L -> hm.format(Date(at))
+    else -> hms.format(Date(at))
+}
 
 /**
  * Heart rate over a window, with set intervals shaded behind it.
@@ -105,6 +114,7 @@ fun ValueChart(
     val latest = rememberUpdatedState(window)
     val bounds = rememberUpdatedState(limit)
     val gutterLeftDp = 34.dp
+    val todayStart = todayStartMs()
 
     Box(
         modifier
@@ -255,26 +265,22 @@ fun ValueChart(
                     minor += ECG_MS_PER_SMALL_SQUARE
                 }
             }
-            val format = when {
-                spanMs > 36 * 3600_000L -> dm
-                spanMs > 30 * 60_000L -> hm
-                else -> hms
-            }
+            // Only an ECG labels a subset of its ruling: it counts whole
+            // seconds from the start of the recording.
             val origin = limit?.first ?: window.first
-            val labelEvery = if (grid == GridStyle.EcgPaper) 1_000L else tickMs
             var tick = (window.first / tickMs) * tickMs
             if (tick < window.first) tick += tickMs
             while (tick <= window.last) {
                 val at = x(tick)
                 drawLine(gridColor, Offset(at, 0f), Offset(at, plotHeight), hairline)
-                if ((tick - origin) % labelEvery != 0L) {
+                if (grid == GridStyle.EcgPaper && (tick - origin) % 1_000L != 0L) {
                     tick += tickMs
                     continue
                 }
                 val text = if (grid == GridStyle.EcgPaper) {
                     "${(tick - origin) / 1000}s"
                 } else {
-                    format.format(Date(tick))
+                    timeLabel(tick, spanMs, todayStart)
                 }
                 val label = measurer.measure(
                     text,

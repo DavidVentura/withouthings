@@ -57,12 +57,7 @@ fun EcgListScreen(
     }
 }
 
-/**
- * One recording, a lead per chart on a shared time window.
- *
- * The leads are simultaneous, so panning one has to move them all; they are the
- * same instant viewed through different electrodes.
- */
+/** The leads are simultaneous, so they share one window: panning one moves them all. */
 @Composable
 fun EcgDetailScreen(
     recording: EcgRecording?,
@@ -89,15 +84,13 @@ fun EcgDetailScreen(
                 ((recording.leads.firstOrNull()?.millivolts?.size ?: 0) * step).toLong()
             )
 
-        // The watch's own filter output is what is worth reading; the raw lead
-        // carries baseline wander and mains hum that obscure it.
+        // The raw lead carries baseline wander and mains hum that obscure it.
         val shown = recording.leads.filter { it.name.endsWith("FILTERED") }
             .ifEmpty { recording.leads }
         shown.forEach { lead ->
-            // An unfiltered lead carries several millivolts of electrode DC,
-            // which would push the trace off a fixed axis. Only the offset is
-            // removed; the millivolt scale is untouched, so the squares still
-            // measure what they claim to.
+            // Electrode DC would push the trace off a fixed axis. Only the
+            // offset goes; the millivolt scale is untouched, so the squares
+            // still measure what they claim to.
             val baseline = if (lead.millivolts.isEmpty()) 0.0 else {
                 lead.millivolts.sorted()[lead.millivolts.size / 2]
             }
@@ -123,13 +116,7 @@ fun EcgDetailScreen(
     }
 }
 
-/**
- * The waveform as it arrives, during a recording.
- *
- * These samples exist nowhere else: the watch streams them only while
- * something is showing them, and the stored copy only appears once the
- * recording finishes.
- */
+/** These samples exist nowhere else until the recording finishes and transfers. */
 @Composable
 fun LiveEcgScreen(
     millivolts: List<Double>,
@@ -153,12 +140,10 @@ fun LiveEcgScreen(
         )
 
         val step = 1000.0 / samplingHz
-        // A window that slides with the newest sample, so it reads like paper
-        // coming out of a machine rather than compressing as it goes.
+        // The window slides with the newest sample rather than compressing to
+        // fit, so it reads like paper coming out of a machine.
         val span = (LIVE_ECG_SPAN_S * 1000).toLong()
         val end = (millivolts.size * step).toLong()
-        // While it streams the view rides the newest sample; once it stops the
-        // whole recording is there to be read, from the beginning.
         val follow = (end - span).coerceAtLeast(0L)
         val shown = window ?: if (recording) follow..(follow + span) else 0L..span
         val baseline = if (millivolts.isEmpty()) 0.0 else {

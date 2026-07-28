@@ -26,7 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/** Title, back arrow, and the padding every screen shares. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Page(
@@ -58,12 +57,6 @@ fun Page(
     }
 }
 
-/**
- * A word about the link, sized so it cannot move what is under it.
- *
- * These change on their own several times a minute; a chip that reflowed the
- * page every time it did would make the whole screen twitch while syncing.
- */
 @Composable
 fun StatusChip(text: String, tone: Tone, onClick: (() -> Unit)? = null) {
     val scheme = MaterialTheme.colorScheme
@@ -89,7 +82,7 @@ fun StatusChip(text: String, tone: Tone, onClick: (() -> Unit)? = null) {
 
 enum class Tone { Good, Working, Bad, Quiet }
 
-/** A fixed-height row of chips: the count varies, the layout does not. */
+/** Fixed height: chips come and go several times a minute and must not reflow the page. */
 @Composable
 fun StatusRow(chips: @Composable RowScope.() -> Unit) {
     Row(
@@ -100,7 +93,6 @@ fun StatusRow(chips: @Composable RowScope.() -> Unit) {
     )
 }
 
-/** A place to go, with what is waiting there. */
 @Composable
 fun NavRow(title: String, detail: String, onClick: () -> Unit) {
     Surface(

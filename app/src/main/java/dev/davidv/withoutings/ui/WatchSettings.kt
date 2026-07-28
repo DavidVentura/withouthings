@@ -27,13 +27,6 @@ import uniffi.wpp_ffi.WearPosition
 
 private val TABS = listOf("Device", "Screens")
 
-/**
- * Everything that configures the watch, in one place.
- *
- * How it is worn, what it measures and what it shows are all things you set
- * once and then leave alone, so they sit behind one door rather than competing
- * with the day's data for room on the home screen.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WatchSettingsScreen(

@@ -95,8 +95,8 @@ private fun App(model: WatchViewModel = viewModel()) {
         return
     }
 
-    // The background cadence is deliberately slow, so what is on screen would
-    // otherwise be up to a quarter of an hour old whenever you looked at it.
+    // The background cadence is deliberately slow, so without this what is on
+    // screen would be stale every time you opened the app.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->

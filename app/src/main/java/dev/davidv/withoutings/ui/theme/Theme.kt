@@ -53,9 +53,8 @@ fun WithoutingsTheme(
         else -> LightColorScheme
     }
 
-    // The window draws behind the status bar, so the system's own clock and
-    // icons are painted over this app's background: without this they stay
-    // light-on-light and become unreadable.
+    // The window draws behind the status bar; without this the system clock and
+    // icons stay light-on-light over the app's background.
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {

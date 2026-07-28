@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
@@ -48,15 +49,12 @@ import uniffi.wpp_ffi.WorkoutSummary
 private val clock = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 private val hourMinute = SimpleDateFormat("HH:mm", Locale.getDefault())
 private val stamp = SimpleDateFormat("d MMM HH:mm", Locale.getDefault())
+private val day = SimpleDateFormat("d MMM", Locale.getDefault())
 
-/**
- * A reading older than this says nothing about now, so it is shown as absent
- * rather than as a current value.
- */
-private const val STALE_AFTER_MS = 30 * 60 * 1000L
+private const val STALE_ALPHA = 0.45f
 
-/** Local midnight, for deciding whether a daily total is actually today's. */
-private fun todayStartMs(): Long = java.util.Calendar.getInstance().apply {
+/** Local midnight, for deciding whether a reading belongs to today. */
+internal fun todayStartMs(): Long = java.util.Calendar.getInstance().apply {
     set(java.util.Calendar.HOUR_OF_DAY, 0)
     set(java.util.Calendar.MINUTE, 0)
     set(java.util.Calendar.SECOND, 0)
@@ -113,16 +111,13 @@ fun IdleScreen(
     onRefresh: () -> Unit,
 ) {
     val snapshot = state.snapshot
-    // The spinner belongs to the gesture, not to the link: the app syncs on its
-    // own several times a minute, and spinning for that would be reporting
-    // someone else's work as the answer to a pull nobody made.
+    // The app syncs on its own; a spinner for that would answer a pull nobody made.
     var pulled by remember { mutableStateOf(false) }
     val syncing = snapshot?.progress == Progress.SYNCING
     LaunchedEffect(pulled, syncing) {
         if (!pulled) return@LaunchedEffect
-        // Held while the sync the pull asked for runs; the delay is what covers
-        // a refresh the watch declines to make, which reports nothing at all.
         if (syncing) return@LaunchedEffect
+        // The watch may decline the refresh, so this cannot wait on a sync that never starts.
         delay(PULL_SETTLE_MS)
         pulled = false
     }
@@ -151,10 +146,7 @@ fun IdleScreen(
                 StatusRow {
                     StatusChip(linkText, tone)
                     syncLabel(snapshot)?.let { StatusChip(it, Tone.Working) }
-                    // The battery says something about the watch rather than
-                    // about you, so it belongs beside the link rather than
-                    // among the day's readings. Charging is only ever claimed
-                    // from a reading recent enough to describe now: a stale one
+                    // Charging is claimed only from a fresh reading: a stale one
                     // would assert the very thing you came here to check.
                     snapshot?.battery?.let { battery ->
                         val charging = battery.charging == true
@@ -167,19 +159,17 @@ fun IdleScreen(
                 }
 
                 val now = System.currentTimeMillis()
-                // A daily total belongs to its day; a reading belongs to its
-                // instant. Neither says anything about now once it is old enough.
-                val steps = snapshot?.steps?.takeIf { it.dayStartMs >= todayStartMs() }
+                val steps = snapshot?.steps
 
-                // The battery has its own pill above; the grid is what the
-                // watch measured about you.
                 MetricStyle.entries.filter { it != MetricStyle.Battery }.chunked(2).forEach { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         row.forEach { style ->
                             val reading = state.latest[style]
+                            // A dash means the watch measured nothing, which is
+                            // a different claim from "not recently".
                             val fresh = when (style) {
-                                MetricStyle.Steps -> steps != null
-                                else -> reading != null && now - reading.atMs < STALE_AFTER_MS
+                                MetricStyle.Steps -> steps != null && steps.dayStartMs >= todayStartMs()
+                                else -> reading != null && now - reading.atMs < style.freshFor
                             }
                             val shown = when (style) {
                                 MetricStyle.Steps -> steps?.count?.toString()
@@ -187,13 +177,15 @@ fun IdleScreen(
                             }
                             Stat(
                                 style.label,
-                                if (fresh) shown ?: "—" else "—",
+                                shown ?: "—",
                                 when {
-                                    fresh -> "${style.unit} · ${age(reading?.atMs ?: now)}"
-                                    reading != null -> "last ${age(reading.atMs)}"
+                                    style == MetricStyle.Steps && steps != null ->
+                                        "${style.unit} · " +
+                                            if (fresh) "today" else day.format(Date(steps.dayStartMs))
+                                    reading != null -> "${style.unit} · ${age(reading.atMs)}"
                                     else -> style.unit
                                 },
-                                Modifier.weight(1f),
+                                Modifier.weight(1f).alpha(if (fresh) 1f else STALE_ALPHA),
                             ) { onOpenMetric(style) }
                         }
                         if (row.size == 1) Spacer(Modifier.weight(1f))
@@ -225,14 +217,11 @@ private fun ecgsDetail(recordings: List<EcgSummary>): String {
     return "${recordings.size} · latest ${age(latest.measuredAtMs)}"
 }
 
-/** How long a pull keeps the spinner once nothing is syncing. */
 private const val PULL_SETTLE_MS = 800L
 
 @Composable
 fun WorkoutScreen(
     state: UiState,
-    /// The workout being looked at: the running one, or one picked from the
-    /// list. Reading the live one only left a finished workout unlabelled.
     workout: WorkoutSummary?,
     window: LongRange,
     elapsedMs: Long,
@@ -244,11 +233,9 @@ fun WorkoutScreen(
     onToggleStopwatch: () -> Unit,
     onBack: () -> Unit,
 ) {
-    // A finished workout is a closed interval; a running one keeps growing.
     val workoutLimit = workout?.let {
         it.startedAtMs..(it.endedAtMs ?: System.currentTimeMillis())
     }
-    // Only a running workout has a "now" to jump to or a rest to time.
     val live = workout != null && workout.endedAtMs == null
     Page(workout?.activity ?: "Workout", onBack) {
         Text(
@@ -289,8 +276,7 @@ fun WorkoutScreen(
             setColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
         )
 
-        // Stacked under the trace on the same window, so the two read as one
-        // picture: panning or zooming either moves both.
+        // Same window as the trace above, so panning or zooming either moves both.
         Text("Temperature", style = MaterialTheme.typography.labelSmall)
         ValueChart(
             points = state.workoutTemp,
@@ -309,14 +295,11 @@ fun WorkoutScreen(
         )
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Timing the rest only means anything while a workout is running.
             if (live) {
                 Button(onClick = onToggleStopwatch, modifier = Modifier.weight(1f)) {
                     Text(if (running) "End rest  ${formatElapsed(elapsedMs)}" else "Start rest")
                 }
             }
-            // The chart follows the live edge until panned away; this is the
-            // way back, and there is no live edge on a finished workout.
             if (live && !following) {
                 Button(onClick = onFollowLive, modifier = Modifier.weight(1f)) {
                     Text("Jump to now")
@@ -362,12 +345,7 @@ fun WorkoutsScreen(
     }
 }
 
-/**
- * What the sync is doing, short enough to sit beside the link state.
- *
- * A transfer reports exact bytes; the history walk can only estimate, so the
- * stream count leads and the fraction is only ever a hint alongside it.
- */
+/** A transfer reports exact bytes; the history walk only estimates, so the count leads. */
 private fun syncLabel(snapshot: Snapshot?): String? {
     val sync = snapshot?.sync ?: return null
     val received = sync.transferReceived
@@ -405,11 +383,7 @@ private fun format(value: Double, style: MetricStyle): String =
     if (style.decimals == 0) value.toInt().toString()
     else String.format(Locale.US, "%.${style.decimals}f", value)
 
-/**
- * Link state and sync phase are different things: the watch can be connected
- * while nothing is syncing. Only the link belongs here; what the sync is doing
- * gets its own chip, so neither has to summarise the other.
- */
+/** The watch can be connected while nothing is syncing; the sync gets its own chip. */
 private fun linkChip(link: LinkState, progress: Progress?): Pair<String, Tone> = when (link) {
     LinkState.Disconnected -> "not connected" to Tone.Quiet
     LinkState.Connecting -> "connecting" to Tone.Working

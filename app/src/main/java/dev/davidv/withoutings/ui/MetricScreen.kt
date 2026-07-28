@@ -22,17 +22,21 @@ enum class MetricStyle(
     val decimals: Int,
     /// Fixed y-axis for this series, in its own units.
     val axis: ClosedFloatingPointRange<Double>,
+    /// How long a reading still describes now. Per metric because the watch
+    /// measures respiratory rate barely once an hour: one horizon for all would
+    /// call the slow ones stale for doing exactly what they do.
+    val freshFor: Long,
 ) {
-    HeartRate(Metric.HEART_RATE, "Heart rate", "bpm", 0, 30.0..200.0),
-    Temperature(Metric.TEMPERATURE, "Temperature", "°C", 2, 35.0..40.0),
-    HrvSdnn(Metric.HRV_SDNN, "HRV (SDNN)", "ms", 0, 0.0..200.0),
-    HrvRmssd(Metric.HRV_RMSSD, "HRV (RMSSD)", "ms", 0, 0.0..200.0),
-    Respiratory(Metric.RESPIRATORY_RATE, "Respiratory", "breaths/min", 0, 0.0..30.0),
-    Battery(Metric.BATTERY, "Battery", "%", 0, 0.0..100.0),
-    Steps(Metric.STEPS, "Steps", "per day", 0, 0.0..15000.0);
+    HeartRate(Metric.HEART_RATE, "Heart rate", "bpm", 0, 30.0..200.0, 20 * MINUTE),
+    Temperature(Metric.TEMPERATURE, "Temperature", "°C", 2, 35.0..40.0, 10 * MINUTE),
+    HrvSdnn(Metric.HRV_SDNN, "HRV (SDNN)", "ms", 0, 0.0..200.0, 3 * HOUR),
+    HrvRmssd(Metric.HRV_RMSSD, "HRV (RMSSD)", "ms", 0, 0.0..200.0, 3 * HOUR),
+    Respiratory(Metric.RESPIRATORY_RATE, "Respiratory", "breaths/min", 0, 0.0..30.0, 4 * HOUR),
+    Battery(Metric.BATTERY, "Battery", "%", 0, 0.0..100.0, HOUR),
+    Steps(Metric.STEPS, "Steps", "per day", 0, 0.0..15000.0, DAY);
 
-    /// Every series opens on the same window, so switching between them is
-    /// comparing the same stretch of time rather than rescaling.
+    /// One window for every series, so switching between them compares the
+    /// same stretch of time rather than rescaling.
     val defaultSpan: Long get() = DEFAULT_SPAN
 
     companion object {
@@ -40,7 +44,9 @@ enum class MetricStyle(
     }
 }
 
-internal const val DAY = 24 * 3600_000L
+private const val MINUTE = 60_000L
+private const val HOUR = 3600_000L
+internal const val DAY = 24 * HOUR
 
 private const val DEFAULT_SPAN = 6 * 3600_000L
 
@@ -75,9 +81,8 @@ fun MetricScreen(
             Stat("Max", show(visible.maxOfOrNull { it.value }, style), style.unit, Modifier.weight(1f))
         }
 
-        // Presets are a coarse jump, so a window landed on by pinching will sit
-        // between two of them and select none; the heading is what says where
-        // it actually is.
+        // A pinched window sits between presets and selects none, so the
+        // heading is the only thing that says where it is.
         val span = window.last - window.first
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Window: ${spanLabel(span)}", style = MaterialTheme.typography.labelMedium)
@@ -108,7 +113,6 @@ fun MetricScreen(
     }
 }
 
-/** The two largest units the span reaches, so a pinched window stays readable. */
 private fun spanLabel(ms: Long): String {
     val minutes = ms / 60_000
     val days = minutes / (24 * 60)
