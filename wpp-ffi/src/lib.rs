@@ -13,6 +13,8 @@ use wpp::units::{Celsius, Millivolts, UnixMillis};
 use wpp::Frame;
 use wpp_store::Store;
 
+mod sleep;
+
 uniffi::setup_scaffolding!();
 
 /// Series the watch keeps separately, each walked with its own watermark.
@@ -22,6 +24,17 @@ uniffi::setup_scaffolding!();
 /// Taken from the end, so the order walked is: body (heart rate), 10 (core
 /// temperature), 11 (HRV), 12 (respiratory rate), 6 (activity), then 8, 9, 5 —
 /// which carry SpO2 and AHI in bulk and would otherwise starve the rest.
+/// A night at roughly one point per horizontal pixel.
+const NIGHT_POINTS: u32 = 1200;
+
+fn origin_of(source: i64) -> Origin {
+    if source == 1 {
+        Origin::Live
+    } else {
+        Origin::Stored
+    }
+}
+
 const CATEGORIES: [Category; 8] = [
     Category(5),
     Category(9),
@@ -170,6 +183,14 @@ impl WearPosition {
     }
 }
 
+/// The next daylight-saving change the phone's time zone knows about. Absent
+/// for a zone that has none ahead of it.
+#[derive(uniffi::Record, Debug, Clone, Copy, PartialEq)]
+pub struct DstChange {
+    pub at_ms: i64,
+    pub gmt_offset_seconds: i32,
+}
+
 /// An activity in the watch's quick-launch menu.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct Activity {
@@ -229,6 +250,25 @@ pub struct Steps {
 pub struct Marker {
     pub at_ms: i64,
     pub edge: SetEdge,
+}
+
+/// One night's screen: the two series it draws, the periods it shades, and the
+/// numbers it puts at the top.
+///
+/// The sleep period is derived from heart rate here, not reported by the watch.
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct Night {
+    pub hr: Vec<Point>,
+    pub rmssd: Vec<Point>,
+    /// Off the wrist, so a hole in the series is explained rather than drawn as
+    /// missing data.
+    pub charging: Vec<Marker>,
+    pub asleep_from_ms: Option<i64>,
+    pub asleep_to_ms: Option<i64>,
+    /// Median over the sleep period only, which is the only window where the
+    /// figure carries anything.
+    pub median_rmssd: Option<f64>,
+    pub lowest_hr: Option<f64>,
 }
 
 /// What a sync is doing, for a progress indicator that means something.
@@ -352,17 +392,6 @@ impl WatchService {
         self.dispatch(actions)
     }
 
-    /// Ask the watch for its own account of recent nights.
-    pub fn request_sleep(&self, since_ms: i64) -> Result<(), WatchError> {
-        let actions = {
-            let mut inner = self.inner.lock().unwrap();
-            inner
-                .client
-                .request_sleep(wpp::units::UnixTime(since_ms / 1000))
-        };
-        self.dispatch(actions)
-    }
-
     /// Ask only for the battery. Cheap enough to run while the charging state
     /// is on screen, where a reading minutes old is worse than none.
     pub fn poll_battery(&self) -> Result<(), WatchError> {
@@ -404,7 +433,12 @@ impl WatchService {
     }
 
     pub fn on_disconnected(&self) {
-        self.inner.lock().unwrap().reassembler.reset();
+        {
+            let mut inner = self.inner.lock().unwrap();
+            inner.reassembler.reset();
+            // Discarded, not dispatched: there is no link left to send on.
+            inner.client.handle(Event::Disconnected);
+        }
         self.transport.changed();
     }
 
@@ -654,6 +688,26 @@ impl WatchService {
         self.dispatch(actions)
     }
 
+    /// Set the watch's clock from the phone's. The caller supplies the time and
+    /// the zone: the watch's clock is the phone's clock, and only the phone has
+    /// a time zone database to read the offsets out of.
+    pub fn set_time(
+        &self,
+        at_ms: i64,
+        gmt_offset_seconds: i32,
+        next_change: Option<DstChange>,
+    ) -> Result<(), WatchError> {
+        let actions = self.inner.lock().unwrap().client.set_time(
+            UnixMillis(at_ms).to_seconds(),
+            gmt_offset_seconds,
+            next_change.map(|change| wpp::client::DstChange {
+                at: UnixMillis(change.at_ms).to_seconds(),
+                gmt_offset: change.gmt_offset_seconds,
+            }),
+        );
+        self.dispatch(actions)
+    }
+
     /// Read the quick-launch menu and wear position from the watch.
     pub fn request_device_config(&self) -> Result<(), WatchError> {
         let actions = self.inner.lock().unwrap().client.request_device_config();
@@ -738,6 +792,86 @@ impl WatchService {
         drop(store);
         self.transport.changed();
         Ok(())
+    }
+
+    /// Everything one night's screen draws, in a single call.
+    ///
+    /// The window wants to start in the evening rather than at the sleep it is
+    /// looking for: the detection takes its levels from what it is given, so a
+    /// window holding only sleep has nothing to compare the sleep against.
+    pub fn night(&self, from_ms: i64, to_ms: i64) -> Result<Night, WatchError> {
+        let store = self.store.lock().unwrap();
+        let hr: Vec<Point> = store
+            .series(self.device_id, 1, from_ms, to_ms, NIGHT_POINTS)?
+            .into_iter()
+            .map(|(at, value, source)| Point {
+                at_ms: at,
+                value: value as f64,
+                origin: origin_of(source),
+            })
+            .collect();
+        let rmssd: Vec<Point> = store
+            .series(self.device_id, 4, from_ms, to_ms, NIGHT_POINTS)?
+            .into_iter()
+            .map(|(at, value, source)| Point {
+                at_ms: at,
+                value: value as f64,
+                origin: origin_of(source),
+            })
+            .collect();
+
+        let asleep = sleep::detect(
+            &hr.iter()
+                .map(|p| (p.at_ms, p.value))
+                .collect::<Vec<(i64, f64)>>(),
+            from_ms + (to_ms - from_ms) / 2,
+        );
+
+        // Only the samples inside the detected sleep: the daytime ones sit far
+        // below and would drag a whole-window median off any night it summarised.
+        let mut nightly: Vec<f64> = rmssd
+            .iter()
+            .filter(|p| {
+                asleep
+                    .map(|s| p.at_ms >= s.from_ms && p.at_ms <= s.to_ms)
+                    .unwrap_or(false)
+            })
+            .map(|p| p.value)
+            .collect();
+        nightly.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let charging = store
+            .charge_periods(self.device_id, from_ms, to_ms)?
+            .into_iter()
+            .flat_map(|(start, end)| {
+                [Some(start), end]
+                    .into_iter()
+                    .flatten()
+                    .zip([SetEdge::Start, SetEdge::End])
+                    .map(|(at_ms, edge)| Marker { at_ms, edge })
+                    .collect::<Vec<Marker>>()
+            })
+            .collect();
+
+        Ok(Night {
+            asleep_from_ms: asleep.map(|s| s.from_ms),
+            asleep_to_ms: asleep.map(|s| s.to_ms),
+            median_rmssd: nightly.get(nightly.len() / 2).copied(),
+            lowest_hr: hr
+                .iter()
+                .filter(|p| {
+                    asleep
+                        .map(|s| p.at_ms >= s.from_ms && p.at_ms <= s.to_ms)
+                        .unwrap_or(false)
+                })
+                .map(|p| p.value)
+                .fold(None, |low: Option<f64>, v| {
+                    Some(low.map_or(v, |l| l.min(v)))
+                }),
+            hr,
+            rmssd,
+            charging,
+        })
     }
 
     /// Charging periods over a window, as the same start/end markers a chart

@@ -12,11 +12,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.ZoneId
+import uniffi.wpp_ffi.DstChange
 import uniffi.wpp_ffi.EcgRecording
 import uniffi.wpp_ffi.EcgSummary
 import uniffi.wpp_ffi.HrPoint
 import uniffi.wpp_ffi.Marker
 import uniffi.wpp_ffi.Metric
+import uniffi.wpp_ffi.Night
 import uniffi.wpp_ffi.Snapshot
 import uniffi.wpp_ffi.Activity
 import uniffi.wpp_ffi.HealthFeature
@@ -79,6 +83,15 @@ class WatchViewModel : ViewModel() {
     /// The finished workout being looked at, if one was picked from the list.
     private val _selectedWorkout = MutableStateFlow<WorkoutSummary?>(null)
     val selectedWorkout: StateFlow<WorkoutSummary?> = _selectedWorkout.asStateFlow()
+
+    private val _night = MutableStateFlow<Night?>(null)
+    val night: StateFlow<Night?> = _night.asStateFlow()
+
+    /// How many nights back the sleep screen is looking; 0 is last night.
+    private val _nightsAgo = MutableStateFlow(0)
+
+    private val _nightWindow = MutableStateFlow<LongRange?>(null)
+    val nightWindow: StateFlow<LongRange?> = _nightWindow.asStateFlow()
 
     /// How wide the view was when it was last set by hand. Returning to the
     /// live edge keeps this rather than snapping back to the whole workout.
@@ -192,6 +205,37 @@ class WatchViewModel : ViewModel() {
         refresh()
     }
 
+    /// The window a night is looked for in: evening through to late morning.
+    ///
+    /// It reaches well past both ends of any sleep because the detection takes
+    /// its levels from what it is given — a window holding only sleep has
+    /// nothing to measure the sleep against.
+    private fun nightRange(): LongRange {
+        val midnight = todayStartMs() - _nightsAgo.value * 86_400_000L
+        return (midnight - 6 * 3600_000L)..(midnight + 12 * 3600_000L)
+    }
+
+    fun showNight() {
+        val service = WatchRepository.get() ?: return
+        val range = nightRange()
+        _nightWindow.value = range
+        viewModelScope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                runCatching { service.night(range.first, range.last) }.getOrNull()
+            }
+            _night.value = loaded
+        }
+    }
+
+    fun shiftNight(by: Int) {
+        _nightsAgo.value = (_nightsAgo.value + by).coerceAtLeast(0)
+        showNight()
+    }
+
+    fun nightZoom(range: LongRange) {
+        _nightWindow.value = range
+    }
+
     fun metricZoom(range: LongRange) {
         _metricWindow.value = range
         refresh()
@@ -296,6 +340,20 @@ class WatchViewModel : ViewModel() {
     fun setWearPosition(position: WearPosition) {
         val service = WatchRepository.get() ?: return
         viewModelScope.launch(Dispatchers.IO) { runCatching { service.setWearPosition(position) } }
+    }
+
+    fun setWatchTime() {
+        val service = WatchRepository.get() ?: return
+        val now = Instant.now()
+        val rules = ZoneId.systemDefault().rules
+        val next = rules.nextTransition(now)?.let {
+            DstChange(it.instant.toEpochMilli(), it.offsetAfter.totalSeconds)
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                service.setTime(now.toEpochMilli(), rules.getOffset(now).totalSeconds, next)
+            }
+        }
     }
 
     fun setActivities(ids: List<UInt>) {

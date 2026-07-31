@@ -193,6 +193,15 @@ impl SignalCollector {
         SignalCollector::default()
     }
 
+    /// Drop a transfer that will never finish.
+    ///
+    /// A signal arrives across many frames; if the link dies partway the bytes
+    /// held here belong to nothing, and the next transfer would append to them.
+    pub fn reset(&mut self) {
+        self.pending = Pending::default();
+        self.live_ecg.clear();
+    }
+
     pub fn observe(&mut self, object: &WppObject) {
         match object {
             WppObject::StoredSignalMeta(meta) => {

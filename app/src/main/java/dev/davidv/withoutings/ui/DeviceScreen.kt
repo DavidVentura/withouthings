@@ -37,6 +37,8 @@ fun DeviceSettings(
     onActivities: (List<UInt>) -> Unit,
     onFeature: (UShort, Boolean) -> Unit,
     onReload: () -> Unit,
+    onReconnect: () -> Unit,
+    onSetTime: () -> Unit,
 ) {
     // Edited locally, sent as one list: the watch takes the whole menu.
     var menu by remember { mutableStateOf(activities) }
@@ -47,7 +49,22 @@ fun DeviceSettings(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Button(onClick = { edited = false; onReload() }) { Text("Reload from watch") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { edited = false; onReload() }) { Text("Reload from watch") }
+            Button(onClick = onReconnect) { Text("Force reconnect") }
+        }
+        Text(
+            "The link is held by a background service, so closing the app does " +
+                "not restart it. This does.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+
+        Button(onClick = onSetTime) { Text("Set watch time") }
+        Text(
+            "Sets the watch's clock to this phone's, with its time zone and the " +
+                "next daylight-saving change.",
+            style = MaterialTheme.typography.bodySmall,
+        )
 
         Text("Worn on", style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

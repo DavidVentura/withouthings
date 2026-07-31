@@ -38,6 +38,8 @@ fun WatchSettingsScreen(
     onActivities: (List<UInt>) -> Unit,
     onFeature: (UShort, Boolean) -> Unit,
     onReloadDevice: () -> Unit,
+    onReconnect: () -> Unit,
+    onSetTime: () -> Unit,
     onReloadScreens: () -> Unit,
     onApplyScreens: (ByteArray) -> Unit,
     onBack: () -> Unit,
@@ -75,6 +77,8 @@ fun WatchSettingsScreen(
                         onActivities = onActivities,
                         onFeature = onFeature,
                         onReload = onReloadDevice,
+                        onReconnect = onReconnect,
+                        onSetTime = onSetTime,
                     )
 
                     else -> ScreenOrderSettings(

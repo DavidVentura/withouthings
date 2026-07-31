@@ -3,6 +3,7 @@ package dev.davidv.withoutings.ble
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
+import android.app.PendingIntent
 import android.app.NotificationManager
 import android.app.Service
 import android.bluetooth.BluetoothAdapter
@@ -12,6 +13,7 @@ import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
@@ -42,6 +44,15 @@ class WatchConnectionService : Service() {
     private var service: WatchService? = null
     private val pending = ArrayDeque<ByteArray>()
     private var writeInFlight = false
+    /// Per-connection traffic, so a teardown can say whether anything was ever
+    /// actually exchanged. "Connected but silent" and "never managed to speak"
+    /// look identical from outside and have completely different causes.
+    private var framesOut = 0
+    private var framesIn = 0
+    private var writeStuckSince = 0L
+    private var connectedAt = 0L
+    /// Consecutive failed attempts, cleared once a link carries real traffic.
+    private var retries = 0
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var scanning = false
     private var lastProgress: Progress? = null
@@ -63,6 +74,12 @@ class WatchConnectionService : Service() {
             Log.e(TAG, "no watch configured")
             stopSelf()
             return START_NOT_STICKY
+        }
+
+        if (intent?.action == ACTION_RECONNECT) {
+            Log.i(TAG, "reconnect asked for by hand ${transportState()}")
+            retryLater("asked to reconnect", Retry.Now)
+            return START_STICKY
         }
 
         if (service == null) {
@@ -125,6 +142,9 @@ class WatchConnectionService : Service() {
             WatchRepository.setLink(LinkState.Connecting)
             gatt?.close()
             gatt = bonded.connectGatt(this, false, callback, BluetoothDevice.TRANSPORT_LE)
+            framesOut = 0
+            framesIn = 0
+            connectedAt = System.currentTimeMillis()
             armLinkWatchdog()
             return
         }
@@ -243,21 +263,58 @@ class WatchConnectionService : Service() {
         }
     }
 
+    /// Whether a retry waits out the backoff or goes now. Asking by hand is
+    /// evidence that something changed, which the backoff cannot know.
+    private enum class Retry { Backoff, Now }
+
+    private val retry = Runnable {
+        val mac = Settings(this).mac
+        if (mac == null) {
+            Log.e(TAG, "no watch configured")
+            return@Runnable
+        }
+        val adapter = (getSystemService(Context.BLUETOOTH_SERVICE)
+            as android.bluetooth.BluetoothManager).adapter
+        connect(adapter, mac)
+    }
+
+    /**
+     * Tear the link down and try again later.
+     *
+     * Reachable from six places, several of which can fire for the same
+     * failure, so the retry is a named callback that replaces any already
+     * scheduled. As a lambda it could not be cancelled, and each caller added
+     * another connection attempt to the same moment.
+     *
+     * The delay grows while attempts keep failing: a watch that is off or out
+     * of range is not coming back within ten seconds, and each attempt is radio
+     * work. It resets as soon as a link actually carries traffic.
+     */
     @SuppressLint("MissingPermission")
-    private fun retryLater(reason: String) {
-        Log.w(TAG, "reconnecting: $reason")
+    private fun retryLater(reason: String, pace: Retry = Retry.Backoff) {
+        val backoff = when (pace) {
+            Retry.Now -> {
+                retries = 0
+                0L
+            }
+            Retry.Backoff -> {
+                val wait = (RETRY_MS shl retries.coerceAtMost(RETRY_SHIFTS))
+                    .coerceAtMost(RETRY_MAX_MS)
+                retries++
+                wait
+            }
+        }
+        Log.w(TAG, "reconnecting in ${backoff / 1000}s: $reason ${transportState()}")
         handler.removeCallbacks(linkWatchdog)
         handler.removeCallbacks(tick)
+        handler.removeCallbacks(retry)
         stopScan()
         gatt?.close()
         gatt = null
-        handler.postDelayed({
-            val settings = Settings(this)
-            val mac = settings.mac ?: return@postDelayed
-            val adapter = (getSystemService(Context.BLUETOOTH_SERVICE)
-                as android.bluetooth.BluetoothManager).adapter
-            connect(adapter, mac)
-        }, RETRY_MS)
+        discardTransport()
+        runCatching { service?.onDisconnected() }
+            .onFailure { Log.e(TAG, "onDisconnected", it) }
+        handler.postDelayed(retry, backoff)
     }
 
     private val callback = object : BluetoothGattCallback() {
@@ -326,6 +383,8 @@ class WatchConnectionService : Service() {
             value: ByteArray,
         ) {
             runCatching {
+                framesIn++
+                retries = 0
                 service?.onBytes(value, System.currentTimeMillis())
                 val progress = service?.snapshot()?.progress
                 if (progress != lastProgress) {
@@ -340,8 +399,14 @@ class WatchConnectionService : Service() {
         }
 
         override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
+            // A callback from a connection already replaced would clear the
+            // flag belonging to the current one, letting two writes overlap.
+            if (g !== gatt) return
             if (status != BluetoothGatt.GATT_SUCCESS) Log.w(TAG, "write failed status=$status")
-            writeInFlight = false
+            synchronized(pending) {
+                writeInFlight = false
+                writeStuckSince = 0L
+            }
             drain()
         }
     }
@@ -386,10 +451,54 @@ class WatchConnectionService : Service() {
         val g = gatt ?: return
         val c = channel ?: return
         val next = synchronized(pending) {
-            if (writeInFlight || pending.isEmpty()) null else pending.removeFirst()
+            if (writeInFlight || pending.isEmpty()) return@synchronized null
+            writeInFlight = true
+            writeStuckSince = System.currentTimeMillis()
+            pending.removeFirst()
         } ?: return
-        writeInFlight = true
-        g.writeCharacteristic(c, next, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+        // A write that never reaches the stack never calls back, so nothing
+        // else would clear the flag and every later frame would queue behind it
+        // forever. It can fail either way: a status when the stack is up and
+        // says no, an exception when the stack has gone away underneath.
+        val status = runCatching {
+            g.writeCharacteristic(c, next, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+        }.getOrElse { failure ->
+            Log.w(TAG, "write threw", failure)
+            BluetoothStatusCodes.ERROR_UNKNOWN
+        }
+        if (status != BluetoothStatusCodes.SUCCESS) {
+            Log.w(TAG, "write refused status=$status")
+            synchronized(pending) { writeInFlight = false }
+        } else {
+            framesOut++
+        }
+    }
+
+    /**
+     * A write only completes on the connection that issued it.
+     *
+     * Keeping the flag across a teardown wedges every later connection: the
+     * callback that would clear it cannot arrive, so nothing is ever written
+     * again and the watch has nothing to answer. The queued frames go too —
+     * they belong to a session that no longer exists.
+     */
+    /// Everything needed to tell a wedge from a quiet watch, in one line.
+    private fun transportState(): String {
+        val queued = synchronized(pending) { pending.size }
+        val stuck = if (writeStuckSince == 0L) 0 else
+            (System.currentTimeMillis() - writeStuckSince) / 1000
+        val alive = if (connectedAt == 0L) 0 else
+            (System.currentTimeMillis() - connectedAt) / 1000
+        return "[out=$framesOut in=$framesIn queued=$queued inFlight=${writeInFlight}" +
+            (if (stuck > 0) " stuckFor=${stuck}s" else "") + " linkAge=${alive}s]"
+    }
+
+    private fun discardTransport() {
+        synchronized(pending) {
+            pending.clear()
+            writeInFlight = false
+            writeStuckSince = 0L
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -398,6 +507,7 @@ class WatchConnectionService : Service() {
         stopScan()
         gatt?.close()
         gatt = null
+        discardTransport()
         super.onDestroy()
     }
 
@@ -421,11 +531,14 @@ class WatchConnectionService : Service() {
     }
 
     companion object {
+        private const val ACTION_RECONNECT = "dev.davidv.withoutings.RECONNECT"
         private const val TAG = "WatchLink"
         private const val CHANNEL_ID = "watch-link"
         private const val NOTIFICATION_ID = 1
         private const val MTU = 512
         private const val RETRY_MS = 10_000L
+        private const val RETRY_MAX_MS = 300_000L
+        private const val RETRY_SHIFTS = 5
         private const val LINK_TIMEOUT_MS = 25_000L
         private const val TICK_MS = 30_000L
         private const val DEVICE_NAME_PREFIX = "ScanWatch"
@@ -442,6 +555,19 @@ class WatchConnectionService : Service() {
 
         fun stop(context: Context) {
             context.stopService(Intent(context, WatchConnectionService::class.java))
+        }
+
+        /**
+         * Drop the link and build a new one, now.
+         *
+         * The service outlives the activity, so closing the app leaves a stuck
+         * link exactly as stuck. Short of force-stopping the process from
+         * Android's own settings there was no way back from one.
+         */
+        fun reconnect(context: Context) {
+            context.startForegroundService(
+                Intent(context, WatchConnectionService::class.java).setAction(ACTION_RECONNECT)
+            )
         }
     }
 }

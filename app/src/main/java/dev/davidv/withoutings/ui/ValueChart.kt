@@ -40,6 +40,26 @@ import uniffi.wpp_ffi.SetEdge
 /** A value at a time, whatever the series. */
 data class ChartPoint(val atMs: Long, val value: Double)
 
+/** A stretch of time shaded behind the trace. A null end runs to the edge. */
+data class Band(val fromMs: Long, val toMs: Long?, val color: Color)
+
+/** Start/end markers as bands. An unclosed start runs to the edge of the view. */
+fun List<Marker>.bands(color: Color): List<Band> {
+    val out = mutableListOf<Band>()
+    var open: Long? = null
+    for (marker in sortedBy { it.atMs }) {
+        when (marker.edge) {
+            SetEdge.START -> open = marker.atMs
+            SetEdge.END -> open?.let {
+                out.add(Band(it, marker.atMs, color))
+                open = null
+            }
+        }
+    }
+    open?.let { out.add(Band(it, null, color)) }
+    return out
+}
+
 /**
  * How the background is ruled.
  *
@@ -78,8 +98,6 @@ private fun timeLabel(at: Long, spanMs: Long, todayStart: Long): String = when {
 }
 
 /**
- * Heart rate over a window, with set intervals shaded behind it.
- *
  * Pinch to zoom, drag to pan; both move the window handed to Rust rather than
  * scaling a bitmap, so zooming in fetches finer data instead of magnifying what
  * was already reduced.
@@ -87,7 +105,7 @@ private fun timeLabel(at: Long, spanMs: Long, todayStart: Long): String = when {
 @Composable
 fun ValueChart(
     points: List<ChartPoint>,
-    markers: List<Marker>,
+    bands: List<Band>,
     window: LongRange,
     onWindowChange: (LongRange) -> Unit,
     /// Fixed vertical range for the series, in its own units. A scale that
@@ -105,7 +123,6 @@ fun ValueChart(
     gridColor: Color = Color(0x22000000),
     axisColor: Color = Color(0x66000000),
     labelColor: Color = Color(0x99000000),
-    setColor: Color = Color(0x22448AFF),
 ) {
     val measurer = rememberTextMeasurer()
     // Read inside the gesture without keying the handler on it: keying on the
@@ -186,26 +203,13 @@ fun ValueChart(
             fun y(value: Double) =
                 plotHeight - ((value - lo) / (hi - lo)).toFloat() * plotHeight
 
-            var open: Long? = null
-            for (marker in markers.sortedBy { it.atMs }) {
-                when (marker.edge) {
-                    SetEdge.START -> open = marker.atMs
-                    SetEdge.END -> {
-                        val from = open ?: continue
-                        drawRect(
-                            setColor,
-                            Offset(x(from), 0f),
-                            Size((x(marker.atMs) - x(from)).coerceAtLeast(1f), plotHeight),
-                        )
-                        open = null
-                    }
-                }
-            }
-            open?.let {
+            for (band in bands) {
+                val from = x(band.fromMs)
+                val to = band.toMs?.let { x(it) } ?: size.width
                 drawRect(
-                    setColor,
-                    Offset(x(it), 0f),
-                    Size((size.width - x(it)).coerceAtLeast(1f), plotHeight),
+                    band.color,
+                    Offset(from, 0f),
+                    Size((to - from).coerceAtLeast(1f), plotHeight),
                 )
             }
 

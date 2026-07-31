@@ -98,7 +98,7 @@ fun EcgDetailScreen(
                 points = lead.millivolts.mapIndexed { index, mv ->
                     ChartPoint(recording.measuredAtMs + (index * step).toLong(), mv - baseline)
                 },
-                markers = emptyList(),
+                bands = emptyList(),
                 window = window,
                 onWindowChange = onWindowChange,
                 axis = -1.0..1.0,
@@ -110,7 +110,6 @@ fun EcgDetailScreen(
                 gridColor = MaterialTheme.colorScheme.outlineVariant,
                 axisColor = MaterialTheme.colorScheme.outline,
                 labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                setColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
             )
         }
     }
@@ -153,7 +152,7 @@ fun LiveEcgScreen(
             points = millivolts.mapIndexed { index, mv ->
                 ChartPoint((index * step).toLong(), mv - baseline)
             },
-            markers = emptyList(),
+            bands = emptyList(),
             window = shown,
             onWindowChange = onWindowChange,
             axis = -1.0..1.0,
@@ -165,7 +164,6 @@ fun LiveEcgScreen(
             gridColor = MaterialTheme.colorScheme.outlineVariant,
             axisColor = MaterialTheme.colorScheme.outline,
             labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            setColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
         )
         if (recording) {
             Text(

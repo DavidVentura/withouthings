@@ -31,6 +31,7 @@ import dev.davidv.withoutings.ui.LiveEcgScreen
 import dev.davidv.withoutings.ui.MetricScreen
 import dev.davidv.withoutings.ui.MetricStyle
 import dev.davidv.withoutings.ui.SetupScreen
+import dev.davidv.withoutings.ui.SleepScreen
 import dev.davidv.withoutings.ui.WatchSettingsScreen
 import dev.davidv.withoutings.ui.WatchViewModel
 import dev.davidv.withoutings.ui.WorkoutScreen
@@ -45,6 +46,7 @@ private object Routes {
     const val WORKOUT = "workout"
     const val WORKOUTS = "workouts"
     const val ECGS = "ecgs"
+    const val SLEEP = "sleep"
     const val ECG = "ecg"
     const val LIVE_ECG = "live-ecg"
     const val SETTINGS = "settings"
@@ -111,6 +113,7 @@ private fun App(model: WatchViewModel = viewModel()) {
 
 @Composable
 private fun Navigation(model: WatchViewModel, nav: NavHostController) {
+    val context = LocalContext.current
     val state by model.state.collectAsState()
     val window by model.window.collectAsState()
     val startedAt by model.stopwatchStartedAt.collectAsState()
@@ -120,6 +123,8 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
     val ecg by model.ecg.collectAsState()
     val ecgWindow by model.ecgWindow.collectAsState()
     val liveWindow by model.liveWindow.collectAsState()
+    val night by model.night.collectAsState()
+    val nightWindow by model.nightWindow.collectAsState()
 
     // A workout is a place you go, not a state the home screen turns into:
     // taking over the start destination left nowhere for Back to go.
@@ -148,6 +153,10 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
                 state = state,
                 onOpenWorkouts = { nav.navigate(Routes.WORKOUTS) },
                 onOpenEcgs = { nav.navigate(Routes.ECGS) },
+                onOpenSleep = {
+                    model.showNight()
+                    nav.navigate(Routes.SLEEP)
+                },
                 onOpenMetric = { nav.navigate(Routes.metric(it)) },
                 onOpenSettings = {
                     model.requestDeviceConfig()
@@ -212,6 +221,16 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
             )
         }
 
+        composable(Routes.SLEEP) {
+            SleepScreen(
+                night = night,
+                window = nightWindow ?: 0L..1L,
+                onWindowChange = { model.nightZoom(it) },
+                onShift = { model.shiftNight(it) },
+                onBack = { nav.popBackStack() },
+            )
+        }
+
         composable(Routes.ECGS) {
             EcgListScreen(
                 recordings = state.ecgs,
@@ -242,6 +261,8 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
                 onActivities = { model.setActivities(it) },
                 onFeature = { id, on -> model.setFeature(id, on) },
                 onReloadDevice = { model.requestDeviceConfig() },
+                onReconnect = { WatchConnectionService.reconnect(context) },
+                onSetTime = { model.setWatchTime() },
                 onReloadScreens = { model.requestScreens() },
                 onApplyScreens = { model.applyScreens(it) },
                 onBack = { nav.popBackStack() },

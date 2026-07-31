@@ -11,9 +11,8 @@
 use crate::frame::Channel;
 use crate::objects::{
     AppProbe, AppProbeOsVersion, FeatureTagsDeprecated, Id, InfoType, MeasureCategory,
-    MeasureLiveAppStatus, Null, ProbeChallenge, ProbeChallengeResponse, SleepActivityGet,
-    StoredSignalMeta, TrackerWearPos, VasistasType, WamScreensList, WamVasistasGet,
-    WorkoutScreenList,
+    MeasureLiveAppStatus, Null, ProbeChallenge, ProbeChallengeResponse, StoredSignalMeta, TimeSet,
+    TrackerWearPos, VasistasType, WamScreensList, WamVasistasGet, WorkoutScreenList,
 };
 use crate::signal::{Signal, SignalCollector};
 use crate::units::{UnixMillis, UnixTime};
@@ -68,6 +67,14 @@ impl Credentials {
     }
 }
 
+/// The next change of local offset from UTC. The watch is told about it so its
+/// clock follows a daylight-saving change with nothing connected to it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DstChange {
+    pub at: UnixTime,
+    pub gmt_offset: i32,
+}
+
 /// Which historical series to walk. The watch keeps them separately and each
 /// needs its own watermark.
 ///
@@ -85,6 +92,9 @@ impl Category {
 pub enum Event {
     /// The link is up and notifications are subscribed.
     Connected,
+    /// The link is gone. Everything scoped to it has to be let go here, or it
+    /// outlives the connection it described and poisons the next one.
+    Disconnected,
     /// A decoded frame and when the host received it. Live pushes carry no
     /// timestamp of their own, so this is the only time they get.
     Frame {
@@ -401,6 +411,7 @@ impl Client {
     pub fn handle(&mut self, event: Event) -> Vec<Action> {
         let actions = match event {
             Event::Connected => self.on_connected(),
+            Event::Disconnected => self.on_disconnected(),
             Event::Frame { frame, received_at } => self.on_frame(frame, received_at),
             Event::Stored { token } => self.on_stored(token),
             Event::Tick { now } => self.on_tick(now),
@@ -420,12 +431,30 @@ impl Client {
 
     fn on_tick(&mut self, now: UnixMillis) -> Vec<Action> {
         self.now = Some(now);
-        let (Some(heard), Some(spoke)) = (self.last_heard, self.last_spoke) else {
+        let Some(heard) = self.last_heard else {
             return Vec::new();
         };
-        // Measured from the request, not the last reply: the wait only starts
-        // when something was actually asked for.
-        if spoke > heard && now.0 - spoke.0 > SILENCE_TIMEOUT_MS {
+        // Silence only means something while the watch owes an answer. Idle at
+        // Phase::Finished it says nothing for minutes by design, and treating
+        // that as a dead link would reconnect all day.
+        //
+        // A handshake or a walk in progress owes one continuously: every reply
+        // is followed by another until the stream ends. That is why the wait is
+        // measured from the last thing heard rather than from the request —
+        // measuring from the request meant a walk that died after its first few
+        // frames left `heard` ahead of `spoke`, which read as a healthy link
+        // forever.
+        let awaiting_reply = matches!(
+            self.phase,
+            Phase::Probing | Phase::Authenticating | Phase::Syncing
+        ) || self.last_spoke.is_some_and(|spoke| spoke > heard);
+        // From whichever came last. Timing from the request alone forgives a
+        // walk that answered and then died; timing from the reply alone starts
+        // the clock before the request that is being waited on was even sent.
+        let quiet_since =
+            self.last_spoke
+                .map_or(heard, |spoke| if spoke.0 > heard.0 { spoke } else { heard });
+        if awaiting_reply && now.0 - quiet_since.0 > SILENCE_TIMEOUT_MS {
             // Reconnecting re-runs the handshake, so the walk starts over from
             // its watermarks rather than waiting on a reply that never came.
             return vec![Action::Reconnect];
@@ -433,11 +462,37 @@ impl Client {
         Vec::new()
     }
 
-    fn on_connected(&mut self) -> Vec<Action> {
-        self.phase = Phase::Probing;
+    /// Let go of everything that belonged to the link that just died.
+    ///
+    /// One place, so that state added later cannot quietly forget to be reset:
+    /// both wedges found so far were per-connection state that outlived its
+    /// connection because each new field had to opt in individually.
+    fn on_disconnected(&mut self) -> Vec<Action> {
+        self.phase = Phase::Idle;
         self.busy_retries = 0;
-        self.last_heard = self.now;
+        self.last_heard = None;
         self.last_spoke = None;
+        // A recording ends only with a stop from the watch, which cannot arrive
+        // for a link that no longer exists. Left set, it refuses every request
+        // this client is ever asked to make again.
+        self.measuring = None;
+        // Whatever stream was in flight was never answered. Putting it back
+        // keeps the pass complete; dropping it left one stream unread until
+        // some later pass happened to pick it up.
+        if let Some(interrupted) = self.current.take() {
+            self.queue.push(interrupted);
+        }
+        self.batch_high_water = None;
+        self.walk_started_from = None;
+        self.signals.reset();
+        Vec::new()
+    }
+
+    fn on_connected(&mut self) -> Vec<Action> {
+        // A link can come up without the old one reporting that it went down.
+        self.on_disconnected();
+        self.phase = Phase::Probing;
+        self.last_heard = self.now;
         vec![Action::Send(Frame::new(
             Command::CMD_PROBE,
             vec![
@@ -951,6 +1006,33 @@ impl Client {
         ]
     }
 
+    /// Set the watch's clock. `now` is UTC; `gmt_offset` is what the watch adds
+    /// to it to display local time.
+    ///
+    /// The watch answers with `TimeSetReply.drift`, the seconds it was out by.
+    pub fn set_time(
+        &self,
+        now: UnixTime,
+        gmt_offset: i32,
+        next_change: Option<DstChange>,
+    ) -> Vec<Action> {
+        // A zone with no transition ahead of it still fills both fields: a
+        // change to the offset it already has is a change to nothing.
+        let change = next_change.unwrap_or(DstChange {
+            at: UnixTime(0),
+            gmt_offset,
+        });
+        vec![Action::Send(Frame::new(
+            Command::CMD_TIME_SET,
+            vec![WppObject::TimeSet(TimeSet {
+                utc: now.0 as u32,
+                gmt_offset,
+                dst_change_time: change.at.0 as u32,
+                next_gmt_offset: change.gmt_offset,
+            })],
+        ))]
+    }
+
     /// Replace the set of enabled health features.
     ///
     /// The watch has no read side for this, and the message carries the whole
@@ -990,27 +1072,6 @@ impl Client {
             }
         }
         let actions = self.force_refresh();
-        self.noted(actions)
-    }
-
-    /// Ask the watch what it made of the nights since `from`.
-    ///
-    /// Sleep staging happens on the watch: each history record is tagged awake
-    /// or asleep, and this returns its own summary of each night rather than
-    /// anything reconstructed here.
-    pub fn request_sleep(&mut self, from: UnixTime) -> Vec<Action> {
-        if matches!(
-            self.phase,
-            Phase::Idle | Phase::Probing | Phase::Authenticating
-        ) {
-            return Vec::new();
-        }
-        let actions = vec![Action::Send(Frame::new(
-            Command::CMD_SLEEP_ACTIVITY_GET,
-            vec![WppObject::SleepActivityGet(SleepActivityGet {
-                from_utc: from.0 as i32,
-            })],
-        ))];
         self.noted(actions)
     }
 
@@ -1650,6 +1711,53 @@ mod tests {
         );
     }
 
+    /// The values are the ones the official app sent in the capture, which the
+    /// watch answered with a drift of one second.
+    #[test]
+    fn setting_the_clock_carries_the_offset_and_the_next_change() {
+        let client = authenticated();
+        let actions = client.set_time(
+            UnixTime(1784997934),
+            7200,
+            Some(DstChange {
+                at: UnixTime(1792890000),
+                gmt_offset: 3600,
+            }),
+        );
+        let Action::Send(frame) = &actions[0] else {
+            panic!("expected a send, got {actions:?}")
+        };
+        assert_eq!(frame.command, Command::CMD_TIME_SET);
+        assert_eq!(
+            frame.objects,
+            vec![WppObject::TimeSet(TimeSet {
+                utc: 1784997934,
+                gmt_offset: 7200,
+                dst_change_time: 1792890000,
+                next_gmt_offset: 3600,
+            })]
+        );
+    }
+
+    /// Somewhere that never changes offset still has to fill both fields.
+    #[test]
+    fn a_zone_with_no_transition_ahead_announces_the_offset_it_has() {
+        let client = authenticated();
+        let actions = client.set_time(UnixTime(1784997934), -18000, None);
+        let Action::Send(frame) = &actions[0] else {
+            panic!("expected a send, got {actions:?}")
+        };
+        assert_eq!(
+            frame.objects,
+            vec![WppObject::TimeSet(TimeSet {
+                utc: 1784997934,
+                gmt_offset: -18000,
+                dst_change_time: 0,
+                next_gmt_offset: -18000,
+            })]
+        );
+    }
+
     /// The list is fixed-length and zero-padded; a short write drops screens.
     #[test]
     fn a_screen_list_is_padded_and_empty_slots_are_not_screens() {
@@ -1888,6 +1996,103 @@ mod tests {
     }
 
     /// The watch streams the waveform only while something says it is being
+    /// A walk that dies partway leaves the last thing heard ahead of the last
+    /// thing asked, which read as a healthy link and stalled the sync for good.
+    #[test]
+    fn a_walk_that_stops_replying_is_noticed() {
+        let mut client = authenticated();
+        assert_eq!(client.phase(), Phase::Syncing);
+
+        // The watch answers the walk request, then goes quiet mid-stream.
+        client.handle(Event::Frame {
+            received_at: UnixMillis(1_000_000),
+            frame: Frame::new(Command::CMD_VASISTAS_GET, Vec::new()),
+        });
+
+        let tick = |ms: i64| Event::Tick {
+            now: UnixMillis(ms),
+        };
+        assert!(
+            client
+                .handle(tick(1_000_000 + SILENCE_TIMEOUT_MS - 1))
+                .is_empty(),
+            "still within its time to answer"
+        );
+        assert_eq!(
+            client.handle(tick(1_000_000 + SILENCE_TIMEOUT_MS + 1)),
+            vec![Action::Reconnect],
+            "a stalled walk has to be given up on"
+        );
+    }
+
+    /// State scoped to a link must not outlive it. Both wedges found so far
+    /// were exactly this, so the reset is asserted field by field.
+    #[test]
+    fn a_disconnect_lets_go_of_everything_the_link_owned() {
+        use crate::objects::MeasureCategory;
+        let mut client = authenticated();
+        client.handle(frame(
+            Command::CMD_MEASURE_START,
+            vec![WppObject::MeasureCategory(MeasureCategory { value: 1 })],
+        ));
+        assert_eq!(client.measuring(), Some(1));
+        assert!(client.current().is_some(), "mid-walk when the link dies");
+        let queued = client.watermarks().len();
+
+        assert!(
+            client.handle(Event::Disconnected).is_empty(),
+            "nothing can be sent into a link that is gone"
+        );
+
+        assert_eq!(client.measuring(), None);
+        assert_eq!(client.phase(), Phase::Idle);
+        assert!(client.current().is_none());
+        assert_eq!(
+            client.watermarks().len(),
+            queued,
+            "the interrupted stream is kept, not dropped"
+        );
+    }
+
+    /// A measurement interrupted by the link dropping must not disable the
+    /// client for the life of the process.
+    #[test]
+    fn a_reconnect_clears_a_measurement_that_never_stopped() {
+        use crate::objects::MeasureCategory;
+        let mut client = authenticated();
+        client.handle(frame(
+            Command::CMD_MEASURE_START,
+            vec![WppObject::MeasureCategory(MeasureCategory { value: 1 })],
+        ));
+        assert_eq!(client.measuring(), Some(1));
+
+        // The link dies here: no CMD_MEASURE_STOP will ever arrive for it.
+        client.handle(Event::Connected);
+        assert_eq!(client.measuring(), None, "a new link has no measurement");
+
+        // Once the new link has authenticated, the client must be usable
+        // again; before this fix every request was refused for good.
+        client.handle(Event::Frame {
+            received_at: UnixMillis(0),
+            frame: Frame::new(
+                Command::CMD_PROBE_CHALLENGE,
+                vec![WppObject::ProbeChallenge(ProbeChallenge {
+                    mac: "a4:7e:fa:44:d6:10".to_string(),
+                    challenge: vec![1; 16],
+                })],
+            ),
+        });
+        let resumed = client.handle(Event::Frame {
+            received_at: UnixMillis(0),
+            frame: Frame::new(Command::CMD_PROBE, Vec::new()),
+        });
+        assert!(
+            resumed.iter().any(|a| matches!(a, Action::Send(_))),
+            "the reconnected client must start asking for things again"
+        );
+        assert!(client.current().is_some(), "and be walking a stream");
+    }
+
     /// looked at. Without the reply it records in silence and the live trace
     /// is lost, since it is never stored at full rate.
     #[test]

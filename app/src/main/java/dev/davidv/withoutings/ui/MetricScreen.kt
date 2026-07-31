@@ -99,7 +99,7 @@ fun MetricScreen(
 
         ValueChart(
             points = points,
-            markers = markers,
+            bands = markers.bands(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
             window = window,
             onWindowChange = onWindowChange,
             axis = style.axis,
@@ -108,7 +108,6 @@ fun MetricScreen(
             gridColor = MaterialTheme.colorScheme.outlineVariant,
             axisColor = MaterialTheme.colorScheme.outline,
             labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            setColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
         )
     }
 }

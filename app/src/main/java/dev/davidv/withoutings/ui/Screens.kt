@@ -53,6 +53,15 @@ private val day = SimpleDateFormat("d MMM", Locale.getDefault())
 
 private const val STALE_ALPHA = 0.45f
 
+/// The battery has its own pill and HRV only means anything over a night, so
+/// neither earns a card here.
+private val GRID = listOf(
+    MetricStyle.HeartRate,
+    MetricStyle.Temperature,
+    MetricStyle.Respiratory,
+    MetricStyle.Steps,
+)
+
 /** Local midnight, for deciding whether a reading belongs to today. */
 internal fun todayStartMs(): Long = java.util.Calendar.getInstance().apply {
     set(java.util.Calendar.HOUR_OF_DAY, 0)
@@ -106,6 +115,7 @@ fun IdleScreen(
     state: UiState,
     onOpenWorkouts: () -> Unit,
     onOpenEcgs: () -> Unit,
+    onOpenSleep: () -> Unit,
     onOpenMetric: (MetricStyle) -> Unit,
     onOpenSettings: () -> Unit,
     onRefresh: () -> Unit,
@@ -161,7 +171,7 @@ fun IdleScreen(
                 val now = System.currentTimeMillis()
                 val steps = snapshot?.steps
 
-                MetricStyle.entries.filter { it != MetricStyle.Battery }.chunked(2).forEach { row ->
+                MetricStyle.entries.filter { it in GRID }.chunked(2).forEach { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         row.forEach { style ->
                             val reading = state.latest[style]
@@ -192,6 +202,7 @@ fun IdleScreen(
                     }
                 }
 
+                NavRow("Sleep", "last night", onOpenSleep)
                 NavRow("Workouts", workoutsDetail(state.workouts), onOpenWorkouts)
                 NavRow("ECG", ecgsDetail(state.ecgs), onOpenEcgs)
 
@@ -262,7 +273,7 @@ fun WorkoutScreen(
         Text("Heart rate", style = MaterialTheme.typography.labelSmall)
         ValueChart(
             points = state.hr.map { ChartPoint(it.atMs, it.bpm.toDouble()) },
-            markers = state.markers,
+            bands = state.markers.bands(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
             window = window,
             onWindowChange = onWindowChange,
             axis = 30.0..200.0,
@@ -273,14 +284,13 @@ fun WorkoutScreen(
             gridColor = MaterialTheme.colorScheme.outlineVariant,
             axisColor = MaterialTheme.colorScheme.outline,
             labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            setColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
         )
 
         // Same window as the trace above, so panning or zooming either moves both.
         Text("Temperature", style = MaterialTheme.typography.labelSmall)
         ValueChart(
             points = state.workoutTemp,
-            markers = state.markers,
+            bands = state.markers.bands(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)),
             window = window,
             onWindowChange = onWindowChange,
             axis = 36.0..38.5,
@@ -291,7 +301,6 @@ fun WorkoutScreen(
             gridColor = MaterialTheme.colorScheme.outlineVariant,
             axisColor = MaterialTheme.colorScheme.outline,
             labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            setColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f),
         )
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
