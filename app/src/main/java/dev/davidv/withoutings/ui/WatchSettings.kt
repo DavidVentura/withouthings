@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import uniffi.wpp_ffi.Activity
 import uniffi.wpp_ffi.HealthFeature
+import uniffi.wpp_ffi.NotificationConfig
 import uniffi.wpp_ffi.WatchScreen
 import uniffi.wpp_ffi.WearPosition
 
@@ -34,9 +35,14 @@ fun WatchSettingsScreen(
     activities: List<Activity>,
     features: List<HealthFeature>,
     screens: List<WatchScreen>,
+    notifications: NotificationConfig?,
+    testNotification: UInt?,
     onWearPosition: (WearPosition) -> Unit,
     onActivities: (List<UInt>) -> Unit,
     onFeature: (UShort, Boolean) -> Unit,
+    onNotifications: (Boolean) -> Unit,
+    onPostTestNotification: () -> Unit,
+    onDismissTestNotification: () -> Unit,
     onReloadDevice: () -> Unit,
     onReconnect: () -> Unit,
     onSetTime: () -> Unit,
@@ -73,9 +79,14 @@ fun WatchSettingsScreen(
                         wearPosition = wearPosition,
                         activities = activities,
                         features = features,
+                        notifications = notifications,
+                        testNotification = testNotification,
                         onWearPosition = onWearPosition,
                         onActivities = onActivities,
                         onFeature = onFeature,
+                        onNotifications = onNotifications,
+                        onPostTestNotification = onPostTestNotification,
+                        onDismissTestNotification = onDismissTestNotification,
                         onReload = onReloadDevice,
                         onReconnect = onReconnect,
                         onSetTime = onSetTime,

@@ -10,9 +10,10 @@
 
 use crate::frame::Channel;
 use crate::objects::{
-    AppProbe, AppProbeOsVersion, FeatureTagsDeprecated, Id, InfoType, MeasureCategory,
-    MeasureLiveAppStatus, Null, ProbeChallenge, ProbeChallengeResponse, StoredSignalMeta, TimeSet,
-    TrackerWearPos, VasistasType, WamScreensList, WamVasistasGet, WorkoutScreenList,
+    AncsStatus, AppProbe, AppProbeOsVersion, FeatureTagsDeprecated, Id, InfoType, MeasureCategory,
+    MeasureLiveAppStatus, NotificationsDisplayState, Null, ProbeChallenge, ProbeChallengeResponse,
+    StoredSignalMeta, TimeSet, TrackerWearPos, VasistasType, WamScreensList, WamVasistasGet,
+    WorkoutScreenList,
 };
 use crate::signal::{Signal, SignalCollector};
 use crate::units::{UnixMillis, UnixTime};
@@ -73,6 +74,19 @@ impl Credentials {
 pub struct DstChange {
     pub at: UnixTime,
     pub gmt_offset: i32,
+}
+
+/// The watch's side of phone notifications, as it reports it.
+///
+/// Two independent switches come back from one request: whether the watch will
+/// talk to the phone's ANCS server, and whether it puts what it hears on the
+/// screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct NotificationConfig {
+    /// `AncsStatus.status`: the watch will act as a notification client.
+    pub accepted: bool,
+    /// `NotificationsDisplayState.status`: it will show them.
+    pub displayed: bool,
 }
 
 /// Which historical series to walk. The watch keeps them separately and each
@@ -252,6 +266,12 @@ pub struct Client {
     activities: Option<Vec<u32>>,
     /// Where the watch says it is worn.
     wear_position: Option<u8>,
+    /// Whether the watch says it will accept phone notifications, and whether
+    /// it will show them. Both come back from one request.
+    notifications: Option<NotificationConfig>,
+    /// The image sizes the watch declares it can hold, by type. Empty until
+    /// it has said, which it does with the workout screen list.
+    image_formats: Vec<crate::image::ImageFormat>,
     records_emitted: u64,
     app_probe: AppProbe,
     /// Latest frame timestamp seen. The client holds no clock of its own, so
@@ -288,6 +308,8 @@ impl Client {
             screens: None,
             activities: None,
             wear_position: None,
+            notifications: None,
+            image_formats: Vec::new(),
             records_emitted: 0,
             now: None,
             last_heard: None,
@@ -562,6 +584,17 @@ impl Client {
                     ],
                 )));
             }
+            // Answered here rather than with the walk below, because the walk
+            // is rate limited and the phase decides whether it runs at all: an
+            // unanswered request is repeated for as long as the link is up, and
+            // the watch raises its connection rate while one is outstanding.
+            // The acknowledgement is what ends it, not the sync it asks for.
+            c if c == Command::CMD_SYNC_REQUEST.0 => {
+                actions.push(Action::Send(Frame::new(
+                    Command::CMD_SYNC_REQUEST.with_channel(Channel::SlaveRequest),
+                    Vec::new(),
+                )));
+            }
             c if c == Command::CMD_MEASURE_STOP.0 => {
                 self.measuring = None;
                 // The stop carries the identity of what was just recorded. The
@@ -616,7 +649,13 @@ impl Client {
             {
                 self.phase = Phase::NotAuthenticated;
             }
-            (Phase::Authenticating, c) if c == Command::CMD_PROBE.0 => {
+            // The watch does not always challenge. Reconnecting quickly, it
+            // answers the probe outright with a `ProbeReply` and no
+            // `ProbeChallenge`, having decided the association still stands.
+            // Waiting for a challenge that is never coming leaves the client
+            // probing forever while the watch, which considers the link up,
+            // asks it to sync every two seconds and is ignored.
+            (Phase::Probing | Phase::Authenticating, c) if c == Command::CMD_PROBE.0 => {
                 self.phase = Phase::Syncing;
                 // A workout that began while nothing was connected is only
                 // discoverable by asking: CMD_WORKOUT_START is pushed once and
@@ -704,6 +743,13 @@ impl Client {
         received_at: UnixMillis,
         records: &mut Vec<Record>,
     ) {
+        // Only meaningful on the workout screen list reply; the same object
+        // rides in every request the watch makes for a picture.
+        let declared = crate::image::ImageFormat::declared(frame);
+        if !declared.is_empty() {
+            self.image_formats = declared;
+        }
+
         for object in &frame.objects {
             self.signals.observe(object);
             match object {
@@ -718,6 +764,14 @@ impl Client {
                 }
                 WppObject::TrackerWearPos(pos) => {
                     self.wear_position = Some(pos.value);
+                }
+                WppObject::AncsStatus(status) => {
+                    let config = self.notifications.get_or_insert_with(Default::default);
+                    config.accepted = status.status != 0;
+                }
+                WppObject::NotificationsDisplayState(state) => {
+                    let config = self.notifications.get_or_insert_with(Default::default);
+                    config.displayed = state.status == NotificationsDisplayState::STATUS_ENABLED;
                 }
                 WppObject::WamScreensList(list) => {
                     // Fixed 24 slots, zero-padded; 0 means an empty slot.
@@ -970,11 +1024,16 @@ impl Client {
         self.wear_position
     }
 
-    /// Read the quick-launch activity menu and where the watch is worn.
+    /// Read the quick-launch activity menu, where the watch is worn, and
+    /// whether it takes phone notifications.
     pub fn request_device_config(&self) -> Vec<Action> {
         vec![
             Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_LIST_GET, Vec::new())),
             Action::Send(Frame::new(Command::CMD_GET_TRACKER_WEAR_POS, Vec::new())),
+            Action::Send(Frame::new(
+                Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_GET,
+                Vec::new(),
+            )),
         ]
     }
 
@@ -991,6 +1050,37 @@ impl Client {
                 })],
             )),
             Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_LIST_GET, Vec::new())),
+        ]
+    }
+
+    /// What the watch last said about phone notifications, once it has said.
+    pub fn notifications(&self) -> Option<NotificationConfig> {
+        self.notifications
+    }
+
+    /// The image sizes the watch says it can hold. Empty until it has said.
+    pub fn image_formats(&self) -> &[crate::image::ImageFormat] {
+        &self.image_formats
+    }
+
+    /// Turn phone notifications on or off at the watch.
+    ///
+    /// This is only the watch's half. It governs whether the watch will go
+    /// looking for the phone's ANCS server at all; the server itself is the
+    /// host's to run, and with it switched on and no server listening the
+    /// watch simply finds nothing.
+    pub fn set_notifications(&self, enabled: bool) -> Vec<Action> {
+        vec![
+            Action::Send(Frame::new(
+                Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_SET,
+                vec![WppObject::AncsStatus(AncsStatus {
+                    status: u8::from(enabled),
+                })],
+            )),
+            Action::Send(Frame::new(
+                Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_GET,
+                Vec::new(),
+            )),
         ]
     }
 
@@ -1676,6 +1766,43 @@ mod tests {
         assert_eq!(list.screen_nb, vec![2, 16, 0, 0, 0, 0, 0, 0]);
     }
 
+    /// Both switches arrive together and mean different things: a watch can
+    /// agree to be a notification client and still not put anything on screen.
+    #[test]
+    fn the_two_notification_switches_are_read_separately() {
+        use crate::objects::{AncsStatus, NotificationsDisplayState};
+        let mut client = authenticated();
+        assert_eq!(client.notifications(), None);
+
+        client.handle(frame(
+            Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_GET,
+            vec![
+                WppObject::AncsStatus(AncsStatus { status: 1 }),
+                WppObject::NotificationsDisplayState(NotificationsDisplayState { status: 0 }),
+            ],
+        ));
+        assert_eq!(
+            client.notifications(),
+            Some(NotificationConfig {
+                accepted: true,
+                displayed: false
+            })
+        );
+
+        let actions = client.set_notifications(true);
+        let Action::Send(frame) = &actions[0] else {
+            panic!()
+        };
+        assert_eq!(
+            frame.command.opcode(),
+            Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_SET.0
+        );
+        assert_eq!(
+            frame.objects,
+            vec![WppObject::AncsStatus(AncsStatus { status: 1 })]
+        );
+    }
+
     /// Features are write-only and the message carries the whole set, so a
     /// write must name everything that should stay on.
     #[test]
@@ -1812,6 +1939,32 @@ mod tests {
         assert_eq!(client.phase(), Phase::NotAuthenticated);
     }
 
+    /// Reconnecting quickly, the watch skips the challenge and answers the
+    /// probe outright. Waiting for one anyway leaves the client probing while
+    /// the watch believes the link is up and asks it to sync every two
+    /// seconds — which looks exactly like a watch that has gone quiet.
+    #[test]
+    fn a_probe_answered_without_a_challenge_still_starts_the_sync() {
+        use crate::objects::ProbeReply;
+        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(0))]);
+        client.handle(Event::Connected);
+        assert_eq!(client.phase(), Phase::Probing);
+
+        let actions = client.handle(frame(
+            Command::CMD_PROBE,
+            vec![WppObject::ProbeReply(ProbeReply {
+                name: "ScanWatch 2".to_string(),
+                mac: "a4:7e:fa:44:d6:10".to_string(),
+                ..Default::default()
+            })],
+        ));
+        assert_eq!(client.phase(), Phase::Syncing);
+        assert!(
+            actions.iter().any(|a| matches!(a, Action::Send(_))),
+            "the walk has to start, or nothing is ever asked for"
+        );
+    }
+
     /// Everything asked before the handshake finishes is refused with the same
     /// code the watch uses to refuse a probe. Reading those as a refused probe
     /// makes the client ignore the challenge it is waiting for.
@@ -1943,6 +2096,31 @@ mod tests {
         client.handle(done(MIN_WALK_INTERVAL_MS + 3_000));
         assert!(client.sync_now().is_empty());
         assert!(!client.walk_now().is_empty(), "the button still means now");
+    }
+
+    /// The rate limit above governs the walk, not the answer. A request left
+    /// unanswered is repeated for as long as the link is up, and the watch
+    /// halves its connection latency while one is outstanding.
+    #[test]
+    fn every_sync_request_is_acknowledged_even_when_the_walk_is_not_due() {
+        let mut client = authenticated();
+        let ask = |ms: i64| Event::Frame {
+            frame: Frame::new(Command::CMD_SYNC_REQUEST, Vec::new()),
+            received_at: UnixMillis(ms),
+        };
+        let acked = |actions: &[Action]| {
+            actions.iter().any(|a| {
+                matches!(a, Action::Send(f)
+                    if f.command.opcode() == Command::CMD_SYNC_REQUEST.0
+                        && f.command.channel() == Some(Channel::SlaveRequest))
+            })
+        };
+
+        assert!(acked(&client.handle(ask(0))));
+        assert!(
+            acked(&client.handle(ask(2_000))),
+            "and the one two seconds behind it"
+        );
     }
 
     /// `CMD_WORKOUT_START` is pushed once, to whoever is connected at the time.

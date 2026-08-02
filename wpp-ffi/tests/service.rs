@@ -1,13 +1,17 @@
 //! The service driven exactly as Kotlin would drive it.
 
 use std::sync::{Arc, Mutex};
-use wpp_ffi::{SetEdge, Transport, WatchService};
+use wpp_ffi::{AncsLink, Bitmap, Rasterizer, SetEdge, Transport, WatchService};
 
 #[derive(Default)]
 struct Recorder {
     written: Mutex<Vec<Vec<u8>>>,
     changes: Mutex<u32>,
     reconnects: Mutex<u32>,
+    announced: Mutex<Vec<Vec<u8>>>,
+    attributes: Mutex<Vec<Vec<u8>>>,
+    /// Every (codepoint, width, height) the watch asked to have drawn.
+    glyphs: Mutex<Vec<(u32, u8, u8)>>,
 }
 
 struct Handle(Arc<Recorder>);
@@ -24,6 +28,38 @@ impl Transport for Handle {
     }
 }
 
+impl AncsLink for Handle {
+    fn announce(&self, bytes: Vec<u8>) {
+        self.0.announced.lock().unwrap().push(bytes);
+    }
+    fn attributes(&self, bytes: Vec<u8>) {
+        self.0.attributes.lock().unwrap().push(bytes);
+    }
+}
+
+/// Draws every pixel solid, so the packed result is unambiguous.
+impl Rasterizer for Handle {
+    fn glyph(&self, codepoint: u32, width: u8, height: u8) -> Bitmap {
+        self.0
+            .glyphs
+            .lock()
+            .unwrap()
+            .push((codepoint, width, height));
+        Bitmap {
+            width,
+            height,
+            pixels: vec![0xffff_ffff; width as usize * height as usize],
+        }
+    }
+    fn icon(&self, _app_id: String, width: u8, height: u8) -> Bitmap {
+        Bitmap {
+            width,
+            height,
+            pixels: vec![0xffff_ffff; width as usize * height as usize],
+        }
+    }
+}
+
 fn service(recorder: &Arc<Recorder>) -> (WatchService, String) {
     let path = format!(
         "/tmp/wpp-ffi-test-{}.db",
@@ -36,6 +72,8 @@ fn service(recorder: &Arc<Recorder>) -> (WatchService, String) {
         path.clone(),
         "a4:7e:fa:44:d6:10".to_string(),
         "gUf8Np69A4GvJxjY1XOcIHKQm2HcPZnO".to_string(),
+        Box::new(Handle(recorder.clone())),
+        Box::new(Handle(recorder.clone())),
         Box::new(Handle(recorder.clone())),
     )
     .expect("service");
@@ -97,6 +135,150 @@ fn a_frame_split_across_notifications_is_reassembled_and_stored() {
     // The reading carries when it was taken, so the UI can say how old it is
     // instead of implying it is current.
     assert_eq!(battery.at_ms, 1_700_000_000_000);
+
+    cleanup(&path);
+}
+
+/// The whole notification exchange, in the order it happens on the wire:
+/// announce, the watch asks, the text goes back.
+#[test]
+fn a_notification_is_announced_then_served_when_the_watch_asks() {
+    use wpp_ffi::NotificationCategory;
+
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+
+    let id = service.post_notification(
+        "dev.davidv.withoutings".into(),
+        "Title".into(),
+        String::new(),
+        "Hello".into(),
+        NotificationCategory::Social,
+    );
+
+    let announced = recorder.announced.lock().unwrap().clone();
+    assert_eq!(announced.len(), 1);
+    assert_eq!(announced[0].len(), 8);
+    assert_eq!(announced[0][0], 0, "added");
+    assert_eq!(announced[0][2], 4, "social");
+    assert_eq!(&announced[0][4..], &id.to_be_bytes(), "id, big-endian");
+
+    // The watch quotes the id back big-endian and asks for the title.
+    let mut write = vec![0x00];
+    write.extend_from_slice(&id.to_be_bytes());
+    write.extend_from_slice(&[0x01, 0x20, 0x00]);
+    service.on_ancs_write(write, 128).unwrap();
+
+    let attributes = recorder.attributes.lock().unwrap().clone();
+    assert_eq!(attributes.len(), 1, "short enough for one fragment");
+    let response = &attributes[0];
+    assert_eq!(&response[1..5], &id.to_le_bytes(), "id, little-endian back");
+    assert_eq!(
+        &response[5..],
+        &[0x01, 0x05, 0x00, b'T', b'i', b't', b'l', b'e']
+    );
+
+    // Dismissing announces the removal and forgets the text.
+    service.dismiss_notification(id);
+    let announced = recorder.announced.lock().unwrap().clone();
+    assert_eq!(announced.len(), 2);
+    assert_eq!(announced[1][0], 2, "removed");
+
+    recorder.attributes.lock().unwrap().clear();
+    let mut write = vec![0x00];
+    write.extend_from_slice(&id.to_be_bytes());
+    write.push(0x01);
+    write.extend_from_slice(&[0x20, 0x00]);
+    service.on_ancs_write(write, 128).unwrap();
+    assert!(
+        recorder.attributes.lock().unwrap().is_empty(),
+        "a dismissed notification has nothing to say"
+    );
+
+    cleanup(&path);
+}
+
+#[test]
+fn a_long_message_is_split_across_data_source_fragments() {
+    use wpp_ffi::NotificationCategory;
+
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+
+    let id = service.post_notification(
+        "app".into(),
+        String::new(),
+        String::new(),
+        "x".repeat(100),
+        NotificationCategory::Other,
+    );
+    let mut write = vec![0x00];
+    write.extend_from_slice(&id.to_be_bytes());
+    write.extend_from_slice(&[0x03, 0xff, 0x00]);
+    service.on_ancs_write(write, 20).unwrap();
+
+    let attributes = recorder.attributes.lock().unwrap().clone();
+    assert!(attributes.len() > 1, "one notification cannot carry it");
+    assert!(attributes.iter().all(|f| f.len() <= 20));
+    let rejoined: Vec<u8> = attributes.concat();
+    assert_eq!(rejoined.len(), 5 + 3 + 100);
+    assert_eq!(&rejoined[8..], "x".repeat(100).as_bytes());
+
+    cleanup(&path);
+}
+
+/// The watch asking for a character it cannot draw, answered from the frame it
+/// arrived in without the sync state machine being involved.
+#[test]
+fn a_glyph_request_is_answered_with_a_packed_bitmap() {
+    use wpp::objects::GlyphId;
+    use wpp::{Channel, Command, Frame, WppObject};
+
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+
+    // 'A' as the watch sends it: the field is byte-swapped inside the frame.
+    let request = Frame::new(
+        Command::CMD_GLYPH_GET.with_channel(Channel::SlaveRequest),
+        vec![WppObject::GlyphId(GlyphId {
+            unicode: 0x41u32.swap_bytes(),
+        })],
+    );
+    service
+        .on_bytes(request.to_bytes(), 1_700_000_000_000)
+        .unwrap();
+
+    // Glyphs are drawn at the size asked for; 22 is what naming no size means.
+    // Only icons are held to what the watch declared.
+    assert_eq!(
+        recorder.glyphs.lock().unwrap().clone(),
+        vec![(0x41, 22, 22)],
+        "the codepoint is unswapped before it reaches the host"
+    );
+
+    let written = recorder.written.lock().unwrap().clone();
+    let reply = wpp::Frame::parse(written.last().expect("a reply")).expect("valid frame");
+    assert_eq!(reply.command.opcode(), Command::CMD_GLYPH_GET.0);
+    assert_eq!(reply.command.channel(), Some(Channel::SlaveRequest));
+    assert_eq!(
+        reply.objects[0],
+        WppObject::GlyphId(GlyphId {
+            unicode: 0x41u32.swap_bytes()
+        }),
+        "the id goes back exactly as it came"
+    );
+    let bits: Vec<u8> = reply
+        .objects
+        .iter()
+        .filter_map(|o| match o {
+            WppObject::ImageData(d) => Some(d.data.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .concat();
+    // 22 tall is three bytes per column, and the last two bits go unused.
+    assert_eq!(bits.len(), 66);
+    assert_eq!(bits[2], 0b0011_1111);
 
     cleanup(&path);
 }

@@ -133,6 +133,13 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
         if (activeStartedAt != null) nav.navigate(Routes.WORKOUT)
     }
 
+    // Read the watch's configuration once the link is up, rather than when
+    // the settings screen opens. Asked there, the round trip happens while
+    // the screen is already showing values it does not have yet.
+    LaunchedEffect(state.link) {
+        if (state.link == LinkState.Ready) model.requestDeviceConfig()
+    }
+
     // The waveform is only sent while something is showing it, so the screen
     // has to be up for the recording to be captured at all.
     val measuring = state.snapshot?.measuring == true
@@ -252,14 +259,20 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
         }
 
         composable(Routes.SETTINGS) {
+            val testNotification by model.testNotification.collectAsState()
             WatchSettingsScreen(
                 wearPosition = state.wearPosition,
                 activities = state.activities,
                 features = state.features,
                 screens = state.screens,
+                notifications = state.notifications,
+                testNotification = testNotification,
                 onWearPosition = { model.setWearPosition(it) },
                 onActivities = { model.setActivities(it) },
                 onFeature = { id, on -> model.setFeature(id, on) },
+                onNotifications = { model.setNotifications(it) },
+                onPostTestNotification = { model.postTestNotification() },
+                onDismissTestNotification = { model.dismissTestNotification() },
                 onReloadDevice = { model.requestDeviceConfig() },
                 onReconnect = { WatchConnectionService.reconnect(context) },
                 onSetTime = { model.setWatchTime() },

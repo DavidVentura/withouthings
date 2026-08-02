@@ -42,6 +42,7 @@ class WatchConnectionService : Service() {
     private var gatt: BluetoothGatt? = null
     private var channel: BluetoothGattCharacteristic? = null
     private var service: WatchService? = null
+    private var ancs: AncsServer? = null
     private val pending = ArrayDeque<ByteArray>()
     private var writeInFlight = false
     /// Per-connection traffic, so a teardown can say whether anything was ever
@@ -56,6 +57,8 @@ class WatchConnectionService : Service() {
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var scanning = false
     private var lastProgress: Progress? = null
+    /// What the link actually granted, which is not necessarily [MTU].
+    private var negotiatedMtu = DEFAULT_MTU
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -83,12 +86,20 @@ class WatchConnectionService : Service() {
         }
 
         if (service == null) {
+            // The watch reads notifications out of a server we run, so it has
+            // to be listening before the link comes up rather than after the
+            // first notification is posted.
+            val ancs = AncsServer(this) { service }
+            this.ancs = ancs
             service = WatchService(
                 dbPath = getDatabasePath("watch.db").also { it.parentFile?.mkdirs() }.absolutePath,
                 mac = mac,
                 secret = secret,
                 transport = GattTransport(),
+                ancs = ancs,
+                rasterizer = AndroidRasterizer(this),
             ).also { WatchRepository.attach(it) }
+            ancs.start()
         }
 
         if (gatt == null) {
@@ -343,6 +354,9 @@ class WatchConnectionService : Service() {
         @SuppressLint("MissingPermission")
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
             Log.i(TAG, "mtu=$mtu status=$status")
+            // What we asked for is not necessarily what we got, and every
+            // outbound frame is cut to fit it.
+            negotiatedMtu = mtu
             g.discoverServices()
         }
 
@@ -385,6 +399,7 @@ class WatchConnectionService : Service() {
             runCatching {
                 framesIn++
                 retries = 0
+                if (WIRE_LOG) Log.i(WIRE_TAG, "<- ${value.hex()}")
                 service?.onBytes(value, System.currentTimeMillis())
                 val progress = service?.snapshot()?.progress
                 if (progress != lastProgress) {
@@ -426,8 +441,32 @@ class WatchConnectionService : Service() {
             }
 
     private inner class GattTransport : Transport {
+        /**
+         * One frame, cut to fit the link.
+         *
+         * A GATT write carries at most the MTU less the ATT header, and the
+         * watch reassembles the byte stream on its side exactly as we do on
+         * ours. Handing the stack an oversized write does not split it — it
+         * fails, or worse arrives truncated and is parsed as a corrupt frame.
+         * Everything sent before images was small enough for this never to
+         * come up.
+         */
         override fun write(bytes: ByteArray) {
-            synchronized(pending) { pending.addLast(bytes) }
+            val limit = (negotiatedMtu - ATT_HEADER).coerceAtLeast(1)
+            if (WIRE_LOG) Log.i(WIRE_TAG, "-> ${bytes.hex()}")
+            if (bytes.size > limit) {
+                Log.i(TAG, "frame of ${bytes.size} split across ${
+                    (bytes.size + limit - 1) / limit
+                } writes")
+            }
+            synchronized(pending) {
+                var offset = 0
+                while (offset < bytes.size) {
+                    val end = minOf(offset + limit, bytes.size)
+                    pending.addLast(bytes.copyOfRange(offset, end))
+                    offset = end
+                }
+            }
             drain()
         }
 
@@ -499,6 +538,7 @@ class WatchConnectionService : Service() {
             writeInFlight = false
             writeStuckSince = 0L
         }
+        negotiatedMtu = DEFAULT_MTU
     }
 
     @SuppressLint("MissingPermission")
@@ -507,6 +547,8 @@ class WatchConnectionService : Service() {
         stopScan()
         gatt?.close()
         gatt = null
+        ancs?.stop()
+        ancs = null
         discardTransport()
         super.onDestroy()
     }
@@ -533,9 +575,19 @@ class WatchConnectionService : Service() {
     companion object {
         private const val ACTION_RECONNECT = "dev.davidv.withoutings.RECONNECT"
         private const val TAG = "WatchLink"
+        /// Every WPP write and notification as hex, for diffing against a
+        /// capture of the official app. Noisy: one line per frame.
+        private const val WIRE_LOG = true
+        private const val WIRE_TAG = "Wpp"
+
+        private fun ByteArray.hex(): String = joinToString(" ") { "%02x".format(it) }
         private const val CHANNEL_ID = "watch-link"
         private const val NOTIFICATION_ID = 1
         private const val MTU = 512
+        /// Before the link says otherwise, the BLE default.
+        private const val DEFAULT_MTU = 23
+        /// Opcode and handle, ahead of every write payload.
+        private const val ATT_HEADER = 3
         private const val RETRY_MS = 10_000L
         private const val RETRY_MAX_MS = 300_000L
         private const val RETRY_SHIFTS = 5

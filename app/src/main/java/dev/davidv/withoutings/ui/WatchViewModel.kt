@@ -15,6 +15,8 @@ import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import uniffi.wpp_ffi.DstChange
+import uniffi.wpp_ffi.NotificationCategory
+import uniffi.wpp_ffi.NotificationConfig
 import uniffi.wpp_ffi.EcgRecording
 import uniffi.wpp_ffi.EcgSummary
 import uniffi.wpp_ffi.HrPoint
@@ -41,6 +43,8 @@ data class UiState(
     val wearPosition: WearPosition = WearPosition.NOT_SET,
     val activities: List<Activity> = emptyList(),
     val features: List<HealthFeature> = emptyList(),
+    /// Null until the watch has been asked about phone notifications.
+    val notifications: NotificationConfig? = null,
     /// The window the heart-rate trace was actually fetched over, so the chart
     /// draws the same range the data came from.
     val hrWindow: LongRange = 0L..0L,
@@ -86,6 +90,11 @@ class WatchViewModel : ViewModel() {
 
     private val _night = MutableStateFlow<Night?>(null)
     val night: StateFlow<Night?> = _night.asStateFlow()
+
+    /// The test notification currently on the watch, by the id that dismisses
+    /// it. Null when there is none to clear.
+    private val _testNotification = MutableStateFlow<UInt?>(null)
+    val testNotification: StateFlow<UInt?> = _testNotification.asStateFlow()
 
     /// How many nights back the sleep screen is looking; 0 is last night.
     private val _nightsAgo = MutableStateFlow(0)
@@ -169,6 +178,7 @@ class WatchViewModel : ViewModel() {
                         wearPosition = service.wearPosition(),
                         activities = service.activities(),
                         features = service.healthFeatures(),
+                        notifications = service.notificationConfig(),
                         metric = service
                             .series(
                                 _metricStyle.value.metric,
@@ -371,8 +381,67 @@ class WatchViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) { runCatching { service.requestRefresh() } }
     }
 
+    fun setNotifications(enabled: Boolean) {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch(Dispatchers.IO) { runCatching { service.setNotifications(enabled) } }
+    }
+
+    /**
+     * A notification of our own, to exercise the path without reading the
+     * phone's real ones. Posting and clearing are separate: the watch keeps it
+     * on screen until told otherwise, and the id is how it is told.
+     */
+    fun postTestNotification() {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                // One at a time, or the previous id is lost and the watch is
+                // left holding a notification nothing can clear.
+                _testNotification.value?.let { service.dismissNotification(it) }
+                val id = service.postNotification(
+                    // The watch caches an app's icon by this id and stops
+                    // asking once it has an answer — including the empty one.
+                    // A fresh id every time forces it to ask again.
+                    appId = "$TEST_APP_ID.t${System.currentTimeMillis() % 100000}",
+                    // Both empty so the watch shows the comparison line and
+                    // nothing else; it lays the three fields out top to bottom
+                    // and a title above the glyph makes it harder to size
+                    // against the letters beside it.
+                    title = "",
+                    subtitle = "",
+                    // The middle character is outside the watch's own font, so
+                    // it has to ask us to draw it, with the watch's own
+                    // capitals either side to size it against. It caches a
+                    // glyph by codepoint just as it caches an icon by app id,
+                    // so a fixed character is asked for exactly once ever;
+                    // rotating through the fullwidth Latin letters keeps every
+                    // tap a fresh request. They are also asymmetric, which is
+                    // what showed the watch reads these bitmaps column-major.
+                    message = "ABC ${probeGlyph()} ABC",
+                    category = NotificationCategory.SOCIAL,
+                )
+                _testNotification.value = id
+            }
+        }
+    }
+
+    /** A fullwidth Latin letter, different each second. */
+    private fun probeGlyph(): Char =
+        ('Ａ'.code + (System.currentTimeMillis() / 1000 % 26).toInt()).toChar()
+
+    fun dismissTestNotification() {
+        val service = WatchRepository.get() ?: return
+        val id = _testNotification.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { service.dismissNotification(id) }
+            _testNotification.value = null
+        }
+    }
+
     private companion object {
         /** The cap Rust reduces to; roughly one point per horizontal pixel. */
         const val MAX_CHART_POINTS = 1200u
+        /** Our own package, so the watch asks us for an icon we actually have. */
+        const val TEST_APP_ID = "dev.davidv.withoutings"
     }
 }

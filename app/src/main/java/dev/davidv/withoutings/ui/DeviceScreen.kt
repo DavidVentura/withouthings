@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import uniffi.wpp_ffi.Activity
 import uniffi.wpp_ffi.HealthFeature
+import uniffi.wpp_ffi.NotificationConfig
 import uniffi.wpp_ffi.WearPosition
 
 /** The watch's own configuration: how it is worn, what it measures, what it offers. */
@@ -33,9 +34,14 @@ fun DeviceSettings(
     wearPosition: WearPosition,
     activities: List<Activity>,
     features: List<HealthFeature>,
+    notifications: NotificationConfig?,
+    testNotification: UInt?,
     onWearPosition: (WearPosition) -> Unit,
     onActivities: (List<UInt>) -> Unit,
     onFeature: (UShort, Boolean) -> Unit,
+    onNotifications: (Boolean) -> Unit,
+    onPostTestNotification: () -> Unit,
+    onDismissTestNotification: () -> Unit,
     onReload: () -> Unit,
     onReconnect: () -> Unit,
     onSetTime: () -> Unit,
@@ -79,6 +85,50 @@ fun DeviceSettings(
                     label = { Text(label) },
                 )
             }
+        }
+
+        Text(
+            "Phone notifications",
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Text(
+            "The watch reads notifications out of a server this app runs, rather " +
+                "than being sent them. This switch is the watch's half; the app " +
+                "does not forward the phone's own notifications yet.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Card(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.fillMaxWidth().padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Accept notifications", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        when {
+                            notifications == null -> "Asking the watch…"
+                            notifications.displayed -> "Shown on the watch"
+                            else -> "Accepted, but the watch is not showing them"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                // Off and "not answered yet" are different things, and drawing
+                // the second as the first states something we do not know.
+                Switch(
+                    checked = notifications?.accepted == true,
+                    enabled = notifications != null,
+                    onCheckedChange = onNotifications,
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onPostTestNotification) { Text("Send test notification") }
+            Button(
+                onClick = onDismissTestNotification,
+                enabled = testNotification != null,
+            ) { Text("Clear it") }
         }
 
         Text(

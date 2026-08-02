@@ -276,7 +276,7 @@ fun WorkoutScreen(
             bands = state.markers.bands(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
             window = window,
             onWindowChange = onWindowChange,
-            axis = 30.0..200.0,
+            axis = 50.0..150.0,
             decimals = 0,
             limit = workoutLimit,
             height = 190.dp,

@@ -368,14 +368,16 @@ private fun bounds(
     // Ruled paper means fixed squares. Growing the axis to swallow an outlier
     // would leave a grid that no longer measures anything.
     if (grid == GridStyle.EcgPaper) return axis.start to axis.endInclusive
-    var lo = axis.start
-    var hi = axis.endInclusive
-    if (points.isNotEmpty()) {
-        lo = minOf(lo, points.minOf { it.value })
-        hi = maxOf(hi, points.maxOf { it.value })
-    }
-    val step = niceStep(hi - lo)
-    return floor(lo / step) * step to ceil(hi / step) * step
+    if (points.isEmpty()) return axis.start to axis.endInclusive
+    val dataLo = points.minOf { it.value }
+    val dataHi = points.maxOf { it.value }
+    // Rounding applies to the widening only: a series that asks for 50..150 is
+    // stating where its readings live, and snapping that to 40..160 throws the
+    // choice away.
+    val step = niceStep(maxOf(dataHi, axis.endInclusive) - minOf(dataLo, axis.start))
+    val lo = if (dataLo < axis.start) floor(dataLo / step) * step else axis.start
+    val hi = if (dataHi > axis.endInclusive) ceil(dataHi / step) * step else axis.endInclusive
+    return lo to hi
 }
 
 /** A step that divides the range into at most six readable intervals. */

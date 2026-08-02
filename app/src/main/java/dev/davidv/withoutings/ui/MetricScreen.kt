@@ -27,7 +27,7 @@ enum class MetricStyle(
     /// call the slow ones stale for doing exactly what they do.
     val freshFor: Long,
 ) {
-    HeartRate(Metric.HEART_RATE, "Heart rate", "bpm", 0, 30.0..200.0, 20 * MINUTE),
+    HeartRate(Metric.HEART_RATE, "Heart rate", "bpm", 0, 50.0..150.0, 20 * MINUTE),
     Temperature(Metric.TEMPERATURE, "Temperature", "°C", 2, 35.0..40.0, 10 * MINUTE),
     HrvSdnn(Metric.HRV_SDNN, "HRV (SDNN)", "ms", 0, 0.0..200.0, 3 * HOUR),
     HrvRmssd(Metric.HRV_RMSSD, "HRV (RMSSD)", "ms", 0, 0.0..200.0, 3 * HOUR),

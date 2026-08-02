@@ -7,8 +7,10 @@
 
 use std::sync::Mutex;
 
+use wpp::ancs::{self, NotificationCenter, NotificationId};
 use wpp::capture::{FrameReassembler, StreamItem};
 use wpp::client::{Action, Category, Client, Credentials, Event, Phase};
+use wpp::image::{GlyphRequest, IconRequest, Mono};
 use wpp::units::{Celsius, Millivolts, UnixMillis};
 use wpp::Frame;
 use wpp_store::Store;
@@ -52,6 +54,8 @@ pub enum WatchError {
     // that field collides with Throwable.
     #[error("storage: {reason}")]
     Storage { reason: String },
+    #[error("protocol: {reason}")]
+    Protocol { reason: String },
 }
 
 impl From<wpp_store::Error> for WatchError {
@@ -341,6 +345,119 @@ pub trait Transport: Send + Sync {
     fn reconnect(&self);
 }
 
+/// The phone's ANCS server, which the host runs and this crate drives.
+///
+/// Separate from [`Transport`] because it is a different link in the opposite
+/// direction: here the phone is the GATT server and the watch the client.
+#[uniffi::export(callback_interface)]
+pub trait AncsLink: Send + Sync {
+    /// Notify the Notification Source characteristic. Always eight bytes.
+    fn announce(&self, bytes: Vec<u8>);
+    /// Notify the Data Source characteristic. One call per fragment, in order.
+    fn attributes(&self, bytes: Vec<u8>);
+}
+
+/// Drawing, which needs a font and a canvas and so belongs to the host.
+///
+/// Both calls must return a bitmap of exactly the size asked for, or an empty
+/// one when there is nothing to draw — an unknown app, or a codepoint the
+/// host's fonts do not cover.
+#[uniffi::export(callback_interface)]
+pub trait Rasterizer: Send + Sync {
+    /// One character, white on transparent.
+    fn glyph(&self, codepoint: u32, width: u8, height: u8) -> Bitmap;
+    /// The icon for an installed app, by package name.
+    fn icon(&self, app_id: String, width: u8, height: u8) -> Bitmap;
+}
+
+/// A rendered bitmap on its way to the watch, in ARGB8888 and row-major —
+/// what `Bitmap.getPixels` hands over.
+///
+/// It is reduced to one bit per pixel on this side rather than the host's, so
+/// the threshold and the packing stay with the rest of the protocol.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct Bitmap {
+    pub width: u8,
+    pub height: u8,
+    pub pixels: Vec<u32>,
+}
+
+impl Bitmap {
+    /// Reject a bitmap whose pixels do not match its declared size instead of
+    /// packing past the end of it.
+    fn pack(self) -> Mono {
+        if self.pixels.len() != self.width as usize * self.height as usize {
+            return Mono::empty();
+        }
+        Mono::pack(&self.pixels, self.width, self.height)
+    }
+}
+
+/// Where a notification lands on the watch. `AncsConfig.type`.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationCategory {
+    Other,
+    IncomingCall,
+    MissedCall,
+    VoiceMail,
+    Social,
+    Schedule,
+    Email,
+    News,
+    HealthAndFitness,
+    BusinessAndFinance,
+    Location,
+    Entertainment,
+}
+
+impl From<NotificationCategory> for ancs::Category {
+    fn from(category: NotificationCategory) -> ancs::Category {
+        match category {
+            NotificationCategory::Other => ancs::Category::Other,
+            NotificationCategory::IncomingCall => ancs::Category::IncomingCall,
+            NotificationCategory::MissedCall => ancs::Category::MissedCall,
+            NotificationCategory::VoiceMail => ancs::Category::VoiceMail,
+            NotificationCategory::Social => ancs::Category::Social,
+            NotificationCategory::Schedule => ancs::Category::Schedule,
+            NotificationCategory::Email => ancs::Category::Email,
+            NotificationCategory::News => ancs::Category::News,
+            NotificationCategory::HealthAndFitness => ancs::Category::HealthAndFitness,
+            NotificationCategory::BusinessAndFinance => ancs::Category::BusinessAndFinance,
+            NotificationCategory::Location => ancs::Category::Location,
+            NotificationCategory::Entertainment => ancs::Category::Entertainment,
+        }
+    }
+}
+
+/// What the watch says about phone notifications.
+#[derive(uniffi::Record, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotificationConfig {
+    /// The watch will act as a notification client.
+    pub accepted: bool,
+    /// It will put what it hears on the screen.
+    pub displayed: bool,
+}
+
+/// The UUIDs of the ANCS server the host has to stand up, so the two sides
+/// cannot drift apart.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct AncsUuids {
+    pub service: String,
+    pub notification_source: String,
+    pub control_point: String,
+    pub data_source: String,
+}
+
+#[uniffi::export]
+pub fn ancs_uuids() -> AncsUuids {
+    AncsUuids {
+        service: ancs::SERVICE_UUID.into(),
+        notification_source: ancs::NOTIFICATION_SOURCE_UUID.into(),
+        control_point: ancs::CONTROL_POINT_UUID.into(),
+        data_source: ancs::DATA_SOURCE_UUID.into(),
+    }
+}
+
 struct Inner {
     client: Client,
     reassembler: FrameReassembler,
@@ -351,10 +468,14 @@ pub struct WatchService {
     inner: Mutex<Inner>,
     store: Mutex<Store>,
     transport: Box<dyn Transport>,
+    ancs: Box<dyn AncsLink>,
+    rasterizer: Box<dyn Rasterizer>,
     device_id: i64,
     /// Enabled features as (id, start, end). Write-only on the wire, so this is
     /// the only record of them.
     features: Mutex<Vec<(u16, u32, u32)>>,
+    /// Notifications the watch has been told about and can still ask about.
+    notifications: Mutex<NotificationCenter>,
 }
 
 #[uniffi::export]
@@ -365,6 +486,8 @@ impl WatchService {
         mac: String,
         secret: String,
         transport: Box<dyn Transport>,
+        ancs: Box<dyn AncsLink>,
+        rasterizer: Box<dyn Rasterizer>,
     ) -> Result<Self, WatchError> {
         let store = Store::open(&db_path)?;
         let device_id = store.device(&mac)?;
@@ -377,8 +500,11 @@ impl WatchService {
             }),
             store: Mutex::new(store),
             transport,
+            ancs,
+            rasterizer,
             device_id,
             features: Mutex::new(DEFAULT_FEATURES.iter().map(|id| (*id, 0, 0)).collect()),
+            notifications: Mutex::new(NotificationCenter::new()),
         })
     }
 
@@ -417,17 +543,24 @@ impl WatchService {
     /// Feed one GATT notification. Frames span several of these.
     pub fn on_bytes(&self, bytes: Vec<u8>, received_at_ms: i64) -> Result<(), WatchError> {
         let mut pending = Vec::new();
+        let mut frames = Vec::new();
         {
             let mut inner = self.inner.lock().unwrap();
             let items = inner.reassembler.push(&bytes);
             for item in items {
                 if let StreamItem::Frame { frame, .. } = item {
                     pending.extend(inner.client.handle(Event::Frame {
-                        frame,
+                        frame: frame.clone(),
                         received_at: UnixMillis(received_at_ms),
                     }));
+                    frames.push(frame);
                 }
             }
+        }
+        // Drawing calls back into the host, which cannot happen while the
+        // client is locked: the host is free to call back in on that thread.
+        for frame in &frames {
+            self.draw(frame);
         }
         self.dispatch(pending)
     }
@@ -780,6 +913,92 @@ impl WatchService {
         };
         let actions = self.inner.lock().unwrap().client.set_features(&features);
         self.dispatch(actions)
+    }
+
+    /// What the watch last said about phone notifications, once it has said.
+    pub fn notification_config(&self) -> Option<NotificationConfig> {
+        self.inner
+            .lock()
+            .unwrap()
+            .client
+            .notifications()
+            .map(|c| NotificationConfig {
+                accepted: c.accepted,
+                displayed: c.displayed,
+            })
+    }
+
+    /// Turn the watch's half of phone notifications on or off.
+    ///
+    /// The host's ANCS server is the other half and is started separately;
+    /// with this on and no server running, the watch finds nothing to talk to.
+    pub fn set_notifications(&self, enabled: bool) -> Result<(), WatchError> {
+        let actions = self.inner.lock().unwrap().client.set_notifications(enabled);
+        self.dispatch(actions)
+    }
+
+    /// Announce a notification. The returned id dismisses it, and is what the
+    /// watch quotes back when it asks what the notification says.
+    pub fn post_notification(
+        &self,
+        app_id: String,
+        title: String,
+        subtitle: String,
+        message: String,
+        category: NotificationCategory,
+    ) -> u32 {
+        let (id, announcement) = self.notifications.lock().unwrap().post(
+            app_id,
+            title,
+            subtitle,
+            message,
+            category.into(),
+        );
+        self.ancs.announce(announcement.to_vec());
+        id.0
+    }
+
+    /// Take a notification off the watch. Silent if it was never posted.
+    pub fn dismiss_notification(&self, id: u32) {
+        let announcement = self
+            .notifications
+            .lock()
+            .unwrap()
+            .dismiss(NotificationId(id));
+        if let Some(announcement) = announcement {
+            self.ancs.announce(announcement.to_vec());
+        }
+    }
+
+    /// Feed one Control Point write from the watch.
+    ///
+    /// `max_payload` is what a single Data Source notification can carry: the
+    /// negotiated ATT MTU less its three-byte header. A long message is split
+    /// across several, so getting this wrong truncates messages rather than
+    /// failing outright.
+    pub fn on_ancs_write(&self, bytes: Vec<u8>, max_payload: u32) -> Result<(), WatchError> {
+        if max_payload == 0 {
+            return Err(WatchError::Protocol {
+                reason: "a data source fragment has to carry something".into(),
+            });
+        }
+        let request =
+            wpp::ancs::ControlPoint::parse(&bytes).map_err(|err| WatchError::Protocol {
+                reason: err.to_string(),
+            })?;
+        let response = {
+            let center = self.notifications.lock().unwrap();
+            // An id never posted, or already dismissed. The watch asking about
+            // one is normal after a restart, and there is nothing to say.
+            let Some(notification) = center.get(request.id) else {
+                return Ok(());
+            };
+            request.response(notification)
+        };
+        for fragment in wpp::ancs::fragments(&response, max_payload as usize) {
+            self.ancs.attributes(fragment);
+        }
+        Ok(())
     }
 
     pub fn mark_set(&self, at_ms: i64, edge: SetEdge) -> Result<(), WatchError> {
@@ -1203,5 +1422,38 @@ impl WatchService {
 
     fn write(&self, frame: &Frame) {
         self.transport.write(frame.to_bytes());
+    }
+
+    /// Answer the two requests the watch makes for pictures.
+    ///
+    /// Neither goes through [`Client`]: they need a font and a canvas, and the
+    /// reply depends on nothing the sync state machine knows.
+    fn draw(&self, frame: &Frame) {
+        let glyph = GlyphRequest::parse(frame);
+        let icon = IconRequest::parse(frame);
+        if glyph.is_none() && icon.is_none() {
+            return;
+        }
+        // Copied out rather than held: rasterising calls back into the host.
+        let formats = self.inner.lock().unwrap().client.image_formats().to_vec();
+
+        if let Some(request) = glyph {
+            let (width, height) = request.size(&formats);
+            let bitmaps: Vec<Mono> = request
+                .glyphs
+                .iter()
+                .map(|g| self.rasterizer.glyph(g.codepoint, width, height).pack())
+                .collect();
+            self.write(&request.reply(&bitmaps));
+            return;
+        }
+        if let Some(request) = icon {
+            let (width, height) = request.size(&formats);
+            let drawn = self
+                .rasterizer
+                .icon(request.app_id.clone(), width, height)
+                .pack();
+            self.write(&request.reply(&drawn));
+        }
     }
 }

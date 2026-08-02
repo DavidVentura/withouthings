@@ -5,20 +5,24 @@
 //! `tools/extract_wpp.py`; see `tools/wpp.json` for the extracted description.
 
 pub mod analysis;
+pub mod ancs;
 pub mod capture;
 pub mod client;
 pub mod codec;
 pub mod commands;
 pub mod frame;
+pub mod image;
 pub mod objects;
 pub mod signal;
 pub mod units;
 
 pub use analysis::{detect_r_peaks, RPeaks};
+pub use ancs::{AncsError, ControlPoint, Notification, NotificationCenter, NotificationId};
 pub use client::{Action, Category, Client, Credentials, Event, Record, SampleKind, Source};
 pub use codec::{ParseError, Reader, WppObjectCodec, Writer};
 pub use commands::Command;
 pub use frame::{Channel, Frame, FrameError, PROTOCOL_VERSION};
+pub use image::{GlyphRequest, IconRequest, ImageFormat, Mono};
 pub use objects::WppObject;
 pub use signal::{Lead, SampleFormat, Signal, SignalCollector, SignalKind};
 pub use units::{Bpm, Celsius, Millis, Millivolts, UnixTime, COUNTS_PER_MILLIVOLT};
