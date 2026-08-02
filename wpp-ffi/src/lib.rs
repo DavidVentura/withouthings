@@ -1023,6 +1023,17 @@ impl WatchService {
         self.dispatch(actions)
     }
 
+    /// The setting the host holds, applied to the watch whenever it reports
+    /// something else. Safe before a link exists, and needed after a watch
+    /// reboot puts notifications back on by itself.
+    pub fn prefer_notifications(&self, enabled: bool) {
+        self.inner
+            .lock()
+            .unwrap()
+            .client
+            .prefer_notifications(enabled);
+    }
+
     /// Announce a notification. The returned id dismisses it, and is what the
     /// watch quotes back when it asks what the notification says.
     pub fn post_notification(

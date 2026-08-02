@@ -115,6 +115,7 @@ private fun App(model: WatchViewModel = viewModel()) {
 @Composable
 private fun Navigation(model: WatchViewModel, nav: NavHostController) {
     val context = LocalContext.current
+    val settings = remember { Settings(context) }
     val state by model.state.collectAsState()
     val window by model.window.collectAsState()
     val startedAt by model.stopwatchStartedAt.collectAsState()
@@ -271,7 +272,13 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
                 onWearPosition = { model.setWearPosition(it) },
                 onActivities = { model.setActivities(it) },
                 onFeature = { id, on -> model.setFeature(id, on) },
-                onNotifications = { model.setNotifications(it) },
+                // Remembered as well as sent: the watch drops the setting over
+                // a reboot, and coming back with notifications on costs half
+                // the idle radio until something notices.
+                onNotifications = {
+                    settings.notifications = it
+                    model.setNotifications(it)
+                },
                 onPostTestNotification = { model.postTestNotification() },
                 onDismissTestNotification = { model.dismissTestNotification() },
                 onReloadDevice = { model.requestDeviceConfig() },

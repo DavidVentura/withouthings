@@ -306,6 +306,9 @@ pub struct Client {
     /// The watch's diagnostic buffer, and when it was last emptied.
     dump: DebugDump,
     last_dump: Option<UnixMillis>,
+    /// Whether the watch should accept phone notifications, if the host has
+    /// said. `None` leaves whatever the watch already holds.
+    wanted_notifications: Option<bool>,
 }
 
 impl Client {
@@ -339,6 +342,7 @@ impl Client {
             last_walk: None,
             dump: DebugDump::new(),
             last_dump: None,
+            wanted_notifications: None,
             app_probe: AppProbe {
                 os: 1,
                 app: 1,
@@ -640,6 +644,20 @@ impl Client {
                     Command::CMD_SYNC_REQUEST.with_channel(Channel::SlaveRequest),
                     Vec::new(),
                 )));
+            }
+            // The watch forgets this over a reboot and it is asked for on
+            // every pass, so putting the host's choice back whenever the two
+            // disagree is what makes it stick. Left to drift it is not a
+            // cosmetic setting: with notifications on, the watch halves its
+            // connection latency and never restores it.
+            c if c == Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_GET.0 => {
+                if let (Some(wanted), Some(config)) =
+                    (self.wanted_notifications, self.notifications)
+                {
+                    if config.accepted != wanted {
+                        actions.extend(self.set_notifications(wanted));
+                    }
+                }
             }
             c if c == Command::CMD_MEASURE_STOP.0 => {
                 self.measuring = None;
@@ -1166,13 +1184,27 @@ impl Client {
         &self.image_formats
     }
 
+    /// What the host wants, without saying so yet.
+    ///
+    /// The watch is only told once it has reported what it currently holds, so
+    /// a preference can be set before there is a link to send it over.
+    pub fn prefer_notifications(&mut self, enabled: bool) {
+        self.wanted_notifications = Some(enabled);
+    }
+
     /// Turn phone notifications on or off at the watch.
     ///
     /// This is only the watch's half. It governs whether the watch will go
     /// looking for the phone's ANCS server at all; the server itself is the
     /// host's to run, and with it switched on and no server listening the
     /// watch simply finds nothing.
-    pub fn set_notifications(&self, enabled: bool) -> Vec<Action> {
+    ///
+    /// Switching it off is what keeps the link at the slower connection
+    /// parameters: the watch asks for latency 15 only in order to run ANCS
+    /// discovery, and never asks for the slower ones back. It costs every
+    /// phone notification to have it.
+    pub fn set_notifications(&mut self, enabled: bool) -> Vec<Action> {
+        self.wanted_notifications = Some(enabled);
         vec![
             Action::Send(Frame::new(
                 Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_SET,
@@ -2034,6 +2066,44 @@ mod tests {
             panic!()
         };
         assert_eq!(list.screen_nb, vec![2, 16, 0, 0, 0, 0, 0, 0]);
+    }
+
+    /// The watch loses this over a reboot, and a watch that quietly comes back
+    /// with notifications on has also quietly halved its connection latency
+    /// for good. The preference is put back whenever the watch reports
+    /// otherwise, and left alone when it already agrees.
+    #[test]
+    fn a_notification_preference_is_restored_whenever_the_watch_has_lost_it() {
+        use crate::objects::{AncsStatus, NotificationsDisplayState};
+        let reports = |status: u8| {
+            frame(
+                Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_GET,
+                vec![
+                    WppObject::AncsStatus(AncsStatus { status }),
+                    WppObject::NotificationsDisplayState(NotificationsDisplayState { status: 1 }),
+                ],
+            )
+        };
+
+        let mut client = authenticated();
+        assert!(
+            sent(&client.handle(reports(1))).is_empty(),
+            "with no preference the watch is left as it is"
+        );
+
+        client.prefer_notifications(false);
+        assert_eq!(
+            sent(&client.handle(reports(1))),
+            vec![
+                Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_SET,
+                Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_GET,
+            ],
+            "a watch that came back with them on is told again"
+        );
+        assert!(
+            sent(&client.handle(reports(0))).is_empty(),
+            "and once it agrees, nothing more is sent"
+        );
     }
 
     /// Both switches arrive together and mean different things: a watch can

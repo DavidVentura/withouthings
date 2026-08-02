@@ -66,8 +66,18 @@ class Settings(context: Context) {
     val configured: Boolean
         get() = !mac.isNullOrBlank() && !secret.isNullOrBlank()
 
+    /// Phone notifications, which are ANCS and nothing else.
+    ///
+    /// Off is worth about half the watch's idle radio: it only asks for the
+    /// faster connection parameters in order to run ANCS discovery, and never
+    /// asks for the slower ones back.
+    var notifications: Boolean
+        get() = prefs.getBoolean(KEY_NOTIFICATIONS, true)
+        set(value) = prefs.edit().putBoolean(KEY_NOTIFICATIONS, value).apply()
+
     private companion object {
         const val KEY_MAC = "mac"
         const val KEY_SECRET = "secret"
+        const val KEY_NOTIFICATIONS = "notifications"
     }
 }

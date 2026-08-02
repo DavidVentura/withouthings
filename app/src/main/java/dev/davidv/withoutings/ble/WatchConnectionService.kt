@@ -99,7 +99,10 @@ class WatchConnectionService : Service() {
                 ancs = ancs,
                 rasterizer = AndroidRasterizer(this),
             ).also { WatchRepository.attach(it) }
-            ancs.start()
+            // Told before the link comes up, so the watch is corrected on the
+            // first pass rather than after a notification has been missed.
+            service?.preferNotifications(settings.notifications)
+            if (settings.notifications) ancs.start()
         }
 
         if (gatt == null) {
