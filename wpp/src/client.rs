@@ -1116,6 +1116,11 @@ impl Client {
                 // The request echoed back around the records, and the empty
                 // reply that closes a category.
                 WppObject::WamVasistasGet(_) | WppObject::VasistasType(_) | WppObject::Null(_) => {}
+                // Which measurements the body stream is set to carry and which
+                // it could. Capability bits rather than a reading, and the
+                // meaning of the individual bits is unknown, so there is
+                // nothing to store that could later be read back honestly.
+                WppObject::VasistasFlags(_) => {}
                 other => self.note_unhandled(frame, other),
             }
         }

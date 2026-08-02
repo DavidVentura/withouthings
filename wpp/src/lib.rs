@@ -16,6 +16,7 @@ pub mod frame;
 pub mod image;
 pub mod objects;
 pub mod signal;
+pub mod sleep;
 pub mod units;
 
 pub use activity::{Minute, Session};

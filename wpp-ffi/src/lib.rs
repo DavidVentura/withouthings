@@ -319,6 +319,20 @@ pub enum SleepStage {
     Rem,
 }
 
+/// One band per run of the same stage. The watch dates a window per record, so
+/// a stretch of walking arrives as a dozen one-minute bands that are one thing.
+fn merge_adjacent(bands: impl Iterator<Item = SleepBand>) -> Vec<SleepBand> {
+    bands.fold(Vec::new(), |mut out: Vec<SleepBand>, band| {
+        match out.last_mut() {
+            Some(last) if last.stage == band.stage && last.to_ms >= band.from_ms => {
+                last.to_ms = last.to_ms.max(band.to_ms);
+            }
+            _ => out.push(band),
+        }
+        out
+    })
+}
+
 impl SleepStage {
     fn of(level: activity::SleepLevel) -> SleepStage {
         match level {
@@ -328,6 +342,18 @@ impl SleepStage {
             activity::SleepLevel::Rem => SleepStage::Rem,
         }
     }
+}
+
+/// A night out of 100, with the parts that made it so a total can be argued
+/// with. See `wpp::sleep` for what each one measures.
+#[derive(uniffi::Record, Debug, Clone, Copy, PartialEq)]
+pub struct SleepScore {
+    pub total: u8,
+    pub duration: u8,
+    pub efficiency: u8,
+    pub deep: u8,
+    pub rem: u8,
+    pub continuity: u8,
 }
 
 /// One night's screen: the two series it draws, the periods it shades, and the
@@ -344,6 +370,8 @@ pub struct Night {
     pub asleep_from_ms: Option<i64>,
     pub asleep_to_ms: Option<i64>,
     pub lowest_hr: Option<f64>,
+    /// Absent for a night with no sleep staged in it.
+    pub score: Option<SleepScore>,
 }
 
 /// What a sync is doing, for a progress indicator that means something.
@@ -1185,34 +1213,58 @@ impl WatchService {
                 origin: origin_of(source),
             })
             .collect();
+        let minutes = store.activity_minutes(self.device_id, from_ms / 1000, to_ms / 1000)?;
+
         // A window the watch staged but whose level this build does not know is
         // dropped rather than guessed at: the level field is five bits wide and
         // only four values have ever been seen.
-        let stages: Vec<SleepBand> = store
-            .activity_minutes(self.device_id, from_ms / 1000, to_ms / 1000)?
-            .into_iter()
+        let levels: Vec<(i64, i64, SleepStage)> = minutes
+            .iter()
             .filter_map(|minute| {
                 let level = activity::SleepLevel::from_wire(minute.sleep_level?)?;
-                Some(SleepBand {
-                    from_ms: minute.at.0 * 1000,
-                    to_ms: minute.ended_at().0 * 1000,
-                    stage: SleepStage::of(level),
-                })
+                Some((
+                    minute.at.0 * 1000,
+                    minute.ended_at().0 * 1000,
+                    SleepStage::of(level),
+                ))
             })
             .collect();
 
         // The watch's own staging, and nothing else. A night it did not stage
         // has no sleep period: inferring one from heart rate scored lying awake
         // and still as sleep, which is worse than saying nothing.
-        let asleep = stages
+        let asleep = levels
             .iter()
-            .filter(|band| band.stage != SleepStage::Awake)
-            .fold(None, |span: Option<(i64, i64)>, band| {
+            .filter(|(_, _, stage)| *stage != SleepStage::Awake)
+            .fold(None, |span: Option<(i64, i64)>, (from, to, _)| {
                 Some(match span {
-                    None => (band.from_ms, band.to_ms),
-                    Some((from, to)) => (from.min(band.from_ms), to.max(band.to_ms)),
+                    None => (*from, *to),
+                    Some((lo, hi)) => (lo.min(*from), hi.max(*to)),
                 })
             });
+
+        // Getting up switches the watch from writing staged records to writing
+        // activity ones, so a window inside the night carrying steps and no
+        // level is time out of bed — not time the watch failed to measure. Left
+        // as a hole it reads as missing data, which is what it is not.
+        let stages = merge_adjacent(minutes.iter().filter_map(|minute| {
+            let (from_ms, to_ms) = (minute.at.0 * 1000, minute.ended_at().0 * 1000);
+            let stage = match minute.sleep_level {
+                Some(level) => SleepStage::of(activity::SleepLevel::from_wire(level)?),
+                None => {
+                    let (night_from, night_to) = asleep?;
+                    if from_ms < night_from || to_ms > night_to {
+                        return None;
+                    }
+                    SleepStage::Awake
+                }
+            };
+            Some(SleepBand {
+                from_ms,
+                to_ms,
+                stage,
+            })
+        }));
 
         let charging = store
             .charge_periods(self.device_id, from_ms, to_ms)?
@@ -1227,9 +1279,37 @@ impl WatchService {
             })
             .collect();
 
+        // Scored on the bands as drawn, gap-fills included: time out of bed is
+        // time not asleep, and leaving it out would score a broken night as if
+        // it had been unbroken.
+        let score = wpp::sleep::score(
+            &stages
+                .iter()
+                .map(|band| wpp::sleep::Band {
+                    from_ms: band.from_ms,
+                    to_ms: band.to_ms,
+                    level: match band.stage {
+                        SleepStage::Awake => activity::SleepLevel::Awake,
+                        SleepStage::Light => activity::SleepLevel::Light,
+                        SleepStage::Deep => activity::SleepLevel::Deep,
+                        SleepStage::Rem => activity::SleepLevel::Rem,
+                    },
+                })
+                .collect::<Vec<_>>(),
+        )
+        .map(|s| SleepScore {
+            total: s.total,
+            duration: s.duration,
+            efficiency: s.efficiency,
+            deep: s.deep,
+            rem: s.rem,
+            continuity: s.continuity,
+        });
+
         Ok(Night {
             asleep_from_ms: asleep.map(|(from, _)| from),
             asleep_to_ms: asleep.map(|(_, to)| to),
+            score,
             lowest_hr: hr
                 .iter()
                 .filter(|p| {

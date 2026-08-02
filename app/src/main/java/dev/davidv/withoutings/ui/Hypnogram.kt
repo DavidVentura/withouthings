@@ -21,10 +21,10 @@ import uniffi.wpp_ffi.SleepBand
 import uniffi.wpp_ffi.SleepStage
 
 /**
- * The stages in the order a hypnogram draws them, deepest at the bottom.
- * Not the wire order, which is awake, light, deep, REM.
+ * Top to bottom, so that read upwards the lanes run awake, light, deep, REM.
+ * Not the wire order, which is awake, light, deep, REM from zero.
  */
-private val lanes = listOf(SleepStage.AWAKE, SleepStage.REM, SleepStage.LIGHT, SleepStage.DEEP)
+private val lanes = listOf(SleepStage.REM, SleepStage.DEEP, SleepStage.LIGHT, SleepStage.AWAKE)
 
 /**
  * Wide enough for "Awake" beside the lanes, and used by every chart on the
@@ -62,7 +62,8 @@ fun Hypnogram(
     stages: List<SleepBand>,
     window: LongRange,
     modifier: Modifier = Modifier,
-    height: Dp = 110.dp,
+    // The lanes keep their depth once the time axis has taken its 16dp.
+    height: Dp = 126.dp,
     /// Must match the value charts above and below, or the same instant sits at
     /// a different x in each.
     gutterLeftDp: Dp = SLEEP_GUTTER,
@@ -77,10 +78,26 @@ fun Hypnogram(
             val gutterLeft = gutterLeftDp.toPx()
             val plotWidth = size.width - gutterLeft
             val spanMs = (window.last - window.first).coerceAtLeast(1L).toFloat()
-            val laneHeight = size.height / lanes.size
+            // The same room ValueChart leaves under its plot for the time
+            // labels, so the two axes sit at the same depth.
+            val gutterBottom = 16.dp.toPx()
+            val plotHeight = size.height - gutterBottom
+            val laneHeight = plotHeight / lanes.size
             val barHeight = laneHeight * 0.62f
 
             fun x(at: Long) = gutterLeft + ((at - window.first).toFloat() / spanMs) * plotWidth
+
+            for (tick in timeTicks(window)) {
+                val at = x(tick)
+                drawLine(gridColor, Offset(at, 0f), Offset(at, plotHeight), 1f)
+                val label = measurer.measure(
+                    timeTickLabel(tick, window),
+                    TextStyle(color = labelColor, fontSize = 9.sp),
+                )
+                val left = (at - label.size.width / 2)
+                    .coerceIn(gutterLeft, size.width - label.size.width)
+                drawText(label, topLeft = Offset(left, plotHeight + 3f))
+            }
 
             lanes.forEachIndexed { row, stage ->
                 val mid = laneHeight * row + laneHeight / 2

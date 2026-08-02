@@ -89,6 +89,28 @@ private val hm = SimpleDateFormat("HH:mm", Locale.getDefault())
 private val dm = SimpleDateFormat("d MMM", Locale.getDefault())
 private val dmhm = SimpleDateFormat("d MMM HH:mm", Locale.getDefault())
 
+/**
+ * Round wall-clock instants to rule a span at, coarse enough to leave about six
+ * of them. Shared so that charts stacked on one screen tick together.
+ */
+fun timeTicks(window: LongRange): List<Long> {
+    val spanMs = (window.last - window.first).coerceAtLeast(1L)
+    val tickMs = (TICK_SECONDS.firstOrNull { spanMs / 1000 / it <= 6 }
+        ?: TICK_SECONDS.last()) * 1000L
+    val out = mutableListOf<Long>()
+    var tick = (window.first / tickMs) * tickMs
+    if (tick < window.first) tick += tickMs
+    while (tick <= window.last) {
+        out.add(tick)
+        tick += tickMs
+    }
+    return out
+}
+
+/** As [timeTicks] labels them, for a chart drawing its own axis. */
+fun timeTickLabel(at: Long, window: LongRange): String =
+    timeLabel(at, (window.last - window.first).coerceAtLeast(1L), todayStartMs())
+
 /** A tick on an earlier day needs its date: nothing else on screen says which day it is. */
 private fun timeLabel(at: Long, spanMs: Long, todayStart: Long): String = when {
     spanMs > 2 * 24 * 3600_000L -> dm.format(Date(at))

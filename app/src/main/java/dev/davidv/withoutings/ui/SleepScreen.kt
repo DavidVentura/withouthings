@@ -65,8 +65,12 @@ fun SleepScreen(
             .filterKeys { it != SleepStage.AWAKE }
             .values
             .sum()
+        val inBedMs = perStage.values.sum()
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            night.score?.let { score ->
+                Stat("Score", "${score.total}", "of 100", Modifier.weight(1f))
+            }
             Stat(
                 "Asleep",
                 asleep?.let { hourMin.format(Date(it.first)) } ?: "—",
@@ -100,21 +104,34 @@ fun SleepScreen(
                     Stat(
                         stageName(stage),
                         duration(total),
-                        if (asleepMs > 0 && stage != SleepStage.AWAKE) {
-                            "%.0f%%".format(100.0 * total / asleepMs)
-                        } else {
-                            ""
-                        },
+                        // Of the whole night rather than of sleep, so awake has
+                        // a denominator too and the four read as one split.
+                        if (inBedMs > 0) "%.0f%%".format(100.0 * total / inBedMs) else "",
                         Modifier.weight(1f),
                     )
                 }
             }
+            // What the score is made of, so a total can be argued with rather
+            // than taken on faith.
+            night.score?.let { score ->
+                Text(
+                    listOf(
+                        "Duration ${score.duration}",
+                        "Efficiency ${score.efficiency}",
+                        "Deep ${score.deep}",
+                        "REM ${score.rem}",
+                        "Continuity ${score.continuity}",
+                    ).joinToString("  ·  "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         val scheme = MaterialTheme.colorScheme
-        val bands = night.charging.bands(scheme.outlineVariant.copy(alpha = 0.5f)) +
-            (asleep?.let { listOf(Band(it.first, it.last, scheme.primary.copy(alpha = 0.10f))) }
-                ?: emptyList())
+        // No sleep band: the view is already clamped to the sleep period, so
+        // shading it would tint the whole width and say nothing.
+        val bands = night.charging.bands(scheme.outlineVariant.copy(alpha = 0.5f))
 
         Text("Heart rate", style = MaterialTheme.typography.labelSmall)
         ValueChart(

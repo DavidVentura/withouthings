@@ -52,14 +52,14 @@ private val day = SimpleDateFormat("d MMM", Locale.getDefault())
 
 private const val STALE_ALPHA = 0.45f
 
-/// The battery has its own pill and HRV only means anything over a night, so
-/// neither earns a card here.
+/// The battery has its own pill, HRV only means anything over a night, and the
+/// watch measures SpO2 a few times a year unless asked by hand — a card for it
+/// would be a dash almost always. None of them earn one here.
 private val GRID = listOf(
     MetricStyle.HeartRate,
     MetricStyle.Temperature,
     MetricStyle.Respiratory,
     MetricStyle.Steps,
-    MetricStyle.Spo2,
     MetricStyle.Ascent,
     MetricStyle.Calories,
 )
