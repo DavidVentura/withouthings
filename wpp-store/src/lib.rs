@@ -3,6 +3,8 @@
 //! The write path is idempotent: re-syncing a window that was already stored
 //! is a no-op, which the paged history walk guarantees will happen.
 
+mod migrate;
+
 use rusqlite::{params, Connection, OptionalExtension};
 use wpp::activity::Minute;
 use wpp::client::{Category, Record};
@@ -32,53 +34,7 @@ impl Store {
     fn prepare(conn: Connection) -> Result<Store, Error> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        conn.execute_batch(include_str!("schema.sql"))?;
-        // `undecoded_frame` was created before there was anything to say about
-        // why a frame failed, and CREATE TABLE IF NOT EXISTS leaves an older
-        // one as it found it.
-        let has_splice: i64 = conn.query_row(
-            "SELECT count(*) FROM pragma_table_info('undecoded_frame')
-              WHERE name = 'splice_at'",
-            [],
-            |r| r.get(0),
-        )?;
-        if has_splice == 0 {
-            conn.execute(
-                "ALTER TABLE undecoded_frame ADD COLUMN splice_at INTEGER",
-                [],
-            )?;
-        }
-        // Staging was arriving on the activity stream long before anything read
-        // it, so every database that predates this has the windows without it.
-        let has_sleep: i64 = conn.query_row(
-            "SELECT count(*) FROM pragma_table_info('activity_minute')
-              WHERE name = 'sleep_level'",
-            [],
-            |r| r.get(0),
-        )?;
-        if has_sleep == 0 {
-            conn.execute(
-                "ALTER TABLE activity_minute ADD COLUMN sleep_level INTEGER",
-                [],
-            )?;
-        }
-        // The streams tag every record with the window it covers and, for
-        // temperature, the conditions it was taken under. Rows written before
-        // these were read have neither, which is not the same as a reading the
-        // watch declined to annotate — but nothing can recover it now.
-        for column in ["window_secs", "context"] {
-            let present: i64 = conn.query_row(
-                "SELECT count(*) FROM pragma_table_info('sample') WHERE name = ?1",
-                [column],
-                |r| r.get(0),
-            )?;
-            if present == 0 {
-                conn.execute(
-                    &format!("ALTER TABLE sample ADD COLUMN {column} INTEGER"),
-                    [],
-                )?;
-            }
-        }
+        migrate::run(&conn)?;
         Ok(Store { conn })
     }
 

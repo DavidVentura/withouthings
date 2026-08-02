@@ -2,20 +2,20 @@
 -- units happens on read, through wpp::units, so a corrected scale factor never
 -- costs stored data.
 
-CREATE TABLE IF NOT EXISTS device (
+CREATE TABLE device (
     id      INTEGER PRIMARY KEY,
     mac     TEXT NOT NULL UNIQUE,
     name    TEXT,
     model   INTEGER
 ) STRICT;
 
-CREATE TABLE IF NOT EXISTS sample_kind (
+CREATE TABLE sample_kind (
     id      INTEGER PRIMARY KEY,
     name    TEXT NOT NULL UNIQUE,
     unit    TEXT NOT NULL
 ) STRICT;
 
-INSERT OR IGNORE INTO sample_kind (id, name, unit) VALUES
+INSERT INTO sample_kind (id, name, unit) VALUES
     (1, 'heart_rate',       'bpm'),
     (2, 'core_temperature', 'millicelsius'),
     (3, 'hrv_sdnn',         'ms'),
@@ -32,7 +32,7 @@ INSERT OR IGNORE INTO sample_kind (id, name, unit) VALUES
     (14, 'distance',        'centimetres'),
     (15, 'tracked_duration','seconds');
 
-CREATE TABLE IF NOT EXISTS workout (
+CREATE TABLE workout (
     id          INTEGER PRIMARY KEY,
     device_id   INTEGER NOT NULL REFERENCES device(id),
     started_at  INTEGER NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS workout (
 
 -- source distinguishes the 1 Hz live stream from the coarser stored series;
 -- both can describe the same instant and neither should overwrite the other.
-CREATE TABLE IF NOT EXISTS sample (
+CREATE TABLE sample (
     device_id   INTEGER NOT NULL REFERENCES device(id),
     -- milliseconds: 1 Hz live pushes collide at one-second resolution
     measured_at INTEGER NOT NULL,
@@ -52,16 +52,10 @@ CREATE TABLE IF NOT EXISTS sample (
     source      INTEGER NOT NULL,
     value       INTEGER NOT NULL,
     quality     INTEGER,
-    -- Seconds the reading covers: a minute for an aggregated series, ~37 for
-    -- an HRV burst. Null for instants and for rows written before it was read.
-    window_secs INTEGER,
-    -- `VasistasCbt.attrib` for temperature: 1 normal, 2 asleep, 3 workout,
-    -- 4 night measure. Null where the stream annotates nothing.
-    context     INTEGER,
     PRIMARY KEY (device_id, measured_at, kind, source)
 ) STRICT, WITHOUT ROWID;
 
-CREATE TABLE IF NOT EXISTS ecg (
+CREATE TABLE ecg (
     id              INTEGER PRIMARY KEY,
     device_id       INTEGER NOT NULL REFERENCES device(id),
     measured_at     INTEGER NOT NULL,
@@ -78,13 +72,7 @@ CREATE TABLE IF NOT EXISTS ecg (
     UNIQUE (device_id, measured_at, signal_type)
 ) STRICT;
 
--- ECG timestamps were once written in seconds while the rest of the schema
--- used milliseconds. Anything below this is a date in 1970, so it is the old
--- form; the correction is idempotent because it leaves no such values behind.
-UPDATE ecg SET measured_at = measured_at * 1000
- WHERE measured_at > 0 AND measured_at < 100000000000;
-
-CREATE TABLE IF NOT EXISTS sync_state (
+CREATE TABLE sync_state (
     device_id      INTEGER NOT NULL REFERENCES device(id),
     category       INTEGER NOT NULL,
     synced_through INTEGER NOT NULL,
@@ -95,19 +83,16 @@ CREATE TABLE IF NOT EXISTS sync_state (
 -- its frame as Unknown or Malformed and never reaches here; what does is a
 -- frame whose objects did not tile its declared length, which is what a lost
 -- notification leaves behind.
-CREATE TABLE IF NOT EXISTS undecoded_frame (
+CREATE TABLE undecoded_frame (
     id          INTEGER PRIMARY KEY,
     device_id   INTEGER NOT NULL REFERENCES device(id),
     received_at INTEGER NOT NULL,
     command     INTEGER NOT NULL,
-    payload     BLOB NOT NULL,
-    -- Where a second frame starts inside this one, when it does: the mark of
-    -- a notification that went missing rather than a frame we cannot read.
-    splice_at   INTEGER
+    payload     BLOB NOT NULL
 ) STRICT;
 
 -- Nothing on the wire links a sample to a workout; only its timestamp does.
-CREATE VIEW IF NOT EXISTS workout_sample AS
+CREATE VIEW workout_sample AS
 SELECT w.id AS workout_id, s.*
   FROM workout w
   JOIN sample s
@@ -119,7 +104,7 @@ SELECT w.id AS workout_id, s.*
 -- samples because the counters describe the window, not an instant, and the
 -- window is not always a minute: idle stretches arrive compressed into one
 -- long one, which is the difference between "no movement" and "no data".
-CREATE TABLE IF NOT EXISTS activity_minute (
+CREATE TABLE activity_minute (
     device_id     INTEGER NOT NULL REFERENCES device(id),
     -- seconds, as the watch dates it
     started_at    INTEGER NOT NULL,
@@ -136,15 +121,12 @@ CREATE TABLE IF NOT EXISTS activity_minute (
     -- and gone from the watch's ring buffer within the day.
     reco_v1       INTEGER,
     reco_v2       INTEGER,
-    -- The watch's own staging for the window: 0 awake, 1 light, 2 deep, 3 REM.
-    -- Stored as the wire value; `wpp::activity::SleepLevel` reads it.
-    sleep_level   INTEGER,
     PRIMARY KEY (device_id, started_at)
 ) STRICT, WITHOUT ROWID;
 
 -- Set boundaries a user marks with the stopwatch. Not protocol data; it is
 -- what makes a workout trace legible as sets rather than one long line.
-CREATE TABLE IF NOT EXISTS marker (
+CREATE TABLE marker (
     device_id INTEGER NOT NULL REFERENCES device(id),
     at_ms     INTEGER NOT NULL,
     edge      INTEGER NOT NULL,
