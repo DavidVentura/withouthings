@@ -5,9 +5,11 @@
 
 mod migrate;
 
+use std::collections::{BTreeSet, HashMap};
+
 use rusqlite::{params, Connection, OptionalExtension};
 use wpp::activity::Minute;
-use wpp::client::{Category, Record};
+use wpp::client::{Category, Record, Source};
 use wpp::signal::Signal;
 use wpp::units::UnixTime;
 
@@ -16,6 +18,11 @@ pub use rusqlite::Error;
 /// `sample_kind.battery_state`, and the value meaning a charger is attached.
 const CHARGING_KIND: i64 = 8;
 const CHARGING_STATE: i64 = 0;
+
+/// How long a level sample stands for on its own. A repeat this far after the
+/// one it repeats is written anyway, so a series that is holding stays
+/// distinguishable from a watch that stopped reporting.
+const LEVEL_MAX_GAP_MS: i64 = 10 * 60 * 1000;
 
 pub struct Store {
     conn: Connection,
@@ -53,6 +60,7 @@ impl Store {
     /// the client the data is durable, and only then may anything be deleted
     /// from the watch.
     pub fn store(&mut self, device_id: i64, records: &[Record]) -> Result<(), Error> {
+        let records = thin_levels(self.newest_levels(device_id, records)?, records);
         let tx = self.conn.transaction()?;
         for record in records {
             match record {
@@ -157,6 +165,44 @@ impl Store {
             }
         }
         tx.commit()
+    }
+
+    /// The newest live sample already stored for each level kind the batch
+    /// carries, as kind id to (measured_at, value).
+    fn newest_levels(
+        &self,
+        device_id: i64,
+        records: &[Record],
+    ) -> Result<HashMap<i64, (i64, i64)>, Error> {
+        let kinds: BTreeSet<i64> = records
+            .iter()
+            .filter_map(|record| match record {
+                Record::Sample {
+                    kind,
+                    source: Source::Live,
+                    ..
+                } if kind.is_level() => Some(kind.id()),
+                _ => None,
+            })
+            .collect();
+
+        let mut newest = HashMap::new();
+        for kind in kinds {
+            let last = self
+                .conn
+                .query_row(
+                    "SELECT measured_at, value FROM sample
+                      WHERE device_id = ?1 AND kind = ?2 AND source = ?3
+                      ORDER BY measured_at DESC LIMIT 1",
+                    params![device_id, kind, Source::Live.id()],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            if let Some(row) = last {
+                newest.insert(kind, row);
+            }
+        }
+        Ok(newest)
     }
 
     /// Keep a frame the decoder could not read.
@@ -488,7 +534,6 @@ impl Store {
 
         let mut periods: Vec<(i64, Option<i64>)> = Vec::new();
         let mut open: Option<i64> = None;
-        let mut last_at = from_ms;
         for row in rows {
             let (at, state) = row?;
             match (open, state == CHARGING_STATE) {
@@ -499,19 +544,14 @@ impl Store {
                 }
                 _ => {}
             }
-            last_at = at;
         }
-        // Still charging at the last reading: leave it open rather than
-        // inventing an end the data does not support.
+        // A state holds until a reading contradicts it, and the series is
+        // written on change, so the last one saying CHARGING means the charge
+        // was still running at the end of the window. Ending it at that reading
+        // would report a charge as over for as long as the gap between two
+        // writes of an unchanged state.
         if let Some(start) = open {
-            periods.push((
-                start,
-                if last_at >= to_ms {
-                    None
-                } else {
-                    Some(last_at)
-                },
-            ));
+            periods.push((start, None));
         }
         Ok(periods)
     }
@@ -552,6 +592,44 @@ impl Store {
     pub fn connection(&self) -> &Connection {
         &self.conn
     }
+}
+
+/// The records of a batch worth writing, given the newest live sample already
+/// stored for each level kind, as kind id to (measured_at, value).
+///
+/// A live level only says something when it changes or when enough time has
+/// passed that its holding is itself news, and the watch pushes one every
+/// ~20 s regardless. Everything else passes through untouched: a stored series
+/// is already the watch's own summary, and an instant is only ever about the
+/// moment it was taken at, so a repeat of one is a second observation rather
+/// than the same one restated.
+fn thin_levels(mut newest: HashMap<i64, (i64, i64)>, records: &[Record]) -> Vec<&Record> {
+    let mut kept = Vec::with_capacity(records.len());
+    for record in records {
+        let Record::Sample {
+            measured_at,
+            kind,
+            value,
+            source: Source::Live,
+            ..
+        } = record
+        else {
+            kept.push(record);
+            continue;
+        };
+        if !kind.is_level() {
+            kept.push(record);
+            continue;
+        }
+        if let Some((last_at, last_value)) = newest.get(&kind.id()) {
+            if value == last_value && measured_at.0 - last_at < LEVEL_MAX_GAP_MS {
+                continue;
+            }
+        }
+        newest.insert(kind.id(), (measured_at.0, *value));
+        kept.push(record);
+    }
+    kept
 }
 
 fn store_ecg(tx: &rusqlite::Transaction<'_>, device_id: i64, signal: &Signal) -> Result<(), Error> {
@@ -828,6 +906,94 @@ mod tests {
             store.charge_periods(device, 2_500, 4_500).unwrap(),
             vec![(2_500, Some(4_000))]
         );
+    }
+
+    fn battery(at: i64, value: i64) -> Record {
+        Record::Sample {
+            measured_at: UnixMillis(at),
+            kind: SampleKind::BatteryPercent,
+            value,
+            quality: None,
+            source: Source::Live,
+            window_secs: None,
+            context: None,
+        }
+    }
+
+    /// The watch pushes the battery every ~20 s; only the changes and a
+    /// ten-minute restatement are worth keeping.
+    #[test]
+    fn a_level_that_is_not_moving_is_stored_every_ten_minutes() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let batch: Vec<Record> = (0..90)
+            .map(|i| battery(i * 20_000, if i < 60 { 84 } else { 83 }))
+            .collect();
+        store.store(device, &batch).unwrap();
+
+        let kept: Vec<(i64, i64)> = store
+            .series(device, SampleKind::BatteryPercent.id(), 0, 1_800_000, 1000)
+            .unwrap()
+            .iter()
+            .map(|(at, value, _)| (*at, *value))
+            .collect();
+        assert_eq!(
+            kept,
+            vec![(0, 84), (600_000, 84), (1_200_000, 83)],
+            "the first reading, a restatement ten minutes on, then the change"
+        );
+    }
+
+    /// Thinning must survive the batch boundary, or a stream that arrives one
+    /// record at a time is not thinned at all.
+    #[test]
+    fn a_repeat_arriving_in_a_later_batch_is_still_dropped() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        for i in 0..40 {
+            store.store(device, &[battery(i * 20_000, 84)]).unwrap();
+        }
+        assert_eq!(
+            store.count("sample").unwrap(),
+            2,
+            "the first reading and the ten-minute restatement"
+        );
+    }
+
+    /// Only levels are thinned: a heart rate that reads the same twice is two
+    /// measurements, not one restated.
+    #[test]
+    fn instants_and_stored_series_pass_through_untouched() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[
+                    sample(1_000, 62, Source::Live),
+                    sample(21_000, 62, Source::Live),
+                    Record::Sample {
+                        measured_at: UnixMillis(1_000),
+                        kind: SampleKind::BatteryPercent,
+                        value: 84,
+                        quality: None,
+                        source: Source::Stored,
+                        window_secs: None,
+                        context: None,
+                    },
+                    Record::Sample {
+                        measured_at: UnixMillis(21_000),
+                        kind: SampleKind::BatteryPercent,
+                        value: 84,
+                        quality: None,
+                        source: Source::Stored,
+                        window_secs: None,
+                        context: None,
+                    },
+                ],
+            )
+            .unwrap();
+        assert_eq!(store.count("sample").unwrap(), 4);
     }
 
     #[test]

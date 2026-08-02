@@ -245,6 +245,20 @@ impl SampleKind {
             SampleKind::TrackedDuration => 15,
         }
     }
+
+    /// Whether the value holds until it changes, rather than describing only
+    /// the instant it was taken at.
+    ///
+    /// The battery series are pushed every ~20 s and move a few hundred times
+    /// a week, so nearly every reading restates the one before it. A reader of
+    /// a level takes the last value as the current one, which is what makes
+    /// the repeats droppable in the first place.
+    pub fn is_level(self) -> bool {
+        matches!(
+            self,
+            SampleKind::BatteryPercent | SampleKind::BatteryState | SampleKind::BatteryMillivolts
+        )
+    }
 }
 
 /// Which ingest path a sample arrived by; the two differ in resolution and
@@ -790,27 +804,43 @@ impl Client {
             }
             (Phase::Syncing, _) => {
                 self.busy_retries = 0;
-                let empty = frame
+                // One request is answered with the whole window: a run of
+                // frames carrying records, closed by a frame holding nothing
+                // but `TYPE_NULL`. `max: 0` asks for no limit and the watch
+                // takes it literally — 68 frames and 397 records in one reply,
+                // in the capture this was read from.
+                //
+                // Asking again for each of those frames queues a request per
+                // frame rather than per window. On the bulk streams that is
+                // thousands, they drain one at a time behind a link already
+                // carrying the batch, and each one that finally goes out asks
+                // from a watermark that moved thousands of records ago — so
+                // the watch sends the same records again.
+                let carries_records = frame
                     .objects
                     .iter()
-                    .any(|o| matches!(o, WppObject::Null(_)));
-                if empty {
-                    // Nothing left in this category; keep its watermark and
-                    // move on.
-                    if let Some(finished) = self.current.take() {
-                        self.done.push(finished);
-                    }
-                    actions.extend(self.request_next());
-                } else if let Some((seen, high)) = self.batch_high_water.take() {
+                    .any(|o| matches!(o, WppObject::WamVasistasHead(_)));
+                // Resume one second past the newest record, but only on the
+                // strength of this stream's own records.
+                if let Some((seen, high)) = self.batch_high_water.take() {
                     if let Some((category, _)) = self.current {
-                        // Resume one second past the newest record so the next
-                        // request does not return it again — but only on the
-                        // strength of this stream's own records.
                         if seen == category {
                             self.current = Some((category, UnixTime(high.0 + 1)));
                         }
                     }
-                    actions.extend(self.request_current());
+                }
+                // A `Null` among records is a field the watch had nothing for;
+                // only a frame with no records at all closes the window.
+                let closed = !carries_records
+                    && frame
+                        .objects
+                        .iter()
+                        .any(|o| matches!(o, WppObject::Null(_)));
+                if closed {
+                    if let Some(finished) = self.current.take() {
+                        self.done.push(finished);
+                    }
+                    actions.extend(self.request_next());
                 }
             }
             _ => {}
@@ -2241,6 +2271,54 @@ mod tests {
         assert_eq!(list.screen_nb, vec![2, 16, 0, 0, 0, 0, 0, 0]);
     }
 
+    /// The watch answers one request with the whole window, across as many
+    /// frames as it takes. Asking again for each of them queued 11,437 writes
+    /// behind a link already busy carrying the reply, and every one that got
+    /// out asked from a watermark thousands of records stale.
+    #[test]
+    fn a_multi_frame_window_is_asked_for_once() {
+        use crate::objects::{VasistasCbt, WamVasistasHead};
+        let records = |from: u32| {
+            frame(
+                Command::CMD_VASISTAS_GET,
+                (0..6)
+                    .flat_map(|i| {
+                        [
+                            WppObject::WamVasistasHead(WamVasistasHead { utc: from + i * 60 }),
+                            WppObject::VasistasCbt(VasistasCbt {
+                                algo: VasistasCbt::ALGO_FREE_LIVING,
+                                attrib: VasistasCbt::ATTRIB_NORMAL,
+                                temperature: 36_900,
+                            }),
+                        ]
+                    })
+                    .collect(),
+            )
+        };
+        let mut client = authenticated();
+
+        for batch in 0..20 {
+            let actions = client.handle(records(10_000 + batch * 360));
+            assert!(
+                sent(&actions).is_empty(),
+                "frame {batch} of a reply still in flight asked for more"
+            );
+        }
+
+        // Only the frame that carries no records at all closes the window,
+        // and that is what moves the walk on — here off the last stream, so
+        // the pass ends.
+        let closing = client.handle(frame(
+            Command::CMD_VASISTAS_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+        assert!(
+            sent(&closing).contains(&Command::CMD_SYNC_OK),
+            "the terminator closes the window: {:?}",
+            sent(&closing)
+        );
+    }
+
     /// The baseline is what the fever algorithm compares against, not a
     /// reading: it arrives on the hour with a zero window and barely moves all
     /// week. Stored beside the measurements it is a temperature nobody took.
@@ -3020,18 +3098,21 @@ mod tests {
             vec![WppObject::Null(Null {})],
         ));
 
-        // The second is far behind, and answers from where it actually is.
-        let actions = client.handle(cbt(2_000));
-        let Some(Action::Send(next)) = actions.into_iter().find(|a| matches!(a, Action::Send(_)))
-        else {
-            panic!("it must ask for more of this stream")
-        };
-        let WppObject::WamVasistasGet(ask) = &next.objects[0] else {
-            panic!()
-        };
-        assert_eq!(
-            ask.utc_start, 2_001,
-            "resume just past this stream's own newest record, not the other's"
+        // The second is far behind, and keeps its own place.
+        client.handle(cbt(2_000));
+        client.handle(frame(
+            Command::CMD_VASISTAS_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+
+        let marks = client.watermarks();
+        assert!(
+            marks.contains(&(Category(6), UnixTime(900_001))),
+            "the current stream resumes past its own newest record: {marks:?}"
+        );
+        assert!(
+            marks.contains(&(Category(11), UnixTime(2_001))),
+            "and the stream behind is not dragged forward with it: {marks:?}"
         );
     }
 
@@ -3158,7 +3239,9 @@ mod tests {
                 max: 0,
             })));
 
-        // 4. a window of samples -> stored, and the next request moves past it
+        // 4. a window of samples -> stored. Nothing is asked for yet: the
+        //    watch is still streaming this window and only the terminator
+        //    that closes it moves the walk on.
         let actions = client.handle(frame(
             Command::CMD_VASISTAS_GET,
             vec![
@@ -3175,7 +3258,10 @@ mod tests {
                 }),
             ],
         ));
-        assert_eq!(sent(&actions), vec![Command::CMD_VASISTAS_GET]);
+        assert!(
+            sent(&actions).is_empty(),
+            "a frame of records is part of a reply already in flight"
+        );
         assert_eq!(
             stored(&actions),
             vec![

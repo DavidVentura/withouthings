@@ -94,8 +94,11 @@ private const val ACTIVITY_LOG_MAX_AGE_MS = 10_000L
 /// Six seconds is what a clinical strip shows on one line at 25 mm/s.
 private const val INITIAL_ECG_SPAN_MS = 6_000L
 
-/// Frequent enough that unplugging shows up before you look away.
-private const val CHARGE_POLL_MS = 8_000L
+/// Frequent enough that plugging in or unplugging shows up before you look
+/// away. Nothing on the wire announces either — only a full battery is pushed
+/// — so this is the only way to see a charge start, and every poll is a wake
+/// for the watch.
+private const val CHARGE_POLL_MS = 15_000L
 
 /**
  * How far back a night step will look for one the watch staged. Longer than the
