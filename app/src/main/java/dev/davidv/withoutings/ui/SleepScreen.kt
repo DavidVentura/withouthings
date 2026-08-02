@@ -22,6 +22,24 @@ private fun duration(ms: Long): String {
     return "${minutes / 60}h${"%02d".format(minutes % 60)}"
 }
 
+private val dayMonth = SimpleDateFormat("EEE d MMM", Locale.getDefault())
+
+/**
+ * The night named by the days it spans, or by the single day when it does not
+ * cross midnight. Falls back to the fetched window for a night with no staging,
+ * where the middle of the window is the morning it belongs to.
+ */
+private fun nightLabel(night: Night, window: LongRange): String {
+    val from = night.asleepFromMs
+    val to = night.asleepToMs
+    if (from == null || to == null) {
+        return dayMonth.format(Date(window.first + (window.last - window.first) / 2))
+    }
+    val start = dayMonth.format(Date(from))
+    val end = dayMonth.format(Date(to))
+    return if (start == end) start else "$start → $end"
+}
+
 /** Enough either side to see the night end, not enough to lose it in the day. */
 private const val SLEEP_MARGIN_MS = 10 * 60_000L
 
@@ -52,6 +70,13 @@ fun SleepScreen(
             Text("No data for this night.", style = MaterialTheme.typography.bodyLarge)
             return@Page
         }
+
+        // Which night this is. A sleep that crosses midnight belongs to both
+        // dates, and saying only one of them is what makes a screen ambiguous.
+        Text(
+            nightLabel(night, window),
+            style = MaterialTheme.typography.titleMedium,
+        )
 
         val asleep = night.asleepFromMs?.let { from ->
             night.asleepToMs?.let { to -> from..to }
@@ -127,28 +152,6 @@ fun SleepScreen(
                 )
             }
         }
-
-        val scheme = MaterialTheme.colorScheme
-        // No sleep band: the view is already clamped to the sleep period, so
-        // shading it would tint the whole width and say nothing.
-        val bands = night.charging.bands(scheme.outlineVariant.copy(alpha = 0.5f))
-
-        Text("Heart rate", style = MaterialTheme.typography.labelSmall)
-        ValueChart(
-            points = night.hr.map { ChartPoint(it.atMs, it.value) },
-            bands = bands,
-            window = window,
-            onWindowChange = onWindowChange,
-            limit = night.sleepWindow(),
-            axis = 30.0..120.0,
-            decimals = 0,
-            height = 180.dp,
-            gutterLeftDp = SLEEP_GUTTER,
-            lineColor = scheme.primary,
-            gridColor = scheme.outlineVariant,
-            axisColor = scheme.outline,
-            labelColor = scheme.onSurfaceVariant,
-        )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(

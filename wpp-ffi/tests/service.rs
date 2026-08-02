@@ -367,6 +367,8 @@ fn reducing_a_series_for_drawing_keeps_peaks_and_troughs() {
             value: if i == 300 { 55 } else { 120 + (i % 5) },
             quality: None,
             source: Source::Live,
+            window_secs: None,
+            context: None,
         })
         .collect();
     store.store(device, &records).unwrap();

@@ -43,20 +43,22 @@ pub struct Score {
 const HOUR_MS: f64 = 3_600_000.0;
 
 /// Weights over the four quality components, summing to 1.
-const WEIGHT_EFFICIENCY: f64 = 0.35;
-const WEIGHT_DEEP: f64 = 0.25;
-const WEIGHT_REM: f64 = 0.20;
-const WEIGHT_CONTINUITY: f64 = 0.20;
+///
+/// Composition carries more than efficiency because efficiency and continuity
+/// are near their ceilings on any night spent in bed, so a night that is
+/// nothing but light sleep otherwise scores as well as a balanced one.
+const WEIGHT_EFFICIENCY: f64 = 0.20;
+const WEIGHT_DEEP: f64 = 0.30;
+const WEIGHT_REM: f64 = 0.35;
+const WEIGHT_CONTINUITY: f64 = 0.15;
 
 /// How much of the score quality can move, the rest being carried by duration
 /// alone.
 ///
 /// Duration multiplies rather than adds because no composition rescues a short
 /// night: four perfect hours is not a good night's sleep, and a model that adds
-/// duration to the others says it is. Health Mate's own score behaves the same
-/// way — across eight scored nights its value tracks time asleep closely and
-/// quality moves it by about 14 points at fixed duration.
-const QUALITY_SHARE: f64 = 0.40;
+/// duration to the others says it is.
+const QUALITY_SHARE: f64 = 0.75;
 
 /// A trapezoid: 0 at or below `zero_low`, full between `full_low` and
 /// `full_high`, 0 at or above `zero_high`, straight lines between.
@@ -124,9 +126,15 @@ pub fn score(bands: &[Band]) -> Option<Score> {
     let hours = asleep as f64 / HOUR_MS;
     let duration = ramp(hours, 0.0, 7.5, 9.5, 14.0);
     let efficiency = ramp(asleep as f64 / in_bed as f64, 0.55, 0.88, 1.0, 1.01);
-    // Shares of time asleep, which is how the conventional figures are quoted.
-    let deep_share = ramp(deep as f64 / asleep as f64, 0.0, 0.13, 0.23, 0.45);
-    let rem_share = ramp(rem as f64 / asleep as f64, 0.0, 0.18, 0.28, 0.50);
+    // Shares of time asleep, which is how the conventional figures are quoted:
+    // for an adult, deep (N3) 13-23%, REM 20-25%, the light stages the rest.
+    //
+    // Neither is penalised for running over. Excess deep or REM is a recovery
+    // pattern rather than a fault, and docking it made a night with 27% deep
+    // score below one with 14%. Light has no term of its own — it is what the
+    // other two are not, so it is already scored, twice over, by their misses.
+    let deep_share = ramp(deep as f64 / asleep as f64, 0.0, 0.16, 1.0, 1.01);
+    let rem_share = ramp(rem as f64 / asleep as f64, 0.0, 0.22, 1.0, 1.01);
     let continuity = ramp(wakings(bands) as f64, -1.0, 0.0, 1.0, 9.0);
 
     let quality = efficiency * WEIGHT_EFFICIENCY
@@ -230,16 +238,16 @@ mod tests {
         out
     }
 
-    /// Health Mate's own scores for eight nights off this watch, read out of
-    /// `Track.dataJson` in `room-healthmate.db`, against ours for the same
-    /// stage totals.
+    /// Health Mate's own scores for six nights off this watch, read out of
+    /// `Track.dataJson` in `room-healthmate.db`.
     ///
-    /// Not a correctness proof — theirs is a different algorithm with inputs we
-    /// do not have, and it floors naps at 20 where ours reports them low. It is
-    /// a guard that the shape stays right: a full night must not come out as a
-    /// nap, and quality must not swamp duration.
+    /// Only the ordering is checked, not the values. We deliberately weight
+    /// composition harder than Withings do — they scored a night with **0%**
+    /// deep at 80 — so agreeing on magnitude would mean abandoning the thing
+    /// this score is for. Ranking the same nights the same way is the part
+    /// worth keeping.
     #[test]
-    fn tracks_health_mates_score_on_real_nights() {
+    fn ranks_nights_the_way_health_mate_does() {
         // light, deep, rem, awake (minutes), wakings, Health Mate's score
         let nights = [
             (347, 0, 95, 103, 7, 80),
@@ -249,16 +257,53 @@ mod tests {
             (222, 42, 83, 11, 1, 70),
             (168, 10, 160, 65, 3, 56),
         ];
-        for (light, deep, rem, awake, wakings, theirs) in nights {
-            let night = night_like(light, deep, rem, awake, wakings);
-            let ours = score(&night).expect("a night with sleep in it scores");
-            let gap = (ours.total as i32 - theirs as i32).abs();
-            assert!(
-                gap <= 15,
-                "{light}/{deep}/{rem}/{awake} {wakings} wakings: ours {} vs theirs {theirs}",
-                ours.total,
-            );
+        let scored: Vec<(u8, u8)> = nights
+            .iter()
+            .map(|&(light, deep, rem, awake, wakings, theirs)| {
+                let night = night_like(light, deep, rem, awake, wakings);
+                (
+                    score(&night).expect("a night with sleep scores").total,
+                    theirs,
+                )
+            })
+            .collect();
+        for (i, (ours_a, theirs_a)) in scored.iter().enumerate() {
+            for (ours_b, theirs_b) in &scored[i + 1..] {
+                // Only pairs they consider clearly different: two nights they
+                // put within a few points of each other may fall either way.
+                if theirs_a.abs_diff(*theirs_b) < 15 {
+                    continue;
+                }
+                assert_eq!(
+                    theirs_a > theirs_b,
+                    ours_a > ours_b,
+                    "ours {ours_a}/{ours_b} disagrees with theirs {theirs_a}/{theirs_b}",
+                );
+            }
         }
+    }
+
+    /// Two real nights off this watch that the first version of this score put
+    /// one point apart, at 93 and 92, when they are plainly not the same night.
+    ///
+    /// 27 Jul is 9 h with 27% deep; 28 Jul is 7.4 h that is 84% light with 10
+    /// minutes of REM in it. Both are REM-starved against the 20-25% an adult
+    /// is expected to get, so neither should look like a good night, and the
+    /// one with three times the REM and twice the deep should be clearly ahead.
+    #[test]
+    fn separates_two_nights_the_first_version_could_not() {
+        let july_27 = score(&night_like(360, 147, 31, 31, 2)).unwrap();
+        let july_28 = score(&night_like(373, 63, 10, 17, 2)).unwrap();
+        assert!(
+            july_27.total >= july_28.total + 5,
+            "27 Jul {} should lead 28 Jul {} clearly",
+            july_27.total,
+            july_28.total,
+        );
+        assert!(
+            july_28.total < 80,
+            "a night that is 84% light with 2% REM is not an 80: {july_28:?}",
+        );
     }
 
     /// The same sleep, broken into many pieces, must score below the whole.

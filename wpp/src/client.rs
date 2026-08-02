@@ -14,7 +14,7 @@ use crate::frame::Channel;
 use crate::objects::{
     AncsStatus, AppProbe, AppProbeOsVersion, FeatureTagsDeprecated, Id, InfoType, MeasureCategory,
     MeasureLiveAppStatus, NotificationsDisplayState, Null, ProbeChallenge, ProbeChallengeResponse,
-    StoredSignalMeta, TimeSet, TrackerWearPos, VasistasType, Version, WamScreensList,
+    StoredSignalMeta, TimeSet, TrackerWearPos, VasistasCbt, VasistasType, Version, WamScreensList,
     WamVasistasGet, WorkoutScreenList,
 };
 use crate::signal::{Signal, SignalCollector};
@@ -163,6 +163,14 @@ pub enum Record {
         value: i64,
         quality: Option<i64>,
         source: Source,
+        /// The window the reading covers. The streams tag every record with
+        /// one: a minute for an aggregated series, ~37 s for an HRV burst.
+        /// Absent for the live pushes and daily totals, which are instants.
+        window_secs: Option<i64>,
+        /// What the watch says the reading is, where the stream annotates it —
+        /// `VasistasCbt.attrib`, one of its `ATTRIB_*`. A temperature measured
+        /// asleep is not the same claim as one measured at a desk.
+        context: Option<i64>,
     },
     WorkoutStarted {
         started_at: UnixTime,
@@ -892,6 +900,8 @@ impl Client {
                         value: steps.value as i64,
                         quality: None,
                         source: Source::Live,
+                        window_secs: None,
+                        context: None,
                     });
                 }
                 WppObject::Stairs(stairs) => {
@@ -901,6 +911,8 @@ impl Client {
                         value: stairs.value as i64,
                         quality: None,
                         source: Source::Live,
+                        window_secs: None,
+                        context: None,
                     });
                 }
                 WppObject::Calories(calories) => {
@@ -910,6 +922,8 @@ impl Client {
                         value: calories.value as i64,
                         quality: None,
                         source: Source::Live,
+                        window_secs: None,
+                        context: None,
                     });
                 }
                 WppObject::Distance(distance) => {
@@ -919,6 +933,8 @@ impl Client {
                         value: distance.value as i64,
                         quality: None,
                         source: Source::Live,
+                        window_secs: None,
+                        context: None,
                     });
                 }
                 WppObject::Duration(duration) => {
@@ -928,6 +944,8 @@ impl Client {
                         value: duration.value as i64,
                         quality: None,
                         source: Source::Live,
+                        window_secs: None,
+                        context: None,
                     });
                 }
                 WppObject::BatteryStatus(battery) => {
@@ -937,6 +955,8 @@ impl Client {
                         value: battery.battery_percent as i64,
                         quality: None,
                         source: Source::Live,
+                        window_secs: None,
+                        context: None,
                     });
                     records.push(Record::Sample {
                         measured_at: received_at,
@@ -944,6 +964,8 @@ impl Client {
                         value: battery.battery_state as i64,
                         quality: None,
                         source: Source::Live,
+                        window_secs: None,
+                        context: None,
                     });
                     records.push(Record::Sample {
                         measured_at: received_at,
@@ -951,6 +973,8 @@ impl Client {
                         value: battery.battery_mv as i64,
                         quality: None,
                         source: Source::Live,
+                        window_secs: None,
+                        context: None,
                     });
                 }
                 WppObject::LiveHr(live) if live.hr > 0 => {
@@ -960,6 +984,8 @@ impl Client {
                         value: live.hr as i64,
                         quality: None,
                         source: Source::Live,
+                        window_secs: None,
+                        context: None,
                     });
                 }
                 WppObject::StartTime(start)
@@ -1039,12 +1065,19 @@ impl Client {
             return;
         }
         let mut at: Option<UnixTime> = None;
+        // Every record is headed by its instant and the window it covers, in
+        // that order, so both are in hand by the time the values arrive.
+        let mut window: Option<i64> = None;
         for object in &frame.objects {
             match object {
                 WppObject::WamVasistasHead(head) => {
                     let time = UnixTime(head.utc as i64);
                     at = Some(time);
+                    window = None;
                     self.note_head(time);
+                }
+                WppObject::WamVasistasDuration(covers) => {
+                    window = Some(covers.duration as i64);
                 }
                 WppObject::VasistasHeartrate(hr) if hr.heartrate > 0 => {
                     if let Some(time) = at {
@@ -1054,10 +1087,18 @@ impl Client {
                             value: hr.heartrate as i64,
                             quality: Some(hr.quality as i64),
                             source: Source::Stored,
+                            window_secs: window,
+                            context: None,
                         });
                     }
                 }
-                WppObject::VasistasCbt(cbt) => {
+                // `ATTRIB_BASELINE` is the reference the fever algorithm
+                // compares against, not a reading: it arrives on the hour with
+                // a zero window and sits within a few hundredths of a degree
+                // all week, while real readings swing more than a degree.
+                // Stored alongside them it would be a measurement that never
+                // happened.
+                WppObject::VasistasCbt(cbt) if cbt.attrib != VasistasCbt::ATTRIB_BASELINE => {
                     if let Some(time) = at {
                         records.push(Record::Sample {
                             measured_at: time.to_millis(),
@@ -1065,9 +1106,12 @@ impl Client {
                             value: cbt.temperature as i64,
                             quality: None,
                             source: Source::Stored,
+                            window_secs: window,
+                            context: Some(cbt.attrib as i64),
                         });
                     }
                 }
+                WppObject::VasistasCbt(_) => {}
                 // `error` is non-zero on readings the watch could not resolve,
                 // which are the majority of what the bulk streams carry.
                 WppObject::VasistasSpo2(spo2) if spo2.error == 0 && spo2.spo2 > 0 => {
@@ -1078,6 +1122,8 @@ impl Client {
                             value: spo2.spo2 as i64,
                             quality: Some(spo2.quality as i64),
                             source: Source::Stored,
+                            window_secs: window,
+                            context: None,
                         });
                     }
                 }
@@ -1089,6 +1135,8 @@ impl Client {
                             value: hrv.sdnn as i64,
                             quality: Some(hrv.quality as i64),
                             source: Source::Stored,
+                            window_secs: window,
+                            context: None,
                         });
                         records.push(Record::Sample {
                             measured_at: time.to_millis(),
@@ -1096,6 +1144,8 @@ impl Client {
                             value: hrv.rmssd as i64,
                             quality: Some(hrv.quality as i64),
                             source: Source::Stored,
+                            window_secs: window,
+                            context: None,
                         });
                     }
                 }
@@ -1107,6 +1157,8 @@ impl Client {
                             value: rr.rr as i64,
                             quality: None,
                             source: Source::Stored,
+                            window_secs: window,
+                            context: None,
                         });
                     }
                 }
@@ -1721,6 +1773,8 @@ mod tests {
                 value: 62,
                 quality: Some(4),
                 source: Source::Stored,
+                window_secs: None,
+                context: None,
             }
         );
     }
@@ -2185,6 +2239,47 @@ mod tests {
             panic!()
         };
         assert_eq!(list.screen_nb, vec![2, 16, 0, 0, 0, 0, 0, 0]);
+    }
+
+    /// The baseline is what the fever algorithm compares against, not a
+    /// reading: it arrives on the hour with a zero window and barely moves all
+    /// week. Stored beside the measurements it is a temperature nobody took.
+    #[test]
+    fn a_temperature_baseline_is_not_stored_but_a_sleeping_one_is() {
+        use crate::objects::{VasistasCbt, WamVasistasDuration, WamVasistasHead};
+        let mut client = authenticated();
+        let stored_records = client.handle(frame(
+            Command::CMD_VASISTAS_GET,
+            vec![
+                WppObject::WamVasistasHead(WamVasistasHead { utc: 5_000 }),
+                WppObject::WamVasistasDuration(WamVasistasDuration { duration: 60 }),
+                WppObject::VasistasCbt(VasistasCbt {
+                    algo: VasistasCbt::ALGO_FREE_LIVING,
+                    attrib: VasistasCbt::ATTRIB_SLEEPING,
+                    temperature: 36_500,
+                }),
+                WppObject::WamVasistasHead(WamVasistasHead { utc: 5_060 }),
+                WppObject::WamVasistasDuration(WamVasistasDuration { duration: 0 }),
+                WppObject::VasistasCbt(VasistasCbt {
+                    algo: VasistasCbt::ALGO_FREE_LIVING,
+                    attrib: VasistasCbt::ATTRIB_BASELINE,
+                    temperature: 37_030,
+                }),
+            ],
+        ));
+        assert_eq!(
+            stored(&stored_records),
+            vec![Record::Sample {
+                measured_at: UnixMillis(5_000_000),
+                kind: SampleKind::CoreTemperature,
+                value: 36_500,
+                quality: None,
+                source: Source::Stored,
+                window_secs: Some(60),
+                context: Some(VasistasCbt::ATTRIB_SLEEPING as i64),
+            }],
+            "the baseline is dropped and the sleeping reading keeps its window"
+        );
     }
 
     /// The watch loses this over a reboot, and a watch that quietly comes back
@@ -3090,6 +3185,8 @@ mod tests {
                     value: 62,
                     quality: Some(4),
                     source: Source::Stored,
+                    window_secs: None,
+                    context: None,
                 },
                 Record::Sample {
                     measured_at: UnixMillis(5_000_000),
@@ -3097,6 +3194,9 @@ mod tests {
                     value: 37255,
                     quality: None,
                     source: Source::Stored,
+                    window_secs: None,
+                    // The conditions the watch says it was taken under.
+                    context: Some(VasistasCbt::ATTRIB_NORMAL as i64),
                 },
             ]
         );

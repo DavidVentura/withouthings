@@ -18,9 +18,6 @@ use wpp_store::Store;
 
 uniffi::setup_scaffolding!();
 
-/// A night at roughly one point per horizontal pixel.
-const NIGHT_POINTS: u32 = 1200;
-
 fn origin_of(source: i64) -> Origin {
     if source == 1 {
         Origin::Live
@@ -356,20 +353,14 @@ pub struct SleepScore {
     pub continuity: u8,
 }
 
-/// One night's screen: the two series it draws, the periods it shades, and the
-/// numbers it puts at the top.
+/// One night's screen: what the watch staged, and the numbers read off it.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct Night {
-    pub hr: Vec<Point>,
     /// What the watch staged, in order, and the only source of the sleep
     /// period. Empty for a night it did not stage.
     pub stages: Vec<SleepBand>,
-    /// Off the wrist, so a hole in the series is explained rather than drawn as
-    /// missing data.
-    pub charging: Vec<Marker>,
     pub asleep_from_ms: Option<i64>,
     pub asleep_to_ms: Option<i64>,
-    pub lowest_hr: Option<f64>,
     /// Absent for a night with no sleep staged in it.
     pub score: Option<SleepScore>,
 }
@@ -832,11 +823,7 @@ impl WatchService {
             .map(|(at, value, source)| HrPoint {
                 at_ms: at,
                 bpm: value as u16,
-                origin: if source == 1 {
-                    Origin::Live
-                } else {
-                    Origin::Stored
-                },
+                origin: origin_of(source),
             })
             .collect())
     }
@@ -857,11 +844,7 @@ impl WatchService {
             .map(|(at, value, source)| Point {
                 at_ms: at,
                 value: value as f64 / scale,
-                origin: if source == 1 {
-                    Origin::Live
-                } else {
-                    Origin::Stored
-                },
+                origin: origin_of(source),
             })
             .collect())
     }
@@ -1199,20 +1182,11 @@ impl WatchService {
 
     /// Everything one night's screen draws, in a single call.
     ///
-    /// The window wants to start in the evening rather than at the sleep it is
-    /// looking for: the detection takes its levels from what it is given, so a
-    /// window holding only sleep has nothing to compare the sleep against.
+    /// The window is asked for far wider than the sleep in it — evening through
+    /// late morning — because where the night falls inside it is what this is
+    /// working out.
     pub fn night(&self, from_ms: i64, to_ms: i64) -> Result<Night, WatchError> {
         let store = self.store.lock().unwrap();
-        let hr: Vec<Point> = store
-            .series(self.device_id, 1, from_ms, to_ms, NIGHT_POINTS)?
-            .into_iter()
-            .map(|(at, value, source)| Point {
-                at_ms: at,
-                value: value as f64,
-                origin: origin_of(source),
-            })
-            .collect();
         let minutes = store.activity_minutes(self.device_id, from_ms / 1000, to_ms / 1000)?;
 
         // A window the watch staged but whose level this build does not know is
@@ -1266,19 +1240,6 @@ impl WatchService {
             })
         }));
 
-        let charging = store
-            .charge_periods(self.device_id, from_ms, to_ms)?
-            .into_iter()
-            .flat_map(|(start, end)| {
-                [Some(start), end]
-                    .into_iter()
-                    .flatten()
-                    .zip([SetEdge::Start, SetEdge::End])
-                    .map(|(at_ms, edge)| Marker { at_ms, edge })
-                    .collect::<Vec<Marker>>()
-            })
-            .collect();
-
         // Scored on the bands as drawn, gap-fills included: time out of bed is
         // time not asleep, and leaving it out would score a broken night as if
         // it had been unbroken.
@@ -1310,21 +1271,15 @@ impl WatchService {
             asleep_from_ms: asleep.map(|(from, _)| from),
             asleep_to_ms: asleep.map(|(_, to)| to),
             score,
-            lowest_hr: hr
-                .iter()
-                .filter(|p| {
-                    asleep
-                        .map(|(from, to)| p.at_ms >= from && p.at_ms <= to)
-                        .unwrap_or(false)
-                })
-                .map(|p| p.value)
-                .fold(None, |low: Option<f64>, v| {
-                    Some(low.map_or(v, |l| l.min(v)))
-                }),
-            hr,
             stages,
-            charging,
         })
+    }
+
+    /// Whether the watch staged any sleep in a window, for stepping past the
+    /// nights it was not worn without loading each one.
+    pub fn has_staging(&self, from_ms: i64, to_ms: i64) -> Result<bool, WatchError> {
+        let store = self.store.lock().unwrap();
+        Ok(store.has_staging(self.device_id, from_ms / 1000, to_ms / 1000)?)
     }
 
     /// Charging periods over a window, as the same start/end markers a chart
@@ -1463,9 +1418,6 @@ const CHARGING_STATE: i64 = 0;
 /// polled every few minutes in the background, and bringing the app to the
 /// front forces one, so anything older than this means nobody has looked.
 const CHARGE_STATE_FRESH_MS: i64 = 180_000;
-
-/// `WAM_SCREEN_MAX_NUMBER` from the app.
-const MAX_SCREEN_ID: u8 = 24;
 
 /// Screen numbers and names, recovered from the official app's `DeviceScreen`
 /// table by pairing `embeddedId` with `name`.

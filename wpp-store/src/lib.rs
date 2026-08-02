@@ -62,6 +62,23 @@ impl Store {
                 [],
             )?;
         }
+        // The streams tag every record with the window it covers and, for
+        // temperature, the conditions it was taken under. Rows written before
+        // these were read have neither, which is not the same as a reading the
+        // watch declined to annotate — but nothing can recover it now.
+        for column in ["window_secs", "context"] {
+            let present: i64 = conn.query_row(
+                "SELECT count(*) FROM pragma_table_info('sample') WHERE name = ?1",
+                [column],
+                |r| r.get(0),
+            )?;
+            if present == 0 {
+                conn.execute(
+                    &format!("ALTER TABLE sample ADD COLUMN {column} INTEGER"),
+                    [],
+                )?;
+            }
+        }
         Ok(Store { conn })
     }
 
@@ -89,12 +106,16 @@ impl Store {
                     value,
                     quality,
                     source,
+                    window_secs,
+                    context,
                 } => {
                     // Every sample is an observation at an instant, so a
                     // repeat of one is a duplicate.
                     tx.execute(
-                        "INSERT INTO sample (device_id, measured_at, kind, source, value, quality)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                        "INSERT INTO sample
+                             (device_id, measured_at, kind, source, value, quality,
+                              window_secs, context)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                          ON CONFLICT DO NOTHING",
                         params![
                             device_id,
@@ -102,7 +123,9 @@ impl Store {
                             kind.id(),
                             source.id(),
                             value,
-                            quality
+                            quality,
+                            window_secs,
+                            context
                         ],
                     )?;
                 }
@@ -386,6 +409,26 @@ impl Store {
     ///
     /// A window that starts before `from_secs` but runs into the span is
     /// included: the walk that a view opens in the middle of began earlier.
+    /// Whether the watch staged any sleep in a window.
+    ///
+    /// Cheap enough to step a night at a time over: the walk back to a night
+    /// with data is a handful of index lookups per day skipped.
+    ///
+    /// Overlap, not containment, and matching [`Store::activity_minutes`]
+    /// exactly. A window that opens before the span and runs into it counts for
+    /// both or neither — the two disagreeing is a night reported as having data
+    /// and then drawn empty, or skipped over while holding some.
+    pub fn has_staging(&self, device_id: i64, from_secs: i64, to_secs: i64) -> Result<bool, Error> {
+        self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM activity_minute
+                             WHERE device_id = ?1 AND started_at <= ?3
+                               AND started_at + duration_secs >= ?2
+                               AND sleep_level IS NOT NULL)",
+            params![device_id, from_secs, to_secs],
+            |r| r.get(0),
+        )
+    }
+
     pub fn activity_minutes(
         &self,
         device_id: i64,
@@ -603,6 +646,8 @@ mod tests {
             value,
             quality: Some(4),
             source,
+            window_secs: Some(60),
+            context: None,
         }
     }
 
@@ -798,6 +843,8 @@ mod tests {
             value: v,
             quality: None,
             source: Source::Live,
+            window_secs: None,
+            context: None,
         };
         // ok, ok, charging, charging, ok, then charging to the end
         store

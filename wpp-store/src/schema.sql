@@ -52,6 +52,12 @@ CREATE TABLE IF NOT EXISTS sample (
     source      INTEGER NOT NULL,
     value       INTEGER NOT NULL,
     quality     INTEGER,
+    -- Seconds the reading covers: a minute for an aggregated series, ~37 for
+    -- an HRV burst. Null for instants and for rows written before it was read.
+    window_secs INTEGER,
+    -- `VasistasCbt.attrib` for temperature: 1 normal, 2 asleep, 3 workout,
+    -- 4 night measure. Null where the stream annotates nothing.
+    context     INTEGER,
     PRIMARY KEY (device_id, measured_at, kind, source)
 ) STRICT, WITHOUT ROWID;
 

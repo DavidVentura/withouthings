@@ -97,6 +97,13 @@ private const val INITIAL_ECG_SPAN_MS = 6_000L
 /// Frequent enough that unplugging shows up before you look away.
 private const val CHARGE_POLL_MS = 8_000L
 
+/**
+ * How far back a night step will look for one the watch staged. Longer than the
+ * watch's own history, so the search ends because there is nothing left rather
+ * than because it gave up.
+ */
+private const val MAX_NIGHT_SEARCH_DAYS = 400
+
 class WatchViewModel : ViewModel() {
 
     private val _state = MutableStateFlow(UiState())
@@ -270,8 +277,10 @@ class WatchViewModel : ViewModel() {
     /// It reaches well past both ends of any sleep because the detection takes
     /// its levels from what it is given — a window holding only sleep has
     /// nothing to measure the sleep against.
-    private fun nightRange(): LongRange {
-        val midnight = todayStartMs() - _nightsAgo.value * 86_400_000L
+    private fun nightRange(): LongRange = nightRangeFor(_nightsAgo.value)
+
+    private fun nightRangeFor(daysAgo: Int): LongRange {
+        val midnight = todayStartMs() - daysAgo * 86_400_000L
         return (midnight - 6 * 3600_000L)..(midnight + 12 * 3600_000L)
     }
 
@@ -290,9 +299,36 @@ class WatchViewModel : ViewModel() {
         }
     }
 
+    /**
+     * The next night in that direction that the watch actually staged.
+     *
+     * Stepping a day at a time would land on nights the watch was off the wrist
+     * for, which show as an empty screen the reader has to work out is empty.
+     * Nothing moves when there is no such night, so the ends of the history are
+     * a button that does nothing rather than a run of blanks.
+     */
     fun shiftNight(by: Int) {
-        _nightsAgo.value = (_nightsAgo.value + by).coerceAtLeast(0)
-        showNight()
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch {
+            val found = withContext(Dispatchers.IO) {
+                var days = _nightsAgo.value
+                repeat(MAX_NIGHT_SEARCH_DAYS) {
+                    val next = days + by
+                    // Tonight is as recent as it gets.
+                    if (next < 0) return@withContext null
+                    days = next
+                    val range = nightRangeFor(days)
+                    val staged = runCatching { service.hasStaging(range.first, range.last) }
+                        .getOrDefault(false)
+                    if (staged) return@withContext days
+                }
+                null
+            }
+            if (found != null) {
+                _nightsAgo.value = found
+                showNight()
+            }
+        }
     }
 
     fun nightZoom(range: LongRange) {
