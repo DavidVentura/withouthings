@@ -59,6 +59,18 @@ private val GRID = listOf(
     MetricStyle.Temperature,
     MetricStyle.Respiratory,
     MetricStyle.Steps,
+    MetricStyle.Spo2,
+    MetricStyle.Ascent,
+    MetricStyle.Calories,
+)
+
+/// Running totals the watch resets at local midnight. Steps is not here: it
+/// arrives with the day it belongs to and is judged on that instead.
+private val DAILY_TOTALS = setOf(
+    MetricStyle.Ascent,
+    MetricStyle.Calories,
+    MetricStyle.Distance,
+    MetricStyle.TrackedDuration,
 )
 
 /** Local midnight, for deciding whether a reading belongs to today. */
@@ -178,6 +190,9 @@ fun IdleScreen(
                             // a different claim from "not recently".
                             val fresh = when (style) {
                                 MetricStyle.Steps -> steps != null && steps.dayStartMs >= todayStartMs()
+                                // A running total resets at local midnight, so
+                                // yesterday's figure is wrong rather than old.
+                                in DAILY_TOTALS -> reading != null && reading.atMs >= todayStartMs()
                                 else -> reading != null && now - reading.atMs < style.freshFor
                             }
                             val shown = when (style) {

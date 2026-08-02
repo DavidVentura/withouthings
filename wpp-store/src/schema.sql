@@ -25,7 +25,12 @@ INSERT OR IGNORE INTO sample_kind (id, name, unit) VALUES
     (7, 'steps',            'count'),
     (8, 'battery_state',    'battery_state'),
     (9, 'battery_mv',       'millivolts'),
-    (10, 'sleep_level',     'sleep_level');
+    (10, 'sleep_level',     'sleep_level'),
+    (11, 'spo2',            'percent'),
+    (12, 'ascent',          'centimetres'),
+    (13, 'calories',        'hundredth_kcal'),
+    (14, 'distance',        'centimetres'),
+    (15, 'tracked_duration','seconds');
 
 CREATE TABLE IF NOT EXISTS workout (
     id          INTEGER PRIMARY KEY,
@@ -125,6 +130,9 @@ CREATE TABLE IF NOT EXISTS activity_minute (
     -- and gone from the watch's ring buffer within the day.
     reco_v1       INTEGER,
     reco_v2       INTEGER,
+    -- The watch's own staging for the window: 0 awake, 1 light, 2 deep, 3 REM.
+    -- Stored as the wire value; `wpp::activity::SleepLevel` reads it.
+    sleep_level   INTEGER,
     PRIMARY KEY (device_id, started_at)
 ) STRICT, WITHOUT ROWID;
 

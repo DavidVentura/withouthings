@@ -284,6 +284,9 @@ class WatchViewModel : ViewModel() {
                 runCatching { service.night(range.first, range.last) }.getOrNull()
             }
             _night.value = loaded
+            // Only once the night is loaded is there a sleep period to frame
+            // it on; until then the fetched range is the best guess available.
+            _nightWindow.value = loaded?.sleepWindow() ?: range
         }
     }
 

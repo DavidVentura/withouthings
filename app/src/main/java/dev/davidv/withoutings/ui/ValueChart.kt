@@ -119,6 +119,9 @@ fun ValueChart(
     limit: LongRange? = null,
     modifier: Modifier = Modifier,
     height: Dp = 260.dp,
+    /// Width reserved for the axis labels. Charts stacked on one screen must
+    /// agree on it, or the same instant sits at a different x in each.
+    gutterLeftDp: Dp = 34.dp,
     lineColor: Color = Color(0xFF4C7EF3),
     gridColor: Color = Color(0x22000000),
     axisColor: Color = Color(0x66000000),
@@ -130,7 +133,6 @@ fun ValueChart(
     // pinch in progress and limits a gesture to a single step.
     val latest = rememberUpdatedState(window)
     val bounds = rememberUpdatedState(limit)
-    val gutterLeftDp = 34.dp
     val todayStart = todayStartMs()
 
     Box(

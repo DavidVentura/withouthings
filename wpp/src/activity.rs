@@ -62,6 +62,35 @@ pub struct Minute {
     pub run_level: Option<i64>,
     pub reco_v1: Option<i64>,
     pub reco_v2: Option<i64>,
+    /// The watch's own staging for the window, as the wire carries it.
+    /// [`SleepLevel`] reads it.
+    pub sleep_level: Option<i64>,
+}
+
+/// What the watch's sleep classifier made of a window.
+///
+/// The official app's decoder names these 0 awake, 1 REM, 2 light, 3 deep, and
+/// that is wrong. Duration-weighted totals for the nights of 7 and 21 Jul match
+/// Health Mate's own `lightSleepDuration`/`deepSleepDuration`/`remSleepDuration`
+/// to the minute only under the mapping below.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SleepLevel {
+    Awake,
+    Light,
+    Deep,
+    Rem,
+}
+
+impl SleepLevel {
+    pub fn from_wire(value: i64) -> Option<SleepLevel> {
+        match value {
+            0 => Some(SleepLevel::Awake),
+            1 => Some(SleepLevel::Light),
+            2 => Some(SleepLevel::Deep),
+            3 => Some(SleepLevel::Rem),
+            _ => None,
+        }
+    }
 }
 
 impl Minute {
@@ -79,6 +108,7 @@ impl Minute {
             run_level: None,
             reco_v1: None,
             reco_v2: None,
+            sleep_level: None,
         }
     }
 

@@ -16,8 +16,6 @@ use wpp::units::{Celsius, Millivolts, UnixMillis};
 use wpp::Frame;
 use wpp_store::Store;
 
-mod sleep;
-
 uniffi::setup_scaffolding!();
 
 /// A night at roughly one point per horizontal pixel.
@@ -86,6 +84,13 @@ pub enum Metric {
     RespiratoryRate,
     Battery,
     Steps,
+    Spo2,
+    /// Climb and the other running totals beside the steps, all reset at local
+    /// midnight. Metres, kilocalories, metres, hours once scaled.
+    Ascent,
+    Calories,
+    Distance,
+    TrackedDuration,
 }
 
 impl Metric {
@@ -98,6 +103,11 @@ impl Metric {
             Metric::RespiratoryRate => 5,
             Metric::Battery => 6,
             Metric::Steps => 7,
+            Metric::Spo2 => 11,
+            Metric::Ascent => 12,
+            Metric::Calories => 13,
+            Metric::Distance => 14,
+            Metric::TrackedDuration => 15,
         }
     }
 
@@ -105,6 +115,9 @@ impl Metric {
     fn scale(self) -> f64 {
         match self {
             Metric::Temperature => 1000.0,
+            // Centimetres, and hundredths of a kilocalorie.
+            Metric::Ascent | Metric::Distance | Metric::Calories => 100.0,
+            Metric::TrackedDuration => 3600.0,
             _ => 1.0,
         }
     }
@@ -287,22 +300,49 @@ pub struct Marker {
     pub edge: SetEdge,
 }
 
+/// A stretch the watch staged, from `activity_minute.sleep_level`.
+///
+/// The watch's own classifier, not an inference: a window it did not stage
+/// produces no band rather than a guess.
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct SleepBand {
+    pub from_ms: i64,
+    pub to_ms: i64,
+    pub stage: SleepStage,
+}
+
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SleepStage {
+    Awake,
+    Light,
+    Deep,
+    Rem,
+}
+
+impl SleepStage {
+    fn of(level: activity::SleepLevel) -> SleepStage {
+        match level {
+            activity::SleepLevel::Awake => SleepStage::Awake,
+            activity::SleepLevel::Light => SleepStage::Light,
+            activity::SleepLevel::Deep => SleepStage::Deep,
+            activity::SleepLevel::Rem => SleepStage::Rem,
+        }
+    }
+}
+
 /// One night's screen: the two series it draws, the periods it shades, and the
 /// numbers it puts at the top.
-///
-/// The sleep period is derived from heart rate here, not reported by the watch.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct Night {
     pub hr: Vec<Point>,
-    pub rmssd: Vec<Point>,
+    /// What the watch staged, in order, and the only source of the sleep
+    /// period. Empty for a night it did not stage.
+    pub stages: Vec<SleepBand>,
     /// Off the wrist, so a hole in the series is explained rather than drawn as
     /// missing data.
     pub charging: Vec<Marker>,
     pub asleep_from_ms: Option<i64>,
     pub asleep_to_ms: Option<i64>,
-    /// Median over the sleep period only, which is the only window where the
-    /// figure carries anything.
-    pub median_rmssd: Option<f64>,
     pub lowest_hr: Option<f64>,
 }
 
@@ -569,6 +609,25 @@ impl WatchService {
             })
         };
         self.dispatch(actions)
+    }
+
+    /// Object types the watch sent that nothing read, one line each, and forget
+    /// them. Empty is the expected answer; anything here is data being thrown
+    /// away, which is how ten nights of sleep staging went missing.
+    pub fn unhandled_objects(&self) -> Vec<String> {
+        self.inner
+            .lock()
+            .unwrap()
+            .client
+            .take_unhandled()
+            .into_iter()
+            .map(|(command, type_id, name)| {
+                let command_name = wpp::commands::Command(command)
+                    .name()
+                    .unwrap_or("unknown command");
+                format!("{command_name} ({command}) carried {name} ({type_id}), unread")
+            })
+            .collect()
     }
 
     /// Feed one GATT notification. Frames span several of these.
@@ -1126,35 +1185,34 @@ impl WatchService {
                 origin: origin_of(source),
             })
             .collect();
-        let rmssd: Vec<Point> = store
-            .series(self.device_id, 4, from_ms, to_ms, NIGHT_POINTS)?
+        // A window the watch staged but whose level this build does not know is
+        // dropped rather than guessed at: the level field is five bits wide and
+        // only four values have ever been seen.
+        let stages: Vec<SleepBand> = store
+            .activity_minutes(self.device_id, from_ms / 1000, to_ms / 1000)?
             .into_iter()
-            .map(|(at, value, source)| Point {
-                at_ms: at,
-                value: value as f64,
-                origin: origin_of(source),
+            .filter_map(|minute| {
+                let level = activity::SleepLevel::from_wire(minute.sleep_level?)?;
+                Some(SleepBand {
+                    from_ms: minute.at.0 * 1000,
+                    to_ms: minute.ended_at().0 * 1000,
+                    stage: SleepStage::of(level),
+                })
             })
             .collect();
 
-        let asleep = sleep::detect(
-            &hr.iter()
-                .map(|p| (p.at_ms, p.value))
-                .collect::<Vec<(i64, f64)>>(),
-            from_ms + (to_ms - from_ms) / 2,
-        );
-
-        // Only the samples inside the detected sleep: the daytime ones sit far
-        // below and would drag a whole-window median off any night it summarised.
-        let mut nightly: Vec<f64> = rmssd
+        // The watch's own staging, and nothing else. A night it did not stage
+        // has no sleep period: inferring one from heart rate scored lying awake
+        // and still as sleep, which is worse than saying nothing.
+        let asleep = stages
             .iter()
-            .filter(|p| {
-                asleep
-                    .map(|s| p.at_ms >= s.from_ms && p.at_ms <= s.to_ms)
-                    .unwrap_or(false)
-            })
-            .map(|p| p.value)
-            .collect();
-        nightly.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            .filter(|band| band.stage != SleepStage::Awake)
+            .fold(None, |span: Option<(i64, i64)>, band| {
+                Some(match span {
+                    None => (band.from_ms, band.to_ms),
+                    Some((from, to)) => (from.min(band.from_ms), to.max(band.to_ms)),
+                })
+            });
 
         let charging = store
             .charge_periods(self.device_id, from_ms, to_ms)?
@@ -1170,14 +1228,13 @@ impl WatchService {
             .collect();
 
         Ok(Night {
-            asleep_from_ms: asleep.map(|s| s.from_ms),
-            asleep_to_ms: asleep.map(|s| s.to_ms),
-            median_rmssd: nightly.get(nightly.len() / 2).copied(),
+            asleep_from_ms: asleep.map(|(from, _)| from),
+            asleep_to_ms: asleep.map(|(_, to)| to),
             lowest_hr: hr
                 .iter()
                 .filter(|p| {
                     asleep
-                        .map(|s| p.at_ms >= s.from_ms && p.at_ms <= s.to_ms)
+                        .map(|(from, to)| p.at_ms >= from && p.at_ms <= to)
                         .unwrap_or(false)
                 })
                 .map(|p| p.value)
@@ -1185,7 +1242,7 @@ impl WatchService {
                     Some(low.map_or(v, |l| l.min(v)))
                 }),
             hr,
-            rmssd,
+            stages,
             charging,
         })
     }

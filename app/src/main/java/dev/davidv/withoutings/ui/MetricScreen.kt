@@ -33,7 +33,12 @@ enum class MetricStyle(
     HrvRmssd(Metric.HRV_RMSSD, "HRV (RMSSD)", "ms", 0, 0.0..200.0, 3 * HOUR),
     Respiratory(Metric.RESPIRATORY_RATE, "Respiratory", "breaths/min", 0, 0.0..30.0, 4 * HOUR),
     Battery(Metric.BATTERY, "Battery", "%", 0, 0.0..100.0, HOUR),
-    Steps(Metric.STEPS, "Steps", "per day", 0, 0.0..15000.0, DAY);
+    Steps(Metric.STEPS, "Steps", "per day", 0, 0.0..15000.0, DAY),
+    Spo2(Metric.SPO2, "SpO2", "%", 0, 90.0..100.0, 3 * HOUR),
+    Ascent(Metric.ASCENT, "Climbed", "m today", 1, 0.0..30.0, DAY),
+    Calories(Metric.CALORIES, "Calories", "kcal today", 0, 0.0..3000.0, DAY),
+    Distance(Metric.DISTANCE, "Distance", "m today", 0, 0.0..10000.0, DAY),
+    TrackedDuration(Metric.TRACKED_DURATION, "Tracked", "h today", 1, 0.0..24.0, DAY);
 
     /// One window for every series, so switching between them compares the
     /// same stretch of time rather than rescaling.

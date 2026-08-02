@@ -48,6 +48,20 @@ impl Store {
                 [],
             )?;
         }
+        // Staging was arriving on the activity stream long before anything read
+        // it, so every database that predates this has the windows without it.
+        let has_sleep: i64 = conn.query_row(
+            "SELECT count(*) FROM pragma_table_info('activity_minute')
+              WHERE name = 'sleep_level'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_sleep == 0 {
+            conn.execute(
+                "ALTER TABLE activity_minute ADD COLUMN sleep_level INTEGER",
+                [],
+            )?;
+        }
         Ok(Store { conn })
     }
 
@@ -120,11 +134,28 @@ impl Store {
                 }
                 Record::Activity(minute) => {
                     tx.execute(
+                        // A re-walk fills in what a window was stored without,
+                        // and never overwrites a value with a null: the fields
+                        // a record carries depend on what the request asked
+                        // for, so an earlier pass can hold columns this one
+                        // does not. That is what recovers the staging and the
+                        // activity recognition for windows already walked.
                         "INSERT INTO activity_minute (device_id, started_at, duration_secs,
                              steps, distance, ascent, descent, calories, met,
-                             walk_level, run_level, reco_v1, reco_v2)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
-                         ON CONFLICT DO NOTHING",
+                             walk_level, run_level, reco_v1, reco_v2, sleep_level)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                         ON CONFLICT (device_id, started_at) DO UPDATE SET
+                             steps       = COALESCE(excluded.steps,       steps),
+                             distance    = COALESCE(excluded.distance,    distance),
+                             ascent      = COALESCE(excluded.ascent,      ascent),
+                             descent     = COALESCE(excluded.descent,     descent),
+                             calories    = COALESCE(excluded.calories,    calories),
+                             met         = COALESCE(excluded.met,         met),
+                             walk_level  = COALESCE(excluded.walk_level,  walk_level),
+                             run_level   = COALESCE(excluded.run_level,   run_level),
+                             reco_v1     = COALESCE(excluded.reco_v1,     reco_v1),
+                             reco_v2     = COALESCE(excluded.reco_v2,     reco_v2),
+                             sleep_level = COALESCE(excluded.sleep_level, sleep_level)",
                         params![
                             device_id,
                             minute.at.0,
@@ -139,6 +170,7 @@ impl Store {
                             minute.run_level,
                             minute.reco_v1,
                             minute.reco_v2,
+                            minute.sleep_level,
                         ],
                     )?;
                 }
@@ -362,7 +394,8 @@ impl Store {
     ) -> Result<Vec<Minute>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT started_at, duration_secs, steps, distance, ascent, descent,
-                    calories, met, walk_level, run_level, reco_v1, reco_v2
+                    calories, met, walk_level, run_level, reco_v1, reco_v2,
+                    sleep_level
                FROM activity_minute
               WHERE device_id = ?1 AND started_at <= ?3
                 AND started_at + duration_secs >= ?2
@@ -382,6 +415,7 @@ impl Store {
                 run_level: r.get(9)?,
                 reco_v1: r.get(10)?,
                 reco_v2: r.get(11)?,
+                sleep_level: r.get(12)?,
             })
         })?;
         rows.collect()

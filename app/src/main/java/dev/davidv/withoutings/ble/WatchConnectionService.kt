@@ -211,6 +211,11 @@ class WatchConnectionService : Service() {
     private val tick = object : Runnable {
         override fun run() {
             runCatching { service?.tick() }.onFailure { Log.e(TAG, "tick", it) }
+            // The watch sent it, we decoded it, and nothing read it. Silence
+            // here once cost ten nights of sleep staging.
+            runCatching {
+                service?.unhandledObjects()?.forEach { Log.w(TAG, "unread: $it") }
+            }.onFailure { Log.e(TAG, "unhandled", it) }
             handler.postDelayed(this, TICK_MS)
         }
     }

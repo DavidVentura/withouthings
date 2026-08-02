@@ -14,8 +14,8 @@ use crate::frame::Channel;
 use crate::objects::{
     AncsStatus, AppProbe, AppProbeOsVersion, FeatureTagsDeprecated, Id, InfoType, MeasureCategory,
     MeasureLiveAppStatus, NotificationsDisplayState, Null, ProbeChallenge, ProbeChallengeResponse,
-    StoredSignalMeta, TimeSet, TrackerWearPos, VasistasType, WamScreensList, WamVasistasGet,
-    WorkoutScreenList,
+    StoredSignalMeta, TimeSet, TrackerWearPos, VasistasType, Version, WamScreensList,
+    WamVasistasGet, WorkoutScreenList,
 };
 use crate::signal::{Signal, SignalCollector};
 use crate::units::{UnixMillis, UnixTime};
@@ -196,10 +196,25 @@ pub enum SampleKind {
     /// Cell voltage. It moves as soon as a charger is attached, well before
     /// the percentage the gauge reports catches up.
     BatteryMillivolts,
-    /// `WamVasistasSleep.level`: 0 awake, 1 REM, 2 light, 3 deep. Staged by the
-    /// watch, and rarely — a night of it appeared once in eight days of the
-    /// official app's own history.
+    /// Unused: the watch serves staging on the activity stream, one level per
+    /// window, so it lives in `activity_minute.sleep_level` where the window's
+    /// duration is kept with it. `sample_kind` row 10 is left in place because
+    /// dropping it would need a migration for nothing.
     SleepLevel,
+    /// Blood oxygen, with `VasistasSpo2.quality` alongside it. Carried by the
+    /// bulk streams the walk reads last.
+    Spo2,
+    /// Climb, centimetres on the wire despite the object being called
+    /// `Stairs` — it matches the activity stream's `ascent` exactly, summed
+    /// over the day, and is a height rather than a count of floors.
+    Ascent,
+    /// The rest of the day's running totals, in the same frame as the steps.
+    /// Calories are hundredths of a kilocalorie and cover resting as well as
+    /// earned; distance is centimetres; the duration is plain seconds and runs
+    /// from local midnight.
+    Calories,
+    Distance,
+    TrackedDuration,
 }
 
 impl SampleKind {
@@ -215,6 +230,11 @@ impl SampleKind {
             SampleKind::BatteryState => 8,
             SampleKind::BatteryMillivolts => 9,
             SampleKind::SleepLevel => 10,
+            SampleKind::Spo2 => 11,
+            SampleKind::Ascent => 12,
+            SampleKind::Calories => 13,
+            SampleKind::Distance => 14,
+            SampleKind::TrackedDuration => 15,
         }
     }
 }
@@ -289,6 +309,10 @@ pub struct Client {
     /// it has said, which it does with the workout screen list.
     image_formats: Vec<crate::image::ImageFormat>,
     records_emitted: u64,
+    /// Object types that decoded but no collector consumed, as
+    /// (command, type id, type name), first sighting only. Reported so a stream
+    /// the watch serves cannot go unnoticed the way its sleep staging did.
+    unhandled: Vec<(u16, u16, &'static str)>,
     app_probe: AppProbe,
     /// Latest frame timestamp seen. The client holds no clock of its own, so
     /// this is the only sense of "now" it has.
@@ -333,6 +357,7 @@ impl Client {
             notifications: None,
             image_formats: Vec::new(),
             records_emitted: 0,
+            unhandled: Vec::new(),
             now: None,
             last_heard: None,
             last_spoke: None,
@@ -856,15 +881,51 @@ impl Client {
                             .collect(),
                     );
                 }
+                // The watch reports running totals for the day. Stamping one
+                // with the day would keep a single row that only ever shows the
+                // latest figure; stamping it with the observation keeps the
+                // accumulation through the day. All four arrive together.
                 WppObject::Steps(steps) => {
-                    // The watch reports the running total for the day. Stamping
-                    // it with the day would keep one row that only ever shows
-                    // the latest figure; stamping it with the observation keeps
-                    // the accumulation through the day.
                     records.push(Record::Sample {
                         measured_at: received_at,
                         kind: SampleKind::Steps,
                         value: steps.value as i64,
+                        quality: None,
+                        source: Source::Live,
+                    });
+                }
+                WppObject::Stairs(stairs) => {
+                    records.push(Record::Sample {
+                        measured_at: received_at,
+                        kind: SampleKind::Ascent,
+                        value: stairs.value as i64,
+                        quality: None,
+                        source: Source::Live,
+                    });
+                }
+                WppObject::Calories(calories) => {
+                    records.push(Record::Sample {
+                        measured_at: received_at,
+                        kind: SampleKind::Calories,
+                        value: calories.value as i64,
+                        quality: None,
+                        source: Source::Live,
+                    });
+                }
+                WppObject::Distance(distance) => {
+                    records.push(Record::Sample {
+                        measured_at: received_at,
+                        kind: SampleKind::Distance,
+                        value: distance.value as i64,
+                        quality: None,
+                        source: Source::Live,
+                    });
+                }
+                WppObject::Duration(duration) => {
+                    records.push(Record::Sample {
+                        measured_at: received_at,
+                        kind: SampleKind::TrackedDuration,
+                        value: duration.value as i64,
                         quality: None,
                         source: Source::Live,
                     });
@@ -1007,6 +1068,19 @@ impl Client {
                         });
                     }
                 }
+                // `error` is non-zero on readings the watch could not resolve,
+                // which are the majority of what the bulk streams carry.
+                WppObject::VasistasSpo2(spo2) if spo2.error == 0 && spo2.spo2 > 0 => {
+                    if let Some(time) = at {
+                        records.push(Record::Sample {
+                            measured_at: time.to_millis(),
+                            kind: SampleKind::Spo2,
+                            value: spo2.spo2 as i64,
+                            quality: Some(spo2.quality as i64),
+                            source: Source::Stored,
+                        });
+                    }
+                }
                 WppObject::VasistasHrv(hrv) => {
                     if let Some(time) = at {
                         records.push(Record::Sample {
@@ -1025,17 +1099,6 @@ impl Client {
                         });
                     }
                 }
-                WppObject::WamVasistasSleep(sleep) => {
-                    if let Some(time) = at {
-                        records.push(Record::Sample {
-                            measured_at: time.to_millis(),
-                            kind: SampleKind::SleepLevel,
-                            value: sleep.level as i64,
-                            quality: None,
-                            source: Source::Stored,
-                        });
-                    }
-                }
                 WppObject::VasistasRr(rr) if rr.rr > 0 => {
                     if let Some(time) = at {
                         records.push(Record::Sample {
@@ -1047,7 +1110,13 @@ impl Client {
                         });
                     }
                 }
-                _ => {}
+                // Zero is the watch saying it did not measure, not a reading of
+                // nothing; the arms above take everything else.
+                WppObject::VasistasHeartrate(_) | WppObject::VasistasRr(_) => {}
+                // The request echoed back around the records, and the empty
+                // reply that closes a category.
+                WppObject::WamVasistasGet(_) | WppObject::VasistasType(_) | WppObject::Null(_) => {}
+                other => self.note_unhandled(frame, other),
             }
         }
     }
@@ -1088,10 +1157,29 @@ impl Client {
                     minute.reco_v1 = Some(r.reco_v1 as i64);
                     minute.reco_v2 = Some(r.reco_v2 as i64);
                 }
-                _ => {}
+                // A window is staged or it is awake; the watch sends one body
+                // or the other under the same head.
+                WppObject::WamVasistasSleep(s) => minute.sleep_level = Some(s.level as i64),
+                // The request echoed back around the records, and the empty
+                // reply that closes a walk.
+                WppObject::WamVasistasGet(_) | WppObject::VasistasType(_) | WppObject::Null(_) => {}
+                other => self.note_unhandled(frame, other),
             }
         }
         records.extend(open.map(Record::Activity));
+    }
+
+    /// An object that decoded but no collector consumed.
+    ///
+    /// A silent catch-all here cost ten nights of staging: the watch had been
+    /// sending `WamVasistasSleep` on the activity stream all along and the arm
+    /// that stored it sat in the branch for a different command. Anything this
+    /// records is either a type worth handling or one worth naming as ignored.
+    fn note_unhandled(&mut self, frame: &Frame, object: &WppObject) {
+        let seen = (frame.command.opcode(), object.type_id(), object.type_name());
+        if !self.unhandled.contains(&seen) {
+            self.unhandled.push(seen);
+        }
     }
 
     fn note_head(&mut self, at: UnixTime) {
@@ -1102,6 +1190,15 @@ impl Client {
             Some((seen, high)) if seen == category => (category, UnixTime(high.0.max(at.0))),
             _ => (category, at),
         });
+    }
+
+    /// Object types the watch sent that nothing consumed, as
+    /// (command, type id, type name), and forget them.
+    ///
+    /// Empty is the expected answer. Anything here is data the watch is serving
+    /// and the client is discarding.
+    pub fn take_unhandled(&mut self) -> Vec<(u16, u16, &'static str)> {
+        std::mem::take(&mut self.unhandled)
     }
 
     /// The screens the watch is currently showing, in order, once it has said.
@@ -1372,7 +1469,18 @@ impl Client {
         let frame = if category == Category::BODY {
             Frame::new(Command::CMD_BODY_VASISTAS_GET, vec![window])
         } else if category == Category::ACTIVITY {
-            Frame::new(Command::CMD_WAM_VASISTAS_GET, vec![window])
+            // Without it the watch serves the records without their activity
+            // recognition; the official app asks for 3 and gets
+            // `VasistasActiRecoV1V2` on every waking window.
+            Frame::new(
+                Command::CMD_WAM_VASISTAS_GET,
+                vec![
+                    window,
+                    WppObject::Version(Version {
+                        value: Version::VALUE_ACTI_RECO_V3,
+                    }),
+                ],
+            )
         } else {
             Frame::new(
                 Command::CMD_VASISTAS_GET,
@@ -1812,10 +1920,16 @@ mod tests {
             .expect("activity stream requested");
         assert_eq!(
             request.objects,
-            vec![WppObject::WamVasistasGet(WamVasistasGet {
-                utc_start: 4000,
-                max: 0,
-            })]
+            vec![
+                WppObject::WamVasistasGet(WamVasistasGet {
+                    utc_start: 4000,
+                    max: 0,
+                }),
+                WppObject::Version(Version {
+                    value: Version::VALUE_ACTI_RECO_V3,
+                }),
+            ],
+            "without the version the watch omits the activity recognition"
         );
     }
 
@@ -2821,18 +2935,19 @@ mod tests {
         );
     }
 
-    /// Sleep arrives on the same stream as the step counts, as the other
-    /// payload of the same record. It is rare enough that a decoder missing
-    /// for it would look exactly like a watch that never stages sleep.
+    /// Staging arrives on the activity stream, as the body of a window in place
+    /// of the step counts an awake one carries — not on the typed stream, where
+    /// a decoder for it sat unreachable while ten nights went unstored.
     #[test]
     fn a_staged_sleep_record_is_captured() {
-        use crate::objects::{WamVasistasHead, WamVasistasSleep};
+        use crate::objects::{WamVasistasDuration, WamVasistasHead, WamVasistasSleep};
         let mut client = authenticated();
         let actions = client.handle(frame(
-            Command::CMD_VASISTAS_GET,
+            Command::CMD_WAM_VASISTAS_GET,
             vec![
                 WppObject::WamVasistasHead(WamVasistasHead { utc: 5_000 }),
-                WppObject::WamVasistasSleep(WamVasistasSleep { level: 3 }),
+                WppObject::WamVasistasDuration(WamVasistasDuration { duration: 780 }),
+                WppObject::WamVasistasSleep(WamVasistasSleep { level: 2 }),
             ],
         ));
         let stored: Vec<Record> = actions
@@ -2842,16 +2957,44 @@ mod tests {
                 _ => None,
             })
             .unwrap_or_default();
+        let Some(Record::Activity(minute)) = stored.first() else {
+            panic!("the staged window was not stored: {stored:?}");
+        };
+        assert_eq!(minute.at, UnixTime(5_000));
         assert_eq!(
-            stored,
-            vec![Record::Sample {
-                measured_at: UnixMillis(5_000_000),
-                kind: SampleKind::SleepLevel,
-                value: 3,
-                quality: None,
-                source: Source::Stored,
-            }]
+            minute.duration_secs, 780,
+            "a level covers its window, not the instant it is dated"
         );
+        assert_eq!(minute.sleep_level, Some(2));
+        assert_eq!(
+            client.take_unhandled(),
+            vec![],
+            "nothing in a staged window should go unread"
+        );
+    }
+
+    /// The failure that hid the staging was silent: a catch-all consumed an
+    /// object type no arm handled. Anything unread has to be reportable.
+    #[test]
+    fn an_object_nothing_reads_is_reported() {
+        use crate::objects::{WamVasistasHead, WamVasistasSleepDbg};
+        let mut client = authenticated();
+        client.handle(frame(
+            Command::CMD_WAM_VASISTAS_GET,
+            vec![
+                WppObject::WamVasistasHead(WamVasistasHead { utc: 5_000 }),
+                WppObject::WamVasistasSleepDbg(WamVasistasSleepDbg { level: 1 }),
+            ],
+        ));
+        assert_eq!(
+            client.take_unhandled(),
+            vec![(
+                Command::CMD_WAM_VASISTAS_GET.0,
+                1542,
+                "TYPE_WAM_VASISTAS_SLEEP_DBG"
+            )]
+        );
+        assert_eq!(client.take_unhandled(), vec![], "taking clears them");
     }
 
     /// A whole session driven message by message, asserting what the client
