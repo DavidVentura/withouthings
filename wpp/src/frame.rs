@@ -149,6 +149,34 @@ impl Frame {
         Some(HEADER_LEN + u16::from_be_bytes([buf[3], buf[4]]) as usize)
     }
 
+    /// The command a buffer claims to carry, readable even when the body will
+    /// not decode — which is exactly when it is worth knowing.
+    pub fn declared_command(buf: &[u8]) -> Option<u16> {
+        if buf.len() < HEADER_LEN {
+            return None;
+        }
+        Some(u16::from_be_bytes([buf[1], buf[2]]))
+    }
+
+    /// Where a second frame begins inside this one, if it does.
+    ///
+    /// Frames span notifications once they outgrow the MTU, so one that goes
+    /// missing leaves the head of a frame glued to the body of a later one.
+    /// The join is visible: a header partway in separates a lost notification
+    /// from a watch that sent something we cannot read — different faults with
+    /// different cures.
+    ///
+    /// The second frame is usually cut off by the first one's declared length,
+    /// so this cannot demand that it parses.
+    pub fn splice_offset(buf: &[u8]) -> Option<usize> {
+        (1..buf.len().saturating_sub(HEADER_LEN)).find(|&at| {
+            buf[at] == PROTOCOL_VERSION
+                && Command(u16::from_be_bytes([buf[at + 1], buf[at + 2]]))
+                    .opcode_name()
+                    .is_some()
+        })
+    }
+
     /// Decode one frame that fills `buf` exactly.
     pub fn parse(buf: &[u8]) -> Result<Frame, FrameError> {
         let (frame, rest) = Frame::parse_prefix(buf)?;

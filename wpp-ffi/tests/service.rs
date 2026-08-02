@@ -300,6 +300,53 @@ fn set_markers_round_trip_through_the_service() {
     cleanup(&path);
 }
 
+/// A walk off the wire: the stream is stored window by window, and the walk
+/// is put back together on the way out.
+#[test]
+fn a_walk_arrives_as_windows_and_comes_back_as_one_activity() {
+    use wpp::objects::{WamVasistasAwake, WamVasistasDuration, WamVasistasHead};
+    use wpp::{Command, Frame, WppObject};
+
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+
+    let start = 1_784_969_340;
+    let objects: Vec<WppObject> = (0..15)
+        .flat_map(|i| {
+            [
+                WppObject::WamVasistasHead(WamVasistasHead {
+                    utc: (start + i * 60) as u32,
+                }),
+                WppObject::WamVasistasDuration(WamVasistasDuration { duration: 60 }),
+                WppObject::WamVasistasAwake(WamVasistasAwake {
+                    steps: 95,
+                    distance: 7180,
+                    ascent: 0,
+                    descent: 0,
+                }),
+            ]
+        })
+        .collect();
+    service
+        .on_bytes(
+            Frame::new(Command::CMD_WAM_VASISTAS_GET, objects).to_bytes(),
+            start as i64 * 1000,
+        )
+        .unwrap();
+
+    let found = service
+        .detected_activities((start as i64 - 3600) * 1000, (start as i64 + 3600) * 1000)
+        .unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].activity, "Walking");
+    assert_eq!(found[0].steps, 15 * 95);
+    assert_eq!(found[0].started_at_ms, start as i64 * 1000);
+    assert_eq!(found[0].ended_at_ms, (start as i64 + 15 * 60) * 1000);
+    assert!((found[0].distance_metres - 15.0 * 71.8).abs() < 0.001);
+
+    cleanup(&path);
+}
+
 /// Reduction for drawing must keep the extremes: a dip between sets is the
 /// point of the chart, and averaging would erase it.
 #[test]

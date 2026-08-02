@@ -7,6 +7,7 @@
 
 use std::sync::Mutex;
 
+use wpp::activity;
 use wpp::ancs::{self, NotificationCenter, NotificationId};
 use wpp::capture::{FrameReassembler, StreamItem};
 use wpp::client::{Action, Category, Client, Credentials, Event, Phase};
@@ -19,13 +20,6 @@ mod sleep;
 
 uniffi::setup_scaffolding!();
 
-/// Series the watch keeps separately, each walked with its own watermark.
-/// Category 0 is the body stream carrying heart rate; the rest are the
-/// VasistasType values the official app asks for. Queued so the body stream
-/// is taken first.
-/// Taken from the end, so the order walked is: body (heart rate), 10 (core
-/// temperature), 11 (HRV), 12 (respiratory rate), 6 (activity), then 8, 9, 5 —
-/// which carry SpO2 and AHI in bulk and would otherwise starve the rest.
 /// A night at roughly one point per horizontal pixel.
 const NIGHT_POINTS: u32 = 1200;
 
@@ -37,7 +31,14 @@ fn origin_of(source: i64) -> Origin {
     }
 }
 
-const CATEGORIES: [Category; 8] = [
+/// Series the watch keeps separately, each walked with its own watermark.
+/// Category 0 is the body stream carrying heart rate and 255 the per-minute
+/// activity stream, both of which have their own command; the rest are the
+/// VasistasType values the official app asks for.
+/// Taken from the end, so the order walked is: body (heart rate), activity,
+/// 10 (core temperature), 11 (HRV), 12 (respiratory rate), 6, then 8, 9, 5 —
+/// which carry SpO2 and AHI in bulk and would otherwise starve the rest.
+const CATEGORIES: [Category; 9] = [
     Category(5),
     Category(9),
     Category(8),
@@ -45,6 +46,7 @@ const CATEGORIES: [Category; 8] = [
     Category(12),
     Category(11),
     Category(10),
+    Category::ACTIVITY,
     Category::BODY,
 ];
 
@@ -124,6 +126,18 @@ pub enum Progress {
     NotAuthenticated,
 }
 
+impl Progress {
+    fn of(phase: Phase) -> Progress {
+        match phase {
+            Phase::Idle => Progress::Idle,
+            Phase::Probing | Phase::Authenticating => Progress::Connecting,
+            Phase::Syncing => Progress::Syncing,
+            Phase::Finished => Progress::Finished,
+            Phase::NotAuthenticated => Progress::NotAuthenticated,
+        }
+    }
+}
+
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct HrPoint {
     pub at_ms: i64,
@@ -156,6 +170,23 @@ pub struct WorkoutSummary {
     /// The sport, named. Unknown ids keep their number rather than being
     /// hidden — the watch may know activities this build does not.
     pub activity: String,
+}
+
+/// A stretch of walking or running found in the activity stream.
+///
+/// Not a [`WorkoutSummary`]: the watch reports those itself and they are what
+/// someone started deliberately. These are derived from step cadence here on
+/// the phone, the same division the official app makes, and they are only as
+/// good as that inference.
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct DetectedActivity {
+    pub started_at_ms: i64,
+    pub ended_at_ms: i64,
+    pub subcategory: i32,
+    pub activity: String,
+    pub steps: i64,
+    pub distance_metres: f64,
+    pub calories: f64,
 }
 
 /// Where the watch is worn, from `TYPE_TRACKER_WEAR_POS`.
@@ -544,17 +575,36 @@ impl WatchService {
     pub fn on_bytes(&self, bytes: Vec<u8>, received_at_ms: i64) -> Result<(), WatchError> {
         let mut pending = Vec::new();
         let mut frames = Vec::new();
+        let mut undecoded = Vec::new();
         {
             let mut inner = self.inner.lock().unwrap();
             let items = inner.reassembler.push(&bytes);
             for item in items {
-                if let StreamItem::Frame { frame, .. } = item {
-                    pending.extend(inner.client.handle(Event::Frame {
-                        frame: frame.clone(),
-                        received_at: UnixMillis(received_at_ms),
-                    }));
-                    frames.push(frame);
+                match item {
+                    StreamItem::Frame { frame, .. } => {
+                        pending.extend(inner.client.handle(Event::Frame {
+                            frame: frame.clone(),
+                            received_at: UnixMillis(received_at_ms),
+                        }));
+                        frames.push(frame);
+                    }
+                    // Whatever it held is lost to this build, and the only way
+                    // to find out what that was is to keep the bytes.
+                    StreamItem::Desync { bytes, .. } => undecoded.push(bytes),
                 }
+            }
+        }
+        {
+            let store = self.store.lock().unwrap();
+            for bytes in &undecoded {
+                let command = Frame::declared_command(bytes).unwrap_or(0);
+                store.store_undecoded(
+                    self.device_id,
+                    received_at_ms,
+                    command as i64,
+                    bytes,
+                    Frame::splice_offset(bytes).map(|at| at as i64),
+                )?;
             }
         }
         // Drawing calls back into the host, which cannot happen while the
@@ -597,6 +647,17 @@ impl WatchService {
         self.dispatch(actions)
     }
 
+    /// How far the link has got, without the readings that go with it.
+    ///
+    /// [`Self::snapshot`] answers the same question but reads the database to
+    /// do it. The host asks this one for every notification the watch sends,
+    /// which during a sync is thousands in a row on the thread delivering
+    /// them, so it touches nothing but the client's own state.
+    pub fn progress(&self) -> Progress {
+        let inner = self.inner.lock().unwrap();
+        Progress::of(inner.client.phase())
+    }
+
     pub fn snapshot(&self) -> Result<Snapshot, WatchError> {
         let store = self.store.lock().unwrap();
         let (phase, pending, progress, measuring) = {
@@ -604,13 +665,7 @@ impl WatchService {
             let now = now_ms();
             let transfer = inner.client.transfer_progress();
             (
-                match inner.client.phase() {
-                    Phase::Idle => Progress::Idle,
-                    Phase::Probing | Phase::Authenticating => Progress::Connecting,
-                    Phase::Syncing => Progress::Syncing,
-                    Phase::Finished => Progress::Finished,
-                    Phase::NotAuthenticated => Progress::NotAuthenticated,
-                },
+                Progress::of(inner.client.phase()),
                 inner.client.pending_deletes() as u32,
                 SyncProgress {
                     history_fraction: inner.client.walk_span().and_then(|(from, at)| {
@@ -756,6 +811,37 @@ impl WatchService {
                 ended_at_ms: end.map(|e| e * 1000),
                 subcategory: sub as i32,
                 activity: activity_name(sub as u32),
+            })
+            .collect())
+    }
+
+    /// Walks and runs found in the activity stream over a window, oldest
+    /// first.
+    ///
+    /// Derived on every call rather than stored: the segmentation is an
+    /// inference over the records, and a later sync filling in the middle of a
+    /// walk has to be able to change its mind about where that walk ended.
+    pub fn detected_activities(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<Vec<DetectedActivity>, WatchError> {
+        let store = self.store.lock().unwrap();
+        let minutes = store.activity_minutes(
+            self.device_id,
+            from_ms.div_euclid(1000),
+            to_ms.div_euclid(1000),
+        )?;
+        Ok(activity::detect(&minutes)
+            .into_iter()
+            .map(|session| DetectedActivity {
+                started_at_ms: session.started_at.to_millis().0,
+                ended_at_ms: session.ended_at.to_millis().0,
+                subcategory: session.subcategory as i32,
+                activity: activity_name(session.subcategory as u32),
+                steps: session.steps,
+                distance_metres: session.distance.0,
+                calories: session.calories.0,
             })
             .collect())
     }

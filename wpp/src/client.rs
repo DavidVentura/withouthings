@@ -8,6 +8,8 @@
 //! [`Action::Delete`] is only ever produced after the host reports the data
 //! durable via [`Event::Stored`].
 
+use crate::activity::Minute;
+use crate::debug_dump::DebugDump;
 use crate::frame::Channel;
 use crate::objects::{
     AncsStatus, AppProbe, AppProbeOsVersion, FeatureTagsDeprecated, Id, InfoType, MeasureCategory,
@@ -39,6 +41,11 @@ const MIN_REFRESH_INTERVAL_MS: i64 = 300_000;
 /// often keeps its radio busy for no gain — it buffers, so a later walk
 /// collects exactly the same records in one pass.
 const MIN_WALK_INTERVAL_MS: i64 = 900_000;
+/// A drain empties the watch's buffer, so a second one straight after has
+/// nothing to collect. The watch asks for a sync once a minute regardless, and
+/// answering every one of those with a transfer would cost more than the
+/// asking does.
+const MIN_DUMP_INTERVAL_MS: i64 = 900_000;
 /// Silence after we have asked for something. A reply can be slow; this long
 /// after being asked, the watch is not going to answer.
 const SILENCE_TIMEOUT_MS: i64 = 90_000;
@@ -100,6 +107,11 @@ pub struct Category(pub u8);
 
 impl Category {
     pub const BODY: Category = Category(0);
+    /// The per-minute activity stream, fetched with `CMD_WAM_VASISTAS_GET`,
+    /// which like the body stream takes no type selector. Numbered outside the
+    /// range the watch uses for `VasistasType` so that it can keep a watermark
+    /// of its own without colliding with a typed one.
+    pub const ACTIVITY: Category = Category(255);
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -161,6 +173,10 @@ pub enum Record {
         ended_at: UnixTime,
         paused_secs: i64,
     },
+    /// One window of the per-minute activity stream. Kept whole rather than
+    /// split into samples: the counters describe a window, not an instant, and
+    /// the session detection reads them together.
+    Activity(Minute),
     Ecg(Box<Signal>),
 }
 
@@ -287,6 +303,9 @@ pub struct Client {
     live_samples: Vec<i16>,
     last_refresh: Option<UnixMillis>,
     last_walk: Option<UnixMillis>,
+    /// The watch's diagnostic buffer, and when it was last emptied.
+    dump: DebugDump,
+    last_dump: Option<UnixMillis>,
 }
 
 impl Client {
@@ -318,6 +337,8 @@ impl Client {
             live_samples: Vec::new(),
             last_refresh: None,
             last_walk: None,
+            dump: DebugDump::new(),
+            last_dump: None,
             app_probe: AppProbe {
                 os: 1,
                 app: 1,
@@ -352,12 +373,35 @@ impl Client {
         self.noted(actions)
     }
 
+    /// Take the watch's diagnostic buffer, if this is the moment for it.
+    ///
+    /// Only the transfer lets the watch drop what it is holding, and until it
+    /// does it goes on asking to sync every minute. The walk and a measurement
+    /// each own the link while they run, so a drain waits for them.
+    fn drain_dump(&mut self) -> Vec<Action> {
+        if self.phase != Phase::Finished || self.measuring.is_some() || self.dump.running() {
+            return Vec::new();
+        }
+        if let (Some(now), Some(last)) = (self.now, self.last_dump) {
+            if now.0 - last.0 < MIN_DUMP_INTERVAL_MS {
+                return Vec::new();
+            }
+        }
+        self.last_dump = self.now;
+        self.dump.start().into_iter().map(Action::Send).collect()
+    }
+
     /// The same walk, ignoring the rate limit.
     pub fn walk_now(&mut self) -> Vec<Action> {
         // A measurement needs the link. Walking the history through one makes
         // the watch abandon the recording and start again — it asks for a sync
         // anyway, so the request has to be declined here.
         if self.measuring.is_some() {
+            return Vec::new();
+        }
+        // The dump owns the link the same way, and it holds the watch's cursor
+        // into a transfer that a walk started underneath it would abandon.
+        if self.dump.running() {
             return Vec::new();
         }
         if self.phase != Phase::Finished && self.phase != Phase::Syncing {
@@ -507,6 +551,7 @@ impl Client {
         self.batch_high_water = None;
         self.walk_started_from = None;
         self.signals.reset();
+        self.dump.reset();
         Vec::new()
     }
 
@@ -559,6 +604,7 @@ impl Client {
         self.collect_passive(&frame, received_at, &mut records);
         self.collect_history(&frame, &mut records);
         self.live_samples.extend(self.signals.take_live());
+        actions.extend(self.dump.on_frame(&frame).into_iter().map(Action::Send));
 
         match frame.command.opcode() {
             // The watch asks whether anything is showing the waveform, and only
@@ -668,7 +714,16 @@ impl Client {
             }
             (Phase::Finished, c) if c == Command::CMD_SYNC_REQUEST.0 => {
                 // The watch asks for a sync when it has data to hand over.
-                actions.extend(self.sync_now());
+                // History first: the walk is what the request is usually about,
+                // and it owns the link while it runs. The diagnostic buffer is
+                // the other thing it can be about, and it is worth taking only
+                // when the walk has nothing to do.
+                let walk = self.sync_now();
+                if walk.is_empty() {
+                    actions.extend(self.drain_dump());
+                } else {
+                    actions.extend(walk);
+                }
             }
             (Phase::Syncing, c) if c == Command::CMD_ERROR.0 => {
                 let busy = frame
@@ -898,6 +953,9 @@ impl Client {
         // letting that reach the watermark drags the walk back to the start of
         // the day, so every refresh re-reads everything since.
         let opcode = frame.command.opcode();
+        if opcode == Command::CMD_WAM_VASISTAS_GET.0 {
+            return self.collect_activity(frame, records);
+        }
         if opcode != Command::CMD_VASISTAS_GET.0 && opcode != Command::CMD_BODY_VASISTAS_GET.0 {
             return;
         }
@@ -907,14 +965,7 @@ impl Client {
                 WppObject::WamVasistasHead(head) => {
                     let time = UnixTime(head.utc as i64);
                     at = Some(time);
-                    if let Some((category, _)) = self.current {
-                        self.batch_high_water = Some(match self.batch_high_water {
-                            Some((seen, high)) if seen == category => {
-                                (category, UnixTime(high.0.max(time.0)))
-                            }
-                            _ => (category, time),
-                        });
-                    }
+                    self.note_head(time);
                 }
                 WppObject::VasistasHeartrate(hr) if hr.heartrate > 0 => {
                     if let Some(time) = at {
@@ -981,6 +1032,58 @@ impl Client {
                 _ => {}
             }
         }
+    }
+
+    /// The activity stream, which unlike the sample streams puts several
+    /// counters under one head and has to be collected a window at a time.
+    fn collect_activity(&mut self, frame: &Frame, records: &mut Vec<Record>) {
+        let mut open: Option<Minute> = None;
+        for object in &frame.objects {
+            if let WppObject::WamVasistasHead(head) = object {
+                let at = UnixTime(head.utc as i64);
+                self.note_head(at);
+                records.extend(open.replace(Minute::opened(at)).map(Record::Activity));
+                continue;
+            }
+            let Some(minute) = open.as_mut() else {
+                continue;
+            };
+            match object {
+                // A window without one claims no span, and the detection
+                // then ignores it rather than guessing a minute.
+                WppObject::WamVasistasDuration(d) => minute.duration_secs = d.duration as i64,
+                WppObject::WamVasistasAwake(a) => {
+                    minute.steps = Some(a.steps as i64);
+                    minute.distance = Some(a.distance as i64);
+                    minute.ascent = Some(a.ascent as i64);
+                    minute.descent = Some(a.descent as i64);
+                }
+                WppObject::WamVasistasMetCalEarned(m) => {
+                    minute.calories = Some(m.calories as i64);
+                    minute.met = Some(m.met as i64);
+                }
+                WppObject::WamVasistasWalk(w) => minute.walk_level = Some(w.level as i64),
+                WppObject::WamVasistasRun(r) => minute.run_level = Some(r.level as i64),
+                // Useless without the official app's classifier, and gone
+                // from the watch's buffer within the day.
+                WppObject::VasistasActiRecoV1V2(r) => {
+                    minute.reco_v1 = Some(r.reco_v1 as i64);
+                    minute.reco_v2 = Some(r.reco_v2 as i64);
+                }
+                _ => {}
+            }
+        }
+        records.extend(open.map(Record::Activity));
+    }
+
+    fn note_head(&mut self, at: UnixTime) {
+        let Some((category, _)) = self.current else {
+            return;
+        };
+        self.batch_high_water = Some(match self.batch_high_water {
+            Some((seen, high)) if seen == category => (category, UnixTime(high.0.max(at.0))),
+            _ => (category, at),
+        });
     }
 
     /// The screens the watch is currently showing, in order, once it has said.
@@ -1236,6 +1339,8 @@ impl Client {
         });
         let frame = if category == Category::BODY {
             Frame::new(Command::CMD_BODY_VASISTAS_GET, vec![window])
+        } else if category == Category::ACTIVITY {
+            Frame::new(Command::CMD_WAM_VASISTAS_GET, vec![window])
         } else {
             Frame::new(
                 Command::CMD_VASISTAS_GET,
@@ -1652,6 +1757,127 @@ mod tests {
             .any(|f| f.command == Command::CMD_BATTERY_STATUS));
     }
 
+    /// The activity stream has its own command and, like the body stream, no
+    /// type selector.
+    #[test]
+    fn the_activity_stream_uses_its_own_command() {
+        let mut client = Client::new(credentials(), vec![(Category::ACTIVITY, UnixTime(4000))]);
+        client.handle(Event::Connected);
+        client.handle(frame(
+            Command::CMD_PROBE_CHALLENGE,
+            vec![WppObject::ProbeChallenge(ProbeChallenge {
+                mac: "a4:7e:fa:44:d6:10".to_string(),
+                challenge: vec![1; 16],
+            })],
+        ));
+        let actions = client.handle(frame(Command::CMD_PROBE, vec![]));
+        let request = actions
+            .iter()
+            .find_map(|a| match a {
+                Action::Send(f) if f.command == Command::CMD_WAM_VASISTAS_GET => Some(f),
+                _ => None,
+            })
+            .expect("activity stream requested");
+        assert_eq!(
+            request.objects,
+            vec![WppObject::WamVasistasGet(WamVasistasGet {
+                utc_start: 4000,
+                max: 0,
+            })]
+        );
+    }
+
+    /// One window of the activity stream: a head, its duration, and the
+    /// counters for it, all of which belong to the same record.
+    #[test]
+    fn a_window_of_the_activity_stream_becomes_one_record() {
+        use crate::objects::{
+            VasistasActiRecoV1V2, WamVasistasAwake, WamVasistasDuration, WamVasistasHead,
+            WamVasistasMetCalEarned, WamVasistasWalk,
+        };
+        let mut client = Client::new(credentials(), vec![(Category::ACTIVITY, UnixTime(0))]);
+        client.handle(Event::Connected);
+        client.handle(frame(Command::CMD_PROBE, vec![]));
+        let actions = client.handle(frame(
+            Command::CMD_WAM_VASISTAS_GET,
+            vec![
+                WppObject::WamVasistasHead(WamVasistasHead { utc: 1_784_969_340 }),
+                WppObject::WamVasistasDuration(WamVasistasDuration { duration: 60 }),
+                WppObject::WamVasistasMetCalEarned(WamVasistasMetCalEarned {
+                    calories: 245,
+                    met: 290,
+                }),
+                WppObject::WamVasistasAwake(WamVasistasAwake {
+                    steps: 94,
+                    distance: 7180,
+                    ascent: 0,
+                    descent: 0,
+                }),
+                WppObject::WamVasistasWalk(WamVasistasWalk { level: 2 }),
+                WppObject::VasistasActiRecoV1V2(VasistasActiRecoV1V2 {
+                    reco_v1: 14002,
+                    reco_v2: 5438,
+                }),
+            ],
+        ));
+        assert_eq!(
+            stored(&actions),
+            vec![Record::Activity(Minute {
+                duration_secs: 60,
+                steps: Some(94),
+                distance: Some(7180),
+                ascent: Some(0),
+                descent: Some(0),
+                calories: Some(245),
+                met: Some(290),
+                walk_level: Some(2),
+                reco_v1: Some(14002),
+                reco_v2: Some(5438),
+                ..Minute::opened(UnixTime(1_784_969_340))
+            })]
+        );
+    }
+
+    /// The stream sends window after window in one frame, and the counters
+    /// after a head belong to it and not to the one before.
+    #[test]
+    fn consecutive_windows_do_not_share_their_counters() {
+        use crate::objects::{WamVasistasAwake, WamVasistasDuration, WamVasistasHead};
+        let mut client = Client::new(credentials(), vec![(Category::ACTIVITY, UnixTime(0))]);
+        client.handle(Event::Connected);
+        client.handle(frame(Command::CMD_PROBE, vec![]));
+        let actions = client.handle(frame(
+            Command::CMD_WAM_VASISTAS_GET,
+            vec![
+                WppObject::WamVasistasHead(WamVasistasHead { utc: 5000 }),
+                WppObject::WamVasistasDuration(WamVasistasDuration { duration: 60 }),
+                WppObject::WamVasistasAwake(WamVasistasAwake {
+                    steps: 94,
+                    distance: 7180,
+                    ascent: 0,
+                    descent: 0,
+                }),
+                // An idle window: a head and a duration, nothing else.
+                WppObject::WamVasistasHead(WamVasistasHead { utc: 5060 }),
+                WppObject::WamVasistasDuration(WamVasistasDuration { duration: 960 }),
+            ],
+        ));
+        let records = stored(&actions);
+        assert_eq!(records.len(), 2);
+        assert_eq!(
+            records[1],
+            Record::Activity(Minute {
+                duration_secs: 960,
+                ..Minute::opened(UnixTime(5060))
+            })
+        );
+        assert_eq!(
+            client.current(),
+            Some((Category::ACTIVITY, UnixTime(5061))),
+            "the walk resumes past the newest window"
+        );
+    }
+
     #[test]
     fn nothing_is_asked_for_before_the_probe_completes() {
         let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(0))]);
@@ -1741,6 +1967,50 @@ mod tests {
             sent(&actions).contains(&Command::CMD_VASISTAS_GET),
             "the walk starts again"
         );
+    }
+
+    /// The watch goes on asking for as long as it holds an undelivered dump,
+    /// so a request the walk has nothing to answer is the one that means the
+    /// diagnostic buffer rather than history.
+    #[test]
+    fn a_request_the_walk_cannot_answer_takes_the_dump_instead() {
+        use crate::objects::{Null, SyncRequest};
+        let mut client = authenticated();
+        let done = |ms: i64| Event::Frame {
+            frame: Frame::new(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]),
+            received_at: UnixMillis(ms),
+        };
+        let ask = |ms: i64| Event::Frame {
+            frame: Frame::new(
+                Command::CMD_SYNC_REQUEST,
+                vec![WppObject::SyncRequest(SyncRequest {
+                    r#type: SyncRequest::TYPE_DEBUG_DUMP,
+                    reserved: 0,
+                })],
+            ),
+            received_at: UnixMillis(ms),
+        };
+
+        client.handle(done(0));
+        let walked = client.handle(ask(1_000));
+        assert!(
+            sent(&walked).contains(&Command::CMD_VASISTAS_GET),
+            "a walk that is due still comes first"
+        );
+        client.handle(done(2_000));
+
+        let drained = client.handle(ask(3_000));
+        assert_eq!(
+            sent(&drained),
+            vec![
+                Command::CMD_SYNC_REQUEST.with_channel(Channel::SlaveRequest),
+                Command::CMD_DEBUG_SET,
+            ],
+            "acknowledged, then the drain opens"
+        );
+
+        // While it runs, a walk would abandon the transfer half way.
+        assert!(client.walk_now().is_empty());
     }
 
     /// The quick-launch menu is eight slots, zero-padded, like the screen list.

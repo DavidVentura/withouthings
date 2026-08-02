@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
+import uniffi.wpp_ffi.DetectedActivity
 import uniffi.wpp_ffi.DstChange
 import uniffi.wpp_ffi.NotificationCategory
 import uniffi.wpp_ffi.NotificationConfig
@@ -31,12 +32,36 @@ import uniffi.wpp_ffi.WearPosition
 import uniffi.wpp_ffi.WatchScreen
 import uniffi.wpp_ffi.WorkoutSummary
 
+/// An entry in the activities list. The watch records what someone starts on
+/// it; everything else it only counts, and walks have to be found in those
+/// counts afterwards.
+sealed interface ActivityEntry {
+    val startedAtMs: Long
+    val endedAtMs: Long?
+    val name: String
+}
+
+data class RecordedEntry(val workout: WorkoutSummary) : ActivityEntry {
+    override val startedAtMs = workout.startedAtMs
+    override val endedAtMs = workout.endedAtMs
+    override val name = workout.activity
+}
+
+data class DetectedEntry(val detected: DetectedActivity) : ActivityEntry {
+    override val startedAtMs = detected.startedAtMs
+    override val endedAtMs = detected.endedAtMs
+    override val name = detected.activity
+}
+
 data class UiState(
     val link: LinkState = LinkState.Disconnected,
     val snapshot: Snapshot? = null,
     val hr: List<HrPoint> = emptyList(),
     val markers: List<Marker> = emptyList(),
-    val workouts: List<WorkoutSummary> = emptyList(),
+    val activityLog: List<ActivityEntry> = emptyList(),
+    /// When the list was last built, so a refresh can tell a stale one from a
+    /// list that has simply not been rebuilt yet.
+    val activityLogAtMs: Long = 0,
     val screens: List<WatchScreen> = emptyList(),
     val metric: List<ChartPoint> = emptyList(),
     val latest: Map<MetricStyle, ChartPoint> = emptyMap(),
@@ -56,6 +81,15 @@ data class UiState(
 )
 
 private const val DEFAULT_WINDOW_MS = 10 * 60 * 1000L
+
+/// How far back the activities list looks for walks. The segmentation runs
+/// over every window in the span each time the list is built, so this is a
+/// cost as much as it is a horizon.
+private const val DETECTED_HISTORY_MS = 7L * 24 * 60 * 60 * 1000
+
+/// How stale the activities list may get. Only a sync can change it, and those
+/// are a quarter of an hour apart.
+private const val ACTIVITY_LOG_MAX_AGE_MS = 10_000L
 
 /// Six seconds is what a clinical strip shows on one line at 25 mm/s.
 private const val INITIAL_ECG_SPAN_MS = 6_000L
@@ -84,9 +118,9 @@ class WatchViewModel : ViewModel() {
     private val _liveWindow = MutableStateFlow<LongRange?>(null)
     val liveWindow: StateFlow<LongRange?> = _liveWindow.asStateFlow()
 
-    /// The finished workout being looked at, if one was picked from the list.
-    private val _selectedWorkout = MutableStateFlow<WorkoutSummary?>(null)
-    val selectedWorkout: StateFlow<WorkoutSummary?> = _selectedWorkout.asStateFlow()
+    /// The finished activity being looked at, if one was picked from the list.
+    private val _selectedActivity = MutableStateFlow<ActivityEntry?>(null)
+    val selectedActivity: StateFlow<ActivityEntry?> = _selectedActivity.asStateFlow()
 
     private val _night = MutableStateFlow<Night?>(null)
     val night: StateFlow<Night?> = _night.asStateFlow()
@@ -153,6 +187,12 @@ class WatchViewModel : ViewModel() {
                         val from = active?.startedAtMs ?: (now - DEFAULT_WINDOW_MS)
                         from..now
                     }
+                    // Rebuilding the list re-reads a week of activity windows,
+                    // which the four-times-a-second poll behind a live workout
+                    // does not need: a walk cannot appear before the watch has
+                    // synced the windows it is made of.
+                    val previous = _state.value
+                    val rebuildLog = now - previous.activityLogAtMs > ACTIVITY_LOG_MAX_AGE_MS
                     UiState(
                         link = WatchRepository.link.value,
                         snapshot = snapshot,
@@ -164,7 +204,17 @@ class WatchViewModel : ViewModel() {
                             .series(Metric.TEMPERATURE, range.first, range.last, MAX_CHART_POINTS)
                             .map { p: Point -> ChartPoint(p.atMs, p.value) },
                         markers = service.markers(range.first, range.last),
-                        workouts = service.workouts(50u),
+                        activityLog = if (rebuildLog) {
+                            (
+                                service.workouts(50u).map(::RecordedEntry) +
+                                    service
+                                        .detectedActivities(now - DETECTED_HISTORY_MS, now)
+                                        .map(::DetectedEntry)
+                                ).sortedByDescending { it.startedAtMs }
+                        } else {
+                            previous.activityLog
+                        },
+                        activityLogAtMs = if (rebuildLog) now else previous.activityLogAtMs,
                         ecgs = service.ecgs(),
                         // The client holds the samples until the next
                         // recording starts, so a finished one stays readable;
@@ -282,9 +332,9 @@ class WatchViewModel : ViewModel() {
         _liveWindow.value = range
     }
 
-    fun showWorkout(workout: WorkoutSummary) {
-        _selectedWorkout.value = workout
-        zoom(workout.startedAtMs..(workout.endedAtMs ?: System.currentTimeMillis()))
+    fun showActivity(entry: ActivityEntry) {
+        _selectedActivity.value = entry
+        zoom(entry.startedAtMs..(entry.endedAtMs ?: System.currentTimeMillis()))
     }
 
     fun followLive() {

@@ -4,6 +4,7 @@
 //! is a no-op, which the paged history walk guarantees will happen.
 
 use rusqlite::{params, Connection, OptionalExtension};
+use wpp::activity::Minute;
 use wpp::client::{Category, Record};
 use wpp::signal::Signal;
 use wpp::units::UnixTime;
@@ -32,6 +33,21 @@ impl Store {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.execute_batch(include_str!("schema.sql"))?;
+        // `undecoded_frame` was created before there was anything to say about
+        // why a frame failed, and CREATE TABLE IF NOT EXISTS leaves an older
+        // one as it found it.
+        let has_splice: i64 = conn.query_row(
+            "SELECT count(*) FROM pragma_table_info('undecoded_frame')
+              WHERE name = 'splice_at'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_splice == 0 {
+            conn.execute(
+                "ALTER TABLE undecoded_frame ADD COLUMN splice_at INTEGER",
+                [],
+            )?;
+        }
         Ok(Store { conn })
     }
 
@@ -102,10 +118,54 @@ impl Store {
                         params![device_id, started_at.0, ended_at.0, paused_secs],
                     )?;
                 }
+                Record::Activity(minute) => {
+                    tx.execute(
+                        "INSERT INTO activity_minute (device_id, started_at, duration_secs,
+                             steps, distance, ascent, descent, calories, met,
+                             walk_level, run_level, reco_v1, reco_v2)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                         ON CONFLICT DO NOTHING",
+                        params![
+                            device_id,
+                            minute.at.0,
+                            minute.duration_secs,
+                            minute.steps,
+                            minute.distance,
+                            minute.ascent,
+                            minute.descent,
+                            minute.calories,
+                            minute.met,
+                            minute.walk_level,
+                            minute.run_level,
+                            minute.reco_v1,
+                            minute.reco_v2,
+                        ],
+                    )?;
+                }
                 Record::Ecg(signal) => store_ecg(&tx, device_id, signal)?,
             }
         }
         tx.commit()
+    }
+
+    /// Keep a frame the decoder could not read.
+    ///
+    /// Silently dropping one loses whatever it carried with nothing to show
+    /// for it; kept, the bytes can be decoded later against a fixed parser.
+    pub fn store_undecoded(
+        &self,
+        device_id: i64,
+        received_at: i64,
+        command: i64,
+        payload: &[u8],
+        splice_at: Option<i64>,
+    ) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT INTO undecoded_frame (device_id, received_at, command, payload, splice_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![device_id, received_at, command, payload, splice_at],
+        )?;
+        Ok(())
     }
 
     /// Watermarks to resume from, one per category the watch serves.
@@ -285,6 +345,44 @@ impl Store {
         )?;
         let rows = stmt.query_map(params![device_id, limit], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?;
+        rows.collect()
+    }
+
+    /// Windows of the activity stream covering a span, oldest first, which is
+    /// the order [`wpp::activity::detect`] needs them in.
+    ///
+    /// A window that starts before `from_secs` but runs into the span is
+    /// included: the walk that a view opens in the middle of began earlier.
+    pub fn activity_minutes(
+        &self,
+        device_id: i64,
+        from_secs: i64,
+        to_secs: i64,
+    ) -> Result<Vec<Minute>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT started_at, duration_secs, steps, distance, ascent, descent,
+                    calories, met, walk_level, run_level, reco_v1, reco_v2
+               FROM activity_minute
+              WHERE device_id = ?1 AND started_at <= ?3
+                AND started_at + duration_secs >= ?2
+              ORDER BY started_at",
+        )?;
+        let rows = stmt.query_map(params![device_id, from_secs, to_secs], |r| {
+            Ok(Minute {
+                at: UnixTime(r.get(0)?),
+                duration_secs: r.get(1)?,
+                steps: r.get(2)?,
+                distance: r.get(3)?,
+                ascent: r.get(4)?,
+                descent: r.get(5)?,
+                calories: r.get(6)?,
+                met: r.get(7)?,
+                walk_level: r.get(8)?,
+                run_level: r.get(9)?,
+                reco_v1: r.get(10)?,
+                reco_v2: r.get(11)?,
+            })
         })?;
         rows.collect()
     }
@@ -472,6 +570,52 @@ mod tests {
             quality: Some(4),
             source,
         }
+    }
+
+    #[test]
+    fn an_activity_window_survives_the_round_trip_and_re_storing_it() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let minute = Minute {
+            duration_secs: 60,
+            steps: Some(94),
+            distance: Some(7180),
+            calories: Some(245),
+            met: Some(290),
+            walk_level: Some(2),
+            ..Minute::opened(UnixTime(5000))
+        };
+        let batch = vec![
+            Record::Activity(minute),
+            Record::Activity(Minute {
+                duration_secs: 960,
+                ..Minute::opened(UnixTime(5060))
+            }),
+        ];
+        store.store(device, &batch).unwrap();
+        store.store(device, &batch).unwrap();
+        let read = store.activity_minutes(device, 0, 10_000).unwrap();
+        assert_eq!(read.len(), 2);
+        assert_eq!(read[0], minute);
+    }
+
+    /// A window that opened before the span but runs into it is part of it.
+    #[test]
+    fn a_window_straddling_the_start_of_the_span_is_read() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[Record::Activity(Minute {
+                    duration_secs: 900,
+                    steps: Some(30),
+                    ..Minute::opened(UnixTime(1000))
+                })],
+            )
+            .unwrap();
+        assert_eq!(store.activity_minutes(device, 1500, 5000).unwrap().len(), 1);
+        assert_eq!(store.activity_minutes(device, 2000, 5000).unwrap().len(), 0);
     }
 
     #[test]

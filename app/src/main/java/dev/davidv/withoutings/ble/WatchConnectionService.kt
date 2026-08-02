@@ -401,7 +401,11 @@ class WatchConnectionService : Service() {
                 retries = 0
                 if (WIRE_LOG) Log.i(WIRE_TAG, "<- ${value.hex()}")
                 service?.onBytes(value, System.currentTimeMillis())
-                val progress = service?.snapshot()?.progress
+                // Not snapshot(): that reads the database, on the thread
+                // delivering notifications, thousands of them back to back
+                // during a sync. A notification we are too slow to take is a
+                // frame lost, and frames span notifications.
+                val progress = service?.progress()
                 if (progress != lastProgress) {
                     lastProgress = progress
                     Log.i(TAG, "progress=$progress")
@@ -577,7 +581,7 @@ class WatchConnectionService : Service() {
         private const val TAG = "WatchLink"
         /// Every WPP write and notification as hex, for diffing against a
         /// capture of the official app. Noisy: one line per frame.
-        private const val WIRE_LOG = true
+        private const val WIRE_LOG = false
         private const val WIRE_TAG = "Wpp"
 
         private fun ByteArray.hex(): String = joinToString(" ") { "%02x".format(it) }

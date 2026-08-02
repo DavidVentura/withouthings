@@ -80,14 +80,19 @@ CREATE TABLE IF NOT EXISTS sync_state (
     PRIMARY KEY (device_id, category)
 ) STRICT, WITHOUT ROWID;
 
--- Kept only for frames carrying an object we could not decode; everything else
--- is already represented losslessly above.
+-- Frames that would not decode at all. An object we cannot read is kept inside
+-- its frame as Unknown or Malformed and never reaches here; what does is a
+-- frame whose objects did not tile its declared length, which is what a lost
+-- notification leaves behind.
 CREATE TABLE IF NOT EXISTS undecoded_frame (
     id          INTEGER PRIMARY KEY,
     device_id   INTEGER NOT NULL REFERENCES device(id),
     received_at INTEGER NOT NULL,
     command     INTEGER NOT NULL,
-    payload     BLOB NOT NULL
+    payload     BLOB NOT NULL,
+    -- Where a second frame starts inside this one, when it does: the mark of
+    -- a notification that went missing rather than a frame we cannot read.
+    splice_at   INTEGER
 ) STRICT;
 
 -- Nothing on the wire links a sample to a workout; only its timestamp does.
@@ -98,6 +103,30 @@ SELECT w.id AS workout_id, s.*
     ON s.device_id   = w.device_id
    AND s.measured_at >= w.started_at * 1000
    AND s.measured_at <= COALESCE(w.ended_at * 1000, 9223372036854775807);
+
+-- One window of the per-minute activity stream. A row rather than a set of
+-- samples because the counters describe the window, not an instant, and the
+-- window is not always a minute: idle stretches arrive compressed into one
+-- long one, which is the difference between "no movement" and "no data".
+CREATE TABLE IF NOT EXISTS activity_minute (
+    device_id     INTEGER NOT NULL REFERENCES device(id),
+    -- seconds, as the watch dates it
+    started_at    INTEGER NOT NULL,
+    duration_secs INTEGER NOT NULL,
+    steps         INTEGER,
+    distance      INTEGER,
+    ascent        INTEGER,
+    descent       INTEGER,
+    calories      INTEGER,
+    met           INTEGER,
+    walk_level    INTEGER,
+    run_level     INTEGER,
+    -- The features the official app's classifier runs on. Useless without it,
+    -- and gone from the watch's ring buffer within the day.
+    reco_v1       INTEGER,
+    reco_v2       INTEGER,
+    PRIMARY KEY (device_id, started_at)
+) STRICT, WITHOUT ROWID;
 
 -- Set boundaries a user marks with the stopwatch. Not protocol data; it is
 -- what makes a workout trace legible as sets rather than one long line.

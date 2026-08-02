@@ -215,12 +215,12 @@ impl FrameReassembler {
                     items.push(StreamItem::Frame { frame, bytes });
                 }
                 Err(cause) => {
-                    // A plausible header that did not describe a frame.
-                    let dropped = self.buf.remove(0);
-                    items.push(StreamItem::Desync {
-                        bytes: vec![dropped],
-                        cause,
-                    });
+                    // The declared length is trustworthy even when the body is
+                    // not, so the whole frame goes: rescanning from the second
+                    // byte resyncs on some 0x01 inside this payload and parses
+                    // the frames after it against a false boundary.
+                    let bytes: Vec<u8> = self.buf.drain(..needed).collect();
+                    items.push(StreamItem::Desync { bytes, cause });
                 }
             }
         }
@@ -309,6 +309,48 @@ mod tests {
                 },
             ]
         );
+    }
+
+    /// A frame spanning two notifications, of which the second never arrived:
+    /// its head is left glued to whatever came next. The whole thing has to be
+    /// consumed — rescanning from inside it parses the following frames against
+    /// a false boundary — and the join is what says a notification went missing
+    /// rather than the watch having sent something unreadable.
+    #[test]
+    fn a_frame_missing_a_notification_is_consumed_whole_and_shows_the_join() {
+        let whole = battery_frame().to_bytes();
+        // Cut inside an object header. Cutting on an object boundary can leave
+        // a frame that decodes with the next one's bytes read as data — a lost
+        // notification is not always a lost frame.
+        let mut stream = whole[..7].to_vec();
+        stream.extend(&whole);
+        stream.extend(&whole);
+
+        let mut r = FrameReassembler::new();
+        let items = r.push(&stream);
+        let StreamItem::Desync { bytes, .. } = &items[0] else {
+            panic!("the spliced frame should not decode: {items:?}");
+        };
+        assert_eq!(
+            bytes.len(),
+            whole.len(),
+            "exactly what the header declared is taken, no more and no less"
+        );
+        assert_eq!(
+            Frame::splice_offset(bytes),
+            Some(7),
+            "the second frame's header is where the first one's body ran out"
+        );
+    }
+
+    /// The other fault: a frame that is all there and simply will not decode.
+    #[test]
+    fn a_frame_that_is_merely_unreadable_shows_no_join() {
+        let mut bytes = battery_frame().to_bytes();
+        // An object claiming more bytes than the payload holds.
+        bytes[8] = 0xff;
+        assert!(Frame::parse(&bytes).is_err());
+        assert_eq!(Frame::splice_offset(&bytes), None);
     }
 
     #[test]

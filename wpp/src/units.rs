@@ -7,7 +7,7 @@
 
 use crate::objects::{
     BatteryStatus, LiveHr, TimeSet, TrackerUser, VasistasCbt, VasistasHeartrate, VasistasHrv,
-    VasistasRr, WamVasistasHead,
+    VasistasRr, WamVasistasAwake, WamVasistasHead, WamVasistasMetCalEarned,
 };
 
 macro_rules! quantity {
@@ -58,6 +58,21 @@ quantity!(
     /// Breaths per minute.
     BreathsPerMinute,
     u16
+);
+quantity!(
+    /// Length in metres.
+    Metres,
+    f64
+);
+quantity!(
+    /// Energy in kilocalories.
+    Kilocalories,
+    f64
+);
+quantity!(
+    /// Metabolic equivalent of task: multiples of resting expenditure.
+    Met,
+    f64
 );
 quantity!(
     /// Seconds since the Unix epoch, UTC. What the protocol carries.
@@ -176,6 +191,41 @@ impl WamVasistasHead {
     /// Start of the sample window this record covers.
     pub fn time(&self) -> UnixTime {
         UnixTime(self.utc as i64)
+    }
+}
+
+/// The activity stream counts in hundredths: centimetres of ground, hundredths
+/// of a calorie, hundredths of a MET.
+///
+/// Established against the official app's own database, which stores these
+/// fields divided by exactly this — 4260 steps of one walk against 3132 m,
+/// 0.735 m a step, and a walking minute at 2.90 MET.
+pub const ACTIVITY_HUNDREDTHS: f64 = 100.0;
+
+impl WamVasistasAwake {
+    /// Ground covered, centimetres on the wire.
+    pub fn distance(&self) -> Metres {
+        Metres(self.distance as f64 / ACTIVITY_HUNDREDTHS)
+    }
+
+    pub fn ascent(&self) -> Metres {
+        Metres(self.ascent as f64 / ACTIVITY_HUNDREDTHS)
+    }
+
+    pub fn descent(&self) -> Metres {
+        Metres(self.descent as f64 / ACTIVITY_HUNDREDTHS)
+    }
+}
+
+impl WamVasistasMetCalEarned {
+    /// Calories earned over the window, above what resting would have cost.
+    pub fn calories(&self) -> Kilocalories {
+        Kilocalories(self.calories as f64 / ACTIVITY_HUNDREDTHS)
+    }
+
+    /// Walking reads 290: three times what resting costs.
+    pub fn met(&self) -> Met {
+        Met(self.met as f64 / ACTIVITY_HUNDREDTHS)
     }
 }
 

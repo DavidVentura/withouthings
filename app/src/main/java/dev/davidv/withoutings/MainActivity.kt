@@ -34,8 +34,9 @@ import dev.davidv.withoutings.ui.SetupScreen
 import dev.davidv.withoutings.ui.SleepScreen
 import dev.davidv.withoutings.ui.WatchSettingsScreen
 import dev.davidv.withoutings.ui.WatchViewModel
-import dev.davidv.withoutings.ui.WorkoutScreen
-import dev.davidv.withoutings.ui.WorkoutsScreen
+import dev.davidv.withoutings.ui.ActivityScreen
+import dev.davidv.withoutings.ui.ActivitiesScreen
+import dev.davidv.withoutings.ui.RecordedEntry
 import dev.davidv.withoutings.ui.theme.WithoutingsTheme
 
 /// The rate the watch streams a live ECG at, and records one at.
@@ -43,8 +44,8 @@ private const val LIVE_ECG_HZ = 300
 
 private object Routes {
     const val HOME = "home"
-    const val WORKOUT = "workout"
-    const val WORKOUTS = "workouts"
+    const val ACTIVITY = "activity"
+    const val ACTIVITIES = "activities"
     const val ECGS = "ecgs"
     const val SLEEP = "sleep"
     const val ECG = "ecg"
@@ -119,7 +120,7 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
     val startedAt by model.stopwatchStartedAt.collectAsState()
     val elapsed by model.elapsed.collectAsState()
     val metricWindow by model.metricWindow.collectAsState()
-    val selected by model.selectedWorkout.collectAsState()
+    val selected by model.selectedActivity.collectAsState()
     val ecg by model.ecg.collectAsState()
     val ecgWindow by model.ecgWindow.collectAsState()
     val liveWindow by model.liveWindow.collectAsState()
@@ -130,7 +131,7 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
     // taking over the start destination left nowhere for Back to go.
     val activeStartedAt = state.snapshot?.activeWorkout?.startedAtMs
     LaunchedEffect(activeStartedAt) {
-        if (activeStartedAt != null) nav.navigate(Routes.WORKOUT)
+        if (activeStartedAt != null) nav.navigate(Routes.ACTIVITY)
     }
 
     // Read the watch's configuration once the link is up, rather than when
@@ -158,7 +159,7 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
             }
             IdleScreen(
                 state = state,
-                onOpenWorkouts = { nav.navigate(Routes.WORKOUTS) },
+                onOpenActivities = { nav.navigate(Routes.ACTIVITIES) },
                 onOpenEcgs = { nav.navigate(Routes.ECGS) },
                 onOpenSleep = {
                     model.showNight()
@@ -174,10 +175,10 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
             )
         }
 
-        composable(Routes.WORKOUT) {
-            WorkoutScreen(
+        composable(Routes.ACTIVITY) {
+            ActivityScreen(
                 state = state,
-                workout = state.snapshot?.activeWorkout ?: selected,
+                entry = state.snapshot?.activeWorkout?.let(::RecordedEntry) ?: selected,
                 window = state.hrWindow,
                 elapsedMs = elapsed,
                 running = startedAt != null,
@@ -206,12 +207,12 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
             )
         }
 
-        composable(Routes.WORKOUTS) {
-            WorkoutsScreen(
-                workouts = state.workouts,
-                onSelect = { workout ->
-                    model.showWorkout(workout)
-                    nav.navigate(Routes.WORKOUT)
+        composable(Routes.ACTIVITIES) {
+            ActivitiesScreen(
+                entries = state.activityLog,
+                onSelect = { entry ->
+                    model.showActivity(entry)
+                    nav.navigate(Routes.ACTIVITY)
                 },
                 onBack = { nav.popBackStack() },
             )

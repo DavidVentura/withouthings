@@ -4,18 +4,21 @@
 //! [`commands`] are generated from the Withings Android app by
 //! `tools/extract_wpp.py`; see `tools/wpp.json` for the extracted description.
 
+pub mod activity;
 pub mod analysis;
 pub mod ancs;
 pub mod capture;
 pub mod client;
 pub mod codec;
 pub mod commands;
+pub mod debug_dump;
 pub mod frame;
 pub mod image;
 pub mod objects;
 pub mod signal;
 pub mod units;
 
+pub use activity::{Minute, Session};
 pub use analysis::{detect_r_peaks, RPeaks};
 pub use ancs::{AncsError, ControlPoint, Notification, NotificationCenter, NotificationId};
 pub use client::{Action, Category, Client, Credentials, Event, Record, SampleKind, Source};

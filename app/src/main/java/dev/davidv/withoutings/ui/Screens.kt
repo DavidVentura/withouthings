@@ -44,7 +44,6 @@ import dev.davidv.withoutings.LinkState
 import uniffi.wpp_ffi.EcgSummary
 import uniffi.wpp_ffi.Progress
 import uniffi.wpp_ffi.Snapshot
-import uniffi.wpp_ffi.WorkoutSummary
 
 private val clock = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 private val hourMinute = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -113,7 +112,7 @@ fun SetupScreen(onSave: (String, String) -> Unit) {
 @Composable
 fun IdleScreen(
     state: UiState,
-    onOpenWorkouts: () -> Unit,
+    onOpenActivities: () -> Unit,
     onOpenEcgs: () -> Unit,
     onOpenSleep: () -> Unit,
     onOpenMetric: (MetricStyle) -> Unit,
@@ -203,7 +202,7 @@ fun IdleScreen(
                 }
 
                 NavRow("Sleep", "last night", onOpenSleep)
-                NavRow("Workouts", workoutsDetail(state.workouts), onOpenWorkouts)
+                NavRow("Activities", activitiesDetail(state.activityLog), onOpenActivities)
                 NavRow("ECG", ecgsDetail(state.ecgs), onOpenEcgs)
 
                 if (snapshot != null && snapshot.pendingDeletes > 0u) {
@@ -218,9 +217,9 @@ fun IdleScreen(
     }
 }
 
-private fun workoutsDetail(workouts: List<WorkoutSummary>): String {
-    val latest = workouts.maxByOrNull { it.startedAtMs } ?: return "none recorded"
-    return "${workouts.size} · latest ${latest.activity}, ${age(latest.startedAtMs)}"
+private fun activitiesDetail(entries: List<ActivityEntry>): String {
+    val latest = entries.maxByOrNull { it.startedAtMs } ?: return "none recorded"
+    return "${entries.size} · latest ${latest.name}, ${age(latest.startedAtMs)}"
 }
 
 private fun ecgsDetail(recordings: List<EcgSummary>): String {
@@ -231,9 +230,9 @@ private fun ecgsDetail(recordings: List<EcgSummary>): String {
 private const val PULL_SETTLE_MS = 800L
 
 @Composable
-fun WorkoutScreen(
+fun ActivityScreen(
     state: UiState,
-    workout: WorkoutSummary?,
+    entry: ActivityEntry?,
     window: LongRange,
     elapsedMs: Long,
     running: Boolean,
@@ -244,17 +243,24 @@ fun WorkoutScreen(
     onToggleStopwatch: () -> Unit,
     onBack: () -> Unit,
 ) {
-    val workoutLimit = workout?.let {
+    val workoutLimit = entry?.let {
         it.startedAtMs..(it.endedAtMs ?: System.currentTimeMillis())
     }
-    val live = workout != null && workout.endedAtMs == null
-    Page(workout?.activity ?: "Workout", onBack) {
+    // Only a workout the watch is recording can still be running; a detected
+    // walk is found in windows the watch has already handed over.
+    val live = entry is RecordedEntry && entry.endedAtMs == null
+    Page(entry?.name ?: "Activity", onBack) {
         Text(
-            workout?.let {
+            entry?.let {
                 val until = it.endedAtMs ?: System.currentTimeMillis()
                 "Start: ${hourMinute.format(Date(it.startedAtMs))} · " +
-                    "Duration: ${formatElapsed(until - it.startedAtMs)}"
-            } ?: "no workout selected",
+                    "Duration: ${formatElapsed(until - it.startedAtMs)}" +
+                    if (it is DetectedEntry) {
+                        " · ${it.detected.steps} steps · ${distance(it.detected.distanceMetres)}"
+                    } else {
+                        ""
+                    }
+            } ?: "no activity selected",
             style = MaterialTheme.typography.bodySmall,
         )
 
@@ -319,39 +325,53 @@ fun WorkoutScreen(
 }
 
 @Composable
-fun WorkoutsScreen(
-    workouts: List<WorkoutSummary>,
-    onSelect: (WorkoutSummary) -> Unit,
+fun ActivitiesScreen(
+    entries: List<ActivityEntry>,
+    onSelect: (ActivityEntry) -> Unit,
     onBack: () -> Unit,
 ) {
-    Page("Workouts", onBack) {
-        if (workouts.isEmpty()) {
+    Page("Activities", onBack) {
+        if (entries.isEmpty()) {
             Text(
-                "No workouts yet. Start one on the watch; it appears here once " +
-                    "the watch has been synced.",
+                "Nothing yet. Workouts started on the watch appear here once it " +
+                    "has been synced, and walks are picked out of the activity " +
+                    "it counts on its own.",
                 style = MaterialTheme.typography.bodySmall,
             )
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(workouts) { workout ->
-                Card(Modifier.fillMaxWidth().clickable { onSelect(workout) }) {
+            items(entries) { entry ->
+                Card(Modifier.fillMaxWidth().clickable { onSelect(entry) }) {
                     Column(Modifier.padding(12.dp)) {
-                        Text(workout.activity, style = MaterialTheme.typography.titleMedium)
+                        Text(entry.name, style = MaterialTheme.typography.titleMedium)
                         Text(
-                            stamp.format(Date(workout.startedAtMs)),
+                            stamp.format(Date(entry.startedAtMs)),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Text(
-                            workout.endedAtMs?.let {
-                                "duration ${formatElapsed(it - workout.startedAtMs)}"
+                            entry.endedAtMs?.let {
+                                "duration ${formatElapsed(it - entry.startedAtMs)}"
                             } ?: "in progress",
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        if (entry is DetectedEntry) {
+                            Text(
+                                "detected · ${entry.detected.steps} steps · " +
+                                    distance(entry.detected.distanceMetres),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
                 }
             }
         }
     }
+}
+
+private fun distance(metres: Double): String = if (metres >= 1000) {
+    String.format(Locale.getDefault(), "%.2f km", metres / 1000)
+} else {
+    String.format(Locale.getDefault(), "%.0f m", metres)
 }
 
 /** A transfer reports exact bytes; the history walk only estimates, so the count leads. */
