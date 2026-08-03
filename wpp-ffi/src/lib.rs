@@ -93,6 +93,7 @@ impl Metric {
             Metric::Temperature => 1000.0,
             Metric::Ascent | Metric::Distance | Metric::Calories => 100.0,
             Metric::TrackedDuration => 3600.0,
+            Metric::Spo2 => 10.0,
             _ => 1.0,
         }
     }

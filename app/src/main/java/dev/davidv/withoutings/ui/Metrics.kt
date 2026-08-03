@@ -11,7 +11,6 @@ import androidx.compose.material.icons.rounded.MonitorHeart
 import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Terrain
 import androidx.compose.material.icons.rounded.Thermostat
-import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.ui.graphics.vector.ImageVector
 import uniffi.wpp_ffi.Marker
 import uniffi.wpp_ffi.Metric
@@ -25,56 +24,52 @@ enum class MetricStyle(
     val icon: ImageVector,
     val axis: ClosedFloatingPointRange<Double>,
     val freshFor: Long,
-    val headline: Headline,
+    val summary: SummaryKind,
     val elevatedAbove: Double? = null,
 ) {
     HeartRate(
         Metric.HEART_RATE, "Heart rate", "bpm", 0, Icons.Rounded.Favorite,
-        50.0..150.0, 20 * MINUTE, Headline.Resting, elevatedAbove = 100.0,
+        50.0..150.0, 20 * MINUTE, SummaryKind.Resting, elevatedAbove = 100.0,
     ),
     Temperature(
         Metric.TEMPERATURE, "Temperature", "°C", 1, Icons.Rounded.Thermostat,
-        35.0..38.5, 10 * MINUTE, Headline.Baseline,
+        35.0..38.5, 10 * MINUTE, SummaryKind.Baseline,
     ),
     Steps(
         Metric.STEPS, "Steps", "steps", 0, Icons.AutoMirrored.Rounded.DirectionsWalk,
-        0.0..15000.0, DAY_MS, Headline.DailyTotal,
+        0.0..15000.0, DAY_MS, SummaryKind.DailyTotal,
     ),
     Calories(
         Metric.CALORIES, "Energy", "kcal", 0, Icons.Rounded.LocalFireDepartment,
-        0.0..3000.0, DAY_MS, Headline.DailyTotal,
+        0.0..3000.0, DAY_MS, SummaryKind.DailyTotal,
     ),
     Respiratory(
         Metric.RESPIRATORY_RATE, "Respiratory", "br/min", 0, Icons.Rounded.Air,
-        0.0..30.0, 4 * HOUR, Headline.Average,
+        0.0..30.0, 4 * HOUR, SummaryKind.Average,
     ),
     HrvSdnn(
         Metric.HRV_SDNN, "HRV (SDNN)", "ms", 0, Icons.Rounded.MonitorHeart,
-        0.0..200.0, 3 * HOUR, Headline.Average,
+        0.0..200.0, 3 * HOUR, SummaryKind.Average,
     ),
     HrvRmssd(
         Metric.HRV_RMSSD, "HRV (RMSSD)", "ms", 0, Icons.Rounded.MonitorHeart,
-        0.0..200.0, 3 * HOUR, Headline.Average,
+        0.0..200.0, 3 * HOUR, SummaryKind.Average,
     ),
     Spo2(
         Metric.SPO2, "Blood oxygen", "%", 0, Icons.Rounded.Bloodtype,
-        90.0..100.0, 3 * HOUR, Headline.Average,
+        90.0..100.0, 3 * HOUR, SummaryKind.Average,
     ),
     Ascent(
         Metric.ASCENT, "Climbed", "m", 1, Icons.Rounded.Terrain,
-        0.0..30.0, DAY_MS, Headline.DailyTotal,
+        0.0..30.0, DAY_MS, SummaryKind.DailyTotal,
     ),
     Distance(
         Metric.DISTANCE, "Distance", "m", 0, Icons.Rounded.Route,
-        0.0..10000.0, DAY_MS, Headline.DailyTotal,
-    ),
-    TrackedDuration(
-        Metric.TRACKED_DURATION, "Tracked", "h", 1, Icons.Rounded.Timer,
-        0.0..24.0, DAY_MS, Headline.DailyTotal,
+        0.0..10000.0, DAY_MS, SummaryKind.DailyTotal,
     ),
     Battery(
         Metric.BATTERY, "Battery", "%", 0, Icons.Rounded.BatteryFull,
-        0.0..100.0, HOUR, Headline.Latest,
+        0.0..100.0, HOUR, SummaryKind.Latest,
     );
 
     val defaultSpan: Long get() = DEFAULT_SPAN
@@ -84,7 +79,7 @@ enum class MetricStyle(
     }
 }
 
-enum class Headline { Resting, Baseline, DailyTotal, Average, Latest }
+enum class SummaryKind { Resting, Baseline, DailyTotal, Average, Latest }
 
 internal const val MINUTE = 60_000L
 internal const val HOUR = 3600_000L

@@ -32,3 +32,5 @@ withings.apk
 *.db-wal
 *.db-shm
 healthmate-backup/
+
+*.bin

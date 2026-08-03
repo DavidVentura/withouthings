@@ -61,7 +61,6 @@ fun MetricScreen(
         window = visible,
         baseline = state.metricBaseline,
         sessions = sessions,
-        latest = state.latest[style],
         nowMs = nowMs,
     )
 
@@ -77,8 +76,6 @@ fun MetricScreen(
             Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(AppTheme.space.blockMetric),
         ) {
-            SummaryCard(summary)
-
             ChipRow(
                 RangeSpan.entries.map { it to it.label },
                 RangeSpan.matching(window.last - window.first),
@@ -118,18 +115,21 @@ fun MetricScreen(
                 }
             }
 
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                summary.stats.forEach { stat ->
-                    StatTile(
-                        stat.eyebrow,
-                        stat.value,
-                        stat.unit,
-                        stat.footer,
-                        Modifier.weight(1f),
-                    )
+            val perRow = if (summary.stats.size == 4) 2 else 3
+            summary.stats.chunked(perRow).forEach { row ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    row.forEach { stat ->
+                        StatTile(
+                            stat.eyebrow,
+                            stat.value,
+                            stat.unit,
+                            stat.footer,
+                            Modifier.weight(1f),
+                        )
+                    }
                 }
             }
 
@@ -151,33 +151,6 @@ fun MetricScreen(
 }
 
 private val CHART_HEIGHT = 190.dp
-
-@Composable
-private fun SummaryCard(summary: MetricSummary) {
-    AccentCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                summary.headline,
-                Modifier.weight(1f),
-                style = AppTheme.type.tileLabel,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                summary.aside,
-                style = AppTheme.type.rowMeta,
-                color = AppTheme.colors.onAccentSecondary,
-            )
-        }
-        Spacer(Modifier.height(2.dp))
-        ValueWithUnit(
-            summary.value,
-            summary.unit,
-            AppTheme.type.focalMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            unitColor = AppTheme.colors.onAccentSecondary,
-        )
-    }
-}
 
 @Composable
 private fun SpellList(

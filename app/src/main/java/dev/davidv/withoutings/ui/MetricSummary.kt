@@ -1,10 +1,6 @@
 package dev.davidv.withoutings.ui
 
 data class MetricSummary(
-    val headline: String,
-    val value: String,
-    val unit: String,
-    val aside: String,
     val guide: Double?,
     val spells: List<Spell>,
     val stats: List<StatFigure>,
@@ -23,42 +19,33 @@ fun metricSummary(
     window: List<ChartPoint>,
     baseline: List<ChartPoint>,
     sessions: List<Session>,
-    latest: ChartPoint?,
     nowMs: Long,
-): MetricSummary {
-    val asideText = latest?.let {
-        "${formatValue(it.value, style.decimals)} ${style.unit} now · ${freshness(it.atMs, nowMs)}"
-    } ?: "nothing measured yet"
-
-    return when (style.headline) {
-        Headline.Resting -> restingSummary(style, window, baseline, sessions, asideText, nowMs)
-        Headline.Baseline -> baselineSummary(style, window, baseline, sessions, asideText)
-        Headline.DailyTotal -> dailyTotalSummary(style, window, baseline, asideText, nowMs)
-        Headline.Average, Headline.Latest ->
-            plainSummary(style, window, baseline, asideText)
-    }
+): MetricSummary = when (style.summary) {
+    SummaryKind.Resting -> restingSummary(style, window, sessions)
+    SummaryKind.Baseline -> baselineSummary(style, window, baseline, sessions)
+    SummaryKind.DailyTotal -> dailyTotalSummary(style, baseline, nowMs)
+    SummaryKind.Average, SummaryKind.Latest -> plainSummary(style, window, baseline)
 }
 
 private fun restingSummary(
     style: MetricStyle,
     window: List<ChartPoint>,
-    baseline: List<ChartPoint>,
     sessions: List<Session>,
-    aside: String,
-    nowMs: Long,
 ): MetricSummary {
-    val today = restingRate(window)
+    val resting = restingRate(window)
     val threshold = style.elevatedAbove ?: 100.0
     val spells = spellsAbove(window, threshold, sessions)
 
     return MetricSummary(
-        headline = "Resting today",
-        value = today?.let { formatValue(it, style.decimals) } ?: "—",
-        unit = style.unit,
-        aside = aside,
-        guide = today,
+        guide = resting,
         spells = spells,
         stats = listOf(
+            StatFigure(
+                "resting",
+                resting?.let { formatValue(it, style.decimals) } ?: "—",
+                style.unit,
+                "in this window",
+            ),
             StatFigure(
                 "avg",
                 mean(window)?.let { formatValue(it, style.decimals) } ?: "—",
@@ -71,12 +58,6 @@ private fun restingSummary(
                 "min",
                 "in ${spells.size} ${if (spells.size == 1) "spell" else "spells"}",
             ),
-            StatFigure(
-                "no session",
-                (unattributedTime(spells) / 60_000).toString(),
-                "min",
-                "above ${threshold.toInt()}",
-            ),
         ),
         listTitle = "where it went up",
     )
@@ -87,20 +68,21 @@ private fun baselineSummary(
     window: List<ChartPoint>,
     baseline: List<ChartPoint>,
     sessions: List<Session>,
-    aside: String,
 ): MetricSummary {
     val centre = percentile(baseline.map { it.value }, 0.5)
     val spells = centre?.let { spellsAbove(window, it + BASELINE_MARGIN, sessions) } ?: emptyList()
     val peak = window.maxOfOrNull { it.value }
 
     return MetricSummary(
-        headline = "Your baseline",
-        value = centre?.let { formatValue(it, style.decimals) } ?: "—",
-        unit = style.unit,
-        aside = aside,
         guide = centre,
         spells = spells,
         stats = listOf(
+            StatFigure(
+                "baseline",
+                centre?.let { formatValue(it, style.decimals) } ?: "—",
+                style.unit,
+                "over the fortnight",
+            ),
             StatFigure(
                 "avg",
                 mean(window)?.let { formatValue(it, style.decimals) } ?: "—",
@@ -128,44 +110,23 @@ private const val BASELINE_MARGIN = 0.3
 
 private fun dailyTotalSummary(
     style: MetricStyle,
-    window: List<ChartPoint>,
     baseline: List<ChartPoint>,
-    aside: String,
     nowMs: Long,
 ): MetricSummary {
     val today = dayStart(nowMs)
     val perDay = baseline.groupBy { dayStart(it.atMs) }
         .mapValues { (_, points) -> points.maxOf { it.value } }
-    val todayTotal = perDay[today]
-    val earlier = perDay.filterKeys { it != today }
-    val average = earlier.values.average().takeIf { it.isFinite() }
-    val best = earlier.maxByOrNull { it.value }
+    val average = perDay.filterKeys { it != today }.values.average().takeIf { it.isFinite() }
 
     return MetricSummary(
-        headline = "Today",
-        value = todayTotal?.let { grouped(it, style.decimals) } ?: "—",
-        unit = style.unit,
-        aside = aside,
         guide = average,
         spells = emptyList(),
         stats = listOf(
             StatFigure(
-                "average day",
-                average?.let { grouped(it, 0) } ?: "—",
+                "today",
+                perDay[today]?.let { grouped(it, style.decimals) } ?: "—",
                 style.unit,
-                "over ${earlier.size} days",
-            ),
-            StatFigure(
-                "best day",
-                best?.let { grouped(it.value, 0) } ?: "—",
-                style.unit,
-                best?.let { dayAndMonth(it.key) } ?: "none counted",
-            ),
-            StatFigure(
-                "days counted",
-                perDay.size.toString(),
-                "",
-                "of the fortnight",
+                "so far",
             ),
         ),
         listTitle = null,
@@ -176,21 +137,23 @@ private fun plainSummary(
     style: MetricStyle,
     window: List<ChartPoint>,
     baseline: List<ChartPoint>,
-    aside: String,
 ): MetricSummary {
-    val average = mean(window)
-    val fortnight = mean(baseline)
+    val (eyebrow, value, footer) = when (style.summary) {
+        SummaryKind.Latest ->
+            Triple("latest", window.maxByOrNull { it.atMs }?.value, "most recent reading")
+        else -> Triple("avg", mean(window), "in this window")
+    }
+
     return MetricSummary(
-        headline = if (style.headline == Headline.Latest) "Latest" else "Average in this window",
-        value = when (style.headline) {
-            Headline.Latest -> window.maxByOrNull { it.atMs }?.value
-            else -> average
-        }?.let { formatValue(it, style.decimals) } ?: "—",
-        unit = style.unit,
-        aside = aside,
-        guide = fortnight,
+        guide = mean(baseline),
         spells = emptyList(),
         stats = listOf(
+            StatFigure(
+                eyebrow,
+                value?.let { formatValue(it, style.decimals) } ?: "—",
+                style.unit,
+                footer,
+            ),
             StatFigure(
                 "min",
                 window.minOfOrNull { it.value }?.let { formatValue(it, style.decimals) } ?: "—",
@@ -203,14 +166,7 @@ private fun plainSummary(
                 style.unit,
                 "in this window",
             ),
-            StatFigure(
-                "readings",
-                window.size.toString(),
-                "",
-                "in this window",
-            ),
         ),
         listTitle = null,
     )
 }
-
