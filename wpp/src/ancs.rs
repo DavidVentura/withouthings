@@ -298,11 +298,7 @@ mod tests {
 
     #[test]
     fn the_id_changes_byte_order_between_the_request_and_the_reply() {
-        let write = [
-            0x00, 0x01, 0x02, 0x03, 0x04,
-            0x00,
-            0x01, 0x10, 0x00,
-        ];
+        let write = [0x00, 0x01, 0x02, 0x03, 0x04, 0x00, 0x01, 0x10, 0x00];
         let request = ControlPoint::parse(&write).unwrap();
         assert_eq!(request.id, NotificationId(0x0102_0304));
         assert_eq!(

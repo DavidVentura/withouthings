@@ -811,11 +811,7 @@ impl WatchService {
         Ok(())
     }
 
-    pub fn activity_totals(
-        &self,
-        from_ms: i64,
-        to_ms: i64,
-    ) -> Result<ActivityTotals, WatchError> {
+    pub fn activity_totals(&self, from_ms: i64, to_ms: i64) -> Result<ActivityTotals, WatchError> {
         let store = self.store.lock().unwrap();
         let minutes = store.activity_minutes(
             self.device_id,
@@ -972,7 +968,6 @@ impl WatchService {
             }),
         );
     }
-
 
     pub fn request_device_config(&self) -> Result<(), WatchError> {
         let actions = self.inner.lock().unwrap().client.request_device_config();

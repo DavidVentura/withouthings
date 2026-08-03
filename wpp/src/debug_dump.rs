@@ -10,9 +10,7 @@ enum State {
     Idle,
     Selecting(u32),
     Receiving,
-    Acking {
-        next: Option<u32>,
-    },
+    Acking { next: Option<u32> },
 }
 
 #[derive(Debug, Clone)]

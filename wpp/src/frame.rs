@@ -55,23 +55,11 @@ impl Command {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameError {
-    ShortHeader {
-        available: usize,
-    },
-    UnsupportedVersion {
-        found: u8,
-    },
-    IncompletePayload {
-        declared: usize,
-        available: usize,
-    },
-    PayloadLengthMismatch {
-        declared: usize,
-        consumed: usize,
-    },
-    TrailingData {
-        remaining: usize,
-    },
+    ShortHeader { available: usize },
+    UnsupportedVersion { found: u8 },
+    IncompletePayload { declared: usize, available: usize },
+    PayloadLengthMismatch { declared: usize, consumed: usize },
+    TrailingData { remaining: usize },
 }
 
 impl core::fmt::Display for FrameError {

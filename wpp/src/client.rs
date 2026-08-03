@@ -145,17 +145,18 @@ pub enum Event {
         frame: Frame,
         received_at: UnixMillis,
     },
-    Stored { token: u64 },
-    Tick { now: UnixMillis },
+    Stored {
+        token: u64,
+    },
+    Tick {
+        now: UnixMillis,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     Send(Frame),
-    Store {
-        token: u64,
-        records: Vec<Record>,
-    },
+    Store { token: u64, records: Vec<Record> },
     Delete(Frame),
     Finished,
     Reconnect,
@@ -625,11 +626,7 @@ impl Client {
                 self.phase = Phase::Syncing;
                 if let (Some(now), Some((gmt_offset, next_change))) = (self.now, self.zone.clone())
                 {
-                    actions.extend(self.set_time(
-                        UnixTime(now.0 / 1000),
-                        gmt_offset,
-                        next_change,
-                    ));
+                    actions.extend(self.set_time(UnixTime(now.0 / 1000), gmt_offset, next_change));
                 }
                 // A workout that began while nothing was connected is
                 // undiscoverable otherwise: `CMD_WORKOUT_START` is pushed once
