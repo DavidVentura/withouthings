@@ -770,6 +770,20 @@ impl WatchService {
             .collect())
     }
 
+    pub fn windowed_max(
+        &self,
+        metric: Metric,
+        edges_ms: Vec<i64>,
+    ) -> Result<Vec<Option<f64>>, WatchError> {
+        let store = self.store.lock().unwrap();
+        let scale = metric.scale();
+        Ok(store
+            .windowed_max(self.device_id, metric.kind(), &edges_ms)?
+            .into_iter()
+            .map(|found| found.map(|value| value as f64 / scale))
+            .collect())
+    }
+
     pub fn latest_value(&self, metric: Metric) -> Result<Option<Point>, WatchError> {
         let store = self.store.lock().unwrap();
         let scale = metric.scale();

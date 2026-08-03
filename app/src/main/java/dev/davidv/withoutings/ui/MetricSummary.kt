@@ -19,11 +19,12 @@ fun metricSummary(
     window: List<ChartPoint>,
     baseline: List<ChartPoint>,
     sessions: List<Session>,
+    dailyTotals: Map<Long, Double>,
     nowMs: Long,
 ): MetricSummary = when (style.summary) {
     SummaryKind.Resting -> restingSummary(style, window, sessions)
     SummaryKind.Baseline -> baselineSummary(style, window, baseline, sessions)
-    SummaryKind.DailyTotal -> dailyTotalSummary(style, baseline, nowMs)
+    SummaryKind.DailyTotal -> dailyTotalSummary(style, dailyTotals, nowMs)
     SummaryKind.Average, SummaryKind.Latest -> plainSummary(style, window, baseline)
 }
 
@@ -110,13 +111,12 @@ private const val BASELINE_MARGIN = 0.3
 
 private fun dailyTotalSummary(
     style: MetricStyle,
-    baseline: List<ChartPoint>,
+    dailyTotals: Map<Long, Double>,
     nowMs: Long,
 ): MetricSummary {
     val today = dayStart(nowMs)
-    val perDay = baseline.groupBy { dayStart(it.atMs) }
-        .mapValues { (_, points) -> points.maxOf { it.value } }
-    val average = perDay.filterKeys { it != today }.values.average().takeIf { it.isFinite() }
+    val earlier = dailyTotals.filterKeys { it != today }.values.filter { it > 0 }
+    val average = earlier.average().takeIf { it.isFinite() }
 
     return MetricSummary(
         guide = average,
@@ -124,7 +124,7 @@ private fun dailyTotalSummary(
         stats = listOf(
             StatFigure(
                 "today",
-                perDay[today]?.let { grouped(it, style.decimals) } ?: "—",
+                dailyTotals[today]?.let { grouped(it, style.decimals) } ?: "—",
                 style.unit,
                 "so far",
             ),

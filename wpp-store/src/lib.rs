@@ -15,6 +15,13 @@ const CHARGING_STATE: i64 = 0;
 
 const LEVEL_MAX_GAP_MS: i64 = 10 * 60 * 1000;
 
+/// How far back a window may start and still overlap the span asked for. The
+/// overlap test alone leaves `started_at` unbounded below, so SQLite walks
+/// every row before the span and the cost grows with the whole history rather
+/// than the span. The watch compresses idle stretches into single windows, the
+/// longest seen being most of a night.
+const LONGEST_WINDOW_SECS: i64 = 2 * 24 * 60 * 60;
+
 pub struct Store {
     conn: Connection,
 }
@@ -334,6 +341,41 @@ impl Store {
             .optional()
     }
 
+    /// The largest value in each window between consecutive `edges_ms`, so
+    /// `edges_ms` holds one more entry than the result. Reads the samples
+    /// themselves rather than [`Store::series`], whose bucketing may drop the
+    /// peak a window is being asked for.
+    pub fn windowed_max(
+        &self,
+        device_id: i64,
+        kind: i64,
+        edges_ms: &[i64],
+    ) -> Result<Vec<Option<i64>>, Error> {
+        let (Some(&first), Some(&last)) = (edges_ms.first(), edges_ms.last()) else {
+            return Ok(Vec::new());
+        };
+        let mut stmt = self.conn.prepare(
+            "SELECT measured_at, value FROM sample
+              WHERE device_id = ?1 AND kind = ?4
+                AND measured_at >= ?2 AND measured_at < ?3
+              ORDER BY measured_at",
+        )?;
+        let rows = stmt.query_map(params![device_id, first, last, kind], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+        })?;
+
+        let mut found = vec![None; edges_ms.len() - 1];
+        let mut window = 0;
+        for row in rows {
+            let (at, value) = row?;
+            while at >= edges_ms[window + 1] {
+                window += 1;
+            }
+            found[window] = Some(found[window].map_or(value, |seen: i64| seen.max(value)));
+        }
+        Ok(found)
+    }
+
     pub fn series(
         &self,
         device_id: i64,
@@ -458,9 +500,10 @@ impl Store {
         self.conn.query_row(
             "SELECT EXISTS (SELECT 1 FROM activity_minute
                              WHERE device_id = ?1 AND started_at <= ?3
+                               AND started_at >= ?2 - ?4
                                AND started_at + duration_secs >= ?2
                                AND sleep_level IS NOT NULL)",
-            params![device_id, from_secs, to_secs],
+            params![device_id, from_secs, to_secs, LONGEST_WINDOW_SECS],
             |r| r.get(0),
         )
     }
@@ -477,10 +520,11 @@ impl Store {
                     sleep_level
                FROM activity_minute
               WHERE device_id = ?1 AND started_at <= ?3
+                AND started_at >= ?2 - ?4
                 AND started_at + duration_secs >= ?2
               ORDER BY started_at",
         )?;
-        let rows = stmt.query_map(params![device_id, from_secs, to_secs], |r| {
+        let rows = stmt.query_map(params![device_id, from_secs, to_secs, LONGEST_WINDOW_SECS], |r| {
             Ok(Minute {
                 at: UnixTime(r.get(0)?),
                 duration_secs: r.get(1)?,
@@ -781,6 +825,28 @@ mod tests {
             .unwrap();
         assert_eq!(store.activity_minutes(device, 1500, 5000).unwrap().len(), 1);
         assert_eq!(store.activity_minutes(device, 2000, 5000).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn each_window_reports_its_own_peak() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[
+                    sample(1000, 62, Source::Stored),
+                    sample(1500, 88, Source::Stored),
+                    sample(2500, 71, Source::Stored),
+                    sample(4000, 90, Source::Stored),
+                ],
+            )
+            .unwrap();
+        let kind = SampleKind::HeartRate.id();
+        let found = store
+            .windowed_max(device, kind, &[1000, 2000, 3000, 4000])
+            .unwrap();
+        assert_eq!(found, vec![Some(88), Some(71), None]);
     }
 
     #[test]

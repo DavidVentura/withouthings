@@ -286,6 +286,7 @@ private fun Navigation(
                 ActivitiesScreen(
                     entries = state.activityLog,
                     recordings = state.ecgs,
+                    dailySteps = state.dailySteps,
                     nowMs = nowMs,
                     onSelect = {
                         model.showActivity(it)

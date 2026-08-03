@@ -61,6 +61,7 @@ fun MetricScreen(
         window = visible,
         baseline = state.metricBaseline,
         sessions = sessions,
+        dailyTotals = state.dailyTotals,
         nowMs = nowMs,
     )
 

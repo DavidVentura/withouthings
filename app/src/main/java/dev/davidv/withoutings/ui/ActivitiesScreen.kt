@@ -37,6 +37,7 @@ import uniffi.wpp_ffi.EcgSummary
 fun ActivitiesScreen(
     entries: List<ActivityEntry>,
     recordings: List<EcgSummary>,
+    dailySteps: Map<Long, Long>,
     nowMs: Long,
     onSelect: (ActivityEntry) -> Unit,
     onSelectEcg: (EcgSummary) -> Unit,
@@ -95,7 +96,7 @@ fun ActivitiesScreen(
             byDay.forEach { (day, dayItems) ->
                 item(key = "head-$day") {
                     Eyebrow(
-                        dayHeading(day, dayItems, nowMs),
+                        dayHeading(day, dayItems, dailySteps[day], nowMs),
                         Modifier.padding(top = 14.dp, bottom = 4.dp),
                         style = AppTheme.type.eyebrowLarge,
                     )
@@ -139,13 +140,9 @@ private fun ecgMeta(summary: EcgSummary): String = listOfNotNull(
 
 private const val STANDARD_ECG_SECONDS = 30
 
-private fun dayHeading(dayMs: Long, items: List<Item>, nowMs: Long): String {
-    val steps = items
-        .filterIsInstance<Item.Activity>()
-        .mapNotNull { it.entry as? DetectedEntry }
-        .sumOf { it.detected.steps }
+private fun dayHeading(dayMs: Long, items: List<Item>, steps: Long?, nowMs: Long): String {
     val name = dayName(dayMs, nowMs)
-    if (steps <= 0) {
+    if (steps == null || steps <= 0) {
         return "$name · ${items.size} recorded"
     }
     return "$name · ${grouped(steps)} steps"

@@ -59,6 +59,9 @@ data class UiState(
     val markers: List<Marker> = emptyList(),
     val activityLog: List<ActivityEntry> = emptyList(),
     val activityLogAtMs: Long = 0,
+    val dailySteps: Map<Long, Long> = emptyMap(),
+    val dailyTotals: Map<Long, Double> = emptyMap(),
+    val dailyTotalsFor: MetricStyle? = null,
     val screens: List<WatchScreen> = emptyList(),
     val metric: List<ChartPoint> = emptyList(),
     val latest: Map<MetricStyle, ChartPoint> = emptyMap(),
@@ -90,13 +93,19 @@ data class HomeState(
 
 private const val DEFAULT_WINDOW_MS = 10 * 60 * 1000L
 
-private const val DETECTED_HISTORY_MS = 7L * 24 * 60 * 60 * 1000
+private const val DETECTED_HISTORY_MS = 7L * DAY_MS
 
 private const val ACTIVITY_LOG_MAX_AGE_MS = 10_000L
 
 private const val HOME_MAX_AGE_MS = 10_000L
 
-private const val BASELINE_MS = 14L * 24 * 60 * 60 * 1000
+private const val DETECTED_HISTORY_DAYS = 7
+
+private const val COUNTER_ROLLOVER_MS = 5 * 60 * 1000L
+
+private const val BASELINE_DAYS = 14
+
+private const val BASELINE_MS = BASELINE_DAYS * DAY_MS
 
 private const val INITIAL_ECG_SPAN_MS = 6_000L
 
@@ -214,6 +223,20 @@ class WatchViewModel : ViewModel() {
                     } else {
                         previous.activityLog
                     }
+                    val steps = if (rebuildLog) {
+                        (0..DETECTED_HISTORY_DAYS).associate { back ->
+                            val day = dayStart(now - back * DAY_MS)
+                            day to service.activityTotals(day, day + DAY_MS - 1000).steps
+                        }
+                    } else {
+                        previous.dailySteps
+                    }
+                    val style = _metricStyle.value
+                    val totals = if (rebuildLog || previous.dailyTotalsFor != style) {
+                        dailyTotals(service, style, now)
+                    } else {
+                        previous.dailyTotals
+                    }
                     UiState(
                         link = WatchRepository.link.value,
                         snapshot = snapshot,
@@ -225,6 +248,9 @@ class WatchViewModel : ViewModel() {
                         markers = service.markers(range.first, range.last),
                         activityLog = log,
                         activityLogAtMs = if (rebuildLog) now else previous.activityLogAtMs,
+                        dailySteps = steps,
+                        dailyTotals = totals,
+                        dailyTotalsFor = style,
                         home = home(service, log, previous.home, now),
                         ecgs = service.ecgs(),
                         liveEcg = if (snapshot.measuring) {
@@ -267,6 +293,24 @@ class WatchViewModel : ViewModel() {
             }
             if (next != null) _state.value = next
         }
+    }
+
+    private fun dailyTotals(
+        service: uniffi.wpp_ffi.WatchService,
+        style: MetricStyle,
+        nowMs: Long,
+    ): Map<Long, Double> {
+        if (style.summary != SummaryKind.DailyTotal) return emptyMap()
+        val days = (BASELINE_DAYS downTo 0).map { dayStart(nowMs - it * DAY_MS) }
+        // The watch keeps reporting yesterday's total for the first minutes of a
+        // day, so a day's count runs from its own rollover to the next one.
+        val found = service.windowedMax(
+            style.metric,
+            days.map { it + COUNTER_ROLLOVER_MS } + nowMs,
+        )
+        return days.zip(found)
+            .mapNotNull { (day, total) -> total?.let { day to it } }
+            .toMap()
     }
 
     private fun home(

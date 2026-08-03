@@ -9,7 +9,7 @@ const RUN_CADENCE_SPM: i64 = 140;
 
 const MAX_BREAK_SECS: i64 = 300;
 
-const MIN_SESSION_SECS: i64 = 600;
+const MIN_SESSION_SECS: i64 = 300;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Minute {
@@ -199,6 +199,13 @@ mod tests {
     #[test]
     fn crossing_a_car_park_is_not_a_session() {
         assert!(detect(&walk(1_000, 3, 90)).is_empty());
+    }
+
+    #[test]
+    fn a_walk_round_the_block_is_a_session() {
+        let found = detect(&walk(1_000, 6, 95));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].steps, 6 * 95);
     }
 
     #[test]
