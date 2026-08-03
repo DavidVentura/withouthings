@@ -8,12 +8,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,6 +48,9 @@ fun DeviceSettings(
     onReload: () -> Unit,
     onReconnect: () -> Unit,
     onSetTime: () -> Unit,
+    connected: Boolean,
+    onUnpair: () -> Unit,
+    onFactoryReset: () -> Unit,
 ) {
     // Edited locally, sent as one list: the watch takes the whole menu.
     var menu by remember { mutableStateOf(activities) }
@@ -200,7 +206,81 @@ fun DeviceSettings(
                 )
             }
         }
+
+        Unpair(connected = connected, onUnpair = onUnpair, onFactoryReset = onFactoryReset)
     }
+}
+
+/**
+ * Two ways to put a watch down, and they are not the same thing.
+ *
+ * Letting go of the key is the irreversible half, not letting go of the watch:
+ * a watch that still holds a key this app has kept is taken back on by
+ * answering its challenge, which asks nothing of the watch. A watch whose key
+ * is gone can only be reached again after it has been erased — so erasing it
+ * is what the destructive button does, in that order.
+ */
+@Composable
+private fun Unpair(connected: Boolean, onUnpair: () -> Unit, onFactoryReset: () -> Unit) {
+    var asking by remember { mutableStateOf(false) }
+
+    Text(
+        "Unpair",
+        style = MaterialTheme.typography.labelLarge,
+        modifier = Modifier.padding(top = 24.dp),
+    )
+    Button(onClick = onUnpair) { Text("Unpair") }
+    Text(
+        "Puts the watch down and keeps its key, so pairing with it again is a " +
+            "handshake and nothing else. Nothing on the watch changes and " +
+            "nothing collected is lost.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+
+    Button(
+        onClick = { asking = true },
+        enabled = connected,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        ),
+        modifier = Modifier.padding(top = 8.dp),
+    ) { Text("Factory reset and unpair") }
+    Text(
+        if (connected) {
+            "Erases the watch as well, which is the only way to hand it to " +
+                "something else. History already collected stays in this app."
+        } else {
+            "Needs a live link: the watch has to be told to erase itself " +
+                "before its key is dropped, or nothing can reach it again."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(bottom = 24.dp),
+    )
+
+    if (!asking) return
+    AlertDialog(
+        onDismissRequest = { asking = false },
+        title = { Text("Factory reset the watch?") },
+        text = {
+            Text(
+                "The watch erases its settings — alarms, screens, goals, wear " +
+                    "position — along with the key that pairs it to this app, " +
+                    "and reboots. Anything it has recorded but not yet handed " +
+                    "over is lost with it. History already synced to this phone " +
+                    "is kept.\n\nIf you only want to pair again, plain Unpair " +
+                    "does that and costs nothing."
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { asking = false; onFactoryReset() }) {
+                Text("Erase and unpair")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { asking = false }) { Text("Cancel") }
+        },
+    )
 }
 
 private const val ACTIVITY_SLOTS = 8

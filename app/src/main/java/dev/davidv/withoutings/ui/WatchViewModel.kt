@@ -10,8 +10,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import java.time.ZoneId
 import uniffi.wpp_ffi.DetectedActivity
@@ -106,6 +108,11 @@ private const val CHARGE_POLL_MS = 15_000L
  * than because it gave up.
  */
 private const val MAX_NIGHT_SEARCH_DAYS = 400
+
+/// How long to wait for the watch to erase itself and reboot before giving up
+/// on hearing the link die. Erasing takes a moment; a link that outlives this
+/// never got the command.
+private const val RESET_TIMEOUT_MS = 20_000L
 
 class WatchViewModel : ViewModel() {
 
@@ -466,6 +473,33 @@ class WatchViewModel : ViewModel() {
     fun setFeature(id: UShort, enabled: Boolean) {
         val service = WatchRepository.get() ?: return
         viewModelScope.launch(Dispatchers.IO) { runCatching { service.setHealthFeature(id, enabled) } }
+    }
+
+    /**
+     * Erase the watch and let go of it.
+     *
+     * The order matters and is the whole reason this is one call: forgetting
+     * the key while the watch still holds it locks the app out of a watch it
+     * can no longer authenticate to. So the reset goes out first, and
+     * [onForgotten] — which is what clears the key here — only runs once the
+     * watch has acted on it.
+     *
+     * The reboot is the acknowledgement. Nothing is sent back for a factory
+     * reset; the link simply dies as the watch erases itself and restarts, so
+     * that is what is waited for.
+     */
+    fun unpair(onForgotten: () -> Unit) {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch {
+            val sent = withContext(Dispatchers.IO) {
+                runCatching { service.factoryReset() }.isSuccess
+            }
+            if (!sent) return@launch
+            withTimeoutOrNull(RESET_TIMEOUT_MS) {
+                WatchRepository.link.first { it == LinkState.Disconnected }
+            }
+            onForgotten()
+        }
     }
 
     fun requestRefresh() {

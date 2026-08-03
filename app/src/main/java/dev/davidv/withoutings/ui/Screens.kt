@@ -91,35 +91,6 @@ private fun age(atMs: Long): String {
     }
 }
 
-@Composable
-fun SetupScreen(onSave: (String, String) -> Unit) {
-    var mac by remember { mutableStateOf("") }
-    var secret by remember { mutableStateOf("") }
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Pair a watch", style = MaterialTheme.typography.headlineSmall)
-        Text(
-            "The secret is the 32-character association key the watch was set up with.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        OutlinedTextField(
-            mac, { mac = it },
-            label = { Text("MAC address") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            secret, { secret = it },
-            label = { Text("Account secret") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Button(
-            onClick = { onSave(mac.trim(), secret.trim()) },
-            enabled = mac.isNotBlank() && secret.isNotBlank(),
-        ) { Text("Connect") }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IdleScreen(

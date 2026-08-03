@@ -48,6 +48,9 @@ fun WatchSettingsScreen(
     onSetTime: () -> Unit,
     onReloadScreens: () -> Unit,
     onApplyScreens: (ByteArray) -> Unit,
+    connected: Boolean,
+    onUnpair: () -> Unit,
+    onFactoryReset: () -> Unit,
     onBack: () -> Unit,
 ) {
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -90,6 +93,9 @@ fun WatchSettingsScreen(
                         onReload = onReloadDevice,
                         onReconnect = onReconnect,
                         onSetTime = onSetTime,
+                        connected = connected,
+                        onUnpair = onUnpair,
+                        onFactoryReset = onFactoryReset,
                     )
 
                     else -> ScreenOrderSettings(

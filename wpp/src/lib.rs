@@ -15,6 +15,7 @@ pub mod debug_dump;
 pub mod frame;
 pub mod image;
 pub mod objects;
+pub mod pairing;
 pub mod signal;
 pub mod sleep;
 pub mod units;
@@ -28,6 +29,7 @@ pub use commands::Command;
 pub use frame::{Channel, Frame, FrameError, PROTOCOL_VERSION};
 pub use image::{GlyphRequest, IconRequest, ImageFormat, Mono};
 pub use objects::WppObject;
+pub use pairing::{Pairing, PairingError, PairingState};
 pub use signal::{Lead, SampleFormat, Signal, SignalCollector, SignalKind};
 pub use units::{Bpm, Celsius, Millis, Millivolts, UnixTime, COUNTS_PER_MILLIVOLT};
 

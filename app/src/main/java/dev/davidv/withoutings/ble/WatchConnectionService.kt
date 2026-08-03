@@ -7,15 +7,7 @@ import android.app.PendingIntent
 import android.app.NotificationManager
 import android.app.Service
 import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothGatt
-import android.bluetooth.BluetoothGattCallback
-import android.bluetooth.BluetoothGattCharacteristic
-import android.bluetooth.BluetoothGattDescriptor
-import android.bluetooth.BluetoothProfile
-import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
@@ -25,7 +17,6 @@ import android.util.Log
 import dev.davidv.withoutings.LinkState
 import dev.davidv.withoutings.Settings
 import dev.davidv.withoutings.WatchRepository
-import java.util.UUID
 import uniffi.wpp_ffi.Progress
 import uniffi.wpp_ffi.Transport
 import uniffi.wpp_ffi.WatchService
@@ -39,26 +30,14 @@ import uniffi.wpp_ffi.WatchService
  */
 class WatchConnectionService : Service() {
 
-    private var gatt: BluetoothGatt? = null
-    private var channel: BluetoothGattCharacteristic? = null
+    private var link: GattLink? = null
     private var service: WatchService? = null
     private var ancs: AncsServer? = null
-    private val pending = ArrayDeque<ByteArray>()
-    private var writeInFlight = false
-    /// Per-connection traffic, so a teardown can say whether anything was ever
-    /// actually exchanged. "Connected but silent" and "never managed to speak"
-    /// look identical from outside and have completely different causes.
-    private var framesOut = 0
-    private var framesIn = 0
-    private var writeStuckSince = 0L
-    private var connectedAt = 0L
     /// Consecutive failed attempts, cleared once a link carries real traffic.
     private var retries = 0
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var scanning = false
     private var lastProgress: Progress? = null
-    /// What the link actually granted, which is not necessarily [MTU].
-    private var negotiatedMtu = DEFAULT_MTU
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -105,7 +84,7 @@ class WatchConnectionService : Service() {
             if (settings.notifications) ancs.start()
         }
 
-        if (gatt == null) {
+        if (link == null) {
             val adapter = (getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager).adapter
             connect(adapter, mac)
         }
@@ -154,11 +133,7 @@ class WatchConnectionService : Service() {
         if (bonded != null) {
             Log.i(TAG, "connecting directly to bonded '${bonded.name}' at ${bonded.address}")
             WatchRepository.setLink(LinkState.Connecting)
-            gatt?.close()
-            gatt = bonded.connectGatt(this, false, callback, BluetoothDevice.TRANSPORT_LE)
-            framesOut = 0
-            framesIn = 0
-            connectedAt = System.currentTimeMillis()
+            openLink().connect(bonded)
             armLinkWatchdog()
             return
         }
@@ -268,10 +243,7 @@ class WatchConnectionService : Service() {
             }
             Log.i(TAG, "found '$name' at ${result.device.address} rssi=${result.rssi}, connecting")
             stopScan()
-            gatt?.close()
-            gatt = result.device.connectGatt(
-                this@WatchConnectionService, false, callback, BluetoothDevice.TRANSPORT_LE
-            )
+            openLink().connect(result.device)
             armLinkWatchdog()
         }
 
@@ -328,87 +300,42 @@ class WatchConnectionService : Service() {
         handler.removeCallbacks(tick)
         handler.removeCallbacks(retry)
         stopScan()
-        gatt?.close()
-        gatt = null
-        discardTransport()
+        link?.close()
+        link = null
         runCatching { service?.onDisconnected() }
             .onFailure { Log.e(TAG, "onDisconnected", it) }
         handler.postDelayed(retry, backoff)
     }
 
-    private val callback = object : BluetoothGattCallback() {
-        @SuppressLint("MissingPermission")
-        override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
-            Log.i(TAG, "connectionStateChange status=$status newState=$newState")
-            when (newState) {
-                BluetoothProfile.STATE_CONNECTED -> {
-                    WatchRepository.setLink(LinkState.Connected)
-                    notify("Connected")
-                    g.requestMtu(MTU)
-                }
-                BluetoothProfile.STATE_DISCONNECTED -> {
-                    WatchRepository.setLink(LinkState.Disconnected)
-                    notify("Disconnected")
-                    channel = null
-                    service?.onDisconnected()
-                    handler.removeCallbacks(resync)
-                    // The address it advertised under may not be reused, so
-                    // find it by name again rather than reconnecting blind.
-                    retryLater("status=$status")
-                }
-            }
+    /**
+     * The link's half of the conversation. Everything the protocol needs is
+     * behind [GattLink]; what is left here is the service's own bookkeeping —
+     * the watchdog, the retry counter and what the notification says.
+     */
+    private fun openLink(): GattLink = GattLink(this, listener).also {
+        link?.close()
+        link = it
+    }
+
+    private val listener = object : GattLink.Listener {
+        override fun onConnected() {
+            WatchRepository.setLink(LinkState.Connected)
+            notify("Connected")
         }
 
-        @SuppressLint("MissingPermission")
-        override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
-            Log.i(TAG, "mtu=$mtu status=$status")
-            // What we asked for is not necessarily what we got, and every
-            // outbound frame is cut to fit it.
-            negotiatedMtu = mtu
-            g.discoverServices()
-        }
-
-        @SuppressLint("MissingPermission")
-        override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
-            Log.i(TAG, "discovered ${g.services.size} services, status=$status")
-            val characteristic = findProtocolChannel(g)
-            if (characteristic == null) {
-                g.services.forEach { svc ->
-                    Log.w(TAG, "service ${svc.uuid}")
-                    svc.characteristics.forEach { Log.w(TAG, "  characteristic ${it.uuid}") }
-                }
-                Log.e(TAG, "protocol characteristic not found")
-                return
-            }
-            Log.i(TAG, "protocol channel ${characteristic.uuid}")
-            channel = characteristic
-            g.setCharacteristicNotification(characteristic, true)
-            characteristic.getDescriptor(CLIENT_CONFIG)?.let {
-                g.writeDescriptor(it, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-            }
-        }
-
-        override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) {
-            Log.i(TAG, "notifications enabled, status=$status")
+        override fun onReady() {
             WatchRepository.setLink(LinkState.Ready)
             scheduleResync()
-            // Only now will the watch's replies actually reach us.
             handler.removeCallbacks(tick)
             handler.postDelayed(tick, TICK_MS)
             runCatching { service?.onConnected() }
                 .onFailure { Log.e(TAG, "onConnected", it) }
         }
 
-        override fun onCharacteristicChanged(
-            g: BluetoothGatt,
-            c: BluetoothGattCharacteristic,
-            value: ByteArray,
-        ) {
+        override fun onBytes(bytes: ByteArray) {
             runCatching {
-                framesIn++
                 retries = 0
-                if (WIRE_LOG) Log.i(WIRE_TAG, "<- ${value.hex()}")
-                service?.onBytes(value, System.currentTimeMillis())
+                service?.onBytes(bytes, System.currentTimeMillis())
                 // Not snapshot(): that reads the database, on the thread
                 // delivering notifications, thousands of them back to back
                 // during a sync. A notification we are too slow to take is a
@@ -425,61 +352,24 @@ class WatchConnectionService : Service() {
             }.onFailure { Log.e(TAG, "onBytes", it) }
         }
 
-        override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
-            // A callback from a connection already replaced would clear the
-            // flag belonging to the current one, letting two writes overlap.
-            if (g !== gatt) return
-            if (status != BluetoothGatt.GATT_SUCCESS) Log.w(TAG, "write failed status=$status")
-            synchronized(pending) {
-                writeInFlight = false
-                writeStuckSince = 0L
-            }
-            drain()
+        override fun onDisconnected(status: Int) {
+            WatchRepository.setLink(LinkState.Disconnected)
+            notify("Disconnected")
+            service?.onDisconnected()
+            handler.removeCallbacks(resync)
+            // The address it advertised under may not be reused, so find it by
+            // name again rather than reconnecting blind.
+            retryLater("status=$status")
+        }
+
+        override fun onChannelMissing() {
+            retryLater("no protocol characteristic")
         }
     }
 
-    /**
-     * The protocol rides on characteristic "handle 4" of the Withings service;
-     * both UUIDs carry ASCII markers ("WITH", "INGS") rather than being
-     * assigned numbers, so they are matched rather than compared.
-     */
-    private fun findProtocolChannel(g: BluetoothGatt): BluetoothGattCharacteristic? =
-        g.services
-            .filter { it.uuid.toString().contains(WITHINGS_SERVICE_MARKER) }
-            .flatMap { it.characteristics }
-            .firstOrNull { c ->
-                c.uuid.toString().uppercase().contains(WITHINGS_CHARACTERISTIC_MARKER) &&
-                    c.uuid.toString().getOrNull(7) == PROTOCOL_HANDLE
-            }
-
     private inner class GattTransport : Transport {
-        /**
-         * One frame, cut to fit the link.
-         *
-         * A GATT write carries at most the MTU less the ATT header, and the
-         * watch reassembles the byte stream on its side exactly as we do on
-         * ours. Handing the stack an oversized write does not split it — it
-         * fails, or worse arrives truncated and is parsed as a corrupt frame.
-         * Everything sent before images was small enough for this never to
-         * come up.
-         */
         override fun write(bytes: ByteArray) {
-            val limit = (negotiatedMtu - ATT_HEADER).coerceAtLeast(1)
-            if (WIRE_LOG) Log.i(WIRE_TAG, "-> ${bytes.hex()}")
-            if (bytes.size > limit) {
-                Log.i(TAG, "frame of ${bytes.size} split across ${
-                    (bytes.size + limit - 1) / limit
-                } writes")
-            }
-            synchronized(pending) {
-                var offset = 0
-                while (offset < bytes.size) {
-                    val end = minOf(offset + limit, bytes.size)
-                    pending.addLast(bytes.copyOfRange(offset, end))
-                    offset = end
-                }
-            }
-            drain()
+            link?.write(bytes)
         }
 
         override fun changed() {
@@ -493,75 +383,16 @@ class WatchConnectionService : Service() {
         }
     }
 
-    /**
-     * One outstanding write at a time: a second write before the first
-     * completes is silently dropped by the stack.
-     */
-    @SuppressLint("MissingPermission")
-    private fun drain() {
-        val g = gatt ?: return
-        val c = channel ?: return
-        val next = synchronized(pending) {
-            if (writeInFlight || pending.isEmpty()) return@synchronized null
-            writeInFlight = true
-            writeStuckSince = System.currentTimeMillis()
-            pending.removeFirst()
-        } ?: return
-        // A write that never reaches the stack never calls back, so nothing
-        // else would clear the flag and every later frame would queue behind it
-        // forever. It can fail either way: a status when the stack is up and
-        // says no, an exception when the stack has gone away underneath.
-        val status = runCatching {
-            g.writeCharacteristic(c, next, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
-        }.getOrElse { failure ->
-            Log.w(TAG, "write threw", failure)
-            BluetoothStatusCodes.ERROR_UNKNOWN
-        }
-        if (status != BluetoothStatusCodes.SUCCESS) {
-            Log.w(TAG, "write refused status=$status")
-            synchronized(pending) { writeInFlight = false }
-        } else {
-            framesOut++
-        }
-    }
-
-    /**
-     * A write only completes on the connection that issued it.
-     *
-     * Keeping the flag across a teardown wedges every later connection: the
-     * callback that would clear it cannot arrive, so nothing is ever written
-     * again and the watch has nothing to answer. The queued frames go too —
-     * they belong to a session that no longer exists.
-     */
-    /// Everything needed to tell a wedge from a quiet watch, in one line.
-    private fun transportState(): String {
-        val queued = synchronized(pending) { pending.size }
-        val stuck = if (writeStuckSince == 0L) 0 else
-            (System.currentTimeMillis() - writeStuckSince) / 1000
-        val alive = if (connectedAt == 0L) 0 else
-            (System.currentTimeMillis() - connectedAt) / 1000
-        return "[out=$framesOut in=$framesIn queued=$queued inFlight=${writeInFlight}" +
-            (if (stuck > 0) " stuckFor=${stuck}s" else "") + " linkAge=${alive}s]"
-    }
-
-    private fun discardTransport() {
-        synchronized(pending) {
-            pending.clear()
-            writeInFlight = false
-            writeStuckSince = 0L
-        }
-        negotiatedMtu = DEFAULT_MTU
-    }
+    private fun transportState(): String = link?.describe() ?: "[no link]"
 
     @SuppressLint("MissingPermission")
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         stopScan()
-        gatt?.close()
-        gatt = null
+        link?.close()
+        link = null
         ancs?.stop()
         ancs = null
-        discardTransport()
         super.onDestroy()
     }
 
@@ -587,31 +418,16 @@ class WatchConnectionService : Service() {
     companion object {
         private const val ACTION_RECONNECT = "dev.davidv.withoutings.RECONNECT"
         private const val TAG = "WatchLink"
-        /// Every WPP write and notification as hex, for diffing against a
-        /// capture of the official app. Noisy: one line per frame.
-        private const val WIRE_LOG = false
-        private const val WIRE_TAG = "Wpp"
-
-        private fun ByteArray.hex(): String = joinToString(" ") { "%02x".format(it) }
         private const val CHANNEL_ID = "watch-link"
         private const val NOTIFICATION_ID = 1
-        private const val MTU = 512
-        /// Before the link says otherwise, the BLE default.
-        private const val DEFAULT_MTU = 23
-        /// Opcode and handle, ahead of every write payload.
-        private const val ATT_HEADER = 3
         private const val RETRY_MS = 10_000L
         private const val RETRY_MAX_MS = 300_000L
         private const val RETRY_SHIFTS = 5
         private const val LINK_TIMEOUT_MS = 25_000L
         private const val TICK_MS = 30_000L
-        private const val DEVICE_NAME_PREFIX = "ScanWatch"
+        private const val DEVICE_NAME_PREFIX = GattLink.DEVICE_NAME_PREFIX
         private const val HEARTBEAT_MS = 65_000L
         private const val RESYNC_MS = 60_000L
-        private const val WITHINGS_SERVICE_MARKER = "5749-5448"
-        private const val WITHINGS_CHARACTERISTIC_MARKER = "494E4753"
-        private const val PROTOCOL_HANDLE = '4'
-        private val CLIENT_CONFIG: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, WatchConnectionService::class.java))

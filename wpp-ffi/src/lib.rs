@@ -12,6 +12,7 @@ use wpp::ancs::{self, NotificationCenter, NotificationId};
 use wpp::capture::{FrameReassembler, StreamItem};
 use wpp::client::{Action, Category, Client, Credentials, Event, Phase};
 use wpp::image::{GlyphRequest, IconRequest, Mono};
+use wpp::pairing::{Pairing, PairingState};
 use wpp::units::{Celsius, Millivolts, UnixMillis};
 use wpp::Frame;
 use wpp_store::Store;
@@ -707,6 +708,17 @@ impl WatchService {
     /// new: each stream answers with one empty reply.
     pub fn sync_now(&self) -> Result<(), WatchError> {
         let actions = self.inner.lock().unwrap().client.sync_now();
+        self.dispatch(actions)
+    }
+
+    /// Erase the watch and let go of it.
+    ///
+    /// The association secret goes with everything else, which is what makes
+    /// the watch pairable again — by anything, including something that is not
+    /// this app. There is no undo and no confirmation from the watch: it
+    /// erases and reboots, and the link dies with it.
+    pub fn factory_reset(&self) -> Result<(), WatchError> {
+        let actions = self.inner.lock().unwrap().client.factory_reset();
         self.dispatch(actions)
     }
 
@@ -1640,6 +1652,163 @@ impl WatchService {
                 .icon(request.app_id.clone(), width, height)
                 .pack();
             self.write(&request.reply(&drawn));
+        }
+    }
+}
+
+/// A watch a key is already held for, as the host keeps it.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct KnownWatch {
+    /// The identity from `ProbeChallenge.mac`, not the advertised address.
+    pub mac: String,
+    pub secret: String,
+}
+
+/// How far pairing has got, for the screen driving it.
+#[derive(uniffi::Enum, Debug, Clone, PartialEq, Eq)]
+pub enum PairingProgress {
+    /// No link yet, or one that went away before anything was agreed.
+    Idle,
+    /// Asking the watch whether it is free.
+    Probing,
+    /// Keys sent, waiting for the watch to store them, then for it to accept
+    /// that setup is over — which is what puts authentication back on.
+    Associating,
+    /// A watch we already had a key for; answering its challenge rather than
+    /// giving it anything new.
+    Readopting,
+    /// Done. These are what the link needs from here on.
+    Paired { mac: String, secret: String },
+    /// The watch belongs to something else already. Only a factory reset,
+    /// performed by whoever holds it now, will free it.
+    AlreadyAssociated,
+}
+
+impl PairingProgress {
+    fn of(state: &PairingState) -> PairingProgress {
+        match state {
+            PairingState::Idle => PairingProgress::Idle,
+            PairingState::Probing => PairingProgress::Probing,
+            PairingState::Associating { .. } | PairingState::FinishingSetup { .. } => {
+                PairingProgress::Associating
+            }
+            PairingState::Readopting(_) => PairingProgress::Readopting,
+            PairingState::Paired(credentials) => PairingProgress::Paired {
+                mac: credentials.mac.clone(),
+                secret: credentials.secret.clone(),
+            },
+            PairingState::AlreadyAssociated => PairingProgress::AlreadyAssociated,
+        }
+    }
+}
+
+/// The association conversation over a live link.
+///
+/// Deliberately not a [`WatchService`]: pairing has no database to write to —
+/// it does not yet know which watch it is talking to — no notifications to
+/// serve and nothing to draw. It ends by handing back credentials, and a
+/// `WatchService` built from those is what does the rest.
+#[derive(uniffi::Object)]
+pub struct PairingService {
+    inner: Mutex<PairingInner>,
+    transport: Box<dyn Transport>,
+}
+
+struct PairingInner {
+    pairing: Pairing,
+    reassembler: FrameReassembler,
+}
+
+#[uniffi::export]
+impl PairingService {
+    /// `secret` is the key a watch with none will be given and challenge
+    /// against forever after, so it comes from the host's own randomness
+    /// rather than from anything derivable here. `known` is every watch a key
+    /// is already held for; one of those is answered rather than given a new
+    /// key, and nothing on it is changed.
+    #[uniffi::constructor]
+    pub fn new(
+        secret: String,
+        account_id: u32,
+        known: Vec<KnownWatch>,
+        transport: Box<dyn Transport>,
+    ) -> Result<Self, WatchError> {
+        let known = known
+            .into_iter()
+            .map(|w| Credentials {
+                mac: w.mac,
+                secret: w.secret,
+            })
+            .collect();
+        let pairing =
+            Pairing::new(secret, account_id, known).map_err(|err| WatchError::Protocol {
+                reason: format!("{err:?}"),
+            })?;
+        Ok(PairingService {
+            inner: Mutex::new(PairingInner {
+                pairing,
+                reassembler: FrameReassembler::new(),
+            }),
+            transport,
+        })
+    }
+
+    pub fn on_connected(&self) {
+        self.step(|inner| {
+            inner.reassembler.reset();
+            inner.pairing.on_connected()
+        });
+    }
+
+    pub fn on_bytes(&self, bytes: Vec<u8>) {
+        self.step(|inner| {
+            let items = inner.reassembler.push(&bytes);
+            items
+                .into_iter()
+                .filter_map(|item| match item {
+                    StreamItem::Frame { frame, .. } => Some(frame),
+                    // A desync during pairing has nowhere to be recorded and
+                    // nothing to say: there is no database yet and the whole
+                    // exchange is four frames long.
+                    StreamItem::Desync { .. } => None,
+                })
+                .flat_map(|frame| inner.pairing.on_frame(&frame))
+                .collect()
+        });
+    }
+
+    pub fn on_disconnected(&self) {
+        self.step(|inner| {
+            inner.reassembler.reset();
+            inner.pairing.on_disconnected();
+            Vec::new()
+        });
+    }
+
+    pub fn progress(&self) -> PairingProgress {
+        PairingProgress::of(self.inner.lock().unwrap().pairing.state())
+    }
+}
+
+impl PairingService {
+    /// Run one step and tell the host if it moved.
+    ///
+    /// The steps that matter most send nothing: reaching `Paired` is a reply
+    /// being absorbed, and a screen watching for outbound frames would never
+    /// hear about the one transition it is waiting for.
+    fn step(&self, act: impl FnOnce(&mut PairingInner) -> Vec<Frame>) {
+        let (frames, moved) = {
+            let mut inner = self.inner.lock().unwrap();
+            let before = inner.pairing.state().clone();
+            let frames = act(&mut inner);
+            let moved = *inner.pairing.state() != before;
+            (frames, moved)
+        };
+        for frame in frames {
+            self.transport.write(frame.to_bytes());
+        }
+        if moved {
+            self.transport.changed();
         }
     }
 }

@@ -23,6 +23,8 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import dev.davidv.withoutings.ble.PairingSession
+import dev.davidv.withoutings.ble.PairingStage
 import dev.davidv.withoutings.ble.WatchConnectionService
 import dev.davidv.withoutings.ui.IdleScreen
 import dev.davidv.withoutings.ui.EcgDetailScreen
@@ -30,7 +32,7 @@ import dev.davidv.withoutings.ui.EcgListScreen
 import dev.davidv.withoutings.ui.LiveEcgScreen
 import dev.davidv.withoutings.ui.MetricScreen
 import dev.davidv.withoutings.ui.MetricStyle
-import dev.davidv.withoutings.ui.SetupScreen
+import dev.davidv.withoutings.ui.PairingScreen
 import dev.davidv.withoutings.ui.SleepScreen
 import dev.davidv.withoutings.ui.WatchSettingsScreen
 import dev.davidv.withoutings.ui.WatchViewModel
@@ -68,33 +70,33 @@ private fun App(model: WatchViewModel = viewModel()) {
     val context = LocalContext.current
     val settings = remember { Settings(context) }
     var configured by remember { mutableStateOf(settings.configured) }
+    // Pairing needs the radio before there is anything to connect to, so the
+    // prompt cannot wait for a watch to be configured the way it used to.
+    var radio by remember { mutableStateOf(false) }
 
     val permissions = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { granted ->
-        if (granted[Manifest.permission.BLUETOOTH_CONNECT] == true) {
-            WatchConnectionService.start(context)
-        }
+        radio = granted[Manifest.permission.BLUETOOTH_CONNECT] == true &&
+            granted[Manifest.permission.BLUETOOTH_SCAN] == true
     }
 
-    LaunchedEffect(configured) {
-        if (configured) {
-            permissions.launch(
-                arrayOf(
-                    Manifest.permission.BLUETOOTH_CONNECT,
-                    Manifest.permission.BLUETOOTH_SCAN,
-                    Manifest.permission.POST_NOTIFICATIONS,
-                )
+    LaunchedEffect(Unit) {
+        permissions.launch(
+            arrayOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.POST_NOTIFICATIONS,
             )
-        }
+        )
+    }
+
+    LaunchedEffect(configured, radio) {
+        if (configured && radio) WatchConnectionService.start(context)
     }
 
     if (!configured) {
-        SetupScreen { mac, secret ->
-            settings.mac = mac
-            settings.secret = secret
-            configured = true
-        }
+        Pairing(settings, radio) { configured = true }
         return
     }
 
@@ -109,11 +111,74 @@ private fun App(model: WatchViewModel = viewModel()) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Navigation(model, rememberNavController())
+    Navigation(
+        model,
+        rememberNavController(),
+        // Keeping the key is what makes this repeatable: the watch challenges
+        // on the way back in and the challenge names the identity, so a watch
+        // whose key is still here is taken back on without being touched.
+        onUnpair = {
+            settings.forgetWatch()
+            WatchConnectionService.stop(context)
+            configured = false
+        },
+        onFactoryReset = {
+            val mac = settings.mac
+            model.unpair {
+                if (mac != null) settings.forgetWatchAndKey(mac)
+                WatchConnectionService.stop(context)
+                configured = false
+            }
+        },
+    )
+}
+
+/**
+ * Claiming a watch that holds no key.
+ *
+ * The scan runs for as long as this is on screen: the watch advertises rarely
+ * enough that a scan with a deadline is mostly a way to miss it.
+ */
+@Composable
+private fun Pairing(settings: Settings, radio: Boolean, onPaired: () -> Unit) {
+    val context = LocalContext.current
+    val devices by PairingSession.devices.collectAsState()
+    val stage by PairingSession.stage.collectAsState()
+
+    LaunchedEffect(radio) { if (radio) PairingSession.startScan(context) }
+    DisposableEffect(Unit) {
+        onDispose {
+            PairingSession.stopScan(context)
+            // Reset rather than stop: leaving with a paired watch behind must
+            // not leave the answer sitting there to be applied a second time
+            // the next time this screen opens.
+            PairingSession.reset()
+        }
+    }
+    LaunchedEffect(stage) {
+        val paired = stage as? PairingStage.Paired ?: return@LaunchedEffect
+        settings.select(paired.mac, paired.secret)
+        onPaired()
+    }
+
+    PairingScreen(
+        devices = devices,
+        stage = stage,
+        known = settings.knownWatches.size,
+        onPair = {
+            PairingSession.pair(context, it, settings.accountId, settings.knownWatches)
+        },
+        onRescan = { PairingSession.startScan(context) },
+    )
 }
 
 @Composable
-private fun Navigation(model: WatchViewModel, nav: NavHostController) {
+private fun Navigation(
+    model: WatchViewModel,
+    nav: NavHostController,
+    onUnpair: () -> Unit,
+    onFactoryReset: () -> Unit,
+) {
     val context = LocalContext.current
     val settings = remember { Settings(context) }
     val state by model.state.collectAsState()
@@ -286,6 +351,11 @@ private fun Navigation(model: WatchViewModel, nav: NavHostController) {
                 onSetTime = { model.setWatchTime() },
                 onReloadScreens = { model.requestScreens() },
                 onApplyScreens = { model.applyScreens(it) },
+                // The watch has to hear the reset before its key is dropped,
+                // so only that half needs a link to say it over.
+                connected = state.link == LinkState.Ready,
+                onUnpair = onUnpair,
+                onFactoryReset = onFactoryReset,
                 onBack = { nav.popBackStack() },
             )
         }

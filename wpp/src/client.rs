@@ -26,12 +26,33 @@ const ERR_DEVBUSY: i32 = -2;
 
 /// Does this error frame refuse the probe, rather than something asked
 /// alongside it? `Cmderror.cmd` names the command that was rejected.
-fn rejects_probe(frame: &Frame) -> bool {
+pub(crate) fn rejects_probe(frame: &Frame) -> bool {
     frame.objects.iter().any(|o| {
         matches!(o, WppObject::Cmderror(e)
             if e.cmd == Command::CMD_PROBE.0 || e.cmd == Command::CMD_PROBE_CHALLENGE.0)
     })
 }
+/// What the app tells the watch it is. The version is the official app's, and
+/// the watch does read it: firmware old enough to lack a command answers
+/// `CMDUNKN` rather than adapting, so claiming to be something older buys
+/// nothing.
+pub const APP_PROBE: AppProbe = AppProbe {
+    os: 1,
+    app: 1,
+    version: 8070101,
+};
+
+/// The frame that opens every conversation, authenticated or not.
+pub fn probe_frame() -> Frame {
+    Frame::new(
+        Command::CMD_PROBE,
+        vec![
+            WppObject::AppProbe(APP_PROBE),
+            WppObject::AppProbeOsVersion(AppProbeOsVersion { os_version: 35 }),
+        ],
+    )
+}
+
 const MAX_BUSY_RETRIES: u32 = 20;
 /// The watch asks for a sync every few seconds, and each one ends with a
 /// refresh. The daily totals do not change fast enough to be worth a request
@@ -58,7 +79,7 @@ const ACTIVITY_SLOTS: usize = 8;
 ///
 /// The secret is the 32-character key sent as `AccountKey`/`AdvKey` by
 /// `CMD_ASSOCIATION_KEYS_SET`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Credentials {
     pub mac: String,
     pub secret: String,
@@ -335,7 +356,6 @@ pub struct Client {
     /// (command, type id, type name), first sighting only. Reported so a stream
     /// the watch serves cannot go unnoticed the way its sleep staging did.
     unhandled: Vec<(u16, u16, &'static str)>,
-    app_probe: AppProbe,
     /// Latest frame timestamp seen. The client holds no clock of its own, so
     /// this is the only sense of "now" it has.
     now: Option<UnixMillis>,
@@ -390,11 +410,6 @@ impl Client {
             dump: DebugDump::new(),
             last_dump: None,
             wanted_notifications: None,
-            app_probe: AppProbe {
-                os: 1,
-                app: 1,
-                version: 8070101,
-            },
         }
     }
 
@@ -611,13 +626,7 @@ impl Client {
         self.on_disconnected();
         self.phase = Phase::Probing;
         self.last_heard = self.now;
-        vec![Action::Send(Frame::new(
-            Command::CMD_PROBE,
-            vec![
-                WppObject::AppProbe(self.app_probe.clone()),
-                WppObject::AppProbeOsVersion(AppProbeOsVersion { os_version: 35 }),
-            ],
-        ))]
+        vec![Action::Send(probe_frame())]
     }
 
     fn on_stored(&mut self, token: u64) -> Vec<Action> {
@@ -1500,6 +1509,28 @@ impl Client {
         }
         let actions = vec![Action::Send(Frame::new(
             Command::CMD_BATTERY_STATUS,
+            Vec::new(),
+        ))];
+        self.noted(actions)
+    }
+
+    /// Erase the watch: settings, association secret and all, then reboot.
+    ///
+    /// The firmware runs a table of per-module reset callbacks and logs
+    /// "Erase all user settings..." on the way through; dropping the secret is
+    /// what puts it back into the state where it answers a probe without a
+    /// challenge, which is the only state an association can be established
+    /// from. Everything the watch is holding that has not been synced goes
+    /// with it.
+    ///
+    /// Sent with no payload, which is what the official app's
+    /// `SendFactoryResetConversation` does. The optional `FactoryResetMode`
+    /// governs what happens afterwards rather than how much is erased — the
+    /// watch reboots on `REBOOT` and stops on `COMA` — and the handler treats
+    /// a missing one as `REBOOT`.
+    pub fn factory_reset(&mut self) -> Vec<Action> {
+        let actions = vec![Action::Send(Frame::new(
+            Command::CMD_FACTORY_RESET,
             Vec::new(),
         ))];
         self.noted(actions)
@@ -3180,6 +3211,20 @@ mod tests {
 
     /// A whole session driven message by message, asserting what the client
     /// sends at each step and the state it ends in.
+    /// The watch acknowledges nothing here — it erases and reboots — so what
+    /// is worth pinning is that the frame matches the one the official app
+    /// sends, payload and all.
+    #[test]
+    fn a_factory_reset_is_the_bare_command() {
+        let mut client = authenticated();
+        let actions = client.factory_reset();
+        let Action::Send(frame) = &actions[0] else {
+            panic!("expected a send, got {actions:?}")
+        };
+        assert_eq!(frame.command, Command::CMD_FACTORY_RESET);
+        assert!(frame.objects.is_empty());
+    }
+
     #[test]
     fn a_scripted_session_reaches_the_expected_end_state() {
         use crate::objects::{Null, VasistasCbt, VasistasHeartrate, WamVasistasHead};

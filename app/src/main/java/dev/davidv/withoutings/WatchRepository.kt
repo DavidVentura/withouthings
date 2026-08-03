@@ -4,6 +4,8 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONObject
+import uniffi.wpp_ffi.KnownWatch
 import uniffi.wpp_ffi.WatchService
 
 /**
@@ -47,24 +49,89 @@ object WatchRepository {
 }
 
 /**
- * Watch address and association secret.
+ * Which watch the app is on, and the keys it holds.
  *
- * Falls back to the build config, which is populated from local.properties, so
- * a development build connects without retyping a 32-character key.
+ * Everything here is the app's own state. A watch becomes reachable by being
+ * paired with and by nothing else, so a build carries no watch in it and two
+ * installs of the same build know different watches.
  */
 class Settings(context: Context) {
     private val prefs = context.getSharedPreferences("withoutings", Context.MODE_PRIVATE)
 
-    var mac: String?
-        get() = prefs.getString(KEY_MAC, null) ?: BuildConfig.WATCH_MAC.ifBlank { null }
-        set(value) = prefs.edit().putString(KEY_MAC, value).apply()
+    /// The watch in use, by the identity it challenges under. Null when none
+    /// has been paired with, or after unpairing.
+    val mac: String?
+        get() = prefs.getString(KEY_MAC, null)
 
-    var secret: String?
-        get() = prefs.getString(KEY_SECRET, null) ?: BuildConfig.WATCH_SECRET.ifBlank { null }
-        set(value) = prefs.edit().putString(KEY_SECRET, value).apply()
+    val secret: String?
+        get() = prefs.getString(KEY_SECRET, null)
 
     val configured: Boolean
         get() = !mac.isNullOrBlank() && !secret.isNullOrBlank()
+
+    /**
+     * Who the watch is told is claiming it, kept so a re-pair of the same
+     * watch presents the same account rather than looking like a new one.
+     *
+     * The official app sends a Withings user id here; this app has no account,
+     * so the number only has to be stable and non-zero — zero is how the watch
+     * is told to store the key without an account beside it.
+     */
+    val accountId: UInt
+        get() {
+            val stored = prefs.getInt(KEY_ACCOUNT_ID, 0)
+            if (stored != 0) return stored.toUInt()
+            val fresh = (1..Int.MAX_VALUE).random()
+            prefs.edit().putInt(KEY_ACCOUNT_ID, fresh).apply()
+            return fresh.toUInt()
+        }
+
+    /**
+     * Every watch a key is held for, by the identity it challenges under.
+     *
+     * Kept apart from the selected one so that letting go of a watch does not
+     * have to mean losing the only thing that can ever authenticate to it. A
+     * watch whose key is still here is taken back on by answering its
+     * challenge, which asks nothing of the watch and changes nothing on it.
+     */
+    val knownWatches: List<KnownWatch>
+        get() = JSONObject(prefs.getString(KEY_KNOWN, "{}") ?: "{}").let { stored ->
+            stored.keys().asSequence()
+                .map { KnownWatch(it, stored.getString(it)) }
+                .toList()
+        }
+
+    /// Keep a watch's key without selecting it.
+    fun remember(mac: String, secret: String) {
+        val stored = JSONObject(prefs.getString(KEY_KNOWN, "{}") ?: "{}")
+        stored.put(mac.lowercase(), secret)
+        prefs.edit().putString(KEY_KNOWN, stored.toString()).apply()
+    }
+
+    /// Take a watch on: it becomes the selected one, and its key is kept
+    /// whether or not it stays selected.
+    fun select(mac: String, secret: String) {
+        remember(mac, secret)
+        prefs.edit().putString(KEY_MAC, mac).putString(KEY_SECRET, secret).apply()
+    }
+
+    /// Put the watch down, keeping its key.
+    fun forgetWatch() {
+        prefs.edit().remove(KEY_MAC).remove(KEY_SECRET).apply()
+    }
+
+    /**
+     * Put it down and drop its key too, for a watch that has been erased.
+     *
+     * Keeping the key of a watch that no longer holds it is worse than useless
+     * — it would be offered on every later scan and refused every time.
+     */
+    fun forgetWatchAndKey(mac: String) {
+        val stored = JSONObject(prefs.getString(KEY_KNOWN, "{}") ?: "{}")
+        stored.remove(mac.lowercase())
+        prefs.edit().putString(KEY_KNOWN, stored.toString()).apply()
+        forgetWatch()
+    }
 
     /// Phone notifications, which are ANCS and nothing else.
     ///
@@ -78,6 +145,8 @@ class Settings(context: Context) {
     private companion object {
         const val KEY_MAC = "mac"
         const val KEY_SECRET = "secret"
+        const val KEY_ACCOUNT_ID = "account-id"
+        const val KEY_KNOWN = "known-watches"
         const val KEY_NOTIFICATIONS = "notifications"
     }
 }
