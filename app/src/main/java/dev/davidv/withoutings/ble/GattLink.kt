@@ -75,11 +75,10 @@ class GattLink(
     fun write(bytes: ByteArray) {
         val limit = (negotiatedMtu - ATT_HEADER).coerceAtLeast(1)
         if (WIRE_LOG) Log.i(WIRE_TAG, "-> ${bytes.hex()}")
-        if (bytes.size > limit) {
-            Log.i(TAG, "frame of ${bytes.size} split across ${
-                (bytes.size + limit - 1) / limit
-            } writes")
-        }
+        // Every frame, not only the split ones: a set is a run of frames and
+        // the small ones — a bare terminator, a short entry — are exactly the
+        // ones worth seeing when a run of them does not take.
+        Log.i(TAG, "frame of ${bytes.size} in ${(bytes.size + limit - 1) / limit} writes")
         synchronized(pending) {
             var offset = 0
             while (offset < bytes.size) {

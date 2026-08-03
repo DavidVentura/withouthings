@@ -58,6 +58,13 @@ impl Rasterizer for Handle {
             pixels: vec![0xffff_ffff; width as usize * height as usize],
         }
     }
+    fn activity_glyph(&self, _activity: u32, width: u8, height: u8) -> Bitmap {
+        Bitmap {
+            width,
+            height,
+            pixels: vec![0xffff_ffff; width as usize * height as usize],
+        }
+    }
 }
 
 fn service(recorder: &Arc<Recorder>) -> (WatchService, String) {

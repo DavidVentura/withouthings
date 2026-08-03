@@ -28,6 +28,18 @@ pub struct Store {
     conn: Connection,
 }
 
+/// The workout the watch is running.
+///
+/// Named fields rather than a tuple because two of the three are `i64` and one
+/// of them is the key the watch identifies the session by: a stop naming the
+/// wrong number is ignored in silence.
+pub struct ActiveWorkout {
+    /// The store's own row id.
+    pub id: i64,
+    pub started_at: UnixTime,
+    pub subcategory: i64,
+}
+
 impl Store {
     pub fn open(path: &str) -> Result<Store, Error> {
         let conn = Connection::open(path)?;
@@ -160,6 +172,12 @@ impl Store {
                          ON CONFLICT (device_id, started_at)
                          DO UPDATE SET ended_at = ?3, paused_secs = ?4",
                         params![device_id, started_at.0, ended_at.0, paused_secs],
+                    )?;
+                }
+                Record::WorkoutDropped { started_at } => {
+                    tx.execute(
+                        "DELETE FROM workout WHERE device_id = ?1 AND started_at = ?2",
+                        params![device_id, started_at.0],
                     )?;
                 }
                 Record::Activity(minute) => {
@@ -546,16 +564,47 @@ impl Store {
     }
 
     /// The workout still running, if any.
-    pub fn active_workout(&self, device_id: i64) -> Result<Option<(i64, i64, i64)>, Error> {
+    pub fn active_workout(&self, device_id: i64) -> Result<Option<ActiveWorkout>, Error> {
         self.conn
             .query_row(
                 "SELECT id, started_at, subcategory FROM workout
                   WHERE device_id = ?1 AND ended_at IS NULL
                   ORDER BY started_at DESC LIMIT 1",
                 params![device_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| {
+                    Ok(ActiveWorkout {
+                        id: r.get(0)?,
+                        started_at: UnixTime(r.get(1)?),
+                        subcategory: r.get(2)?,
+                    })
+                },
             )
             .optional()
+    }
+
+    /// Forget a recorded session, and the set marks that only divide it.
+    ///
+    /// The measurements it covers stay: nothing on the wire ties a sample to a
+    /// workout, so they are the day's readings that happen to fall inside it,
+    /// and the heart rate someone was at is true whether or not the session
+    /// around it is kept.
+    pub fn delete_workout(&self, device_id: i64, id: i64) -> Result<(), Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "DELETE FROM marker
+              WHERE device_id = ?1
+                AND at_ms >= (SELECT started_at * 1000 FROM workout
+                               WHERE id = ?2 AND device_id = ?1)
+                AND at_ms <= (SELECT COALESCE(ended_at, started_at) * 1000 FROM workout
+                               WHERE id = ?2 AND device_id = ?1)",
+            params![device_id, id],
+        )?;
+        tx.execute(
+            "DELETE FROM workout WHERE device_id = ?1 AND id = ?2",
+            params![device_id, id],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn mark_set(&self, device_id: i64, at_ms: i64, edge: i64) -> Result<(), Error> {
@@ -900,6 +949,64 @@ mod tests {
         assert_eq!(store.count("workout").unwrap(), 1);
         assert_eq!(ended, 1784999069);
         assert_eq!(subcategory, 16, "the stop must not clobber the category");
+    }
+
+    #[test]
+    fn a_dropped_workout_takes_the_row_its_start_created_with_it() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[Record::WorkoutStarted {
+                    started_at: UnixTime(1784998983),
+                    subcategory: 16,
+                }],
+            )
+            .unwrap();
+        store
+            .store(
+                device,
+                &[Record::WorkoutDropped {
+                    started_at: UnixTime(1784998983),
+                }],
+            )
+            .unwrap();
+        assert_eq!(store.count("workout").unwrap(), 0);
+    }
+
+    #[test]
+    fn deleting_a_workout_keeps_its_samples_and_drops_its_marks() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[
+                    Record::WorkoutStarted {
+                        started_at: UnixTime(1000),
+                        subcategory: 16,
+                    },
+                    Record::WorkoutEnded {
+                        started_at: UnixTime(1000),
+                        ended_at: UnixTime(1100),
+                        paused_secs: 0,
+                    },
+                    sample(1_050_000, 120, Source::Live),
+                ],
+            )
+            .unwrap();
+        store.mark_set(device, 1_020_000, 0).unwrap();
+        store.mark_set(device, 1_040_000, 1).unwrap();
+        // Outside the session, so not the session's to delete.
+        store.mark_set(device, 1_200_000, 0).unwrap();
+
+        let id = store.workouts(device, 10).unwrap()[0].0;
+        store.delete_workout(device, id).unwrap();
+
+        assert_eq!(store.count("workout").unwrap(), 0);
+        assert_eq!(store.count("sample").unwrap(), 1);
+        assert_eq!(store.count("marker").unwrap(), 1);
     }
 
     #[test]

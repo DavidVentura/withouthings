@@ -5,6 +5,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
+import java.time.Instant
+import java.time.ZoneId
+import uniffi.wpp_ffi.DstChange
 import uniffi.wpp_ffi.KnownWatch
 import uniffi.wpp_ffi.WatchService
 
@@ -20,6 +23,28 @@ import uniffi.wpp_ffi.WatchService
  * sees it, so it does not belong in the snapshot.
  */
 enum class LinkState { Disconnected, Connecting, Connected, Ready }
+
+/**
+ * Put the watch's clock right.
+ *
+ * The watch times everything it records by its own clock and nothing corrects
+ * it on its own, so a drift is not confined to the timestamps — a workout
+ * stopped from here is ended with this phone's clock and measured against a
+ * start stamped with the watch's, which turns the gap between them into
+ * duration. The official app sends this on every connection and keeps the
+ * watch within a second of the phone.
+ *
+ * The zone rules are the host's to know, which is why this lives here rather
+ * than in the client.
+ */
+fun syncWatchClock(service: WatchService) {
+    val now = Instant.now()
+    val rules = ZoneId.systemDefault().rules
+    val next = rules.nextTransition(now)?.let {
+        DstChange(it.instant.toEpochMilli(), it.offsetAfter.totalSeconds)
+    }
+    service.setTime(now.toEpochMilli(), rules.getOffset(now).totalSeconds, next)
+}
 
 object WatchRepository {
     private var service: WatchService? = null

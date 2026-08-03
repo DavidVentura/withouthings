@@ -16,7 +16,7 @@ use crate::objects::{
     Id, InfoType, MeasureCategory, MeasureLiveAppStatus, NotificationsDisplayState, Null,
     ProbeChallenge, ProbeChallengeResponse, StartTime, StoredSignalMeta, TimeSet, TrackerUser,
     TrackerWearPos, VasistasCbt, VasistasType, Version, WamScreensList, WamVasistasGet,
-    WorkoutScreenList,
+    WorkoutScreenMetadata,
 };
 use crate::signal::{Signal, SignalCollector};
 use crate::units::{UnixMillis, UnixTime};
@@ -75,6 +75,9 @@ const SILENCE_TIMEOUT_MS: i64 = 90_000;
 const SCREEN_SLOTS: usize = 24;
 /// The quick-launch menu holds this many activities, zero-padded.
 const ACTIVITY_SLOTS: usize = 8;
+/// A session shorter than this is a start and a stop on the wrist with nothing
+/// in between, and is not a workout anyone means to keep.
+const MIN_WORKOUT_SECS: i64 = 10;
 
 /// Shared secret established at association, and the watch's address.
 ///
@@ -129,6 +132,22 @@ impl DeviceIdentity {
             rescue: reported(reply.rescue_version),
         }
     }
+}
+
+/// One entry of the quick-launch menu, as the watch is told it.
+///
+/// The glyphs are keyed by the image kind the watch declared on its screen
+/// list: it asks for a set of sizes and the reply has to answer each of them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkoutScreen {
+    pub id: u32,
+    pub name: String,
+    /// What the watch's own workout face leads with: 2 paces, 3 speeds, 1
+    /// neither. Read off the activity's feature list.
+    pub face_mode: u8,
+    /// 0 where the activity may wake the phone, 1 where it may not.
+    pub flag: u16,
+    pub glyphs: Vec<(u8, crate::image::Mono)>,
 }
 
 /// Who the watch thinks is wearing it.
@@ -271,6 +290,11 @@ pub enum Record {
         started_at: UnixTime,
         ended_at: UnixTime,
         paused_secs: i64,
+    },
+    /// A session that ran too briefly to be one. It is named rather than
+    /// omitted because its start may already have been stored.
+    WorkoutDropped {
+        started_at: UnixTime,
     },
     /// One window of the per-minute activity stream. Kept whole rather than
     /// split into samples: the counters describe a window, not an instant, and
@@ -450,6 +474,13 @@ pub struct Client {
     /// Whether the watch should accept phone notifications, if the host has
     /// said. `None` leaves whatever the watch already holds.
     wanted_notifications: Option<bool>,
+    /// A stop sent to the watch, waiting to be confirmed by a status reply.
+    ///
+    /// The watch answers a stop with a bare `Null` whether it acted on it or
+    /// threw it away — a stop naming a start time it is not running is
+    /// discarded in silence — so the reply says nothing and the status that
+    /// follows says everything.
+    pending_stop: Option<(UnixTime, UnixTime)>,
 }
 
 impl Client {
@@ -485,6 +516,7 @@ impl Client {
             dump: DebugDump::new(),
             last_dump: None,
             wanted_notifications: None,
+            pending_stop: None,
         }
     }
 
@@ -741,6 +773,22 @@ impl Client {
         self.live_samples.extend(self.signals.take_live());
         actions.extend(self.dump.on_frame(&frame).into_iter().map(Action::Send));
 
+        // A refused menu write takes the menu with it: the firmware erases the
+        // whole store before parsing, and again on every error path. What the
+        // watch holds afterwards is neither what it had nor what was asked
+        // for, so ask.
+        if frame.command.opcode() == Command::CMD_ERROR.0
+            && frame.objects.iter().any(|o| {
+                matches!(o, WppObject::Cmderror(e) if e.cmd == Command::CMD_WORKOUT_SCREEN_SET.0)
+            })
+        {
+            self.activities = None;
+            actions.push(Action::Send(Frame::new(
+                Command::CMD_WORKOUT_SCREEN_LIST_GET,
+                Vec::new(),
+            )));
+        }
+
         match frame.command.opcode() {
             // The watch asks whether anything is showing the waveform, and only
             // streams if told yes. Nothing else turns it on.
@@ -970,6 +1018,33 @@ impl Client {
             self.image_formats = declared;
         }
 
+        // Whether the stop we sent was taken. The watch acknowledges one it
+        // discarded exactly as it acknowledges one it acted on, so the session
+        // being gone is the only evidence — and a session still running means
+        // the stop named a start time the watch is not holding.
+        if frame.command.opcode() == Command::CMD_WORKOUT_STATUS.0 {
+            let running = frame
+                .objects
+                .iter()
+                .any(|o| matches!(o, WppObject::Status(s) if s.value == 1));
+            if let Some((started_at, ended_at)) = self.pending_stop.take() {
+                if !running {
+                    records.push(Record::WorkoutEnded {
+                        started_at,
+                        ended_at,
+                        paused_secs: frame
+                            .objects
+                            .iter()
+                            .find_map(|o| match o {
+                                WppObject::PauseState(p) => Some(p.sum as i64),
+                                _ => None,
+                            })
+                            .unwrap_or(0),
+                    });
+                }
+            }
+        }
+
         for object in &frame.objects {
             self.signals.observe(object);
             match object {
@@ -1160,13 +1235,28 @@ impl Client {
                             _ => None,
                         })
                         .unwrap_or(0);
-                    if let Some(started) = started {
-                        records.push(Record::WorkoutEnded {
-                            started_at: UnixTime(started as i64),
-                            ended_at: UnixTime(end.value as i64),
-                            paused_secs: paused,
+                    let Some(started) = started else { continue };
+                    let started_at = UnixTime(started as i64);
+                    let ended_at = UnixTime(end.value as i64);
+                    // Too short to be a session. The stop is what says so, and
+                    // the start it names may have gone out frames ago and
+                    // already be stored, so this is a drop rather than a
+                    // silence.
+                    if ended_at.0 - started_at.0 < MIN_WORKOUT_SECS {
+                        records.retain(|record| {
+                            !matches!(
+                                record,
+                                Record::WorkoutStarted { started_at: s, .. } if *s == started_at
+                            )
                         });
+                        records.push(Record::WorkoutDropped { started_at });
+                        continue;
                     }
+                    records.push(Record::WorkoutEnded {
+                        started_at,
+                        ended_at,
+                        paused_secs: paused,
+                    });
                 }
                 _ => {}
             }
@@ -1483,11 +1573,22 @@ impl Client {
 
     /// End the session the watch is running.
     ///
-    /// `started_at` has to be the one the watch reported, not the one asked
-    /// for: the watch compares it against the running session and ignores a
-    /// stop that names a different one. That is also why this takes it rather
-    /// than reading it from state — the caller has the watch's own answer.
-    pub fn stop_workout(&self, started_at: UnixTime, at: UnixTime) -> Vec<Action> {
+    /// `started_at` has to be the exact second the watch stamped the session
+    /// with — it compares the two as integers and throws away a stop that does
+    /// not match, with no error and the same acknowledgement a successful one
+    /// gets. The watch never took the start time it was offered, so the only
+    /// source for this is a status reply. Hence taking it rather than reading
+    /// it from state: the caller has the watch's own answer.
+    ///
+    /// `at` is stamped by this host's clock but subtracted from a start the
+    /// watch stamped with its own, unsigned and without checking the order, so
+    /// an end earlier than the start is stored as a session lasting most of a
+    /// century. The two clocks only have to disagree by a second for a short
+    /// workout to land there, and the record cannot be deleted afterwards, so
+    /// an end before the start is moved to the start.
+    pub fn stop_workout(&mut self, started_at: UnixTime, at: UnixTime) -> Vec<Action> {
+        let ended_at = UnixTime(at.0.max(started_at.0));
+        self.pending_stop = Some((started_at, ended_at));
         vec![
             Action::Send(Frame::new(
                 Command::CMD_WORKOUT_STOP,
@@ -1495,7 +1596,9 @@ impl Client {
                     WppObject::StartTime(StartTime {
                         value: started_at.0 as i32,
                     }),
-                    WppObject::EndTime(EndTime { value: at.0 as i32 }),
+                    WppObject::EndTime(EndTime {
+                        value: ended_at.0 as i32,
+                    }),
                 ],
             )),
             Action::Send(Frame::new(Command::CMD_WORKOUT_STATUS, Vec::new())),
@@ -1503,17 +1606,36 @@ impl Client {
     }
 
     /// Replace the quick-launch activity menu, in the order given.
-    pub fn set_activities(&self, ids: &[u32]) -> Vec<Action> {
-        let mut slots = ids.to_vec();
-        slots.truncate(ACTIVITY_SLOTS);
-        slots.resize(ACTIVITY_SLOTS, 0);
+    ///
+    /// The watch is not sent a list of ids. Each entry goes whole — what it is
+    /// called, how its face reads, and the glyph to draw for it at every size
+    /// it asked for — because it keeps no catalogue of its own and an id alone
+    /// means nothing to it. Sending the id array that the *read* returns
+    /// empties the menu rather than setting it.
+    pub fn set_activities(&self, screens: &[WorkoutScreen]) -> Vec<Action> {
+        let mut objects = Vec::new();
+        for screen in screens.iter().take(ACTIVITY_SLOTS) {
+            objects.push(WppObject::WorkoutScreenMetadata(WorkoutScreenMetadata {
+                id: screen.id,
+                version: 0,
+                name: screen.name.clone(),
+                face_mode: screen.face_mode,
+                flag: screen.flag,
+            }));
+            for (kind, glyph) in &screen.glyphs {
+                objects.push(WppObject::ImageMetadata(glyph.metadata_of(*kind)));
+                objects.extend(glyph.data_objects());
+            }
+        }
+
+        // One terminator for the whole list, as the last object — the same
+        // shape as the glyph and icon replies. Where the frame boundaries fall
+        // is settled when this is written, not here.
+        objects.push(WppObject::Null(Null {}));
+
         vec![
-            Action::Send(Frame::new(
-                Command::CMD_WORKOUT_SCREEN_SET,
-                vec![WppObject::WorkoutScreenList(WorkoutScreenList {
-                    screen_nb: slots,
-                })],
-            )),
+            Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_SET, objects)),
+            // Read back rather than assume: the watch may reject or reorder.
             Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_LIST_GET, Vec::new())),
         ]
     }
@@ -1901,7 +2023,7 @@ mod tests {
             .any(|o| matches!(o, WppObject::ProbeChallengeResponse(_))));
     }
 
-    fn authenticated() -> Client {
+    pub(super) fn authenticated() -> Client {
         let mut client = Client::new(credentials(), vec![(Category(8), UnixTime(1000))]);
         client.handle(Event::Connected);
         client.handle(Event::Frame {
@@ -2442,15 +2564,6 @@ mod tests {
             })],
         ));
         assert_eq!(client.activities(), Some(vec![16, 2, 36, 28]));
-
-        let actions = client.set_activities(&[2, 16]);
-        let Action::Send(frame) = &actions[0] else {
-            panic!()
-        };
-        let WppObject::WorkoutScreenList(list) = &frame.objects[0] else {
-            panic!()
-        };
-        assert_eq!(list.screen_nb, vec![2, 16, 0, 0, 0, 0, 0, 0]);
     }
 
     /// The watch answers one request with the whole window, across as many
@@ -2987,6 +3100,130 @@ mod tests {
         assert!(records(&idle).is_empty(), "no workout, no record");
     }
 
+    /// A stop the watch discarded and one it acted on are acknowledged
+    /// identically, so nothing but the session disappearing confirms it. Until
+    /// this was read off the status reply the app stayed in a workout the
+    /// watch had already finished.
+    #[test]
+    fn a_stop_is_confirmed_by_the_session_being_gone() {
+        use crate::objects::{StartTime, Status};
+        let mut client = authenticated();
+
+        let records = |actions: &[Action]| -> Vec<Record> {
+            actions
+                .iter()
+                .find_map(|a| match a {
+                    Action::Store { records, .. } => Some(records.clone()),
+                    _ => None,
+                })
+                .unwrap_or_default()
+        };
+        let status = |value: i8| {
+            frame(
+                Command::CMD_WORKOUT_STATUS,
+                vec![
+                    WppObject::Status(Status { value }),
+                    WppObject::StartTime(StartTime {
+                        value: 1_785_000_000,
+                    }),
+                ],
+            )
+        };
+
+        client.stop_workout(UnixTime(1_785_000_000), UnixTime(1_785_000_600));
+
+        // Still running: the watch did not take the stop, and saying it ended
+        // would close a session that is still going.
+        let ended = |actions: &[Action]| -> Vec<Record> {
+            records(actions)
+                .into_iter()
+                .filter(|r| matches!(r, Record::WorkoutEnded { .. }))
+                .collect()
+        };
+        assert!(ended(&client.handle(status(1))).is_empty());
+
+        client.stop_workout(UnixTime(1_785_000_000), UnixTime(1_785_000_600));
+        assert_eq!(
+            ended(&client.handle(status(0))),
+            vec![Record::WorkoutEnded {
+                started_at: UnixTime(1_785_000_000),
+                ended_at: UnixTime(1_785_000_600),
+                paused_secs: 0,
+            }],
+        );
+
+        // And only once — a later status must not close it again.
+        assert!(ended(&client.handle(status(0))).is_empty());
+    }
+
+    /// A start and a stop seconds apart is a mis-press, and the start may
+    /// already be stored by the time the stop says so.
+    #[test]
+    fn a_session_too_short_to_be_one_is_dropped_rather_than_ended() {
+        use crate::objects::{ActivitySubcategory, EndTime, StartTime, Status};
+        let mut client = authenticated();
+
+        let brief = client.handle(frame(
+            Command::CMD_WORKOUT_STOP,
+            vec![
+                WppObject::StartTime(StartTime {
+                    value: 1_785_000_000,
+                }),
+                WppObject::EndTime(EndTime {
+                    value: 1_785_000_004,
+                }),
+            ],
+        ));
+        assert_eq!(
+            stored(&brief),
+            vec![Record::WorkoutDropped {
+                started_at: UnixTime(1_785_000_000),
+            }]
+        );
+
+        // The same frame carrying its own start: neither half survives.
+        let both = client.handle(frame(
+            Command::CMD_WORKOUT_STATUS,
+            vec![
+                WppObject::Status(Status { value: 1 }),
+                WppObject::ActivitySubcategory(ActivitySubcategory { value: 16 }),
+                WppObject::StartTime(StartTime {
+                    value: 1_785_000_100,
+                }),
+                WppObject::EndTime(EndTime {
+                    value: 1_785_000_105,
+                }),
+            ],
+        ));
+        assert_eq!(
+            stored(&both),
+            vec![Record::WorkoutDropped {
+                started_at: UnixTime(1_785_000_100),
+            }]
+        );
+
+        let kept = client.handle(frame(
+            Command::CMD_WORKOUT_STOP,
+            vec![
+                WppObject::StartTime(StartTime {
+                    value: 1_785_000_200,
+                }),
+                WppObject::EndTime(EndTime {
+                    value: 1_785_000_210,
+                }),
+            ],
+        ));
+        assert_eq!(
+            stored(&kept),
+            vec![Record::WorkoutEnded {
+                started_at: UnixTime(1_785_000_200),
+                ended_at: UnixTime(1_785_000_210),
+                paused_secs: 0,
+            }],
+            "ten seconds is a session"
+        );
+    }
+
     /// The watch streams the waveform only while something says it is being
     /// A walk that dies partway leaves the last thing heard ahead of the last
     /// thing asked, which read as a healthy link and stalled the sync for good.
@@ -3505,5 +3742,97 @@ mod tests {
         // Finishing must not discard where the walk got to; the next pass
         // resumes from here rather than replaying the history.
         assert_eq!(client.watermarks(), vec![(Category(8), UnixTime(5001))]);
+    }
+}
+
+#[cfg(test)]
+mod workout_screen_tests {
+    use super::tests::authenticated;
+    use super::*;
+    use crate::image::Mono;
+
+    /// A 34x34 glyph is 170 bytes on its own — larger than a frame — so the
+    /// message this builds only reaches the watch if the wire split works.
+    fn screen(id: u32, name: &str) -> WorkoutScreen {
+        WorkoutScreen {
+            id,
+            name: name.to_string(),
+            face_mode: 2,
+            flag: 0,
+            glyphs: vec![
+                (0, Mono::pack(&vec![0xffff_ffff; 20 * 20], 20, 20)),
+                (1, Mono::pack(&vec![0xffff_ffff; 34 * 34], 34, 34)),
+            ],
+        }
+    }
+
+    fn written(client: &Client, screens: &[WorkoutScreen]) -> Frame {
+        let actions = client.set_activities(screens);
+        let sent: Vec<&Frame> = actions
+            .iter()
+            .filter_map(|a| match a {
+                Action::Send(f) if f.command == Command::CMD_WORKOUT_SCREEN_SET => Some(f),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(sent.len(), 1, "the menu is one message, however it is sent");
+        sent[0].clone()
+    }
+
+    /// The whole menu goes as one message and is cut up on the way out, so
+    /// what has to hold is that no piece reaches the size that reboots it.
+    #[test]
+    fn no_frame_reaches_the_size_that_reboots_the_watch() {
+        let client = authenticated();
+        let frames = written(&client, &[screen(16, "Weights"), screen(2, "Running")]).to_wire();
+        assert!(frames.len() > 1, "one frame would overflow the watch");
+        for frame in &frames {
+            let encoded = frame.to_bytes().len();
+            assert!(
+                encoded <= crate::frame::MAX_FRAME_BYTES,
+                "frame of {encoded} bytes reboots the watch",
+            );
+        }
+    }
+
+    /// The object run the official app sends: every entry whole, both declared
+    /// glyph sizes, and one terminator for the list rather than one per entry.
+    #[test]
+    fn the_menu_carries_every_entry_and_closes_once() {
+        let client = authenticated();
+        let message = written(&client, &[screen(16, "Weights"), screen(2, "Running")]);
+        let sent: Vec<u16> = message.objects.iter().map(|o| o.type_id()).collect();
+        assert_eq!(
+            sent.iter().filter(|t| **t == 317).count(),
+            2,
+            "one entry per screen and no filler",
+        );
+        assert_eq!(
+            sent.iter().filter(|t| **t == 2397).count(),
+            4,
+            "both glyph sizes for both screens",
+        );
+        // 20x20 packs to 60 bytes and 34x34 to 170, so one chunk and three.
+        assert_eq!(
+            sent.iter().filter(|t| **t == 2398).count(),
+            2 * (1 + 3),
+            "every chunk of every glyph survives",
+        );
+        assert_eq!(sent.iter().filter(|t| **t == 256).count(), 1);
+        assert_eq!(sent.last().copied(), Some(256), "the list closes with Null");
+    }
+
+    /// Every object has to survive the split, in order, or the watch is told
+    /// about a screen whose picture went missing.
+    #[test]
+    fn splitting_keeps_every_object_in_order() {
+        let client = authenticated();
+        let message = written(&client, &[screen(16, "Weights"), screen(2, "Running")]);
+        let split: Vec<WppObject> = message
+            .to_wire()
+            .into_iter()
+            .flat_map(|f| f.objects)
+            .collect();
+        assert_eq!(split, message.objects);
     }
 }

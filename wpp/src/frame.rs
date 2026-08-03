@@ -128,9 +128,47 @@ pub struct Frame {
     pub objects: Vec<WppObject>,
 }
 
+/// The watch's reassembly buffer: the whole frame, header included, so 195
+/// bytes of objects.
+///
+/// Over it the watch does not refuse the frame — it logs "Command too long",
+/// panics, and reboots several seconds later, far enough from the cause to be
+/// hard to place. Anything longer is split across frames of the same command,
+/// which the watch accumulates.
+pub const MAX_FRAME_BYTES: usize = 200;
+
 impl Frame {
     pub fn new(command: Command, objects: Vec<WppObject>) -> Frame {
         Frame { command, objects }
+    }
+
+    /// The wire frames this one is sent as: itself, or as many frames of the
+    /// same command as its objects take.
+    ///
+    /// Boundaries carry no meaning — the watch accumulates across frames of a
+    /// command — so they are settled here rather than by whoever built the
+    /// message. Objects keep their order, and one too big for a frame on its
+    /// own still goes rather than being dropped silently.
+    pub fn to_wire(&self) -> Vec<Frame> {
+        if HEADER_LEN + self.payload_len() <= MAX_FRAME_BYTES {
+            return vec![self.clone()];
+        }
+        let mut frames = Vec::new();
+        let mut batch: Vec<WppObject> = Vec::new();
+        let mut used = HEADER_LEN;
+        for object in &self.objects {
+            let cost = OBJECT_HEADER_LEN + object.data_size();
+            if !batch.is_empty() && used + cost > MAX_FRAME_BYTES {
+                frames.push(Frame::new(self.command, std::mem::take(&mut batch)));
+                used = HEADER_LEN;
+            }
+            used += cost;
+            batch.push(object.clone());
+        }
+        if !batch.is_empty() {
+            frames.push(Frame::new(self.command, batch));
+        }
+        frames
     }
 
     pub fn payload_len(&self) -> usize {
@@ -262,5 +300,63 @@ impl Frame {
             WppObject::Unknown { type_id, .. } => Some(*type_id),
             _ => None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::objects::ImageData;
+
+    /// A frame of exactly `total` encoded bytes, padding included.
+    fn sized(total: usize) -> Frame {
+        Frame::new(
+            Command::CMD_WORKOUT_SCREEN_SET,
+            vec![WppObject::ImageData(ImageData {
+                // One length byte of its own, plus the object header.
+                data: vec![0; total - HEADER_LEN - OBJECT_HEADER_LEN - 1],
+            })],
+        )
+    }
+
+    /// Off by the five bytes of header and every frame goes over the watch's
+    /// buffer, which reboots it.
+    #[test]
+    fn the_limit_counts_the_header_too() {
+        assert_eq!(sized(MAX_FRAME_BYTES).to_bytes().len(), MAX_FRAME_BYTES);
+        assert_eq!(sized(MAX_FRAME_BYTES).to_wire().len(), 1);
+    }
+
+    #[test]
+    fn one_byte_over_takes_two_frames() {
+        // Two objects, because splitting is by object: 195 bytes of payload
+        // fills a frame exactly, so one more byte cannot ride with it.
+        let frame = Frame::new(
+            Command::CMD_WORKOUT_SCREEN_SET,
+            vec![
+                WppObject::ImageData(ImageData {
+                    data: vec![0; MAX_FRAME_BYTES - HEADER_LEN - OBJECT_HEADER_LEN - 1],
+                }),
+                WppObject::ImageData(ImageData { data: Vec::new() }),
+            ],
+        );
+        let wire = frame.to_wire();
+        assert_eq!(wire.len(), 2, "a frame past the limit has to be split");
+        assert_eq!(wire[0].to_bytes().len(), MAX_FRAME_BYTES);
+        for piece in &wire {
+            assert!(piece.to_bytes().len() <= MAX_FRAME_BYTES);
+        }
+    }
+
+    /// Splitting is by object, so one too large for a frame goes anyway,
+    /// oversize. Nothing sent is close — the largest is a 64-byte `ImageData`
+    /// — and dropping it silently would be worse.
+    #[test]
+    fn an_object_larger_than_a_frame_goes_rather_than_vanishing() {
+        let frame = sized(MAX_FRAME_BYTES + 1);
+        assert_eq!(frame.objects.len(), 1);
+        let wire = frame.to_wire();
+        assert_eq!(wire.len(), 1);
+        assert_eq!(wire[0].objects, frame.objects);
     }
 }

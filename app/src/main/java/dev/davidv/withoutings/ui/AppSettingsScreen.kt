@@ -33,6 +33,7 @@ import dev.davidv.withoutings.ui.theme.AppTheme
 @Composable
 fun AppSettingsScreen(
     connected: Boolean,
+    onProbeFrame: (Int) -> Unit,
     testNotification: UInt?,
     onPostTestNotification: () -> Unit,
     onDismissTestNotification: () -> Unit,
@@ -64,6 +65,27 @@ fun AppSettingsScreen(
                     onClick = onDismissTestNotification,
                 )
             }
+
+            Eyebrow("frame size probe", Modifier.padding(top = 12.dp))
+            Text(
+                "Sends a frame of the chosen size. The watch reboots above its " +
+                    "reassembly limit, so the size that kills it is the answer.",
+                style = AppTheme.type.body,
+                color = AppTheme.colors.onSurfaceTertiary,
+            )
+            var probe by remember { mutableStateOf(190) }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                OutlineAction("-8") { probe -= 8 }
+                OutlineAction("-1") { probe -= 1 }
+                Text("$probe", Modifier.weight(1f), style = AppTheme.type.summaryValue)
+                OutlineAction("+1") { probe += 1 }
+                OutlineAction("+8") { probe += 8 }
+            }
+            OutlineAction("Send $probe bytes", Modifier.fillMaxWidth()) { onProbeFrame(probe) }
 
             Eyebrow("this watch", Modifier.padding(top = 12.dp))
             Text(

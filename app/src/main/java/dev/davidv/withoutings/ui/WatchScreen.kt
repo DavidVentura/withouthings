@@ -268,7 +268,7 @@ private fun String.saysSomethingBeyond(title: String): Boolean {
     return !description.contains(name) && !name.contains(description)
 }
 
-/** The eight the watch offers from its own menu, sent as one list. */
+/** The eight the watch offers from its own menu, sent as one list, in order. */
 @Composable
 fun WatchActivitiesScreen(
     activities: List<Activity>,
@@ -277,52 +277,55 @@ fun WatchActivitiesScreen(
     onAcknowledge: () -> Unit,
     onBack: () -> Unit,
 ) {
-    // Chosen first, so what is on can be reviewed at a glance, then the rest
-    // by name — the watch knows fifty-odd activities and hunting for one in
-    // the order they happen to be numbered is hopeless.
-    fun ordered(list: List<Activity>) =
-        list.sortedWith(compareByDescending<Activity> { it.enabled }.thenBy { it.name })
-
-    var menu by remember { mutableStateOf(ordered(activities)) }
+    // The menu is the chosen ones in the order the watch lists them, which is
+    // the order they arrive in, so it is the whole of the local state: being
+    // on the menu is being in this list. The rest are the catalogue to add
+    // from, by name — the watch knows fifty-odd activities and hunting for one
+    // in the order they happen to be numbered is hopeless.
+    var menu by remember { mutableStateOf(activities.filter { it.enabled }) }
     var edited by remember { mutableStateOf(false) }
-    LaunchedEffect(activities) { if (!edited) menu = ordered(activities) }
-    val chosen = menu.count { it.enabled }
+    LaunchedEffect(activities) { if (!edited) menu = activities.filter { it.enabled } }
+    val rest = activities
+        .filterNot { candidate -> menu.any { it.id == candidate.id } }
+        .sortedBy { it.name }
 
     DetailScaffold(title = "Quick launch", onBack = onBack) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             Text(
-                "The activities the watch offers from its own menu, in the order " +
-                    "it lists them. It holds $ACTIVITY_SLOTS.",
+                "The activities the watch offers from its own menu. Long-press and " +
+                    "drag to set the order it lists them in. It holds $ACTIVITY_SLOTS.",
                 Modifier.padding(bottom = 8.dp),
                 style = AppTheme.type.rowMeta,
                 color = AppTheme.colors.onSurfaceTertiary,
             )
-            // CMD_WORKOUT_SCREEN_SET empties the menu instead of setting it,
-            // and the official app never sent one in the capture the frame was
-            // inferred from — so the shape is a guess, and a destructive one.
-            // Reading the menu works; writing it is off until that is settled.
-            EmptyNote(
-                "Read-only for now: sending this list empties the watch's menu " +
-                    "rather than setting it. Use the Withings app to change it.",
-                Modifier.padding(bottom = 8.dp),
-            )
-            menu.forEachIndexed { index, activity ->
+            if (menu.isEmpty()) {
+                EmptyNote("Nothing on the menu yet — turn one on below.")
+            }
+            ReorderableColumn(menu, onReorder = { edited = true; menu = it }) { activity, _ ->
+                Text(
+                    activity.name,
+                    Modifier.weight(1f).padding(start = 12.dp),
+                    style = AppTheme.type.rowTitle,
+                )
+                AppToggle(true) {
+                    edited = true
+                    menu = menu.filterNot { it.id == activity.id }
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            SectionHeader("All activities")
+            rest.forEachIndexed { index, activity ->
                 if (index > 0) RowDivider(inset = 0.dp)
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(activity.name, Modifier.weight(1f), style = AppTheme.type.rowTitle)
-                    AppToggle(
-                        activity.enabled,
-                        // The menu holds eight; refuse the ninth rather than
-                        // letting the watch silently drop it.
-                        enabled = activity.enabled || chosen < ACTIVITY_SLOTS,
-                    ) { on ->
+                    // The menu holds eight; refuse the ninth rather than
+                    // letting the watch silently drop it.
+                    AppToggle(false, enabled = menu.size < ACTIVITY_SLOTS) {
                         edited = true
-                        menu = menu.toMutableList().also {
-                            it[index] = activity.copy(enabled = on)
-                        }
+                        menu = menu + activity.copy(enabled = true)
                     }
                 }
             }
@@ -331,11 +334,11 @@ fun WatchActivitiesScreen(
         SaveFooter(
             edited = edited,
             saveState = saveState,
-            enabled = false,
+            enabled = edited && menu.isNotEmpty(),
             onAcknowledge = onAcknowledge,
             onSaved = onBack,
         ) {
-            onApply(menu.filter { it.enabled }.map { it.id })
+            onApply(menu.map { it.id })
         }
     }
 }

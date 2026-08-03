@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,9 +40,11 @@ fun ActivityDetailScreen(
     window: LongRange,
     nowMs: Long,
     onWindowChange: (LongRange) -> Unit,
+    onDelete: (RecordedEntry) -> Unit,
     onBack: () -> Unit,
 ) {
     var scrubAtMs by remember { mutableStateOf<Long?>(null) }
+    var asking by remember { mutableStateOf(false) }
 
     val hr = state.hr.map { ChartPoint(it.atMs, it.bpm.toDouble()) }
     val temperature = state.workoutTemp
@@ -128,7 +132,27 @@ fun ActivityDetailScreen(
         }
 
         Spacer(Modifier.weight(1f))
+
+        // Only the recorded ones: a detected activity is read back out of the
+        // step counts on the next refresh, so deleting one would be a lie.
+        if (entry is RecordedEntry) {
+            OutlineAction("Delete this session", Modifier.fillMaxWidth()) { asking = true }
+        }
     }
+
+    if (!asking || entry !is RecordedEntry) return
+    AlertDialog(
+        onDismissRequest = { asking = false },
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        title = { Text("Delete this session?") },
+        text = { Text("Set timings and workout start/end cannot be recovered") },
+        confirmButton = {
+            TextButton(onClick = { asking = false; onDelete(entry) }) { Text("Delete") }
+        },
+        dismissButton = {
+            TextButton(onClick = { asking = false }) { Text("Cancel") }
+        },
+    )
 }
 
 /** Three figures side by side, ruled apart. The screen's only summary. */

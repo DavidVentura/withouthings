@@ -155,11 +155,16 @@ private const val MAX_NIGHT_SEARCH_DAYS = 400
 /// never got the command.
 private const val RESET_TIMEOUT_MS = 20_000L
 
-/// How long to wait for the watch to read a set back before giving up on it.
-/// The round trip is a frame each way over a link that wakes a few times a
-/// second, so this is generous rather than tight.
-private const val ACK_TIMEOUT_MS = 6_000L
-private const val ACK_POLL_MS = 200L
+/// How long to wait for the watch to confirm a set, and how often to ask.
+///
+/// Asking matters more than waiting. The read that confirms a write is a
+/// command like any other, and one sent while the watch is still storing a
+/// menu goes unanswered — so the wait re-asks rather than sitting on a reply
+/// that never came. With that, a few seconds is plenty; without it, no amount
+/// of waiting helps.
+private const val ACK_TIMEOUT_MS = 8_000L
+private const val ACK_POLL_MS = 250L
+private const val ACK_REASK_MS = 1_500L
 
 /// `FEATURE_ID_NOTIFICATION`. Not a sensor, and not a switch of its own — it
 /// is moved by [WatchViewModel.setNotifications] along with the ANCS config.
@@ -504,6 +509,25 @@ class WatchViewModel : ViewModel() {
         zoom(entry.startedAtMs..(entry.endedAtMs ?: System.currentTimeMillis()))
     }
 
+    /**
+     * Forget a recorded session.
+     *
+     * Only the recorded ones can be forgotten: a detected activity is worked
+     * out from the minute stream on every refresh, so there is nothing there
+     * to delete and it would be back before the screen closed.
+     */
+    fun deleteActivity(entry: RecordedEntry) {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { service.deleteWorkout(entry.workout.id) } }
+                .onFailure { Log.w(TAG, "delete: refused", it) }
+            _selectedActivity.value = null
+            // The log is rebuilt on age alone, and it has just become wrong.
+            _state.value = _state.value.copy(activityLogAtMs = 0)
+            refresh()
+        }
+    }
+
     fun followLive() {
         _window.value = null
         refresh()
@@ -549,6 +573,17 @@ class WatchViewModel : ViewModel() {
         }
     }
 
+    /// Deliberately send an oversize frame, to find where the watch stops
+    /// taking them. Over the limit it reboots, which is the measurement.
+    fun probeFrame(bytes: Int) {
+        val service = WatchRepository.get() ?: return
+        Log.w(TAG, "probe: sending a frame of $bytes bytes")
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { service.probeFrame(bytes.toUInt()) }
+                .onFailure { Log.w(TAG, "probe: refused", it) }
+        }
+    }
+
     fun requestScreens() {
         val service = WatchRepository.get() ?: return
         viewModelScope.launch(Dispatchers.IO) { runCatching { service.requestScreens() } }
@@ -566,14 +601,19 @@ class WatchViewModel : ViewModel() {
         val wanted = ids.map { it.toUByte() }
         save(
             send = { it.setScreens(ids) },
+            reask = { it.requestScreens() },
             confirm = { it.screens().filter { s -> s.enabled }.map { s -> s.id } == wanted },
             unconfirmed = "The watch did not come back with the new order.",
         )
     }
 
     fun applyActivities(ids: List<UInt>) {
+        Log.i(TAG, "quick launch: sending $ids")
         save(
             send = { it.setActivities(ids) },
+            reask = { it.requestDeviceConfig() },
+            // In order: the menu is listed in the order it was written, so a
+            // menu that came back reordered is not the menu that was asked for.
             confirm = { it.activities().filter { a -> a.enabled }.map { a -> a.id } == ids },
             unconfirmed = "The watch did not come back with the new menu.",
         )
@@ -590,6 +630,7 @@ class WatchViewModel : ViewModel() {
     fun applyFeatures(changes: List<Pair<UShort, Boolean>>) {
         save(
             send = { service -> changes.forEach { (id, on) -> service.setHealthFeature(id, on) } },
+            reask = null,
             confirm = null,
             unconfirmed = "",
         )
@@ -605,6 +646,7 @@ class WatchViewModel : ViewModel() {
     fun applyUser(birthSecs: Long, weightGrams: UInt, heightCm: UInt) {
         save(
             send = { it.setUser(birthSecs, weightGrams, heightCm) },
+            reask = { it.requestDeviceConfig() },
             confirm = {
                 val held = it.snapshot().user
                 held != null &&
@@ -618,6 +660,9 @@ class WatchViewModel : ViewModel() {
 
     private fun save(
         send: (WatchService) -> Unit,
+        /// Asks the watch again for what it now holds. Without this the wait
+        /// is just a long look at whatever the last reply happened to say.
+        reask: ((WatchService) -> Unit)?,
         confirm: ((WatchService) -> Boolean)?,
         unconfirmed: String,
     ) {
@@ -628,13 +673,17 @@ class WatchViewModel : ViewModel() {
         }
         _save.value = SaveState.Saving
         viewModelScope.launch {
-            val sent = withContext(Dispatchers.IO) {
+            // The reason rather than a guess at it: this fails for things the
+            // watch never saw — a glyph size it has not declared yet — and
+            // calling those a refusal sends anyone reading it looking at the
+            // wrong end of the link.
+            val refusal = withContext(Dispatchers.IO) {
                 runCatching { send(service) }
                     .onFailure { Log.w(TAG, "save: the write itself failed", it) }
-                    .isSuccess
+                    .exceptionOrNull()
             }
-            if (!sent) {
-                _save.value = SaveState.Failed("The watch refused it.")
+            if (refusal != null) {
+                _save.value = SaveState.Failed(refusal.message ?: "The write failed.")
                 return@launch
             }
             if (confirm == null) {
@@ -642,11 +691,17 @@ class WatchViewModel : ViewModel() {
                 return@launch
             }
             val agreed = withTimeoutOrNull(ACK_TIMEOUT_MS) {
+                var sinceAsked = 0L
                 while (!withContext(Dispatchers.IO) {
                         runCatching { confirm(service) }.getOrDefault(false)
                     }
                 ) {
+                    if (sinceAsked <= 0) {
+                        withContext(Dispatchers.IO) { runCatching { reask?.invoke(service) } }
+                        sinceAsked = ACK_REASK_MS
+                    }
                     delay(ACK_POLL_MS)
+                    sinceAsked -= ACK_POLL_MS
                 }
                 true
             } == true
@@ -655,7 +710,11 @@ class WatchViewModel : ViewModel() {
                 // arrives can be told apart from one that disagreed.
                 Log.w(TAG, "save: no confirmation in ${ACK_TIMEOUT_MS}ms")
                 runCatching {
-                    Log.w(TAG, "save: watch holds ${service.activities().filter { it.enabled }}")
+                    Log.w(
+                        TAG,
+                        "save: watch holds " +
+                            service.activities().filter { it.enabled }.map { it.id },
+                    )
                     Log.w(TAG, "save: screens ${service.screens().filter { it.enabled }}")
                 }
             }
@@ -701,18 +760,11 @@ class WatchViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) { runCatching { service.setWearPosition(position) } }
     }
 
+    /// The clock is put right on every connection; this is the same thing on
+    /// demand, for when the drift is the thing being looked at.
     fun setWatchTime() {
         val service = WatchRepository.get() ?: return
-        val now = Instant.now()
-        val rules = ZoneId.systemDefault().rules
-        val next = rules.nextTransition(now)?.let {
-            DstChange(it.instant.toEpochMilli(), it.offsetAfter.totalSeconds)
-        }
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                service.setTime(now.toEpochMilli(), rules.getOffset(now).totalSeconds, next)
-            }
-        }
+        viewModelScope.launch(Dispatchers.IO) { runCatching { syncWatchClock(service) } }
     }
 
 

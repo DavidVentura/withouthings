@@ -330,6 +330,10 @@ class WatchConnectionService : Service() {
             handler.postDelayed(tick, TICK_MS)
             runCatching { service?.onConnected() }
                 .onFailure { Log.e(TAG, "onConnected", it) }
+            // Before anything is read off the watch, so what comes back is
+            // stamped with a clock that agrees with this one.
+            runCatching { service?.let { svc -> syncWatchClock(svc) } }
+                .onFailure { Log.w(TAG, "clock sync", it) }
         }
 
         override fun onBytes(bytes: ByteArray) {

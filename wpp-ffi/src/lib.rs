@@ -517,6 +517,11 @@ pub trait Rasterizer: Send + Sync {
     fn glyph(&self, codepoint: u32, width: u8, height: u8) -> Bitmap;
     /// The icon for an installed app, by package name.
     fn icon(&self, app_id: String, width: u8, height: u8) -> Bitmap;
+    /// The glyph for an activity, by the id the quick-launch menu uses.
+    ///
+    /// The watch keeps no icons of its own, so writing the menu means drawing
+    /// one for every entry at every size it asked for.
+    fn activity_glyph(&self, activity: u32, width: u8, height: u8) -> Bitmap;
 }
 
 /// A rendered bitmap on its way to the watch, in ARGB8888 and row-major —
@@ -880,12 +885,12 @@ impl WatchService {
             }),
             active_workout: store
                 .active_workout(self.device_id)?
-                .map(|(id, start, sub)| WorkoutSummary {
-                    id,
-                    started_at_ms: start * 1000,
+                .map(|active| WorkoutSummary {
+                    id: active.id,
+                    started_at_ms: active.started_at.0 * 1000,
                     ended_at_ms: None,
-                    subcategory: sub as i32,
-                    activity: activity_name(sub as u32),
+                    subcategory: active.subcategory as i32,
+                    activity: activity_name(active.subcategory as u32),
                 }),
             pending_deletes: pending,
             sync: progress,
@@ -968,6 +973,16 @@ impl WatchService {
                 activity: activity_name(sub as u32),
             })
             .collect())
+    }
+
+    /// Forget a recorded session and the set marks inside it. What the watch
+    /// measured during it is the day's history and stays.
+    pub fn delete_workout(&self, id: i64) -> Result<(), WatchError> {
+        let store = self.store.lock().unwrap();
+        store.delete_workout(self.device_id, id)?;
+        drop(store);
+        self.transport.changed();
+        Ok(())
     }
 
     /// Walks and runs found in the activity stream over a window, oldest
@@ -1092,8 +1107,7 @@ impl WatchService {
     /// Stop the session the watch is running. Does nothing when it is running
     /// none: the watch ignores a stop that does not name the session it has.
     pub fn stop_workout(&self) -> Result<(), WatchError> {
-        let Some((started_at, _, _)) = self.store.lock().unwrap().active_workout(self.device_id)?
-        else {
+        let Some(active) = self.store.lock().unwrap().active_workout(self.device_id)? else {
             return Ok(());
         };
         let actions = self
@@ -1101,7 +1115,7 @@ impl WatchService {
             .lock()
             .unwrap()
             .client
-            .stop_workout(UnixTime(started_at), UnixTime(now_ms() / 1000));
+            .stop_workout(active.started_at, UnixTime(now_ms() / 1000));
         self.dispatch(actions)
     }
 
@@ -1146,6 +1160,54 @@ impl WatchService {
         self.dispatch(actions)
     }
 
+    /// Send a frame of exactly `total_bytes` to find where the watch stops
+    /// accepting them.
+    ///
+    /// The length check happens during reassembly, before the command is even
+    /// looked at, so the command here is a harmless read and the payload is
+    /// padding: what is being measured is the frame, not what it says. Over
+    /// the limit the watch logs "Command too long" and takes a deliberate
+    /// panic, so a probe that reboots it is the answer, not a failure.
+    ///
+    /// Deliberately bypasses the size guard in `write`, which exists to stop
+    /// exactly this happening by accident.
+    pub fn probe_frame(&self, total_bytes: u32) -> Result<(), WatchError> {
+        // Sized by construction rather than arithmetic: the padding object is
+        // length-prefixed, and guessing its overhead is how the first version
+        // of this managed to send nothing at all.
+        let build = |payload: usize| {
+            Frame::new(
+                wpp::commands::Command::CMD_WORKOUT_SCREEN_LIST_GET,
+                vec![wpp::objects::WppObject::ImageData(
+                    wpp::objects::ImageData {
+                        data: vec![0; payload],
+                    },
+                )],
+            )
+        };
+        let want = total_bytes as usize;
+        let mut payload = want.saturating_sub(build(0).to_bytes().len());
+        let mut frame = build(payload);
+        // One correction is enough — the relationship is linear — but loop so
+        // a padding type that ever stops being so cannot lie about the size.
+        for _ in 0..4 {
+            let len = frame.to_bytes().len();
+            if len == want {
+                break;
+            }
+            payload = (payload + want).saturating_sub(len);
+            frame = build(payload);
+        }
+        let bytes = frame.to_bytes();
+        if bytes.len() != want {
+            return Err(WatchError::Protocol {
+                reason: format!("cannot build a frame of exactly {want} bytes"),
+            });
+        }
+        self.transport.write(bytes);
+        Ok(())
+    }
+
     /// Read the quick-launch menu and wear position from the watch.
     pub fn request_device_config(&self) -> Result<(), WatchError> {
         let actions = self.inner.lock().unwrap().client.request_device_config();
@@ -1182,8 +1244,50 @@ impl WatchService {
         activities
     }
 
+    /// Replace the quick-launch menu.
+    ///
+    /// Each entry is sent whole — name, face mode, wake flag, and a glyph at
+    /// every size the watch declared on its screen list. The watch holds no
+    /// catalogue to look an id up in, so a list of ids alone empties the menu.
     pub fn set_activities(&self, ids: Vec<u32>) -> Result<(), WatchError> {
-        let actions = self.inner.lock().unwrap().client.set_activities(&ids);
+        // Every size the watch declared, in the order it declared them. It
+        // draws the menu at both, preferring the larger.
+        let formats = self.inner.lock().unwrap().client.image_formats().to_vec();
+        if formats.is_empty() {
+            return Err(WatchError::Protocol {
+                reason: "the watch has not said what size glyphs it wants yet".to_string(),
+            });
+        }
+        let screens: Vec<wpp::client::WorkoutScreen> = ids
+            .iter()
+            .map(|id| {
+                let (face_mode, flag) = ACTIVITY_FACES
+                    .iter()
+                    .find(|(known, _, _)| known == id)
+                    .map(|(_, face, flag)| (*face, *flag))
+                    .unwrap_or((1, 1));
+                let glyphs = formats
+                    .iter()
+                    .map(|format| {
+                        let drawn =
+                            self.rasterizer
+                                .activity_glyph(*id, format.width, format.height);
+                        (
+                            format.kind,
+                            wpp::image::Mono::pack(&drawn.pixels, drawn.width, drawn.height),
+                        )
+                    })
+                    .collect();
+                wpp::client::WorkoutScreen {
+                    id: *id,
+                    name: activity_name(*id),
+                    face_mode,
+                    flag,
+                    glyphs,
+                }
+            })
+            .collect();
+        let actions = self.inner.lock().unwrap().client.set_activities(&screens);
         self.dispatch(actions)
     }
 
@@ -1663,6 +1767,61 @@ const HEALTH_FEATURES: &[(u16, &str, &str)] = &[
 ];
 
 /// Activity ids and names, from `ConstantsWs.WITHINGS_ACTIVITY_SUBCATEGORY_*`.
+/// How each activity's workout face reads, and whether it may wake the phone.
+///
+/// `face_mode`: 2 where the activity has a pace, 3 where it has a speed, 1
+/// where it has neither. `flag`: 0 where its feature list allows waking the
+/// phone, 1 where it does not. Both are read off the same feature strings the
+/// official app keeps per category.
+const ACTIVITY_FACES: &[(u32, u8, u16)] = &[
+    (1, 2, 0),   // Walking
+    (2, 2, 0),   // Running
+    (3, 2, 0),   // Hiking
+    (4, 1, 1),   // Skating
+    (5, 1, 1),   // BMX
+    (6, 3, 0),   // Cycling
+    (7, 1, 1),   // Swimming
+    (8, 1, 1),   // Surfing
+    (9, 1, 1),   // Kitesurfing
+    (10, 3, 1),  // Windsurfing
+    (11, 1, 1),  // Bodyboard
+    (12, 1, 1),  // Tennis
+    (13, 1, 1),  // Table tennis
+    (14, 1, 1),  // Squash
+    (15, 1, 1),  // Badminton
+    (16, 1, 1),  // Weights
+    (17, 1, 1),  // Calisthenics
+    (18, 1, 0),  // Elliptical
+    (19, 1, 1),  // Pilates
+    (20, 1, 1),  // Basketball
+    (21, 1, 1),  // Soccer
+    (22, 1, 1),  // Football
+    (23, 1, 1),  // Rugby
+    (24, 1, 1),  // Volleyball
+    (25, 1, 1),  // Water polo
+    (26, 3, 0),  // Horse riding
+    (27, 1, 1),  // Golf
+    (28, 1, 1),  // Yoga
+    (29, 1, 1),  // Dancing
+    (30, 1, 1),  // Boxing
+    (31, 1, 1),  // Fencing
+    (32, 1, 1),  // Wrestling
+    (33, 1, 1),  // Martial arts
+    (34, 3, 0),  // Skiing
+    (35, 3, 0),  // Snowboarding
+    (36, 3, 0),  // Other
+    (187, 3, 0), // Rowing
+    (188, 1, 1), // Zumba
+    (191, 1, 1), // Baseball
+    (192, 1, 1), // Handball
+    (193, 1, 1), // Hockey
+    (194, 1, 1), // Ice hockey
+    (195, 1, 1), // Climbing
+    (196, 1, 1), // Ice skating
+    (306, 2, 1), // Indoor walk
+    (307, 1, 0), // Indoor running
+];
+
 const ACTIVITIES: &[(u32, &str)] = &[
     (1, "Walking"),
     (2, "Running"),
@@ -1730,9 +1889,14 @@ fn now_ms() -> i64 {
 impl WatchService {
     /// Run the actions a step produced. Deletes only ever appear here as the
     /// result of a commit, so watch data cannot be dropped before it is safe.
-    fn dispatch(&self, mut actions: Vec<Action>) -> Result<(), WatchError> {
+    fn dispatch(&self, actions: Vec<Action>) -> Result<(), WatchError> {
+        // A queue, not a stack. The order a step produced its actions in is
+        // the order the watch has to see them: a write followed by the read
+        // that confirms it, or a run of frames that only means anything read
+        // front to back.
+        let mut actions: std::collections::VecDeque<Action> = actions.into();
         let mut changed = false;
-        while let Some(action) = actions.pop() {
+        while let Some(action) = actions.pop_front() {
             match action {
                 Action::Send(frame) | Action::Delete(frame) => self.write(&frame),
                 Action::Finished => changed = true,
@@ -1764,8 +1928,14 @@ impl WatchService {
         Ok(())
     }
 
-    fn write(&self, frame: &Frame) {
-        self.transport.write(frame.to_bytes());
+    /// Everything this crate sends leaves through here, which is why the size
+    /// ceiling is applied here and nowhere else: a message is what the watch
+    /// is being told, a frame is what fits, and nothing upstream should carry
+    /// a byte budget it cannot influence.
+    fn write(&self, message: &Frame) {
+        for frame in message.to_wire() {
+            self.transport.write(frame.to_bytes());
+        }
     }
 
     /// Answer the two requests the watch makes for pictures.

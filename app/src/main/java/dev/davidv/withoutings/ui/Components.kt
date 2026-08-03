@@ -3,6 +3,7 @@ package dev.davidv.withoutings.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,21 +25,32 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import dev.davidv.withoutings.ui.theme.AppTheme
+import kotlin.math.roundToInt
 
 /**
  * The pieces every screen is built from.
@@ -775,6 +787,91 @@ fun EmptyNote(text: String, modifier: Modifier = Modifier) {
         style = AppTheme.type.body,
         color = AppTheme.colors.onSurfaceTertiary,
     )
+}
+
+/// Rows of one height, so a drag can be read as a whole number of them.
+val REORDER_ROW_HEIGHT = 52.dp
+
+/**
+ * A short list, dragged into order.
+ *
+ * The order is the caller's — every crossing is reported as a whole new list
+ * rather than kept here — because these lists are sent to the watch in the
+ * order they are shown, and the watch is the one that decides what that means.
+ *
+ * The held row lifts rather than animating into a new position: the reorder is
+ * local until the watch takes it, so nothing has happened yet.
+ */
+@Composable
+fun <T> ReorderableColumn(
+    order: List<T>,
+    onReorder: (List<T>) -> Unit,
+    modifier: Modifier = Modifier,
+    row: @Composable RowScope.(item: T, index: Int) -> Unit,
+) {
+    var dragging by remember { mutableStateOf<Int?>(null) }
+    var dragOffset by remember { mutableStateOf(0f) }
+    val rowPx = with(LocalDensity.current) { REORDER_ROW_HEIGHT.toPx() }
+
+    Column(modifier.fillMaxWidth()) {
+        order.forEachIndexed { index, item ->
+            val held = dragging == index
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(REORDER_ROW_HEIGHT)
+                    .zIndex(if (held) 1f else 0f)
+                    .graphicsLayer { translationY = if (held) dragOffset else 0f }
+                    .then(
+                        if (held) {
+                            Modifier
+                                .shadow(4.dp, RoundedCornerShape(AppTheme.radius.small))
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceContainerLowest,
+                                    RoundedCornerShape(AppTheme.radius.small),
+                                )
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .pointerInput(order) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { dragging = index; dragOffset = 0f },
+                            onDragEnd = { dragging = null; dragOffset = 0f },
+                            onDragCancel = { dragging = null; dragOffset = 0f },
+                            onDrag = { change, amount ->
+                                change.consume()
+                                dragOffset += amount.y
+                                val moved = (dragOffset / rowPx).roundToInt()
+                                val from = dragging ?: return@detectDragGesturesAfterLongPress
+                                val to = (from + moved).coerceIn(0, order.size - 1)
+                                if (to != from) {
+                                    onReorder(
+                                        order.toMutableList().apply { add(to, removeAt(from)) }
+                                    )
+                                    dragging = to
+                                    dragOffset -= moved * rowPx
+                                }
+                            },
+                        )
+                    }
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Rounded.DragIndicator,
+                    null,
+                    Modifier.size(20.dp),
+                    tint = if (held) {
+                        AppTheme.colors.dragHandleActive
+                    } else {
+                        AppTheme.colors.dragHandle
+                    },
+                )
+                row(item, index)
+            }
+        }
+    }
 }
 
 /** A row that goes somewhere. */

@@ -362,7 +362,14 @@ private fun Navigation(
                         model.requestDeviceConfig()
                         nav.navigate(Routes.WATCH_SENSORS)
                     },
-                    onOpenActivities = { nav.navigate(Routes.WATCH_ACTIVITIES) },
+                    // The menu cannot be written until the watch has said what
+                    // size glyphs it wants, and it only says so on the screen
+                    // list reply. Asking on the way in leaves the round trip
+                    // to finish while the list is being chosen.
+                    onOpenActivities = {
+                        model.requestDeviceConfig()
+                        nav.navigate(Routes.WATCH_ACTIVITIES)
+                    },
                     onOpenScreens = {
                         model.requestScreens()
                         nav.navigate(Routes.WATCH_SCREENS)
@@ -440,6 +447,7 @@ private fun Navigation(
                     window = state.hrWindow,
                     nowMs = nowMs,
                     onWindowChange = { model.zoom(it) },
+                    onDelete = { model.deleteActivity(it); nav.popBackStack() },
                     onBack = { nav.popBackStack() },
                 )
             }
@@ -499,6 +507,7 @@ private fun Navigation(
             composable(Routes.SETTINGS) {
                 val testNotification by model.testNotification.collectAsState()
                 AppSettingsScreen(
+                    onProbeFrame = { model.probeFrame(it) },
                     // The watch has to hear the reset before its key is
                     // dropped, so only that half needs a link to say it over.
                     connected = state.link == LinkState.Ready,

@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.util.Log
+import androidx.core.content.ContextCompat
 import uniffi.wpp_ffi.Bitmap
 import uniffi.wpp_ffi.Rasterizer
 
@@ -71,6 +72,25 @@ class AndroidRasterizer(private val context: Context) : Rasterizer {
         return draw(width.toInt(), height.toInt()) { canvas, w, h ->
             // The watch's screen is one bit deep; tinting first is what decides
             // which parts of a colour icon survive the threshold.
+            drawable.setTint(Color.WHITE)
+            drawable.setBounds(0, 0, w, h)
+            drawable.draw(canvas)
+        }
+    }
+
+    override fun activityGlyph(activity: UInt, width: UByte, height: UByte): Bitmap {
+        val res = ACTIVITY_GLYPHS[activity]
+        if (res == null) {
+            // A menu entry with no glyph would still take a slot on the watch
+            // and show nothing in it, so this is worth seeing in the log.
+            Log.w(TAG, "no glyph for activity $activity")
+            return empty()
+        }
+        val drawable = ContextCompat.getDrawable(context, res) ?: return empty()
+        Log.i(TAG, "activity $activity glyph at ${width.toInt()}x${height.toInt()}")
+        return draw(width.toInt(), height.toInt()) { canvas, w, h ->
+            // Same reasoning as an app icon: the watch's screen is one bit
+            // deep, so tint before drawing and let the threshold do the rest.
             drawable.setTint(Color.WHITE)
             drawable.setBounds(0, 0, w, h)
             drawable.draw(canvas)

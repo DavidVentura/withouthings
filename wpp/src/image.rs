@@ -84,11 +84,25 @@ impl Mono {
     }
 
     fn metadata(&self) -> ImageMetadata {
+        self.metadata_of(IMAGE_TYPE)
+    }
+
+    /// The same, for a picture the watch asked for by a type of its own.
+    ///
+    /// The workout screen list declares the kinds it wants glyphs in, and the
+    /// reply has to name the kind it is answering — the size alone does not
+    /// say which, and two kinds can share one.
+    pub fn metadata_of(&self, kind: u8) -> ImageMetadata {
         ImageMetadata {
-            r#type: IMAGE_TYPE,
+            r#type: kind,
             width: self.width,
             height: self.height,
         }
+    }
+
+    /// The bits as `ImageData` objects, in the 64-byte pieces the app sends.
+    pub fn data_objects(&self) -> Vec<WppObject> {
+        self.chunks()
     }
 
     /// The bits as `ImageData` objects. An empty bitmap is still one object,
@@ -267,6 +281,8 @@ impl GlyphRequest {
             objects.extend(bitmap.chunks());
         }
         objects.push(WppObject::Null(Null {}));
+        // The watch says so itself — "WPP_CMD_GLYPH_GET must be sent in
+        // multiple packets" — and its accumulator is what joins them again.
         Frame::new(
             Command::CMD_GLYPH_GET.with_channel(Channel::SlaveRequest),
             objects,
@@ -322,6 +338,8 @@ impl IconRequest {
         objects.push(WppObject::ImageMetadata(icon.metadata()));
         objects.extend(icon.chunks());
         objects.push(WppObject::Null(Null {}));
+        // A full-size icon does not fit a frame, and one frame too many is
+        // what reboots the watch rather than anything about the picture.
         Frame::new(
             Command::CMD_NOTIFICATION_GET.with_channel(Channel::SlaveRequest),
             objects,
@@ -552,7 +570,33 @@ mod tests {
             height: 3,
         };
         let icon = Mono::pack(&[WHITE; 9], 3, 3);
-        let reply = request.reply(&icon);
-        assert_eq!(Frame::parse(&reply.to_bytes()).unwrap(), reply);
+        for frame in request.reply(&icon).to_wire() {
+            assert_eq!(Frame::parse(&frame.to_bytes()).unwrap(), frame);
+        }
+    }
+
+    /// The size the watch declares for its larger icon, which is what made a
+    /// single-frame reply reboot it.
+    #[test]
+    fn a_full_size_icon_is_split_into_frames_the_watch_survives() {
+        let request = IconRequest {
+            app_id: "dev.davidv.withoutings".into(),
+            kind: 1,
+            width: 34,
+            height: 34,
+        };
+        let frames = request
+            .reply(&Mono::pack(&[WHITE; 34 * 34], 34, 34))
+            .to_wire();
+        assert!(
+            frames.len() > 1,
+            "170 bytes of icon cannot ride in one frame"
+        );
+        for frame in &frames {
+            assert!(
+                frame.to_bytes().len() <= crate::frame::MAX_FRAME_BYTES,
+                "every frame must be sendable",
+            );
+        }
     }
 }
