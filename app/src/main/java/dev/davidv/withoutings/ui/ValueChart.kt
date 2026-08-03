@@ -59,6 +59,12 @@ private const val ECG_MV_PER_SMALL_SQUARE = 0.1
 
 private val NICE_STEPS = listOf(1.0, 2.0, 5.0)
 
+private val AXIS_STRIP = 16.dp
+private val SESSION_LABEL_STRIP = 13.dp
+private val PAN_HANDLE_MIN = 24.dp
+
+private enum class ChartGesture { Scrub, Pan }
+
 private val hms = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 private val hm = SimpleDateFormat("HH:mm", Locale.getDefault())
 private val dm = SimpleDateFormat("d MMM", Locale.getDefault())
@@ -125,23 +131,32 @@ fun ValueChart(
     val bounds = rememberUpdatedState(limit)
     val todayStart = dayStart(System.currentTimeMillis())
 
+    val axisStrip = if (showTimeAxis) AXIS_STRIP else 0.dp
+    val labelStripDp = if (labelSessions) SESSION_LABEL_STRIP else 0.dp
+    val panHandle = maxOf(axisStrip + labelStripDp, PAN_HANDLE_MIN)
+
     Box(
         modifier
             .fillMaxWidth()
             .then(if (height != null) Modifier.height(height) else Modifier)
-            .pointerInput(Unit) {
+            .pointerInput(panHandle) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     var live = latest.value
                     var pointers = 1
-                    onScrub?.invoke(atX(down.position.x, size.width, live))
+                    val mode = if (
+                        onWindowChange != null && down.position.y >= size.height - panHandle.toPx()
+                    ) ChartGesture.Pan else ChartGesture.Scrub
+                    if (mode == ChartGesture.Scrub) {
+                        onScrub?.invoke(atX(down.position.x, size.width, live))
+                    }
                     do {
                         val event = awaitPointerEvent()
                         pointers = maxOf(pointers, event.changes.count { it.pressed })
                         val zoom = event.calculateZoom()
                         val pan = event.calculatePan()
 
-                        if (pointers < 2 && onScrub != null) {
+                        if (pointers < 2 && mode == ChartGesture.Scrub && onScrub != null) {
                             val x = event.changes.firstOrNull()?.position?.x ?: continue
                             onScrub(atX(x, size.width, live))
                             event.changes.forEach { it.consume() }
@@ -176,8 +191,8 @@ fun ValueChart(
             }
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val axisHeight = if (showTimeAxis) 16.dp.toPx() else 0f
-            val labelStrip = if (labelSessions) 13.dp.toPx() else 0f
+            val axisHeight = axisStrip.toPx()
+            val labelStrip = labelStripDp.toPx()
             val plotHeight = size.height - axisHeight - labelStrip
             if (size.width <= 0 || plotHeight <= 0) return@Canvas
 

@@ -63,7 +63,11 @@ fun NowScreen(
         title = "Now",
         subtitle = "${fullDate(nowMs)} · ${clock(nowMs)}",
         trailing = {
-            BatteryPill(batteryLabel(state), dotColor = linkDot(state))
+            BatteryPill(
+                batteryLabel(state),
+                dotColor = linkDot(state),
+                onClick = { onOpenMetric(MetricStyle.Battery) },
+            )
             GlyphButton(Icons.Rounded.Settings, "App settings", onClick = onOpenSettings)
         },
     ) {

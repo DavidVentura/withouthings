@@ -97,7 +97,7 @@ fun ActivityDetailScreen(
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "pinch to zoom",
+                    "pinch to zoom · drag axis to pan",
                     style = AppTheme.type.axisSmall,
                     color = AppTheme.colors.onSurfaceDim,
                 )

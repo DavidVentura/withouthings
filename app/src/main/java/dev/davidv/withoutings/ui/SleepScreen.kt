@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.ui.theme.AppTheme
 import uniffi.wpp_ffi.Night
@@ -119,63 +120,52 @@ fun SleepScreen(
 
 @Composable
 private fun ScoreCard(night: Night, asleepMs: Long, inBedMs: Long) {
-    AccentCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(AppTheme.radius.hero)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val score = night.score
-            Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) {
-                ScoreRing(score?.total?.toInt() ?: 0)
-                Text(
-                    score?.total?.toString() ?: "—",
-                    style = AppTheme.type.summaryValue,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
-            Column(Modifier.weight(1f).padding(start = 18.dp)) {
-                Text(
-                    scoreHeadline(night.score),
-                    style = AppTheme.type.cardTitle,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    buildString {
-                        append("${hoursMinutes(asleepMs)} asleep")
-                        if (inBedMs > asleepMs) {
-                            append(", ${compactDuration(inBedMs - asleepMs)} awake")
-                        }
-                        append(" across ${night.stages.size} stretches.")
-                    },
-                    style = AppTheme.type.bodyLarge,
-                    color = AppTheme.colors.onAccentSecondary,
-                )
-            }
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        val score = night.score
+        Box(Modifier.size(SCORE_RING), contentAlignment = Alignment.Center) {
+            ScoreRing(score?.total?.toInt() ?: 0)
+            Text(
+                score?.total?.toString() ?: "—",
+                style = AppTheme.type.focalInverse,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            buildString {
+                append("${hoursMinutes(asleepMs)} asleep")
+                val awakeMs = inBedMs - asleepMs
+                val spells = night.stages.count { it.stage == SleepStage.AWAKE }
+                if (awakeMs > WAKE_NOTABLE_MS || spells > WAKE_NOTABLE_SPELLS) {
+                    append(
+                        ". Woke up $spells ${if (spells == 1) "time" else "times"}, " +
+                            "totaling ${compactDuration(awakeMs)}",
+                    )
+                } else if (awakeMs > 0) {
+                    append(", ${compactDuration(awakeMs)} awake")
+                }
+                append(".")
+            },
+            style = AppTheme.type.rowTitle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
-private fun scoreHeadline(score: SleepScore?): String {
-    if (score == null) return "No score for this night"
-    val parts = listOf(
-        "duration" to score.duration.toInt(),
-        "efficiency" to score.efficiency.toInt(),
-        "deep" to score.deep.toInt(),
-        "REM" to score.rem.toInt(),
-        "continuity" to score.continuity.toInt(),
-    )
-    val best = parts.maxBy { it.second }
-    val worst = parts.minBy { it.second }
-    if (best.second - worst.second < EVEN_NIGHT_SPREAD) return "An even night"
-    return "${best.first.replaceFirstChar { it.uppercase() }} led, ${worst.first} lagged"
-}
-
-private const val EVEN_NIGHT_SPREAD = 15
+private val SCORE_RING = 115.dp
+private const val WAKE_NOTABLE_MS = 5 * 60_000L
+private const val WAKE_NOTABLE_SPELLS = 5
 
 @Composable
 private fun ScoreRing(score: Int) {
-    val track = AppTheme.colors.ringTrack
+    val track = AppTheme.colors.track
     val fill = MaterialTheme.colorScheme.primary
-    Canvas(Modifier.size(96.dp)) {
-        val stroke = 8.dp.toPx()
+    Canvas(Modifier.size(SCORE_RING)) {
+        val stroke = SCORE_RING.toPx() / 12
         val inset = stroke / 2
         val diameter = size.minDimension - stroke
         drawArc(
