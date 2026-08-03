@@ -1,5 +1,6 @@
 package dev.davidv.withoutings.ui
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.davidv.withoutings.LinkState
@@ -32,6 +33,7 @@ import uniffi.wpp_ffi.HealthFeature
 import uniffi.wpp_ffi.Point
 import uniffi.wpp_ffi.WearPosition
 import uniffi.wpp_ffi.WatchScreen
+import uniffi.wpp_ffi.WatchService
 import uniffi.wpp_ffi.WorkoutSummary
 
 /// An entry in the activities list. The watch records what someone starts on
@@ -80,6 +82,36 @@ data class UiState(
     val liveEcg: List<Double> = emptyList(),
     /// Charging periods over the metric window, shaded behind the battery.
     val charging: List<Marker> = emptyList(),
+    /// A fortnight of the metric on screen, which is what its personal band and
+    /// its own-history delta are read off. Never plotted: the chart shows the
+    /// selected window, and this is only the yardstick beside it.
+    val metricBaseline: List<ChartPoint> = emptyList(),
+    val home: HomeState = HomeState(),
+)
+
+/**
+ * What the two home screens are made of.
+ *
+ * Gathered apart from the rest because it is expensive — a fortnight of two
+ * series plus a night's staging — and because none of it changes between the
+ * four-times-a-second polls behind a live workout.
+ */
+data class HomeState(
+    /// Midnight to now, which is what the day ribbon draws and what every
+    /// figure on Now is derived from.
+    val hr: List<ChartPoint> = emptyList(),
+    val temperature: List<ChartPoint> = emptyList(),
+    val respiratory: List<ChartPoint> = emptyList(),
+    /// The same two over a fortnight, for "3 below your fortnight average".
+    val fortnightHr: List<ChartPoint> = emptyList(),
+    val fortnightTemperature: List<ChartPoint> = emptyList(),
+    val lastNight: Night? = null,
+    /// Everything recorded since local midnight, newest first.
+    val today: List<ActivityEntry> = emptyList(),
+    /// Distance and energy the watch counted for today, if it has yet.
+    val distanceMetres: Double? = null,
+    val calories: Double? = null,
+    val builtAtMs: Long = 0,
 )
 
 private const val DEFAULT_WINDOW_MS = 10 * 60 * 1000L
@@ -92,6 +124,15 @@ private const val DETECTED_HISTORY_MS = 7L * 24 * 60 * 60 * 1000
 /// How stale the activities list may get. Only a sync can change it, and those
 /// are a quarter of an hour apart.
 private const val ACTIVITY_LOG_MAX_AGE_MS = 10_000L
+
+/// How stale the home bundle may get. Same reasoning as the activities list,
+/// and it is rebuilt on the same pass.
+private const val HOME_MAX_AGE_MS = 10_000L
+
+/// The stretch of a person's own past that the app compares today against.
+/// A fortnight is long enough to cover a routine and short enough that a
+/// change in one is not averaged away.
+private const val BASELINE_MS = 14L * 24 * 60 * 60 * 1000
 
 /// Six seconds is what a clinical strip shows on one line at 25 mm/s.
 private const val INITIAL_ECG_SPAN_MS = 6_000L
@@ -113,6 +154,31 @@ private const val MAX_NIGHT_SEARCH_DAYS = 400
 /// on hearing the link die. Erasing takes a moment; a link that outlives this
 /// never got the command.
 private const val RESET_TIMEOUT_MS = 20_000L
+
+/// How long to wait for the watch to read a set back before giving up on it.
+/// The round trip is a frame each way over a link that wakes a few times a
+/// second, so this is generous rather than tight.
+private const val ACK_TIMEOUT_MS = 6_000L
+private const val ACK_POLL_MS = 200L
+
+/// `FEATURE_ID_NOTIFICATION`. Not a sensor, and not a switch of its own — it
+/// is moved by [WatchViewModel.setNotifications] along with the ANCS config.
+internal const val NOTIFICATION_FEATURE: UShort = 19u
+
+/**
+ * How a page-sized edit is going.
+ *
+ * Sent and taken are different things, so they are different states: the
+ * button stays disabled through [Saving] and the page only leaves on [Saved].
+ */
+sealed interface SaveState {
+    data object Idle : SaveState
+    data object Saving : SaveState
+    data object Saved : SaveState
+    data class Failed(val reason: String) : SaveState
+}
+
+private const val TAG = "WatchViewModel"
 
 class WatchViewModel : ViewModel() {
 
@@ -164,6 +230,10 @@ class WatchViewModel : ViewModel() {
     private val _metricWindow = MutableStateFlow<LongRange?>(null)
     val metricWindow: StateFlow<LongRange?> = _metricWindow.asStateFlow()
 
+    /// How a page-sized edit is going, for the one button that sends it.
+    private val _save = MutableStateFlow<SaveState>(SaveState.Idle)
+    val save: StateFlow<SaveState> = _save.asStateFlow()
+
     private val _stopwatchStartedAt = MutableStateFlow<Long?>(null)
     val stopwatchStartedAt: StateFlow<Long?> = _stopwatchStartedAt.asStateFlow()
 
@@ -210,6 +280,16 @@ class WatchViewModel : ViewModel() {
                     // synced the windows it is made of.
                     val previous = _state.value
                     val rebuildLog = now - previous.activityLogAtMs > ACTIVITY_LOG_MAX_AGE_MS
+                    val log = if (rebuildLog) {
+                        (
+                            service.workouts(50u).map(::RecordedEntry) +
+                                service
+                                    .detectedActivities(now - DETECTED_HISTORY_MS, now)
+                                    .map(::DetectedEntry)
+                            ).sortedByDescending { it.startedAtMs }
+                    } else {
+                        previous.activityLog
+                    }
                     UiState(
                         link = WatchRepository.link.value,
                         snapshot = snapshot,
@@ -221,17 +301,9 @@ class WatchViewModel : ViewModel() {
                             .series(Metric.TEMPERATURE, range.first, range.last, MAX_CHART_POINTS)
                             .map { p: Point -> ChartPoint(p.atMs, p.value) },
                         markers = service.markers(range.first, range.last),
-                        activityLog = if (rebuildLog) {
-                            (
-                                service.workouts(50u).map(::RecordedEntry) +
-                                    service
-                                        .detectedActivities(now - DETECTED_HISTORY_MS, now)
-                                        .map(::DetectedEntry)
-                                ).sortedByDescending { it.startedAtMs }
-                        } else {
-                            previous.activityLog
-                        },
+                        activityLog = log,
                         activityLogAtMs = if (rebuildLog) now else previous.activityLogAtMs,
+                        home = home(service, log, previous.home, now),
                         ecgs = service.ecgs(),
                         // The client holds the samples until the next
                         // recording starts, so a finished one stays readable;
@@ -259,6 +331,14 @@ class WatchViewModel : ViewModel() {
                         } else {
                             emptyList()
                         },
+                        metricBaseline = service
+                            .series(
+                                _metricStyle.value.metric,
+                                now - BASELINE_MS,
+                                now,
+                                MAX_CHART_POINTS,
+                            )
+                            .map { p: Point -> ChartPoint(p.atMs, p.value) },
                         latest = MetricStyle.entries.mapNotNull { style ->
                             service.latestValue(style.metric)
                                 ?.let { style to ChartPoint(it.atMs, it.value) }
@@ -268,6 +348,44 @@ class WatchViewModel : ViewModel() {
             }
             if (next != null) _state.value = next
         }
+    }
+
+    /**
+     * The home bundle, rebuilt no more often than it can change.
+     *
+     * A fortnight of two series and a night's staging is far too much to
+     * re-read behind a live workout, which polls four times a second; nothing
+     * in here can move faster than a sync anyway.
+     */
+    private fun home(
+        service: uniffi.wpp_ffi.WatchService,
+        log: List<ActivityEntry>,
+        previous: HomeState,
+        nowMs: Long,
+    ): HomeState {
+        if (nowMs - previous.builtAtMs < HOME_MAX_AGE_MS) return previous
+        val midnight = dayStart(nowMs)
+        val fortnightAgo = nowMs - BASELINE_MS
+
+        fun series(metric: Metric, fromMs: Long) = service
+            .series(metric, fromMs, nowMs, MAX_CHART_POINTS)
+            .map { p: Point -> ChartPoint(p.atMs, p.value) }
+
+        val nightRange = nightRangeFor(0)
+        return HomeState(
+            hr = series(Metric.HEART_RATE, midnight),
+            temperature = series(Metric.TEMPERATURE, midnight),
+            respiratory = series(Metric.RESPIRATORY_RATE, midnight),
+            fortnightHr = series(Metric.HEART_RATE, fortnightAgo),
+            fortnightTemperature = series(Metric.TEMPERATURE, fortnightAgo),
+            lastNight = runCatching { service.night(nightRange.first, nightRange.last) }.getOrNull(),
+            today = log.filter { it.startedAtMs >= midnight },
+            distanceMetres = service.latestValue(Metric.DISTANCE)
+                ?.takeIf { it.atMs >= midnight }?.value,
+            calories = service.latestValue(Metric.CALORIES)
+                ?.takeIf { it.atMs >= midnight }?.value,
+            builtAtMs = nowMs,
+        )
     }
 
     private fun metricRange(): LongRange {
@@ -290,7 +408,7 @@ class WatchViewModel : ViewModel() {
     private fun nightRange(): LongRange = nightRangeFor(_nightsAgo.value)
 
     private fun nightRangeFor(daysAgo: Int): LongRange {
-        val midnight = todayStartMs() - daysAgo * 86_400_000L
+        val midnight = dayStart(System.currentTimeMillis()) - daysAgo * 86_400_000L
         return (midnight - 6 * 3600_000L)..(midnight + 12 * 3600_000L)
     }
 
@@ -436,14 +554,146 @@ class WatchViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) { runCatching { service.requestScreens() } }
     }
 
+    /**
+     * Hand a whole list to the watch and wait to be told it took it.
+     *
+     * The screen and activity sets are written and then read straight back —
+     * the watch may reject or reorder — so what confirms them is the watch's
+     * own answer, not the write returning. Nothing is called saved until that
+     * answer matches what went out.
+     */
     fun applyScreens(ids: ByteArray) {
-        val service = WatchRepository.get() ?: return
-        viewModelScope.launch(Dispatchers.IO) { runCatching { service.setScreens(ids) } }
+        val wanted = ids.map { it.toUByte() }
+        save(
+            send = { it.setScreens(ids) },
+            confirm = { it.screens().filter { s -> s.enabled }.map { s -> s.id } == wanted },
+            unconfirmed = "The watch did not come back with the new order.",
+        )
+    }
+
+    fun applyActivities(ids: List<UInt>) {
+        save(
+            send = { it.setActivities(ids) },
+            confirm = { it.activities().filter { a -> a.enabled }.map { a -> a.id } == ids },
+            unconfirmed = "The watch did not come back with the new menu.",
+        )
+    }
+
+    /**
+     * The health features, as one batch.
+     *
+     * There is no read side for these at all — the watch cannot be asked what
+     * it has on — so the only thing that can be confirmed is that every frame
+     * went out. Each write carries the whole set, so they go one at a time and
+     * the last one is what the watch is left holding.
+     */
+    fun applyFeatures(changes: List<Pair<UShort, Boolean>>) {
+        save(
+            send = { service -> changes.forEach { (id, on) -> service.setHealthFeature(id, on) } },
+            confirm = null,
+            unconfirmed = "",
+        )
+    }
+
+    /**
+     * The wearer's profile, which the watch holds rather than this app.
+     *
+     * A write replaces the whole record, and the set is answered with Null, so
+     * the only confirmation is reading it back — same shape as the screen and
+     * activity lists.
+     */
+    fun applyUser(birthSecs: Long, weightGrams: UInt, heightCm: UInt) {
+        save(
+            send = { it.setUser(birthSecs, weightGrams, heightCm) },
+            confirm = {
+                val held = it.snapshot().user
+                held != null &&
+                    held.birthSecs == birthSecs &&
+                    held.weightGrams == weightGrams &&
+                    held.heightCm == heightCm
+            },
+            unconfirmed = "The watch did not come back with the new profile.",
+        )
+    }
+
+    private fun save(
+        send: (WatchService) -> Unit,
+        confirm: ((WatchService) -> Boolean)?,
+        unconfirmed: String,
+    ) {
+        val service = WatchRepository.get()
+        if (service == null) {
+            _save.value = SaveState.Failed("Not connected to the watch.")
+            return
+        }
+        _save.value = SaveState.Saving
+        viewModelScope.launch {
+            val sent = withContext(Dispatchers.IO) {
+                runCatching { send(service) }
+                    .onFailure { Log.w(TAG, "save: the write itself failed", it) }
+                    .isSuccess
+            }
+            if (!sent) {
+                _save.value = SaveState.Failed("The watch refused it.")
+                return@launch
+            }
+            if (confirm == null) {
+                _save.value = SaveState.Saved
+                return@launch
+            }
+            val agreed = withTimeoutOrNull(ACK_TIMEOUT_MS) {
+                while (!withContext(Dispatchers.IO) {
+                        runCatching { confirm(service) }.getOrDefault(false)
+                    }
+                ) {
+                    delay(ACK_POLL_MS)
+                }
+                true
+            } == true
+            if (!agreed) {
+                // What the watch came back with, so a confirmation that never
+                // arrives can be told apart from one that disagreed.
+                Log.w(TAG, "save: no confirmation in ${ACK_TIMEOUT_MS}ms")
+                runCatching {
+                    Log.w(TAG, "save: watch holds ${service.activities().filter { it.enabled }}")
+                    Log.w(TAG, "save: screens ${service.screens().filter { it.enabled }}")
+                }
+            }
+            _save.value = if (agreed) SaveState.Saved else SaveState.Failed(unconfirmed)
+        }
+    }
+
+    /** Called once the screen has acted on the outcome, win or lose. */
+    fun acknowledgeSave() {
+        _save.value = SaveState.Idle
     }
 
     fun requestDeviceConfig() {
         val service = WatchRepository.get() ?: return
         viewModelScope.launch(Dispatchers.IO) { runCatching { service.requestDeviceConfig() } }
+    }
+
+    /**
+     * Ask the watch to begin a session.
+     *
+     * Nothing is shown as started here: the watch stamps the session with its
+     * own clock and reports it back, and that report is what the screen
+     * follows. A start the watch declines therefore shows as nothing happening,
+     * which is the truth.
+     */
+    fun startWorkout(activity: UInt) {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { service.startWorkout(activity) }
+                .onFailure { Log.w(TAG, "start workout $activity", it) }
+        }
+    }
+
+    fun stopWorkout() {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { service.stopWorkout() }.onFailure { Log.w(TAG, "stop workout", it) }
+        }
     }
 
     fun setWearPosition(position: WearPosition) {
@@ -465,15 +715,6 @@ class WatchViewModel : ViewModel() {
         }
     }
 
-    fun setActivities(ids: List<UInt>) {
-        val service = WatchRepository.get() ?: return
-        viewModelScope.launch(Dispatchers.IO) { runCatching { service.setActivities(ids) } }
-    }
-
-    fun setFeature(id: UShort, enabled: Boolean) {
-        val service = WatchRepository.get() ?: return
-        viewModelScope.launch(Dispatchers.IO) { runCatching { service.setHealthFeature(id, enabled) } }
-    }
 
     /**
      * Erase the watch and let go of it.
@@ -507,9 +748,22 @@ class WatchViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) { runCatching { service.requestRefresh() } }
     }
 
+    /**
+     * Phone notifications, both halves at once.
+     *
+     * The feature tag and the ANCS switch are two mechanisms for one thing: the
+     * tag is the entitlement and the config is the live setting. Offering them
+     * as two switches let them disagree, and since the tag has no read side
+     * nothing could ever detect that they had — so the tag follows the switch.
+     */
     fun setNotifications(enabled: Boolean) {
         val service = WatchRepository.get() ?: return
-        viewModelScope.launch(Dispatchers.IO) { runCatching { service.setNotifications(enabled) } }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                service.setNotifications(enabled)
+                service.setHealthFeature(NOTIFICATION_FEATURE, enabled)
+            }
+        }
     }
 
     /**

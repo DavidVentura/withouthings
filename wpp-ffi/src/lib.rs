@@ -13,7 +13,7 @@ use wpp::capture::{FrameReassembler, StreamItem};
 use wpp::client::{Action, Category, Client, Credentials, Event, Phase};
 use wpp::image::{GlyphRequest, IconRequest, Mono};
 use wpp::pairing::{Pairing, PairingState};
-use wpp::units::{Celsius, Millivolts, UnixMillis};
+use wpp::units::{Celsius, Millivolts, UnixMillis, UnixTime};
 use wpp::Frame;
 use wpp_store::Store;
 
@@ -383,9 +383,42 @@ pub struct SyncProgress {
     pub streams_total: u32,
 }
 
+/// What the watch says it is, out of the probe reply that opens every session.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct DeviceIdentity {
+    pub name: String,
+    /// The firmware, as the number its image is named after — 3411, not a
+    /// dotted version. Nothing on the wire says it any other way.
+    pub firmware: u32,
+    pub bootloader: u32,
+    /// Absent where the watch reports no version rather than a version; this
+    /// one reports none for either.
+    pub hardware: Option<u32>,
+    pub rescue: Option<u32>,
+}
+
+/// Who the watch says is wearing it.
+///
+/// The watch holds this record and hands it back on request, so it is the store
+/// of record and not something this app owns. Editing it means writing the
+/// whole thing back with [`WatchService::set_user`].
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct UserProfile {
+    /// Unix seconds. Signed, so a birth before 1970 is representable.
+    pub birth_secs: i64,
+    pub weight_grams: u32,
+    pub height_cm: u32,
+    pub first_name: String,
+}
+
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct Snapshot {
     pub progress: Progress,
+    /// Absent until the watch has been probed once. Kept afterwards, so a
+    /// disconnected watch still has a version to print.
+    pub device: Option<DeviceIdentity>,
+    /// Absent until the watch has been asked. Kept afterwards.
+    pub user: Option<UserProfile>,
     pub battery: Option<Battery>,
     pub latest_hr: Option<HrPoint>,
     pub latest_temperature: Option<Temperature>,
@@ -405,6 +438,22 @@ pub struct EcgLead {
     pub millivolts: Vec<f64>,
 }
 
+/// The watch's rhythm verdict on a recording.
+///
+/// Computed on the watch, by the classifier its firmware calls ECGSW2, and sent
+/// with the waveform. Nothing here reads a rhythm off the trace: reporting the
+/// watch's answer is a different act from making one up.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EcgRhythm {
+    NoAfib,
+    Afib,
+    Inconclusive,
+    PoorRecording,
+    RateOutOfRange,
+    /// The watch ran, and declined to conclude.
+    NoResult,
+}
+
 /// A recording as listed, without carrying its samples across the boundary.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct EcgSummary {
@@ -412,9 +461,16 @@ pub struct EcgSummary {
     pub measured_at_ms: i64,
     pub seconds: f64,
     pub leads: u32,
-    /// Median rate over the recording, from its own R waves. Absent when too
-    /// few beats were found to be worth quoting.
+    /// Median rate over the recording, as the watch read it.
+    ///
+    /// Absent when the watch sent none, which it does for a recording too noisy
+    /// to count beats in — 3 of 21 in the official app's own history, and
+    /// exactly the 3 it classified as a poor recording. Reading a rate off a
+    /// trace the watch declined to read is not a rate, so nothing is shown.
     pub heart_rate: Option<u32>,
+    /// Absent where the watch sent no classification — every recording synced
+    /// before this app collected them, and any it declines to judge.
+    pub rhythm: Option<EcgRhythm>,
 }
 
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
@@ -423,6 +479,8 @@ pub struct EcgRecording {
     pub measured_at_ms: i64,
     pub sampling_hz: u32,
     pub leads: Vec<EcgLead>,
+    pub heart_rate: Option<u32>,
+    pub rhythm: Option<EcgRhythm>,
 }
 
 /// What the host must do on the Rust side's behalf.
@@ -780,6 +838,21 @@ impl WatchService {
         let progress_phase = phase;
         Ok(Snapshot {
             progress: progress_phase,
+            user: store.watch_user(self.device_id)?.map(|user| UserProfile {
+                birth_secs: user.birth as i64,
+                weight_grams: user.weight,
+                height_cm: user.height,
+                first_name: user.first_name,
+            }),
+            device: store
+                .identity(self.device_id)?
+                .map(|identity| DeviceIdentity {
+                    name: identity.name,
+                    firmware: identity.firmware,
+                    bootloader: identity.bootloader,
+                    hardware: identity.hardware,
+                    rescue: identity.rescue,
+                }),
             battery: store.latest(self.device_id, 6)?.map(|(at, value)| Battery {
                 percent: value as u32,
                 at_ms: at,
@@ -965,6 +1038,70 @@ impl WatchService {
     /// Replace the watch's screens. The order given is the order it cycles.
     pub fn set_screens(&self, ids: Vec<u8>) -> Result<(), WatchError> {
         let actions = self.inner.lock().unwrap().client.set_screens(&ids);
+        self.dispatch(actions)
+    }
+
+    /// Change the profile the watch holds.
+    ///
+    /// The watch takes the record whole, so the fields not offered here — the
+    /// account id it was associated under, and the gender byte nothing in this
+    /// app interprets — are carried over from the one it last reported. Without
+    /// a profile read back there is nothing to carry, and this refuses rather
+    /// than writing zeroes into the fields it cannot see.
+    pub fn set_user(
+        &self,
+        birth_secs: i64,
+        weight_grams: u32,
+        height_cm: u32,
+    ) -> Result<(), WatchError> {
+        let held = self
+            .store
+            .lock()
+            .unwrap()
+            .watch_user(self.device_id)?
+            .ok_or_else(|| WatchError::Protocol {
+                reason: "the watch has not reported a profile to edit yet".to_string(),
+            })?;
+        let actions = self
+            .inner
+            .lock()
+            .unwrap()
+            .client
+            .set_user(&wpp::client::UserProfile {
+                birth: birth_secs as i32,
+                weight: weight_grams,
+                height: height_cm,
+                ..held
+            });
+        self.dispatch(actions)
+    }
+
+    /// Start a session on the watch, by the activity ids its quick-launch menu
+    /// uses. The watch stamps it with its own clock; the session appears once
+    /// it reports the start back.
+    pub fn start_workout(&self, activity: u32) -> Result<(), WatchError> {
+        let actions = self
+            .inner
+            .lock()
+            .unwrap()
+            .client
+            .start_workout(activity as i16, UnixTime(now_ms() / 1000));
+        self.dispatch(actions)
+    }
+
+    /// Stop the session the watch is running. Does nothing when it is running
+    /// none: the watch ignores a stop that does not name the session it has.
+    pub fn stop_workout(&self) -> Result<(), WatchError> {
+        let Some((started_at, _, _)) = self.store.lock().unwrap().active_workout(self.device_id)?
+        else {
+            return Ok(());
+        };
+        let actions = self
+            .inner
+            .lock()
+            .unwrap()
+            .client
+            .stop_workout(UnixTime(started_at), UnixTime(now_ms() / 1000));
         self.dispatch(actions)
     }
 
@@ -1358,12 +1495,14 @@ impl WatchService {
                     .unwrap_or(1);
                 // Two bytes a sample, shared out between the leads.
                 let per_lead = bytes / 2 / leads.max(1) as i64;
+                let verdict = verdict_of(&store, id);
                 EcgSummary {
                     id,
                     measured_at_ms: measured_at,
                     seconds: per_lead as f64 / (hz.max(1) as f64),
                     leads: leads as u32,
-                    heart_rate: rate_of(&store, id, hz as u16, leads),
+                    heart_rate: verdict.0,
+                    rhythm: verdict.1,
                 }
             })
             .collect())
@@ -1390,37 +1529,44 @@ impl WatchService {
                 .millivolts
                 .push(Millivolts::from_counts(counts).0);
         }
+        let verdict = verdict_of(&store, id);
         Ok(Some(EcgRecording {
             id,
             measured_at_ms: measured_at,
             sampling_hz: hz as u32,
             leads,
+            heart_rate: verdict.0,
+            rhythm: verdict.1,
         }))
     }
 }
 
-/// Rate read out of a recording's own waveform.
-///
-/// Measured on the filtered channel where there is one: the raw lead carries
-/// baseline wander that the detector would count as beats.
-fn rate_of(store: &wpp_store::Store, id: i64, hz: u16, leads: usize) -> Option<u32> {
-    let (_, signal_type, _, _, samples) = store.ecg(id).ok().flatten()?;
-    let names: Vec<&'static str> = wpp::signal::SignalKind::from_type_id(signal_type as u16)
-        .map(|k| k.leads().iter().map(|l| l.name()).collect())
-        .unwrap_or_default();
-    let channel = names
-        .iter()
-        .position(|n| n.ends_with("FILTERED"))
-        .unwrap_or(0);
-    let lane: Vec<i16> = samples
-        .chunks_exact(2)
-        .skip(channel)
-        .step_by(leads.max(1))
-        .map(|p| i16::from_le_bytes([p[0], p[1]]))
-        .collect();
-    wpp::analysis::detect_r_peaks(&lane, hz)
-        .heart_rate()
-        .map(|bpm| bpm.0 as u32)
+/// What the watch itself said about a recording: its median rate, and its
+/// rhythm. Both absent for a recording it sent no conclusions with.
+fn verdict_of(store: &wpp_store::Store, id: i64) -> (Option<u32>, Option<EcgRhythm>) {
+    let Ok(measures) = store.ecg_measures(id) else {
+        return (None, None);
+    };
+    let reading = |kind: wpp::signal::MeasureType| {
+        measures
+            .iter()
+            .find(|(t, _, _)| *t == kind.0 as i64)
+            .map(|(_, value, exponent)| *value as f64 * 10f64.powi(*exponent as i32))
+    };
+    let rhythm = reading(wpp::signal::MeasureType::AFIB_RESULT).map(|code| {
+        match wpp::signal::Rhythm::of(code as i32) {
+            wpp::signal::Rhythm::NoAfib => EcgRhythm::NoAfib,
+            wpp::signal::Rhythm::Afib => EcgRhythm::Afib,
+            wpp::signal::Rhythm::Inconclusive => EcgRhythm::Inconclusive,
+            wpp::signal::Rhythm::PoorRecording => EcgRhythm::PoorRecording,
+            wpp::signal::Rhythm::RateOutOfRange => EcgRhythm::RateOutOfRange,
+            wpp::signal::Rhythm::NoResult => EcgRhythm::NoResult,
+        }
+    });
+    let rate = reading(wpp::signal::MeasureType::HEART_RATE)
+        .filter(|bpm| *bpm > 0.0)
+        .map(|bpm| bpm.round() as u32);
+    (rate, rhythm)
 }
 
 /// `BatteryStatus.battery_state` when a charger is attached.

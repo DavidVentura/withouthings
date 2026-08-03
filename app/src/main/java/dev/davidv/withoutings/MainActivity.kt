@@ -6,14 +6,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
@@ -22,41 +26,54 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import dev.davidv.withoutings.ble.PairingSession
 import dev.davidv.withoutings.ble.PairingStage
 import dev.davidv.withoutings.ble.WatchConnectionService
-import dev.davidv.withoutings.ui.IdleScreen
+import dev.davidv.withoutings.ui.ActivitiesScreen
+import dev.davidv.withoutings.ui.ActivityDetailScreen
+import dev.davidv.withoutings.ui.AppSettingsScreen
+import dev.davidv.withoutings.ui.BottomNav
 import dev.davidv.withoutings.ui.EcgDetailScreen
-import dev.davidv.withoutings.ui.EcgListScreen
+import dev.davidv.withoutings.ui.LIVE_ECG_HZ
 import dev.davidv.withoutings.ui.LiveEcgScreen
+import dev.davidv.withoutings.ui.LiveWorkoutScreen
 import dev.davidv.withoutings.ui.MetricScreen
 import dev.davidv.withoutings.ui.MetricStyle
+import dev.davidv.withoutings.ui.NowScreen
 import dev.davidv.withoutings.ui.PairingScreen
-import dev.davidv.withoutings.ui.SleepScreen
-import dev.davidv.withoutings.ui.WatchSettingsScreen
-import dev.davidv.withoutings.ui.WatchViewModel
-import dev.davidv.withoutings.ui.ActivityScreen
-import dev.davidv.withoutings.ui.ActivitiesScreen
 import dev.davidv.withoutings.ui.RecordedEntry
+import dev.davidv.withoutings.ui.SleepScreen
+import dev.davidv.withoutings.ui.Tab
+import dev.davidv.withoutings.ui.TodayScreen
+import dev.davidv.withoutings.ui.WatchActivitiesScreen
+import dev.davidv.withoutings.ui.WatchScreensScreen
+import dev.davidv.withoutings.ui.WatchSensorsScreen
+import dev.davidv.withoutings.ui.WatchTab
+import dev.davidv.withoutings.ui.WatchUserScreen
+import dev.davidv.withoutings.ui.WatchViewModel
 import dev.davidv.withoutings.ui.theme.WithoutingsTheme
-
-/// The rate the watch streams a live ECG at, and records one at.
-private const val LIVE_ECG_HZ = 300
+import kotlinx.coroutines.delay
 
 private object Routes {
-    const val HOME = "home"
     const val ACTIVITY = "activity"
-    const val ACTIVITIES = "activities"
-    const val ECGS = "ecgs"
+    const val LIVE = "live"
     const val SLEEP = "sleep"
     const val ECG = "ecg"
     const val LIVE_ECG = "live-ecg"
     const val SETTINGS = "settings"
-    const val METRIC = "metric/{metric}"
-
-    fun metric(style: MetricStyle) = "metric/${style.name}"
+    const val METRIC = "metric"
+    const val WATCH_USER = "watch-user"
+    const val WATCH_SENSORS = "watch-sensors"
+    const val WATCH_ACTIVITIES = "watch-activities"
+    const val WATCH_SCREENS = "watch-screens"
 }
+
+/// How often the clock in a header and the elapsed time on a session are
+/// redrawn. Fast enough that a minute never reads as stale, slow enough that
+/// an idle screen is not recomposing for nothing.
+private const val CLOCK_TICK_MS = 1_000L
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -185,26 +202,49 @@ private fun Navigation(
     val window by model.window.collectAsState()
     val startedAt by model.stopwatchStartedAt.collectAsState()
     val elapsed by model.elapsed.collectAsState()
+    val metricStyle by model.metricStyle.collectAsState()
     val metricWindow by model.metricWindow.collectAsState()
     val selected by model.selectedActivity.collectAsState()
     val ecg by model.ecg.collectAsState()
     val ecgWindow by model.ecgWindow.collectAsState()
     val liveWindow by model.liveWindow.collectAsState()
     val night by model.night.collectAsState()
+    val saving by model.save.collectAsState()
     val nightWindow by model.nightWindow.collectAsState()
 
+    // Wall-clock time, ticked here rather than read at each callsite: a header
+    // that says "18:58" and a session that says "12:04" have to agree, and two
+    // independent reads of the clock do not.
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowMs = System.currentTimeMillis()
+            delay(CLOCK_TICK_MS)
+        }
+    }
+
     // A workout is a place you go, not a state the home screen turns into:
-    // taking over the start destination left nowhere for Back to go.
+    // taking over the start destination left nowhere for Back to go. It is
+    // also a place that stops existing — when the watch ends the session the
+    // screen has nothing left to mirror, so it leaves rather than counting up
+    // from a start time that is now history.
     val activeStartedAt = state.snapshot?.activeWorkout?.startedAtMs
     LaunchedEffect(activeStartedAt) {
-        if (activeStartedAt != null) nav.navigate(Routes.ACTIVITY)
+        val onLive = nav.currentBackStackEntry?.destination?.route == Routes.LIVE
+        when {
+            activeStartedAt != null && !onLive -> nav.navigate(Routes.LIVE)
+            activeStartedAt == null && onLive -> nav.popBackStack()
+        }
     }
 
     // Read the watch's configuration once the link is up, rather than when
     // the settings screen opens. Asked there, the round trip happens while
     // the screen is already showing values it does not have yet.
     LaunchedEffect(state.link) {
-        if (state.link == LinkState.Ready) model.requestDeviceConfig()
+        if (state.link == LinkState.Ready) {
+            model.requestDeviceConfig()
+            model.requestScreens()
+        }
     }
 
     // The waveform is only sent while something is showing it, so the screen
@@ -214,150 +254,268 @@ private fun Navigation(
         if (measuring) nav.navigate(Routes.LIVE_ECG)
     }
 
-    NavHost(nav, startDestination = Routes.HOME) {
-        composable(Routes.HOME) {
-            // The charging state is only shown here, so it is only worth
-            // asking for here — not behind a workout, which is exactly when
-            // the extra traffic would cost something.
-            DisposableEffect(Unit) {
-                model.watchCharging(true)
-                onDispose { model.watchCharging(false) }
+    val entry by nav.currentBackStackEntryAsState()
+    val tab = Tab.entries.firstOrNull { it.route == entry?.destination?.route }
+
+    // Switching tab is not the same as pushing a screen: it unwinds back to
+    // the tab and keeps what that tab had. Going to Activity from a link on
+    // Now has to do this too, or the bottom bar and the back stack end up
+    // telling different stories about where you are.
+    fun selectTab(target: Tab) {
+        nav.navigate(target.route) {
+            // Qualified: the screen's own `saveState` is in scope here and
+            // shadows the builder's property of the same name.
+            popUpTo(Tab.Now.route) { this.saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        NavHost(
+            nav,
+            startDestination = Tab.Now.route,
+            modifier = Modifier.weight(1f),
+        ) {
+            composable(Tab.Now.route) {
+                // The charging state is only shown here, so it is only worth
+                // asking for here — not behind a workout, which is exactly when
+                // the extra traffic would cost something.
+                DisposableEffect(Unit) {
+                    model.watchCharging(true)
+                    onDispose { model.watchCharging(false) }
+                }
+                NowScreen(
+                    state = state,
+                    nowMs = nowMs,
+                    onOpenMetric = {
+                        model.showMetric(it)
+                        nav.navigate(Routes.METRIC)
+                    },
+                    onOpenSleep = {
+                        model.showNight()
+                        nav.navigate(Routes.SLEEP)
+                    },
+                    onOpenActivities = { selectTab(Tab.Activity) },
+                    onOpenActivity = {
+                        model.showActivity(it)
+                        nav.navigate(Routes.ACTIVITY)
+                    },
+                    onOpenLive = { nav.navigate(Routes.LIVE) },
+                    onStartWorkout = { model.startWorkout(it) },
+                    onOpenSettings = { nav.navigate(Routes.SETTINGS) },
+                )
             }
-            IdleScreen(
-                state = state,
-                onOpenActivities = { nav.navigate(Routes.ACTIVITIES) },
-                onOpenEcgs = { nav.navigate(Routes.ECGS) },
-                onOpenSleep = {
-                    model.showNight()
-                    nav.navigate(Routes.SLEEP)
-                },
-                onOpenMetric = { nav.navigate(Routes.metric(it)) },
-                onOpenSettings = {
-                    model.requestDeviceConfig()
-                    model.requestScreens()
-                    nav.navigate(Routes.SETTINGS)
-                },
-                onRefresh = { model.requestRefresh() },
-            )
+
+            composable(Tab.Today.route) {
+                TodayScreen(
+                    state = state,
+                    nowMs = nowMs,
+                    onOpenActivity = {
+                        model.showActivity(it)
+                        nav.navigate(Routes.ACTIVITY)
+                    },
+                    onOpenSleep = {
+                        model.showNight()
+                        nav.navigate(Routes.SLEEP)
+                    },
+                )
+            }
+
+            composable(Tab.Activity.route) {
+                ActivitiesScreen(
+                    entries = state.activityLog,
+                    recordings = state.ecgs,
+                    nowMs = nowMs,
+                    onSelect = {
+                        model.showActivity(it)
+                        nav.navigate(Routes.ACTIVITY)
+                    },
+                    onSelectEcg = {
+                        model.showEcg(it.id)
+                        nav.navigate(Routes.ECG)
+                    },
+                )
+            }
+
+            composable(Tab.Watch.route) {
+                WatchTab(
+                    state = state,
+                    nowMs = nowMs,
+                    onWearPosition = { model.setWearPosition(it) },
+                    // Remembered as well as sent: the watch drops the setting
+                    // over a reboot, and coming back with notifications on
+                    // costs half the idle radio until something notices.
+                    onNotifications = {
+                        settings.notifications = it
+                        model.setNotifications(it)
+                    },
+                    onSync = { model.requestDeviceConfig(); model.requestRefresh() },
+                    onReconnect = { WatchConnectionService.reconnect(context) },
+                    onSetTime = { model.setWatchTime() },
+                    onOpenBattery = {
+                        model.showMetric(MetricStyle.Battery)
+                        nav.navigate(Routes.METRIC)
+                    },
+                    onOpenUser = { nav.navigate(Routes.WATCH_USER) },
+                    onOpenSensors = {
+                        model.requestDeviceConfig()
+                        nav.navigate(Routes.WATCH_SENSORS)
+                    },
+                    onOpenActivities = { nav.navigate(Routes.WATCH_ACTIVITIES) },
+                    onOpenScreens = {
+                        model.requestScreens()
+                        nav.navigate(Routes.WATCH_SCREENS)
+                    },
+                )
+            }
+
+            composable(Routes.WATCH_USER) {
+                WatchUserScreen(
+                    user = state.snapshot?.user,
+                    saveState = saving,
+                    onApply = { birth, weight, height ->
+                        model.applyUser(birth, weight, height)
+                    },
+                    onAcknowledge = { model.acknowledgeSave() },
+                    onBack = { nav.popBackStack() },
+                )
+            }
+
+            composable(Routes.WATCH_SENSORS) {
+                WatchSensorsScreen(
+                    features = state.features,
+                    saveState = saving,
+                    onApply = { model.applyFeatures(it) },
+                    onAcknowledge = { model.acknowledgeSave() },
+                    onBack = { nav.popBackStack() },
+                )
+            }
+
+            composable(Routes.WATCH_ACTIVITIES) {
+                WatchActivitiesScreen(
+                    activities = state.activities,
+                    saveState = saving,
+                    onApply = { model.applyActivities(it) },
+                    onAcknowledge = { model.acknowledgeSave() },
+                    onBack = { nav.popBackStack() },
+                )
+            }
+
+            composable(Routes.WATCH_SCREENS) {
+                WatchScreensScreen(
+                    screens = state.screens,
+                    saveState = saving,
+                    onReload = { model.requestScreens() },
+                    onApply = { model.applyScreens(it) },
+                    onAcknowledge = { model.acknowledgeSave() },
+                    onBack = { nav.popBackStack() },
+                )
+            }
+
+            composable(Routes.LIVE) {
+                LiveWorkoutScreen(
+                    state = state,
+                    // Only ever the session the watch is running. Falling back
+                    // to whatever was last opened made a finished walk look
+                    // like a workout that had been going for a day.
+                    workout = state.snapshot?.activeWorkout,
+                    window = state.hrWindow,
+                    nowMs = nowMs,
+                    restElapsedMs = elapsed,
+                    resting = startedAt != null,
+                    following = window == null,
+                    onWindowChange = { model.zoom(it) },
+                    onFollowLive = { model.followLive() },
+                    onToggleRest = { model.toggleStopwatch() },
+                    onStopWorkout = { model.stopWorkout() },
+                    onBack = { nav.popBackStack() },
+                )
+            }
+
+            composable(Routes.ACTIVITY) {
+                ActivityDetailScreen(
+                    state = state,
+                    entry = selected,
+                    window = state.hrWindow,
+                    nowMs = nowMs,
+                    onWindowChange = { model.zoom(it) },
+                    onBack = { nav.popBackStack() },
+                )
+            }
+
+            composable(Routes.METRIC) {
+                MetricScreen(
+                    style = metricStyle,
+                    state = state,
+                    window = metricWindow
+                        ?: ((nowMs - metricStyle.defaultSpan)..nowMs),
+                    nowMs = nowMs,
+                    onWindowChange = { model.metricZoom(it) },
+                    onRange = { model.metricRangeSpan(it) },
+                    onSelectStyle = { model.showMetric(it) },
+                    onOpenSession = { session ->
+                        state.activityLog
+                            .firstOrNull { it.startedAtMs == session.span.fromMs }
+                            ?.let {
+                                model.showActivity(it)
+                                nav.navigate(Routes.ACTIVITY)
+                            }
+                    },
+                    onBack = { nav.popBackStack() },
+                )
+            }
+
+            composable(Routes.SLEEP) {
+                SleepScreen(
+                    night = night,
+                    window = nightWindow ?: 0L..1L,
+                    nowMs = nowMs,
+                    onShift = { model.shiftNight(it) },
+                    onBack = { nav.popBackStack() },
+                )
+            }
+
+            composable(Routes.ECG) {
+                EcgDetailScreen(
+                    recording = ecg,
+                    window = ecgWindow ?: 0L..1L,
+                    onWindowChange = { model.ecgZoom(it) },
+                    onBack = { nav.popBackStack() },
+                )
+            }
+
+            composable(Routes.LIVE_ECG) {
+                LiveEcgScreen(
+                    millivolts = state.liveEcg,
+                    samplingHz = LIVE_ECG_HZ,
+                    recording = state.snapshot?.measuring == true,
+                    window = liveWindow,
+                    onWindowChange = { model.liveEcgZoom(it) },
+                    onBack = { nav.popBackStack() },
+                )
+            }
+
+            composable(Routes.SETTINGS) {
+                val testNotification by model.testNotification.collectAsState()
+                AppSettingsScreen(
+                    // The watch has to hear the reset before its key is
+                    // dropped, so only that half needs a link to say it over.
+                    connected = state.link == LinkState.Ready,
+                    testNotification = testNotification,
+                    onPostTestNotification = { model.postTestNotification() },
+                    onDismissTestNotification = { model.dismissTestNotification() },
+                    onUnpair = onUnpair,
+                    onFactoryReset = onFactoryReset,
+                    onBack = { nav.popBackStack() },
+                )
+            }
         }
 
-        composable(Routes.ACTIVITY) {
-            ActivityScreen(
-                state = state,
-                entry = state.snapshot?.activeWorkout?.let(::RecordedEntry) ?: selected,
-                window = state.hrWindow,
-                elapsedMs = elapsed,
-                running = startedAt != null,
-                following = window == null,
-                onWindowChange = { model.zoom(it) },
-                onFollowLive = { model.followLive() },
-                onToggleStopwatch = { model.toggleStopwatch() },
-                onBack = { nav.popBackStack() },
-            )
-        }
-
-        composable(Routes.METRIC) { entry ->
-            val style = entry.arguments?.getString("metric")
-                ?.let { runCatching { MetricStyle.valueOf(it) }.getOrNull() }
-                ?: MetricStyle.HeartRate
-            LaunchedEffect(style) { model.showMetric(style) }
-            val now = System.currentTimeMillis()
-            MetricScreen(
-                style = style,
-                points = state.metric,
-                markers = state.charging,
-                window = metricWindow ?: ((now - style.defaultSpan)..now),
-                onWindowChange = { model.metricZoom(it) },
-                onRange = { model.metricRangeSpan(it) },
-                onBack = { nav.popBackStack() },
-            )
-        }
-
-        composable(Routes.ACTIVITIES) {
-            ActivitiesScreen(
-                entries = state.activityLog,
-                onSelect = { entry ->
-                    model.showActivity(entry)
-                    nav.navigate(Routes.ACTIVITY)
-                },
-                onBack = { nav.popBackStack() },
-            )
-        }
-
-        composable(Routes.LIVE_ECG) {
-            LiveEcgScreen(
-                millivolts = state.liveEcg,
-                samplingHz = LIVE_ECG_HZ,
-                recording = state.snapshot?.measuring == true,
-                window = liveWindow,
-                onWindowChange = { model.liveEcgZoom(it) },
-                onBack = { nav.popBackStack() },
-            )
-        }
-
-        composable(Routes.SLEEP) {
-            SleepScreen(
-                night = night,
-                window = nightWindow ?: 0L..1L,
-                onWindowChange = { model.nightZoom(it) },
-                onShift = { model.shiftNight(it) },
-                onBack = { nav.popBackStack() },
-            )
-        }
-
-        composable(Routes.ECGS) {
-            EcgListScreen(
-                recordings = state.ecgs,
-                onSelect = {
-                    model.showEcg(it.id)
-                    nav.navigate(Routes.ECG)
-                },
-                onBack = { nav.popBackStack() },
-            )
-        }
-
-        composable(Routes.ECG) {
-            EcgDetailScreen(
-                recording = ecg,
-                window = ecgWindow ?: 0L..1L,
-                onWindowChange = { model.ecgZoom(it) },
-                onBack = { nav.popBackStack() },
-            )
-        }
-
-        composable(Routes.SETTINGS) {
-            val testNotification by model.testNotification.collectAsState()
-            WatchSettingsScreen(
-                wearPosition = state.wearPosition,
-                activities = state.activities,
-                features = state.features,
-                screens = state.screens,
-                notifications = state.notifications,
-                testNotification = testNotification,
-                onWearPosition = { model.setWearPosition(it) },
-                onActivities = { model.setActivities(it) },
-                onFeature = { id, on -> model.setFeature(id, on) },
-                // Remembered as well as sent: the watch drops the setting over
-                // a reboot, and coming back with notifications on costs half
-                // the idle radio until something notices.
-                onNotifications = {
-                    settings.notifications = it
-                    model.setNotifications(it)
-                },
-                onPostTestNotification = { model.postTestNotification() },
-                onDismissTestNotification = { model.dismissTestNotification() },
-                onReloadDevice = { model.requestDeviceConfig() },
-                onReconnect = { WatchConnectionService.reconnect(context) },
-                onSetTime = { model.setWatchTime() },
-                onReloadScreens = { model.requestScreens() },
-                onApplyScreens = { model.applyScreens(it) },
-                // The watch has to hear the reset before its key is dropped,
-                // so only that half needs a link to say it over.
-                connected = state.link == LinkState.Ready,
-                onUnpair = onUnpair,
-                onFactoryReset = onFactoryReset,
-                onBack = { nav.popBackStack() },
-            )
+        // Only the four tabs carry it; a pushed screen is somewhere you came
+        // from, and the way back is the arrow it already has.
+        if (tab != null) {
+            BottomNav(tab) { target -> if (target != tab) selectTab(target) }
         }
     }
 }

@@ -4,7 +4,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -16,21 +15,18 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import dev.davidv.withoutings.ui.theme.AppTheme
 import uniffi.wpp_ffi.SleepBand
 import uniffi.wpp_ffi.SleepStage
 
 /**
- * Top to bottom, so that read upwards the lanes run awake, light, deep, REM.
- * Not the wire order, which is awake, light, deep, REM from zero.
+ * Top to bottom, so that read downwards the lanes run awake, REM, light, deep
+ * — shallowest to deepest, which is how a hypnogram is read.
  */
-private val lanes = listOf(SleepStage.REM, SleepStage.DEEP, SleepStage.LIGHT, SleepStage.AWAKE)
+private val lanes = listOf(SleepStage.AWAKE, SleepStage.REM, SleepStage.LIGHT, SleepStage.DEEP)
 
-/**
- * Wide enough for "Awake" beside the lanes, and used by every chart on the
- * sleep screen so they share one time axis.
- */
-val SLEEP_GUTTER = 46.dp
+/** Wide enough for "Awake" beside the lanes, in the mono the labels are set in. */
+val SLEEP_GUTTER = 42.dp
 
 fun stageName(stage: SleepStage): String = when (stage) {
     SleepStage.AWAKE -> "Awake"
@@ -39,49 +35,47 @@ fun stageName(stage: SleepStage): String = when (stage) {
     SleepStage.DEEP -> "Deep"
 }
 
+/** The stage order the design gives, deepest first, for lists and totals. */
+val STAGE_ORDER = listOf(SleepStage.DEEP, SleepStage.REM, SleepStage.LIGHT, SleepStage.AWAKE)
+
 @Composable
 fun stageColor(stage: SleepStage): Color {
-    val scheme = MaterialTheme.colorScheme
+    val colors = AppTheme.colors
     return when (stage) {
-        SleepStage.AWAKE -> scheme.outline
-        SleepStage.REM -> scheme.tertiary
-        SleepStage.LIGHT -> scheme.primary.copy(alpha = 0.45f)
-        SleepStage.DEEP -> scheme.primary
+        SleepStage.DEEP -> colors.sleepDeep
+        SleepStage.REM -> colors.sleepRem
+        SleepStage.LIGHT -> colors.sleepLight
+        SleepStage.AWAKE -> colors.sleepAwake
     }
 }
 
 /**
- * The watch's own staging over the same window the other charts draw, so the
- * three line up when one of them is panned.
+ * The watch's own staging, lane by lane.
  *
- * Deliberately not interactive: the gestures live on the value charts, and this
- * follows the window they publish.
+ * Deliberately not interactive: the night is a shape to be seen rather than a
+ * series to be scrubbed, and the numbers under it say everything a cursor
+ * would.
  */
 @Composable
 fun Hypnogram(
     stages: List<SleepBand>,
     window: LongRange,
     modifier: Modifier = Modifier,
-    // The lanes keep their depth once the time axis has taken its 16dp.
-    height: Dp = 126.dp,
-    /// Must match the value charts above and below, or the same instant sits at
-    /// a different x in each.
+    height: Dp = 138.dp,
     gutterLeftDp: Dp = SLEEP_GUTTER,
 ) {
     val measurer = rememberTextMeasurer()
     val colors = lanes.associateWith { stageColor(it) }
-    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val gridColor = MaterialTheme.colorScheme.outlineVariant
+    val labelStyle = AppTheme.type.axisSmall.copy(color = AppTheme.colors.onSurfaceDim)
+    val gridColor = AppTheme.colors.chartGrid
 
     Box(modifier.fillMaxWidth().height(height)) {
         Canvas(Modifier.fillMaxWidth().height(height)) {
             val gutterLeft = gutterLeftDp.toPx()
             val plotWidth = size.width - gutterLeft
             val spanMs = (window.last - window.first).coerceAtLeast(1L).toFloat()
-            // The same room ValueChart leaves under its plot for the time
-            // labels, so the two axes sit at the same depth.
-            val gutterBottom = 16.dp.toPx()
-            val plotHeight = size.height - gutterBottom
+            val axisHeight = 16.dp.toPx()
+            val plotHeight = size.height - axisHeight
             val laneHeight = plotHeight / lanes.size
             val barHeight = laneHeight * 0.62f
 
@@ -90,26 +84,20 @@ fun Hypnogram(
             for (tick in timeTicks(window)) {
                 val at = x(tick)
                 drawLine(gridColor, Offset(at, 0f), Offset(at, plotHeight), 1f)
-                val label = measurer.measure(
-                    timeTickLabel(tick, window),
-                    TextStyle(color = labelColor, fontSize = 9.sp),
-                )
+                val label = measurer.measure(timeTickLabel(tick, window), labelStyle)
                 val left = (at - label.size.width / 2)
-                    .coerceIn(gutterLeft, size.width - label.size.width)
+                    .coerceIn(gutterLeft, (size.width - label.size.width).coerceAtLeast(gutterLeft))
                 drawText(label, topLeft = Offset(left, plotHeight + 3f))
             }
 
             lanes.forEachIndexed { row, stage ->
                 val mid = laneHeight * row + laneHeight / 2
                 drawLine(gridColor, Offset(gutterLeft, mid), Offset(size.width, mid), 1f)
-                val label = measurer.measure(
-                    stageName(stage),
-                    TextStyle(color = labelColor, fontSize = 10.sp),
-                )
+                val label = measurer.measure(stageName(stage), labelStyle)
                 drawText(
                     label,
                     topLeft = Offset(
-                        gutterLeft - label.size.width - 4f,
+                        gutterLeft - label.size.width - 6f,
                         mid - label.size.height / 2,
                     ),
                 )

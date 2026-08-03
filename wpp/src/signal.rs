@@ -7,7 +7,8 @@
 //! `EcgSampleParser.decodeRaw` in the Withings app.
 
 use crate::objects::{
-    StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend, UnitConversionParameters,
+    StoredMeasureData, StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend,
+    UnitConversionParameters,
 };
 use crate::WppObject;
 
@@ -101,6 +102,58 @@ impl SampleFormat {
     }
 }
 
+/// What the watch concluded about a recording, from `StoredMeasureData.type`.
+///
+/// These are `ConstantsWs.MEASURE_TYPE_*` in the app; only the two the watch
+/// sends with an ECG are named here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeasureType(pub u16);
+
+impl MeasureType {
+    /// The median rate the watch read off its own recording.
+    pub const HEART_RATE: MeasureType = MeasureType(11);
+    /// The rhythm classification. Computed **on the watch** — the firmware
+    /// logs it as `[ECG DIAGNOSIS] ECGSW2 WS Diagnosis` — not by the phone and
+    /// not by a server.
+    pub const AFIB_RESULT: MeasureType = MeasureType(130);
+}
+
+/// The rhythm the watch reports, from `ConstantsWs.AFIB_*`.
+///
+/// The codes are finer than any app shows: Health Mate collapses them into
+/// three outcomes through its own string table. They are kept apart here
+/// because the watch draws the distinction, and a reading of "normal heart
+/// rate" is a different claim from "no atrial fibrillation".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rhythm {
+    /// 0, 9, 10.
+    NoAfib,
+    /// 1, 11, 12.
+    Afib,
+    /// 2, 8.
+    Inconclusive,
+    /// 5, 3 — too noisy to read.
+    PoorRecording,
+    /// 6, 7 — the rate itself put the recording outside what the classifier
+    /// will judge.
+    RateOutOfRange,
+    /// -3, -2, -1, 4, and anything unrecognised: the watch declined to say.
+    NoResult,
+}
+
+impl Rhythm {
+    pub fn of(code: i32) -> Rhythm {
+        match code {
+            0 | 9 | 10 => Rhythm::NoAfib,
+            1 | 11 | 12 => Rhythm::Afib,
+            2 | 8 => Rhythm::Inconclusive,
+            3 | 5 => Rhythm::PoorRecording,
+            6 | 7 => Rhythm::RateOutOfRange,
+            _ => Rhythm::NoResult,
+        }
+    }
+}
+
 /// One reassembled signal and the descriptors that came with it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signal {
@@ -108,6 +161,9 @@ pub struct Signal {
     pub extend: StoredSignalMetaExtend,
     pub units: Option<UnitConversionParameters>,
     pub measure: Option<StoredMeasureMeta>,
+    /// What the watch worked out about the recording, in wire form. Empty for
+    /// a recording it said nothing about.
+    pub measures: Vec<StoredMeasureData>,
     pub data: Vec<u8>,
 }
 
@@ -177,6 +233,7 @@ struct Pending {
     extend: Option<StoredSignalMetaExtend>,
     units: Option<UnitConversionParameters>,
     measure: Option<StoredMeasureMeta>,
+    measures: Vec<StoredMeasureData>,
     data: Vec<u8>,
 }
 
@@ -216,7 +273,22 @@ impl SignalCollector {
             }
             WppObject::StoredSignalMetaExtend(extend) => self.pending.extend = Some(extend.clone()),
             WppObject::UnitConversionParameters(units) => self.pending.units = Some(units.clone()),
-            WppObject::StoredMeasureMeta(measure) => self.pending.measure = Some(measure.clone()),
+            // Identifies the recording the values below belong to, so a new
+            // one leaves the previous recording's conclusions behind.
+            WppObject::StoredMeasureMeta(measure) => {
+                if self.pending.measure.as_ref() != Some(measure) {
+                    self.pending.measure = Some(measure.clone());
+                    self.pending.measures.clear();
+                }
+            }
+            // The watch's own conclusions about the recording — its median rate
+            // and its rhythm classification. They arrive with the measure that
+            // announces the recording, before the waveform is asked for.
+            WppObject::StoredMeasureData(data) => {
+                if !self.pending.measures.contains(data) {
+                    self.pending.measures.push(data.clone());
+                }
+            }
             WppObject::StoredSignalData(chunk) => {
                 self.pending.data.extend_from_slice(&chunk.samples);
                 let done = self
@@ -242,6 +314,7 @@ impl SignalCollector {
                     extend,
                     units: self.pending.units.clone(),
                     measure: self.pending.measure.clone(),
+                    measures: self.pending.measures.clone(),
                     data: std::mem::take(&mut self.pending.data),
                 });
             }
@@ -314,6 +387,7 @@ mod tests {
             },
             units: None,
             measure: None,
+            measures: Vec::new(),
             // 1, -1, 2, -2 as little-endian i16
             data: vec![0x01, 0x00, 0xff, 0xff, 0x02, 0x00, 0xfe, 0xff],
         };
@@ -385,9 +459,85 @@ mod tests {
             },
             units: None,
             measure: None,
+            measures: Vec::new(),
             data: vec![1, 2, 3, 4],
         };
         assert_eq!(signal.format(), SampleFormat::Delta);
         assert!(signal.leads().is_empty());
+    }
+
+    /// The watch announces a recording with its own conclusions about it, then
+    /// the waveform is fetched. The verdict must survive that gap, and must not
+    /// leak onto the next recording.
+    #[test]
+    fn a_recording_keeps_the_verdict_that_was_announced_with_it() {
+        use crate::objects::{StoredMeasureData, StoredMeasureMeta};
+
+        let announce = |uid: u32, code: i32| {
+            [
+                WppObject::StoredMeasureMeta(StoredMeasureMeta {
+                    uid,
+                    user_id_cnt: 0,
+                    user_id: Vec::new(),
+                    attrib: 0,
+                    time: 1_700_000_000,
+                }),
+                WppObject::StoredMeasureData(StoredMeasureData {
+                    value: 62,
+                    r#type: MeasureType::HEART_RATE.0,
+                    exponent: 0,
+                }),
+                WppObject::StoredMeasureData(StoredMeasureData {
+                    value: code,
+                    r#type: MeasureType::AFIB_RESULT.0,
+                    exponent: 0,
+                }),
+            ]
+        };
+
+        let mut collector = SignalCollector::new();
+        for object in announce(1, 9) {
+            collector.observe(&object);
+        }
+        collector.observe(&WppObject::StoredSignalMeta(meta(13, 2)));
+        collector.observe(&WppObject::StoredSignalMetaExtend(StoredSignalMetaExtend {
+            duration: 0,
+            total_size: 4,
+            filter_bank: 0,
+        }));
+        collector.observe(&WppObject::StoredSignalData(StoredSignalData {
+            samples: vec![1, 0, 2, 0],
+        }));
+
+        let first = collector.take_completed();
+        assert_eq!(first.len(), 1);
+        let codes: Vec<(u16, i32)> = first[0]
+            .measures
+            .iter()
+            .map(|m| (m.r#type, m.value))
+            .collect();
+        assert_eq!(codes, vec![(11, 62), (130, 9)]);
+
+        // A different recording replaces them rather than adding to them.
+        for object in announce(2, 5) {
+            collector.observe(&object);
+        }
+        let mut second = meta(13, 2);
+        second.size = 4;
+        collector.observe(&WppObject::StoredSignalMeta(second));
+        collector.observe(&WppObject::StoredSignalMetaExtend(StoredSignalMetaExtend {
+            duration: 0,
+            total_size: 4,
+            filter_bank: 0,
+        }));
+        collector.observe(&WppObject::StoredSignalData(StoredSignalData {
+            samples: vec![3, 0, 4, 0],
+        }));
+        let next = collector.take_completed();
+        assert_eq!(next.len(), 1);
+        assert_eq!(
+            next[0].measures.iter().map(|m| m.value).collect::<Vec<_>>(),
+            vec![62, 5],
+        );
     }
 }

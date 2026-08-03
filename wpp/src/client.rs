@@ -12,10 +12,11 @@ use crate::activity::Minute;
 use crate::debug_dump::DebugDump;
 use crate::frame::Channel;
 use crate::objects::{
-    AncsStatus, AppProbe, AppProbeOsVersion, FeatureTagsDeprecated, Id, InfoType, MeasureCategory,
-    MeasureLiveAppStatus, NotificationsDisplayState, Null, ProbeChallenge, ProbeChallengeResponse,
-    StoredSignalMeta, TimeSet, TrackerWearPos, VasistasCbt, VasistasType, Version, WamScreensList,
-    WamVasistasGet, WorkoutScreenList,
+    ActivitySubcategory, AncsStatus, AppProbe, AppProbeOsVersion, EndTime, FeatureTagsDeprecated,
+    Id, InfoType, MeasureCategory, MeasureLiveAppStatus, NotificationsDisplayState, Null,
+    ProbeChallenge, ProbeChallengeResponse, StartTime, StoredSignalMeta, TimeSet, TrackerUser,
+    TrackerWearPos, VasistasCbt, VasistasType, Version, WamScreensList, WamVasistasGet,
+    WorkoutScreenList,
 };
 use crate::signal::{Signal, SignalCollector};
 use crate::units::{UnixMillis, UnixTime};
@@ -93,6 +94,75 @@ impl Credentials {
         input.extend_from_slice(self.mac.as_bytes());
         input.extend_from_slice(self.secret.as_bytes());
         sha1(&input).to_vec()
+    }
+}
+
+/// What the watch says it is, out of the `ProbeReply` that opens every session.
+///
+/// The association secret rides in the same object and is deliberately not kept
+/// here: it is already held as [`Credentials`], and a copy in the record store
+/// is a copy to leak.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceIdentity {
+    pub name: String,
+    /// `soft_version`: the firmware, and the number its image is named after.
+    pub firmware: u32,
+    pub bootloader: u32,
+    /// `hard_version` and `rescue_version`, absent when the watch reports
+    /// [`DeviceIdentity::UNREPORTED`] for them — which this one does for both.
+    pub hardware: Option<u32>,
+    pub rescue: Option<u32>,
+}
+
+impl DeviceIdentity {
+    /// All-ones in the 24 bits the field uses. Not a version: the watch sends
+    /// it for the two it has nothing to say about.
+    pub const UNREPORTED: u32 = 0xFF_FFFF;
+
+    pub fn of(reply: &crate::objects::ProbeReply) -> DeviceIdentity {
+        let reported = |value: u32| Some(value).filter(|v| *v != DeviceIdentity::UNREPORTED);
+        DeviceIdentity {
+            name: reply.name.clone(),
+            firmware: reply.soft_version,
+            bootloader: reply.bl_version,
+            hardware: reported(reply.hard_version),
+            rescue: reported(reply.rescue_version),
+        }
+    }
+}
+
+/// Who the watch thinks is wearing it.
+///
+/// The watch holds this and answers `CMD_TRACKER_USER_GET` with all of it, so
+/// it is the store of record rather than anything the phone owns. Written back
+/// whole by `CMD_TRACKER_USER_SET`: there is no way to change one field, which
+/// is why the fields nothing here understands are carried rather than dropped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserProfile {
+    /// The account the watch was associated under. Echoed back unchanged; the
+    /// watch chose nothing about it and neither does this.
+    pub id: u32,
+    /// Grams.
+    pub weight: u32,
+    /// Centimetres.
+    pub height: u32,
+    /// Uninterpreted. Nothing here reads it, and a write has to preserve it.
+    pub gender: u8,
+    /// Unix seconds, signed so that a birth before 1970 is representable.
+    pub birth: i32,
+    pub first_name: String,
+}
+
+impl UserProfile {
+    pub fn of(user: &crate::objects::TrackerUser) -> UserProfile {
+        UserProfile {
+            id: user.id,
+            weight: user.weight,
+            height: user.height,
+            gender: user.gender,
+            birth: user.birth,
+            first_name: user.first_name.clone(),
+        }
     }
 }
 
@@ -207,6 +277,11 @@ pub enum Record {
     /// the session detection reads them together.
     Activity(Minute),
     Ecg(Box<Signal>),
+    /// What the watch says it is. Restated on every connection, so this is an
+    /// update of the device row rather than a new observation.
+    Identity(DeviceIdentity),
+    /// Who the watch says is wearing it. Also restated, and also an update.
+    User(UserProfile),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -898,6 +973,15 @@ impl Client {
         for object in &frame.objects {
             self.signals.observe(object);
             match object {
+                // The probe reply is the only place the firmware version is
+                // stated, and it is stated on every connection whether or not
+                // the watch challenges first.
+                WppObject::ProbeReply(reply) => {
+                    records.push(Record::Identity(DeviceIdentity::of(reply)));
+                }
+                WppObject::TrackerUser(user) => {
+                    records.push(Record::User(UserProfile::of(user)));
+                }
                 WppObject::WorkoutScreenList(list) => {
                     self.activities = Some(
                         list.screen_nb
@@ -1338,8 +1422,8 @@ impl Client {
         self.wear_position
     }
 
-    /// Read the quick-launch activity menu, where the watch is worn, and
-    /// whether it takes phone notifications.
+    /// Read the quick-launch activity menu, where the watch is worn, whether it
+    /// takes phone notifications, and who it thinks is wearing it.
     pub fn request_device_config(&self) -> Vec<Action> {
         vec![
             Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_LIST_GET, Vec::new())),
@@ -1348,6 +1432,73 @@ impl Client {
                 Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_GET,
                 Vec::new(),
             )),
+            // Empty payload; the watch answers with the whole record. The
+            // official app asks for it on every connection.
+            Action::Send(Frame::new(Command::CMD_TRACKER_USER_GET, Vec::new())),
+        ]
+    }
+
+    /// Replace the profile the watch holds.
+    ///
+    /// The whole record goes out — the watch takes nothing smaller — so the
+    /// caller must edit one it read back rather than assemble a fresh one, or
+    /// the fields it does not set are zeroed on the watch.
+    pub fn set_user(&self, profile: &UserProfile) -> Vec<Action> {
+        vec![
+            Action::Send(Frame::new(
+                Command::CMD_TRACKER_USER_SET,
+                vec![WppObject::TrackerUser(TrackerUser {
+                    id: profile.id,
+                    weight: profile.weight,
+                    height: profile.height,
+                    gender: profile.gender,
+                    birth: profile.birth,
+                    first_name: profile.first_name.clone(),
+                })],
+            )),
+            // The set is answered with Null, so the record is only confirmed by
+            // reading it back.
+            Action::Send(Frame::new(Command::CMD_TRACKER_USER_GET, Vec::new())),
+        ]
+    }
+
+    /// Begin a session on the watch.
+    ///
+    /// The watch stamps the session with its own clock and does not take the
+    /// start time offered here — read the real one back from
+    /// `CMD_WORKOUT_STATUS`, which is also what makes the session appear as a
+    /// record. The reply to this is a bare acknowledgement.
+    pub fn start_workout(&self, subcategory: i16, at: UnixTime) -> Vec<Action> {
+        vec![
+            Action::Send(Frame::new(
+                Command::CMD_WORKOUT_START,
+                vec![
+                    WppObject::ActivitySubcategory(ActivitySubcategory { value: subcategory }),
+                    WppObject::StartTime(StartTime { value: at.0 as i32 }),
+                ],
+            )),
+            Action::Send(Frame::new(Command::CMD_WORKOUT_STATUS, Vec::new())),
+        ]
+    }
+
+    /// End the session the watch is running.
+    ///
+    /// `started_at` has to be the one the watch reported, not the one asked
+    /// for: the watch compares it against the running session and ignores a
+    /// stop that names a different one. That is also why this takes it rather
+    /// than reading it from state — the caller has the watch's own answer.
+    pub fn stop_workout(&self, started_at: UnixTime, at: UnixTime) -> Vec<Action> {
+        vec![
+            Action::Send(Frame::new(
+                Command::CMD_WORKOUT_STOP,
+                vec![
+                    WppObject::StartTime(StartTime {
+                        value: started_at.0 as i32,
+                    }),
+                    WppObject::EndTime(EndTime { value: at.0 as i32 }),
+                ],
+            )),
+            Action::Send(Frame::new(Command::CMD_WORKOUT_STATUS, Vec::new())),
         ]
     }
 

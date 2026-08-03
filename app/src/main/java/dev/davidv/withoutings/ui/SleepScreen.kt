@@ -1,55 +1,289 @@
 package dev.davidv.withoutings.ui
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import dev.davidv.withoutings.ui.theme.AppTheme
 import uniffi.wpp_ffi.Night
+import uniffi.wpp_ffi.SleepScore
 import uniffi.wpp_ffi.SleepStage
 
-private val hourMin = SimpleDateFormat("HH:mm", Locale.getDefault())
-
-private fun duration(ms: Long): String {
-    val minutes = ms / 60_000
-    return "${minutes / 60}h${"%02d".format(minutes % 60)}"
-}
-
-private val dayMonth = SimpleDateFormat("EEE d MMM", Locale.getDefault())
-
 /**
- * The night named by the days it spans, or by the single day when it does not
- * cross midnight. Falls back to the fetched window for a night with no staging,
- * where the middle of the window is the morning it belongs to.
+ * One night, read.
+ *
+ * Everything on the screen comes from the watch's own staging. A window it did
+ * not stage produces no band rather than a guess, which is why the empty state
+ * says so instead of drawing a flat line.
  */
-private fun nightLabel(night: Night, window: LongRange): String {
-    val from = night.asleepFromMs
-    val to = night.asleepToMs
-    if (from == null || to == null) {
-        return dayMonth.format(Date(window.first + (window.last - window.first) / 2))
+@Composable
+fun SleepScreen(
+    night: Night?,
+    window: LongRange,
+    nowMs: Long,
+    onShift: (Int) -> Unit,
+    onBack: () -> Unit,
+) {
+    val asleep = night?.let { it.asleepFromMs to it.asleepToMs }
+    DetailScaffold(
+        title = "Sleep",
+        subtitle = asleep?.let { (from, to) ->
+            if (from == null || to == null) {
+                "no sleep period detected"
+            } else {
+                "${dayName(to, nowMs)} · ${clock(from)} – ${clock(to)}"
+            }
+        } ?: "no night loaded",
+        onBack = onBack,
+        gap = AppTheme.space.blockLoose,
+        trailing = { DayStepper(canGoForward = true, onStep = { onShift(-it) }) },
+    ) {
+        if (night == null || night.stages.isEmpty()) {
+            EmptyNote(
+                "The watch staged no sleep for this night. Stepping back finds " +
+                    "the last night it did — nights it was off the wrist are " +
+                    "skipped rather than shown as blanks."
+            )
+            return@DetailScaffold
+        }
+
+        val perStage = STAGE_ORDER.associateWith { stage ->
+            night.stages.filter { it.stage == stage }.sumOf { it.toMs - it.fromMs }
+        }
+        val inBedMs = perStage.values.sum()
+        val asleepMs = perStage.filterKeys { it != SleepStage.AWAKE }.values.sum()
+
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.space.blockLoose),
+        ) {
+            ScoreCard(night, asleepMs, inBedMs)
+
+            Eyebrow("stages")
+            Hypnogram(night.stages, window)
+
+            Column(Modifier.fillMaxWidth()) {
+                STAGE_ORDER.forEachIndexed { index, stage ->
+                    if (index > 0) RowDivider(inset = 0.dp)
+                    val total = perStage[stage] ?: 0L
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier
+                                .size(9.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(stageColor(stage))
+                        )
+                        Text(
+                            stageName(stage),
+                            Modifier.weight(1f).padding(start = 9.dp),
+                            style = AppTheme.type.rowTitle,
+                        )
+                        Text(
+                            hoursMinutes(total),
+                            style = AppTheme.type.rowMeta,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            if (inBedMs > 0) "  ${100 * total / inBedMs}%" else "  —",
+                            Modifier.width(48.dp),
+                            style = AppTheme.type.rowMeta,
+                            color = AppTheme.colors.onSurfaceTertiary,
+                        )
+                    }
+                }
+            }
+
+            night.score?.let { QualityList(it) }
+            Spacer(Modifier.height(8.dp))
+        }
     }
-    val start = dayMonth.format(Date(from))
-    val end = dayMonth.format(Date(to))
-    return if (start == end) start else "$start → $end"
 }
 
-/** Enough either side to see the night end, not enough to lose it in the day. */
-private const val SLEEP_MARGIN_MS = 10 * 60_000L
+/**
+ * The score, and what it is made of.
+ *
+ * The sentence beside the ring is assembled from the components rather than
+ * written: a total can then be argued with, which is the point of showing the
+ * parts at all.
+ */
+@Composable
+private fun ScoreCard(night: Night, asleepMs: Long, inBedMs: Long) {
+    AccentCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(AppTheme.radius.hero)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val score = night.score
+            Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) {
+                ScoreRing(score?.total?.toInt() ?: 0)
+                Text(
+                    score?.total?.toString() ?: "—",
+                    style = AppTheme.type.summaryValue,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            Column(Modifier.weight(1f).padding(start = 18.dp)) {
+                Text(
+                    scoreHeadline(night.score),
+                    style = AppTheme.type.cardTitle,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    buildString {
+                        append("${hoursMinutes(asleepMs)} asleep")
+                        if (inBedMs > asleepMs) {
+                            append(", ${compactDuration(inBedMs - asleepMs)} awake")
+                        }
+                        append(" across ${night.stages.size} stretches.")
+                    },
+                    style = AppTheme.type.bodyLarge,
+                    color = AppTheme.colors.onAccentSecondary,
+                )
+            }
+        }
+    }
+}
 
 /**
- * The window the sleep charts open on, and the furthest they may be panned.
+ * The night named by its own components.
+ *
+ * Nothing here interprets: it reports which part of the score came out
+ * strongest and which weakest, which is a fact about the number beside it.
+ */
+private fun scoreHeadline(score: SleepScore?): String {
+    if (score == null) return "No score for this night"
+    val parts = listOf(
+        "duration" to score.duration.toInt(),
+        "efficiency" to score.efficiency.toInt(),
+        "deep" to score.deep.toInt(),
+        "REM" to score.rem.toInt(),
+        "continuity" to score.continuity.toInt(),
+    )
+    val best = parts.maxBy { it.second }
+    val worst = parts.minBy { it.second }
+    if (best.second - worst.second < EVEN_NIGHT_SPREAD) return "An even night"
+    return "${best.first.replaceFirstChar { it.uppercase() }} led, ${worst.first} lagged"
+}
+
+/// Under this, no component stands out enough to be worth naming.
+private const val EVEN_NIGHT_SPREAD = 15
+
+@Composable
+private fun ScoreRing(score: Int) {
+    val track = AppTheme.colors.ringTrack
+    val fill = MaterialTheme.colorScheme.primary
+    Canvas(Modifier.size(96.dp)) {
+        val stroke = 8.dp.toPx()
+        val inset = stroke / 2
+        val diameter = size.minDimension - stroke
+        drawArc(
+            track,
+            startAngle = 0f,
+            sweepAngle = 360f,
+            useCenter = false,
+            topLeft = Offset(inset, inset),
+            size = Size(diameter, diameter),
+            style = Stroke(width = stroke, cap = StrokeCap.Round),
+        )
+        drawArc(
+            fill,
+            startAngle = -90f,
+            sweepAngle = 360f * (score.coerceIn(0, 100) / 100f),
+            useCenter = false,
+            topLeft = Offset(inset, inset),
+            size = Size(diameter, diameter),
+            style = Stroke(width = stroke, cap = StrokeCap.Round),
+        )
+    }
+}
+
+/**
+ * What the score is made of.
+ *
+ * A component that came out below par gets a neutral bar, never a warm one:
+ * this app does not tell anyone their night was a problem.
+ */
+@Composable
+private fun QualityList(score: SleepScore) {
+    Tile(Modifier.fillMaxWidth()) {
+        Text(
+            "Score breakdown",
+            Modifier.padding(bottom = 6.dp),
+            style = AppTheme.type.sectionTitle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        listOf(
+            "Duration" to score.duration.toInt(),
+            "Efficiency" to score.efficiency.toInt(),
+            "Deep" to score.deep.toInt(),
+            "REM" to score.rem.toInt(),
+            "Continuity" to score.continuity.toInt(),
+        ).forEach { (label, value) ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    label,
+                    Modifier.width(70.dp),
+                    style = AppTheme.type.rowMeta.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TrackBar(
+                    value / 100f,
+                    Modifier.weight(1f).padding(horizontal = 10.dp),
+                    color = if (value < BELOW_PAR) {
+                        AppTheme.colors.barBelow
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                )
+                Text(
+                    value.toString(),
+                    Modifier.width(28.dp),
+                    style = AppTheme.type.rowMeta,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/// Where a component stops being drawn in the primary colour. Neutral below,
+/// never warm.
+private const val BELOW_PAR = 50
+
+/**
+ * The window the sleep charts open on.
  *
  * The night is fetched far wider than this — evening through late morning,
- * because the heart-rate detection takes its levels from the waking hours — but
- * those hours are not what the screen is for. Null for a night with no sleep
- * period at all, where the whole fetched range is all there is to show.
+ * because the heart-rate detection takes its levels from the waking hours —
+ * but those hours are not what the screen is for.
  */
 fun Night.sleepWindow(): LongRange? {
     val from = asleepFromMs ?: return null
@@ -57,113 +291,5 @@ fun Night.sleepWindow(): LongRange? {
     return (from - SLEEP_MARGIN_MS)..(to + SLEEP_MARGIN_MS)
 }
 
-@Composable
-fun SleepScreen(
-    night: Night?,
-    window: LongRange,
-    onWindowChange: (LongRange) -> Unit,
-    onShift: (Int) -> Unit,
-    onBack: () -> Unit,
-) {
-    Page("Sleep", onBack) {
-        if (night == null) {
-            Text("No data for this night.", style = MaterialTheme.typography.bodyLarge)
-            return@Page
-        }
-
-        // Which night this is. A sleep that crosses midnight belongs to both
-        // dates, and saying only one of them is what makes a screen ambiguous.
-        Text(
-            nightLabel(night, window),
-            style = MaterialTheme.typography.titleMedium,
-        )
-
-        val asleep = night.asleepFromMs?.let { from ->
-            night.asleepToMs?.let { to -> from..to }
-        }
-        // Time in each stage, which is what the watch actually measured. The
-        // span between first and last is longer by however much was spent awake.
-        val perStage = night.stages
-            .groupBy { it.stage }
-            .mapValues { (_, bands) -> bands.sumOf { it.toMs - it.fromMs } }
-        val asleepMs = perStage
-            .filterKeys { it != SleepStage.AWAKE }
-            .values
-            .sum()
-        val inBedMs = perStage.values.sum()
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            night.score?.let { score ->
-                Stat("Score", "${score.total}", "of 100", Modifier.weight(1f))
-            }
-            Stat(
-                "Asleep",
-                asleep?.let { hourMin.format(Date(it.first)) } ?: "—",
-                asleep?.let { "to ${hourMin.format(Date(it.last))}" } ?: "not detected",
-                Modifier.weight(1f),
-            )
-            Stat(
-                "Duration",
-                if (night.stages.isEmpty()) "—" else duration(asleepMs),
-                if (night.stages.isEmpty()) "" else "asleep",
-                Modifier.weight(1f),
-            )
-        }
-
-        if (night.stages.isEmpty()) {
-            Text(
-                "The watch reported no staging for this night.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        } else {
-            Text("Stages", style = MaterialTheme.typography.labelSmall)
-            Hypnogram(stages = night.stages, window = window)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (stage in listOf(
-                    SleepStage.DEEP,
-                    SleepStage.REM,
-                    SleepStage.LIGHT,
-                    SleepStage.AWAKE,
-                )) {
-                    val total = perStage[stage] ?: 0L
-                    Stat(
-                        stageName(stage),
-                        duration(total),
-                        // Of the whole night rather than of sleep, so awake has
-                        // a denominator too and the four read as one split.
-                        if (inBedMs > 0) "%.0f%%".format(100.0 * total / inBedMs) else "",
-                        Modifier.weight(1f),
-                    )
-                }
-            }
-            // What the score is made of, so a total can be argued with rather
-            // than taken on faith.
-            night.score?.let { score ->
-                Text(
-                    listOf(
-                        "Duration ${score.duration}",
-                        "Efficiency ${score.efficiency}",
-                        "Deep ${score.deep}",
-                        "REM ${score.rem}",
-                        "Continuity ${score.continuity}",
-                    ).joinToString("  ·  "),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = false,
-                onClick = { onShift(1) },
-                label = { Text("Earlier night") },
-            )
-            FilterChip(
-                selected = false,
-                onClick = { onShift(-1) },
-                label = { Text("Later night") },
-            )
-        }
-    }
-}
+/// Enough either side to see the night end, not enough to lose it in the day.
+private const val SLEEP_MARGIN_MS = 10 * 60_000L

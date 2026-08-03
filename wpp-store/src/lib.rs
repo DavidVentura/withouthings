@@ -9,7 +9,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use wpp::activity::Minute;
-use wpp::client::{Category, Record, Source};
+use wpp::client::{Category, DeviceIdentity, Record, Source, UserProfile};
 use wpp::signal::Signal;
 use wpp::units::UnixTime;
 
@@ -54,6 +54,49 @@ impl Store {
             .query_row("SELECT id FROM device WHERE mac = ?1", params![mac], |r| {
                 r.get(0)
             })
+    }
+
+    /// What the watch last said it is, once it has said. Written by the probe
+    /// reply, so it survives a disconnection and is available before the next
+    /// one completes.
+    pub fn identity(&self, device_id: i64) -> Result<Option<DeviceIdentity>, Error> {
+        self.conn
+            .query_row(
+                "SELECT name, firmware, bootloader, hardware, rescue
+                   FROM device WHERE id = ?1 AND firmware IS NOT NULL",
+                params![device_id],
+                |r| {
+                    Ok(DeviceIdentity {
+                        name: r.get(0)?,
+                        firmware: r.get(1)?,
+                        bootloader: r.get(2)?,
+                        hardware: r.get(3)?,
+                        rescue: r.get(4)?,
+                    })
+                },
+            )
+            .optional()
+    }
+
+    /// Who the watch says is wearing it, once it has said.
+    pub fn watch_user(&self, device_id: i64) -> Result<Option<UserProfile>, Error> {
+        self.conn
+            .query_row(
+                "SELECT user_id, weight, height, gender, birth, first_name
+                   FROM watch_user WHERE device_id = ?1",
+                params![device_id],
+                |r| {
+                    Ok(UserProfile {
+                        id: r.get(0)?,
+                        weight: r.get(1)?,
+                        height: r.get(2)?,
+                        gender: r.get(3)?,
+                        birth: r.get(4)?,
+                        first_name: r.get(5)?,
+                    })
+                },
+            )
+            .optional()
     }
 
     /// Persist a batch atomically. Only after this returns may the caller tell
@@ -162,6 +205,42 @@ impl Store {
                     )?;
                 }
                 Record::Ecg(signal) => store_ecg(&tx, device_id, signal)?,
+                Record::User(profile) => {
+                    tx.execute(
+                        "INSERT INTO watch_user
+                             (device_id, user_id, weight, height, gender, birth, first_name)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                         ON CONFLICT (device_id) DO UPDATE SET
+                             user_id = excluded.user_id, weight = excluded.weight,
+                             height = excluded.height, gender = excluded.gender,
+                             birth = excluded.birth, first_name = excluded.first_name",
+                        params![
+                            device_id,
+                            profile.id,
+                            profile.weight,
+                            profile.height,
+                            profile.gender,
+                            profile.birth,
+                            profile.first_name,
+                        ],
+                    )?;
+                }
+                Record::Identity(identity) => {
+                    tx.execute(
+                        "UPDATE device
+                            SET name = ?2, firmware = ?3,
+                                bootloader = ?4, hardware = ?5, rescue = ?6
+                          WHERE id = ?1",
+                        params![
+                            device_id,
+                            identity.name,
+                            identity.firmware,
+                            identity.bootloader,
+                            identity.hardware,
+                            identity.rescue,
+                        ],
+                    )?;
+                }
             }
         }
         tx.commit()
@@ -573,6 +652,17 @@ impl Store {
         rows.collect()
     }
 
+    /// What the watch concluded about a recording, as (type, value, exponent).
+    /// Empty for one it said nothing about, and for every recording stored
+    /// before this was collected.
+    pub fn ecg_measures(&self, ecg_id: i64) -> Result<Vec<(i64, i64, i64)>, Error> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT type, value, exponent FROM ecg_measure WHERE ecg_id = ?1")?;
+        let rows = stmt.query_map(params![ecg_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect()
+    }
+
     pub fn ecg(&self, id: i64) -> Result<Option<(i64, i64, i64, i64, Vec<u8>)>, Error> {
         self.conn
             .query_row(
@@ -664,6 +754,22 @@ fn store_ecg(tx: &rusqlite::Transaction<'_>, device_id: i64, signal: &Signal) ->
             signal.data,
         ],
     )?;
+
+    // The insert above does nothing for a recording already stored, so the id
+    // has to be looked up rather than taken from the insert.
+    let ecg_id: i64 = tx.query_row(
+        "SELECT id FROM ecg WHERE device_id = ?1 AND measured_at = ?2 AND signal_type = ?3",
+        params![device_id, measured_at, signal.meta.r#type],
+        |r| r.get(0),
+    )?;
+    for measure in &signal.measures {
+        tx.execute(
+            "INSERT INTO ecg_measure (ecg_id, type, value, exponent)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT DO NOTHING",
+            params![ecg_id, measure.r#type, measure.value, measure.exponent],
+        )?;
+    }
     Ok(())
 }
 

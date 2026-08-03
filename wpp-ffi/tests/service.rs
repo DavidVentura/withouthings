@@ -103,6 +103,50 @@ fn connecting_probes_the_watch_and_asks_nothing_else() {
     cleanup(&path);
 }
 
+/// The firmware version is only ever stated in the probe reply, which opens
+/// every session. Kept, so the Watch page has one to print while the link is
+/// down; the association secret in the same object is not.
+#[test]
+fn the_probe_reply_leaves_a_firmware_version_behind() {
+    use wpp::objects::ProbeReply;
+    use wpp::{Command, Frame, WppObject};
+
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+
+    service
+        .on_bytes(
+            Frame::new(
+                Command::CMD_PROBE,
+                vec![WppObject::ProbeReply(ProbeReply {
+                    vid: 0,
+                    pid: 0,
+                    name: "ScanWatch 2".to_string(),
+                    mac: "a4:7e:fa:44:d6:10".to_string(),
+                    secret: String::new(),
+                    hard_version: 16777215,
+                    mfg_id: "00280074".to_string(),
+                    bl_version: 8,
+                    soft_version: 3411,
+                    rescue_version: 16777215,
+                })],
+            )
+            .to_bytes(),
+            1_700_000_000_000,
+        )
+        .unwrap();
+
+    let device = service.snapshot().unwrap().device.expect("identity");
+    assert_eq!(device.name, "ScanWatch 2");
+    assert_eq!(device.firmware, 3411);
+    assert_eq!(device.bootloader, 8);
+    // 0xFFFFFF is the watch saying it has none, not a version of 16777215.
+    assert_eq!(device.hardware, None);
+    assert_eq!(device.rescue, None);
+
+    cleanup(&path);
+}
+
 /// A notification split across two writes, as the MTU forces.
 #[test]
 fn a_frame_split_across_notifications_is_reassembled_and_stored() {
