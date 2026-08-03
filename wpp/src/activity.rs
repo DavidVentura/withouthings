@@ -1,53 +1,16 @@
-//! The per-minute activity stream, and grouping it into sessions.
-//!
-//! `CMD_WAM_VASISTAS_GET` hands over one record per minute carrying the
-//! counters the watch keeps itself: steps, distance, climb, earned calories,
-//! MET, and the two features its activity classifier runs on.
-//!
-//! The official app turns those records into "Walk" and "Run" entries on the
-//! phone, not on the watch: `WorkoutActivityRecognitionBuilder` feeds them to
-//! `libactirec.so` with a per-user classifier downloaded from Withings. That
-//! blob is not available here, so the sessions below are found from step
-//! cadence instead, and will not agree with the official app on anything
-//! subtler than walking and running.
-
 use crate::units::{Kilocalories, Metres, UnixTime, ACTIVITY_HUNDREDTHS};
 
-/// `ConstantsWs.WITHINGS_ACTIVITY_SUBCATEGORY_WALK`.
 pub const WALK: u16 = 1;
-/// `ConstantsWs.WITHINGS_ACTIVITY_SUBCATEGORY_RUN`.
 pub const RUN: u16 = 2;
 
-/// Steps per minute a window must hold to count as walking.
-///
-/// Cadence over a recorded day is bimodal: idle minutes sit at zero, walking
-/// runs 85-112, and the thin band between is moving about indoors. Cutting at
-/// 50 keeps whole walks together without letting a trip to the kitchen open a
-/// session.
 const MIN_CADENCE_SPM: i64 = 50;
 
 const RUN_CADENCE_SPM: i64 = 140;
 
-/// A pause longer than this ends the session rather than being absorbed into
-/// it.
-///
-/// Five minutes, because a walk of three blocks, a wait, and three more blocks
-/// is one walk: the watch reports that wait as a single idle window, and at
-/// three minutes the two halves fell under [`MIN_SESSION_SECS`] and neither
-/// was reported at all.
 const MAX_BREAK_SECS: i64 = 300;
 
-/// Shorter stretches are not reported. Walking this long is an activity;
-/// walking two minutes is crossing a car park.
 const MIN_SESSION_SECS: i64 = 600;
 
-/// One record of the stream: what the watch counted over the window a
-/// `WamVasistasHead` opened.
-///
-/// Every counter is optional because the watch sends only the objects it has
-/// something to say about — an idle stretch arrives as a head and a duration
-/// and nothing else, and it compresses several of them into one long window.
-/// Values are as they came off the wire; [`crate::units`] holds the scales.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Minute {
     pub at: UnixTime,
@@ -62,17 +25,12 @@ pub struct Minute {
     pub run_level: Option<i64>,
     pub reco_v1: Option<i64>,
     pub reco_v2: Option<i64>,
-    /// The watch's own staging for the window, as the wire carries it.
-    /// [`SleepLevel`] reads it.
     pub sleep_level: Option<i64>,
 }
 
-/// What the watch's sleep classifier made of a window.
-///
-/// The official app's decoder names these 0 awake, 1 REM, 2 light, 3 deep, and
-/// that is wrong. Duration-weighted totals for the nights of 7 and 21 Jul match
-/// Health Mate's own `lightSleepDuration`/`deepSleepDuration`/`remSleepDuration`
-/// to the minute only under the mapping below.
+/// The official app's decoder names these 0 awake, 1 REM, 2 light, 3 deep;
+/// that mapping is wrong and using it silently swaps light and REM in every
+/// derived sleep total.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SleepLevel {
     Awake,
@@ -116,7 +74,6 @@ impl Minute {
         UnixTime(self.at.0 + self.duration_secs)
     }
 
-    /// Steps per minute over the window, for windows that have one.
     pub fn cadence(self) -> Option<i64> {
         let steps = self.steps?;
         if self.duration_secs <= 0 {
@@ -126,28 +83,34 @@ impl Minute {
     }
 }
 
-/// A stretch of walking or running, found in the stream.
-///
-/// Derived rather than stored, so unlike a [`Minute`] it carries converted
-/// quantities: nothing will re-read it years from now against a corrected
-/// scale.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Session {
     pub started_at: UnixTime,
     pub ended_at: UnixTime,
-    /// `WITHINGS_ACTIVITY_SUBCATEGORY_*`, so it can be named alongside the
-    /// workouts the watch reports itself.
     pub subcategory: u16,
     pub steps: i64,
     pub distance: Metres,
     pub calories: Kilocalories,
 }
 
-/// Sessions in `minutes`, which must be sorted by time.
-///
-/// Windows below the cadence cut are skipped rather than treated as breaks:
-/// the watch omits a record entirely when nothing happened, so a session that
-/// survives a standing pause has to survive a missing minute the same way.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Totals {
+    pub steps: i64,
+    pub distance: Metres,
+    pub ascent: Metres,
+    pub calories: Kilocalories,
+}
+
+pub fn totals(minutes: &[Minute]) -> Totals {
+    let sum = |pick: fn(&Minute) -> Option<i64>| -> i64 { minutes.iter().filter_map(pick).sum() };
+    Totals {
+        steps: sum(|m| m.steps),
+        distance: Metres(sum(|m| m.distance) as f64 / ACTIVITY_HUNDREDTHS),
+        ascent: Metres(sum(|m| m.ascent) as f64 / ACTIVITY_HUNDREDTHS),
+        calories: Kilocalories(sum(|m| m.calories) as f64 / ACTIVITY_HUNDREDTHS),
+    }
+}
+
 pub fn detect(minutes: &[Minute]) -> Vec<Session> {
     let mut sessions = Vec::new();
     let mut open: Vec<Minute> = Vec::new();
@@ -174,13 +137,9 @@ fn close(minutes: &[Minute]) -> Option<Session> {
         return None;
     }
 
-    let steps: i64 = minutes.iter().filter_map(|m| m.steps).sum();
-    let distance: i64 = minutes.iter().filter_map(|m| m.distance).sum();
-    let calories: i64 = minutes.iter().filter_map(|m| m.calories).sum();
+    let summed = totals(minutes);
     let moving_secs: i64 = minutes.iter().map(|m| m.duration_secs).sum();
-    // Cadence over the windows that were moving, not over the whole span: the
-    // pauses inside a session would drag a run down into walking territory.
-    let cadence = steps * 60 / moving_secs.max(1);
+    let cadence = summed.steps * 60 / moving_secs.max(1);
     Some(Session {
         started_at,
         ended_at,
@@ -189,9 +148,9 @@ fn close(minutes: &[Minute]) -> Option<Session> {
         } else {
             WALK
         },
-        steps,
-        distance: Metres(distance as f64 / ACTIVITY_HUNDREDTHS),
-        calories: Kilocalories(calories as f64 / ACTIVITY_HUNDREDTHS),
+        steps: summed.steps,
+        distance: summed.distance,
+        calories: summed.calories,
     })
 }
 
@@ -199,7 +158,6 @@ fn close(minutes: &[Minute]) -> Option<Session> {
 mod tests {
     use super::*;
 
-    /// A minute of walking at `steps` per minute, `at` seconds in.
     fn minute(at: i64, steps: i64) -> Minute {
         Minute {
             duration_secs: 60,
@@ -227,6 +185,18 @@ mod tests {
     }
 
     #[test]
+    fn a_window_missing_a_column_is_skipped_rather_than_counted_as_zero() {
+        let mut minutes = walk(1_000, 3, 90);
+        minutes[0].ascent = Some(150);
+        minutes[1].ascent = None;
+        minutes[2].ascent = Some(450);
+
+        let summed = totals(&minutes);
+        assert_eq!(summed.steps, 270);
+        assert_eq!(summed.ascent, Metres(6.0));
+    }
+
+    #[test]
     fn crossing_a_car_park_is_not_a_session() {
         assert!(detect(&walk(1_000, 3, 90)).is_empty());
     }
@@ -236,8 +206,6 @@ mod tests {
         assert!(detect(&walk(1_000, 30, 30)).is_empty());
     }
 
-    /// The watch sends nothing at all for a window it counted no steps in, so
-    /// a pause inside a walk is a hole in the series rather than a zero.
     #[test]
     fn a_short_pause_does_not_split_a_session() {
         let mut minutes = walk(1_000, 8, 95);
@@ -264,7 +232,6 @@ mod tests {
         assert_eq!(found[0].subcategory, RUN);
     }
 
-    /// Idle time arrives as one long window, not as a run of empty minutes.
     #[test]
     fn a_compressed_idle_window_breaks_the_session() {
         let mut minutes = walk(1_000, 12, 95);

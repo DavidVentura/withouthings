@@ -1,5 +1,3 @@
-//! The service driven exactly as Kotlin would drive it.
-
 use std::sync::{Arc, Mutex};
 use wpp_ffi::{AncsLink, Bitmap, Rasterizer, SetEdge, Transport, WatchService};
 
@@ -10,15 +8,14 @@ struct Recorder {
     reconnects: Mutex<u32>,
     announced: Mutex<Vec<Vec<u8>>>,
     attributes: Mutex<Vec<Vec<u8>>>,
-    /// Every (codepoint, width, height) the watch asked to have drawn.
     glyphs: Mutex<Vec<(u32, u8, u8)>>,
 }
 
 struct Handle(Arc<Recorder>);
 
 impl Transport for Handle {
-    fn write(&self, bytes: Vec<u8>) {
-        self.0.written.lock().unwrap().push(bytes);
+    fn write(&self, frames: Vec<Vec<u8>>) {
+        self.0.written.lock().unwrap().extend(frames);
     }
     fn changed(&self) {
         *self.0.changes.lock().unwrap() += 1;
@@ -37,7 +34,6 @@ impl AncsLink for Handle {
     }
 }
 
-/// Draws every pixel solid, so the packed result is unambiguous.
 impl Rasterizer for Handle {
     fn glyph(&self, codepoint: u32, width: u8, height: u8) -> Bitmap {
         self.0
@@ -101,8 +97,6 @@ fn connecting_probes_the_watch_and_asks_nothing_else() {
     service.on_connected().unwrap();
 
     let written = recorder.written.lock().unwrap().clone();
-    // Anything asked before the handshake completes draws ERR_NOT_AUTH, which
-    // is indistinguishable from the watch refusing the probe outright.
     assert_eq!(written.len(), 1, "the probe, and nothing else");
     let frame = wpp::Frame::parse(&written[0]).expect("valid frame");
     assert_eq!(frame.command.opcode(), wpp::Command::CMD_PROBE.0);
@@ -110,9 +104,6 @@ fn connecting_probes_the_watch_and_asks_nothing_else() {
     cleanup(&path);
 }
 
-/// The firmware version is only ever stated in the probe reply, which opens
-/// every session. Kept, so the Watch page has one to print while the link is
-/// down; the association secret in the same object is not.
 #[test]
 fn the_probe_reply_leaves_a_firmware_version_behind() {
     use wpp::objects::ProbeReply;
@@ -147,14 +138,12 @@ fn the_probe_reply_leaves_a_firmware_version_behind() {
     assert_eq!(device.name, "ScanWatch 2");
     assert_eq!(device.firmware, 3411);
     assert_eq!(device.bootloader, 8);
-    // 0xFFFFFF is the watch saying it has none, not a version of 16777215.
     assert_eq!(device.hardware, None);
     assert_eq!(device.rescue, None);
 
     cleanup(&path);
 }
 
-/// A notification split across two writes, as the MTU forces.
 #[test]
 fn a_frame_split_across_notifications_is_reassembled_and_stored() {
     use wpp::objects::BatteryStatus;
@@ -183,15 +172,11 @@ fn a_frame_split_across_notifications_is_reassembled_and_stored() {
     let snapshot = service.snapshot().unwrap();
     let battery = snapshot.battery.expect("battery reading");
     assert_eq!(battery.percent, 31);
-    // The reading carries when it was taken, so the UI can say how old it is
-    // instead of implying it is current.
     assert_eq!(battery.at_ms, 1_700_000_000_000);
 
     cleanup(&path);
 }
 
-/// The whole notification exchange, in the order it happens on the wire:
-/// announce, the watch asks, the text goes back.
 #[test]
 fn a_notification_is_announced_then_served_when_the_watch_asks() {
     use wpp_ffi::NotificationCategory;
@@ -214,7 +199,6 @@ fn a_notification_is_announced_then_served_when_the_watch_asks() {
     assert_eq!(announced[0][2], 4, "social");
     assert_eq!(&announced[0][4..], &id.to_be_bytes(), "id, big-endian");
 
-    // The watch quotes the id back big-endian and asks for the title.
     let mut write = vec![0x00];
     write.extend_from_slice(&id.to_be_bytes());
     write.extend_from_slice(&[0x01, 0x20, 0x00]);
@@ -229,7 +213,6 @@ fn a_notification_is_announced_then_served_when_the_watch_asks() {
         &[0x01, 0x05, 0x00, b'T', b'i', b't', b'l', b'e']
     );
 
-    // Dismissing announces the removal and forgets the text.
     service.dismiss_notification(id);
     let announced = recorder.announced.lock().unwrap().clone();
     assert_eq!(announced.len(), 2);
@@ -278,8 +261,6 @@ fn a_long_message_is_split_across_data_source_fragments() {
     cleanup(&path);
 }
 
-/// The watch asking for a character it cannot draw, answered from the frame it
-/// arrived in without the sync state machine being involved.
 #[test]
 fn a_glyph_request_is_answered_with_a_packed_bitmap() {
     use wpp::objects::GlyphId;
@@ -288,7 +269,6 @@ fn a_glyph_request_is_answered_with_a_packed_bitmap() {
     let recorder = Arc::new(Recorder::default());
     let (service, path) = service(&recorder);
 
-    // 'A' as the watch sends it: the field is byte-swapped inside the frame.
     let request = Frame::new(
         Command::CMD_GLYPH_GET.with_channel(Channel::SlaveRequest),
         vec![WppObject::GlyphId(GlyphId {
@@ -299,8 +279,6 @@ fn a_glyph_request_is_answered_with_a_packed_bitmap() {
         .on_bytes(request.to_bytes(), 1_700_000_000_000)
         .unwrap();
 
-    // Glyphs are drawn at the size asked for; 22 is what naming no size means.
-    // Only icons are held to what the watch declared.
     assert_eq!(
         recorder.glyphs.lock().unwrap().clone(),
         vec![(0x41, 22, 22)],
@@ -327,7 +305,6 @@ fn a_glyph_request_is_answered_with_a_packed_bitmap() {
         })
         .collect::<Vec<_>>()
         .concat();
-    // 22 tall is three bytes per column, and the last two bits go unused.
     assert_eq!(bits.len(), 66);
     assert_eq!(bits[2], 0b0011_1111);
 
@@ -351,8 +328,6 @@ fn set_markers_round_trip_through_the_service() {
     cleanup(&path);
 }
 
-/// A walk off the wire: the stream is stored window by window, and the walk
-/// is put back together on the way out.
 #[test]
 fn a_walk_arrives_as_windows_and_comes_back_as_one_activity() {
     use wpp::objects::{WamVasistasAwake, WamVasistasDuration, WamVasistasHead};
@@ -398,8 +373,6 @@ fn a_walk_arrives_as_windows_and_comes_back_as_one_activity() {
     cleanup(&path);
 }
 
-/// Reduction for drawing must keep the extremes: a dip between sets is the
-/// point of the chart, and averaging would erase it.
 #[test]
 fn reducing_a_series_for_drawing_keeps_peaks_and_troughs() {
     use wpp::client::{Record, SampleKind, Source};
@@ -414,7 +387,6 @@ fn reducing_a_series_for_drawing_keeps_peaks_and_troughs() {
         .map(|i| Record::Sample {
             measured_at: UnixMillis(1_000_000 + i * 1000),
             kind: SampleKind::HeartRate,
-            // a slow ramp with one sharp dip in the middle
             value: if i == 300 { 55 } else { 120 + (i % 5) },
             quality: None,
             source: Source::Live,

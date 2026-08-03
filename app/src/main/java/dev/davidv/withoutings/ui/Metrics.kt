@@ -17,29 +17,15 @@ import uniffi.wpp_ffi.Marker
 import uniffi.wpp_ffi.Metric
 import uniffi.wpp_ffi.SetEdge
 
-/**
- * How each series is drawn, named and read.
- *
- * [headline] is what the history screen leads with, and it is not always the
- * latest value: for heart rate the meaningful figure is the resting rate,
- * because that is what carries meaning across days, while "now" is already
- * owned by the home screen.
- */
 enum class MetricStyle(
     val metric: Metric,
     val label: String,
     val unit: String,
     val decimals: Int,
     val icon: ImageVector,
-    /// Fixed y-axis for this series, in its own units.
     val axis: ClosedFloatingPointRange<Double>,
-    /// How long a reading still describes now. Per metric because the watch
-    /// measures respiratory rate barely once an hour: one horizon for all would
-    /// call the slow ones stale for doing exactly what they do.
     val freshFor: Long,
     val headline: Headline,
-    /// The threshold the "where it went up" list is built from, in the series'
-    /// own units. Null for a series where being high is not an event.
     val elevatedAbove: Double? = null,
 ) {
     HeartRate(
@@ -91,29 +77,13 @@ enum class MetricStyle(
         0.0..100.0, HOUR, Headline.Latest,
     );
 
-    /// One window for every series, so switching between them compares the
-    /// same stretch of time rather than rescaling.
     val defaultSpan: Long get() = DEFAULT_SPAN
 
     companion object {
-        /**
-         * The four the home screen shows, and none of them is a hero.
-         *
-         * An earlier version gave heart rate a large accent card with a
-         * sparkline; it was wrong, because at any given moment there is no
-         * single most important number in this app.
-         */
         val HOME = listOf(HeartRate, Steps, Calories, Temperature)
     }
 }
 
-/**
- * Which aggregate a series is summarised by.
- *
- * Not a formatting choice: it decides what the screen claims. A resting rate
- * is a fact about the person, a daily total is a fact about the day, and
- * saying one where the other is meant makes the whole card wrong.
- */
 enum class Headline { Resting, Baseline, DailyTotal, Average, Latest }
 
 internal const val MINUTE = 60_000L
@@ -121,7 +91,6 @@ internal const val HOUR = 3600_000L
 
 private const val DEFAULT_SPAN = 6 * HOUR
 
-/** The windows a history screen offers, and the aggregation each implies. */
 enum class RangeSpan(val label: String, val spanMs: Long) {
     SixHours("6H", 6 * HOUR),
     Day("DAY", DAY_MS),
@@ -134,12 +103,6 @@ enum class RangeSpan(val label: String, val spanMs: Long) {
     }
 }
 
-/**
- * Set boundaries as the stretches they enclose.
- *
- * An unclosed start runs to the edge of the view: the watch marks the start of
- * a set before it can possibly know where the end is.
- */
 fun List<Marker>.workSpans(edgeMs: Long): List<Span> {
     val out = mutableListOf<Span>()
     var open: Long? = null
@@ -156,12 +119,9 @@ fun List<Marker>.workSpans(edgeMs: Long): List<Span> {
     return out
 }
 
-/** An entry from the store, as the chart and the attribution logic see it. */
 fun ActivityEntry.session(nowMs: Long) = Session(
     span = Span(startedAtMs, endedAtMs ?: nowMs),
     name = name,
-    // A workout is something someone started; a walk is something the watch
-    // found afterwards in counts it was keeping anyway.
     started = this is RecordedEntry,
 )
 

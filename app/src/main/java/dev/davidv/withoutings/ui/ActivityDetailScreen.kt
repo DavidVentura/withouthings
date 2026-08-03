@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,20 +27,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.ui.theme.AppTheme
 import kotlin.math.abs
+import uniffi.wpp_ffi.ActivityTotals
 
-/**
- * A finished session, read.
- *
- * Both charts share one cursor: a drag on either moves the same instant on
- * both, because the question being asked of this screen is what the two series
- * were doing at the same moment.
- */
 @Composable
 fun ActivityDetailScreen(
     state: UiState,
     entry: ActivityEntry?,
     window: LongRange,
     nowMs: Long,
+    totals: ActivityTotals?,
     onWindowChange: (LongRange) -> Unit,
     onDelete: (RecordedEntry) -> Unit,
     onBack: () -> Unit,
@@ -59,6 +56,11 @@ fun ActivityDetailScreen(
         },
         onBack = onBack,
         gap = AppTheme.space.blockMetric,
+        trailing = {
+            if (entry is RecordedEntry) {
+                GlyphButton(Icons.Rounded.DeleteOutline, "Delete this session") { asking = true }
+            }
+        },
     ) {
         if (entry == null) {
             EmptyNote("No session selected.")
@@ -66,6 +68,11 @@ fun ActivityDetailScreen(
         }
 
         SummaryRail(hr, temperature)
+
+        if (totals != null && totals.steps > 0) {
+            RowDivider(inset = 0.dp)
+            StepRail(totals)
+        }
 
         ChartTitle("Heart rate")
         ChartCard {
@@ -123,20 +130,10 @@ fun ActivityDetailScreen(
                     scrubAtMs = scrubAtMs,
                     onScrub = { scrubAtMs = it },
                     limit = extent,
-                    // The same cursor at half strength: one of the two has to
-                    // read as the one being touched.
                     cursorAlpha = 0.45f,
                     unit = " °C",
                 )
             }
-        }
-
-        Spacer(Modifier.weight(1f))
-
-        // Only the recorded ones: a detected activity is read back out of the
-        // step counts on the next refresh, so deleting one would be a lie.
-        if (entry is RecordedEntry) {
-            OutlineAction("Delete this session", Modifier.fillMaxWidth()) { asking = true }
         }
     }
 
@@ -155,7 +152,6 @@ fun ActivityDetailScreen(
     )
 }
 
-/** Three figures side by side, ruled apart. The screen's only summary. */
 @Composable
 private fun SummaryRail(hr: List<ChartPoint>, temperature: List<ChartPoint>) {
     val ordered = temperature.sortedBy { it.atMs }
@@ -188,6 +184,18 @@ private fun SummaryRail(hr: List<ChartPoint>, temperature: List<ChartPoint>) {
 }
 
 @Composable
+private fun StepRail(totals: ActivityTotals) {
+    Row(
+        Modifier.fillMaxWidth().height(64.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SummaryFigure("steps", grouped(totals.steps), "", Modifier.weight(1f))
+        RailRule()
+        SummaryFigure("climbed", grouped(totals.ascentMetres, 0), "m", Modifier.weight(1f))
+    }
+}
+
+@Composable
 private fun SummaryFigure(eyebrow: String, value: String, unit: String, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Eyebrow(eyebrow)
@@ -207,13 +215,6 @@ private fun RailRule() {
     )
 }
 
-/**
- * A chart's name, and any standing fact about it.
- *
- * Not the cursor's readout: the tooltip travels with the cursor and saying the
- * same thing twice, in two places, at two sizes, only splits the attention of
- * whoever is dragging.
- */
 @Composable
 fun ChartTitle(title: String, detail: String? = null) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {

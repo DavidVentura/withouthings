@@ -33,19 +33,9 @@ import dev.davidv.withoutings.ui.theme.AppTheme
 import kotlin.math.abs
 import uniffi.wpp_ffi.WorkoutSummary
 
-/**
- * In-session glance, one-handed, at arm's length.
- *
- * Light like the rest of the app: an earlier version inverted this screen to a
- * dark scheme with a warm zone ring, and both were rejected. The session runs
- * on the watch and the phone is a mirror, which is why nothing here commands
- * anything except the rest timer, which is the app's own.
- */
 @Composable
 fun LiveWorkoutScreen(
     state: UiState,
-    /// Null the moment the watch ends the session, which is when this screen
-    /// stops having anything to mirror.
     workout: WorkoutSummary?,
     window: LongRange,
     nowMs: Long,
@@ -60,8 +50,6 @@ fun LiveWorkoutScreen(
 ) {
     val hr = state.hr.map { ChartPoint(it.atMs, it.bpm.toDouble()) }
     val started = workout?.startedAtMs
-    // Counting from the live edge rather than from the clock: a sample that
-    // arrives late must not make the timer jump backwards.
     val elapsed = started?.let { (nowMs - it).coerceAtLeast(0) } ?: 0L
     val sets = state.markers.workSpans(nowMs)
     val space = AppTheme.space
@@ -177,7 +165,6 @@ fun LiveWorkoutScreen(
     }
 }
 
-/** The one number the screen is about, at arm's length. */
 @Composable
 private fun FocalHeartRate(hr: List<ChartPoint>) {
     val latest = hr.maxByOrNull { it.atMs }?.value
@@ -207,15 +194,6 @@ private fun FocalHeartRate(hr: List<ChartPoint>) {
     }
 }
 
-/**
- * The heart-rate zones, and which one the current rate is in.
- *
- * Four segments rather than the five the design drew: the watch's own
- * ecosystem defines four, and a fifth boundary would be this app's invention
- * placed among three that are not. The maximum comes from the birth date the
- * watch itself holds — see [maxHeartRate] — so the bar only goes blank for a
- * watch that has not yet reported a profile.
- */
 @Composable
 private fun ZoneBar(bpm: Double?, maxRate: Int?) {
     val current = bpm?.let { zoneOf(it, maxRate) }
@@ -255,14 +233,6 @@ private fun ZoneBar(bpm: Double?, maxRate: Int?) {
     }
 }
 
-/**
- * What this session has done so far, in facts.
- *
- * The design allows advice about the session's own pacing; it does not allow
- * anything that reads as medical. Everything here is a count or a difference
- * taken from the two series on the screen, so there is nothing to disagree
- * with the charts.
- */
 @Composable
 private fun Observation(hr: List<ChartPoint>, temperature: List<ChartPoint>) {
     if (hr.isEmpty()) {
@@ -282,8 +252,6 @@ private fun Observation(hr: List<ChartPoint>, temperature: List<ChartPoint>) {
     }
 
     val peak = hr.maxOf { it.value }
-    // "At your ceiling" is this session's own ceiling, not a target: the
-    // stretch spent within a few beats of the highest rate it has reached.
     val nearPeak = hr.filter { it.value >= peak - CEILING_BAND_BPM }
     val ceilingMs = nearPeak.size * samplingIntervalMs(hr)
     val rise = temperature.takeIf { it.size > 1 }?.let {
@@ -325,7 +293,6 @@ private fun Observation(hr: List<ChartPoint>, temperature: List<ChartPoint>) {
     }
 }
 
-/// How close to the session's own peak still counts as being at it.
 private const val CEILING_BAND_BPM = 5.0
 
 @Composable
@@ -366,12 +333,6 @@ private fun SkinTempTile(temperature: List<ChartPoint>, modifier: Modifier) {
     }
 }
 
-/**
- * The rest timer, which is the app's own and not the watch's.
- *
- * Starting and stopping it writes set boundaries, which is what lets the chart
- * shade the work rather than showing one undifferentiated line.
- */
 @Composable
 private fun RestTile(sets: Int, resting: Boolean, elapsedMs: Long, modifier: Modifier) {
     Tile(modifier) {

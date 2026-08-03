@@ -1,9 +1,3 @@
-//! WPP framing.
-//!
-//! A frame is `[version u8][command u16][payload_len u16][payload]`, and the
-//! payload is a run of `[type u16][size u16][data size]` objects. Everything is
-//! big-endian.
-
 use crate::codec::{ParseError, Writer};
 use crate::commands::Command;
 use crate::objects::WppObject;
@@ -15,7 +9,6 @@ pub const OBJECT_HEADER_LEN: usize = 4;
 const CHANNEL_MASK: u16 = 0xC000;
 const OPCODE_MASK: u16 = 0x3FFF;
 
-/// The two high bits of a command id, from `Wpp.CMD_CHANNEL_*`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Channel {
     MasterRequest,
@@ -43,8 +36,6 @@ impl Channel {
 }
 
 impl Command {
-    /// The command id without its channel bits, which is what the `CMD_*`
-    /// constants name.
     pub fn opcode(self) -> u16 {
         self.0 & OPCODE_MASK
     }
@@ -57,7 +48,6 @@ impl Command {
         Command(self.opcode() | channel.bits())
     }
 
-    /// Name of the underlying command, ignoring channel bits.
     pub fn opcode_name(self) -> Option<&'static str> {
         Command(self.opcode()).name()
     }
@@ -65,25 +55,20 @@ impl Command {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameError {
-    /// Fewer than `HEADER_LEN` bytes; nothing can be decided yet.
     ShortHeader {
         available: usize,
     },
     UnsupportedVersion {
         found: u8,
     },
-    /// The declared payload extends past the end of the buffer. Callers doing
-    /// BLE reassembly should treat this as "need more data".
     IncompletePayload {
         declared: usize,
         available: usize,
     },
-    /// The payload's object sizes do not add up to the declared length.
     PayloadLengthMismatch {
         declared: usize,
         consumed: usize,
     },
-    /// Bytes remained after a frame that was expected to fill the buffer.
     TrailingData {
         remaining: usize,
     },
@@ -128,13 +113,9 @@ pub struct Frame {
     pub objects: Vec<WppObject>,
 }
 
-/// The watch's reassembly buffer: the whole frame, header included, so 195
-/// bytes of objects.
-///
-/// Over it the watch does not refuse the frame — it logs "Command too long",
-/// panics, and reboots several seconds later, far enough from the cause to be
-/// hard to place. Anything longer is split across frames of the same command,
-/// which the watch accumulates.
+/// Over this many bytes the watch panics and reboots several seconds later;
+/// anything longer must be split across frames of the same command, which the
+/// watch accumulates.
 pub const MAX_FRAME_BYTES: usize = 200;
 
 impl Frame {
@@ -142,13 +123,6 @@ impl Frame {
         Frame { command, objects }
     }
 
-    /// The wire frames this one is sent as: itself, or as many frames of the
-    /// same command as its objects take.
-    ///
-    /// Boundaries carry no meaning — the watch accumulates across frames of a
-    /// command — so they are settled here rather than by whoever built the
-    /// message. Objects keep their order, and one too big for a frame on its
-    /// own still goes rather than being dropped silently.
     pub fn to_wire(&self) -> Vec<Frame> {
         if HEADER_LEN + self.payload_len() <= MAX_FRAME_BYTES {
             return vec![self.clone()];
@@ -178,8 +152,6 @@ impl Frame {
             .sum()
     }
 
-    /// Total frame length declared by a header prefix, for BLE reassembly.
-    /// Returns `None` until `HEADER_LEN` bytes are available.
     pub fn declared_len(buf: &[u8]) -> Option<usize> {
         if buf.len() < HEADER_LEN {
             return None;
@@ -187,8 +159,6 @@ impl Frame {
         Some(HEADER_LEN + u16::from_be_bytes([buf[3], buf[4]]) as usize)
     }
 
-    /// The command a buffer claims to carry, readable even when the body will
-    /// not decode — which is exactly when it is worth knowing.
     pub fn declared_command(buf: &[u8]) -> Option<u16> {
         if buf.len() < HEADER_LEN {
             return None;
@@ -196,16 +166,6 @@ impl Frame {
         Some(u16::from_be_bytes([buf[1], buf[2]]))
     }
 
-    /// Where a second frame begins inside this one, if it does.
-    ///
-    /// Frames span notifications once they outgrow the MTU, so one that goes
-    /// missing leaves the head of a frame glued to the body of a later one.
-    /// The join is visible: a header partway in separates a lost notification
-    /// from a watch that sent something we cannot read — different faults with
-    /// different cures.
-    ///
-    /// The second frame is usually cut off by the first one's declared length,
-    /// so this cannot demand that it parses.
     pub fn splice_offset(buf: &[u8]) -> Option<usize> {
         (1..buf.len().saturating_sub(HEADER_LEN)).find(|&at| {
             buf[at] == PROTOCOL_VERSION
@@ -215,7 +175,6 @@ impl Frame {
         })
     }
 
-    /// Decode one frame that fills `buf` exactly.
     pub fn parse(buf: &[u8]) -> Result<Frame, FrameError> {
         let (frame, rest) = Frame::parse_prefix(buf)?;
         if !rest.is_empty() {
@@ -226,8 +185,6 @@ impl Frame {
         Ok(frame)
     }
 
-    /// Decode the frame at the start of `buf`, returning it with the bytes that
-    /// follow it.
     pub fn parse_prefix(buf: &[u8]) -> Result<(Frame, &[u8]), FrameError> {
         if buf.len() < HEADER_LEN {
             return Err(FrameError::ShortHeader {
@@ -284,9 +241,6 @@ impl Frame {
         w.finish()
     }
 
-    /// Objects whose type is known but whose bytes did not match the layout
-    /// extracted from the app. A non-empty result means the extracted spec is
-    /// wrong for that type.
     pub fn malformed(&self) -> impl Iterator<Item = (u16, &ParseError)> {
         self.objects.iter().filter_map(|o| match o {
             WppObject::Malformed { type_id, error, .. } => Some((*type_id, error)),
@@ -294,7 +248,6 @@ impl Frame {
         })
     }
 
-    /// Objects carrying a type id the app has no class for.
     pub fn unknown(&self) -> impl Iterator<Item = u16> + '_ {
         self.objects.iter().filter_map(|o| match o {
             WppObject::Unknown { type_id, .. } => Some(*type_id),
@@ -308,19 +261,15 @@ mod tests {
     use super::*;
     use crate::objects::ImageData;
 
-    /// A frame of exactly `total` encoded bytes, padding included.
     fn sized(total: usize) -> Frame {
         Frame::new(
             Command::CMD_WORKOUT_SCREEN_SET,
             vec![WppObject::ImageData(ImageData {
-                // One length byte of its own, plus the object header.
                 data: vec![0; total - HEADER_LEN - OBJECT_HEADER_LEN - 1],
             })],
         )
     }
 
-    /// Off by the five bytes of header and every frame goes over the watch's
-    /// buffer, which reboots it.
     #[test]
     fn the_limit_counts_the_header_too() {
         assert_eq!(sized(MAX_FRAME_BYTES).to_bytes().len(), MAX_FRAME_BYTES);
@@ -329,8 +278,6 @@ mod tests {
 
     #[test]
     fn one_byte_over_takes_two_frames() {
-        // Two objects, because splitting is by object: 195 bytes of payload
-        // fills a frame exactly, so one more byte cannot ride with it.
         let frame = Frame::new(
             Command::CMD_WORKOUT_SCREEN_SET,
             vec![
@@ -348,9 +295,6 @@ mod tests {
         }
     }
 
-    /// Splitting is by object, so one too large for a frame goes anyway,
-    /// oversize. Nothing sent is close — the largest is a 64-byte `ImageData`
-    /// — and dropping it silently would be worse.
     #[test]
     fn an_object_larger_than_a_frame_goes_rather_than_vanishing() {
         let frame = sized(MAX_FRAME_BYTES + 1);

@@ -43,13 +43,6 @@ import dev.davidv.withoutings.ui.theme.AppTheme
 import uniffi.wpp_ffi.Night
 import uniffi.wpp_ffi.SleepStage
 
-/**
- * The day as a shape: what happened, in order, from midnight to now.
- *
- * The ribbon runs top to bottom chronologically, so the present sits at the
- * bottom of the rail — which is also where the thumb is, and why the "now" card
- * is pinned there rather than leading.
- */
 @Composable
 fun TodayScreen(
     state: UiState,
@@ -103,13 +96,6 @@ fun TodayScreen(
     }
 }
 
-/**
- * Midnight to midnight, drawn once.
- *
- * The whole day is always in view whatever the cards do, because the rail is a
- * scale rather than a list: compressing it to the hours that happen to have
- * something in them would make two identical days look different.
- */
 @Composable
 private fun DayRail(
     midnightMs: Long,
@@ -159,8 +145,6 @@ private fun DayRail(
         for (session in sessions) {
             val top = y(session.fromMs).coerceAtLeast(0f)
             val bottom = y(session.toMs).coerceAtMost(size.height)
-            // A ten-minute walk is a hair's width over a whole day, and a
-            // block that cannot be seen reads as a day with nothing in it.
             val height = (bottom - top).coerceAtLeast(3.dp.toPx())
             drawRoundRect(
                 scheme.primary,
@@ -170,8 +154,6 @@ private fun DayRail(
             )
         }
 
-        // The day's heart rate, laid along the same axis: the trace runs down
-        // the bar and its horizontal position is the rate.
         val trace = heartRate.filter { it.atMs in midnightMs..nowMs }.sortedBy { it.atMs }
         if (trace.size > 1) {
             val path = Path()
@@ -207,12 +189,9 @@ private fun DayRail(
     }
 }
 
-/// The rail maps the width of the bar onto the rates a day is normally spent
-/// in. Wider would flatten the trace; narrower would clip most of a workout.
 private const val RAIL_BPM_LOW = 40.0
 private const val RAIL_BPM_HIGH = 120.0
 
-/** The night, and the one accent card on this screen. */
 @Composable
 private fun SleptCard(night: Night?, sleep: Span, onOpen: () -> Unit) {
     AccentCard(
@@ -254,7 +233,6 @@ private fun SleptCard(night: Night?, sleep: Span, onOpen: () -> Unit) {
     }
 }
 
-/** One thing that happened, with the numbers the watch recorded for it. */
 @Composable
 private fun EventCard(entry: ActivityEntry, nowMs: Long, onOpen: () -> Unit) {
     Column(

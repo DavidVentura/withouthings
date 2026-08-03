@@ -23,17 +23,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.ui.theme.AppTheme
 
-/**
- * The app's own settings, as opposed to the watch's.
- *
- * Everything here changes what this phone does or which watch it holds a key
- * for. Nothing here is sent over the air except the factory reset, which is
- * the one action that has to be.
- */
 @Composable
 fun AppSettingsScreen(
     connected: Boolean,
-    onProbeFrame: (Int) -> Unit,
+    listening: Boolean,
     testNotification: UInt?,
     onPostTestNotification: () -> Unit,
     onDismissTestNotification: () -> Unit,
@@ -50,14 +43,25 @@ fun AppSettingsScreen(
         ) {
             Eyebrow("diagnostics")
             Text(
-                "Posts a notification of this app's own, to exercise the path " +
-                    "without reading the phone's real ones. The watch keeps it on " +
-                    "screen until it is cleared.",
+                if (listening) {
+                    "Posts a notification of this app's own, to exercise the path " +
+                        "without reading the phone's real ones. The watch keeps it on " +
+                        "screen until it is cleared."
+                } else {
+                    "The watch has not subscribed to the notification server yet. " +
+                        "It does that a few seconds after connecting, and anything " +
+                        "sent before then is discarded."
+                },
                 style = AppTheme.type.body,
                 color = AppTheme.colors.onSurfaceTertiary,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlineAction("Send test", Modifier.weight(1f), onClick = onPostTestNotification)
+                OutlineAction(
+                    "Send test",
+                    Modifier.weight(1f),
+                    enabled = listening,
+                    onClick = onPostTestNotification,
+                )
                 OutlineAction(
                     "Clear it",
                     Modifier.weight(1f),
@@ -65,27 +69,6 @@ fun AppSettingsScreen(
                     onClick = onDismissTestNotification,
                 )
             }
-
-            Eyebrow("frame size probe", Modifier.padding(top = 12.dp))
-            Text(
-                "Sends a frame of the chosen size. The watch reboots above its " +
-                    "reassembly limit, so the size that kills it is the answer.",
-                style = AppTheme.type.body,
-                color = AppTheme.colors.onSurfaceTertiary,
-            )
-            var probe by remember { mutableStateOf(190) }
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            ) {
-                OutlineAction("-8") { probe -= 8 }
-                OutlineAction("-1") { probe -= 1 }
-                Text("$probe", Modifier.weight(1f), style = AppTheme.type.summaryValue)
-                OutlineAction("+1") { probe += 1 }
-                OutlineAction("+8") { probe += 8 }
-            }
-            OutlineAction("Send $probe bytes", Modifier.fillMaxWidth()) { onProbeFrame(probe) }
 
             Eyebrow("this watch", Modifier.padding(top = 12.dp))
             Text(

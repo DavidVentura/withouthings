@@ -1,8 +1,3 @@
-//! SQLite persistence for [`wpp::Record`].
-//!
-//! The write path is idempotent: re-syncing a window that was already stored
-//! is a no-op, which the paged history walk guarantees will happen.
-
 mod migrate;
 
 use std::collections::{BTreeSet, HashMap};
@@ -15,26 +10,16 @@ use wpp::units::UnixTime;
 
 pub use rusqlite::Error;
 
-/// `sample_kind.battery_state`, and the value meaning a charger is attached.
 const CHARGING_KIND: i64 = 8;
 const CHARGING_STATE: i64 = 0;
 
-/// How long a level sample stands for on its own. A repeat this far after the
-/// one it repeats is written anyway, so a series that is holding stays
-/// distinguishable from a watch that stopped reporting.
 const LEVEL_MAX_GAP_MS: i64 = 10 * 60 * 1000;
 
 pub struct Store {
     conn: Connection,
 }
 
-/// The workout the watch is running.
-///
-/// Named fields rather than a tuple because two of the three are `i64` and one
-/// of them is the key the watch identifies the session by: a stop naming the
-/// wrong number is ignored in silence.
 pub struct ActiveWorkout {
-    /// The store's own row id.
     pub id: i64,
     pub started_at: UnixTime,
     pub subcategory: i64,
@@ -68,9 +53,6 @@ impl Store {
             })
     }
 
-    /// What the watch last said it is, once it has said. Written by the probe
-    /// reply, so it survives a disconnection and is available before the next
-    /// one completes.
     pub fn identity(&self, device_id: i64) -> Result<Option<DeviceIdentity>, Error> {
         self.conn
             .query_row(
@@ -90,7 +72,6 @@ impl Store {
             .optional()
     }
 
-    /// Who the watch says is wearing it, once it has said.
     pub fn watch_user(&self, device_id: i64) -> Result<Option<UserProfile>, Error> {
         self.conn
             .query_row(
@@ -111,9 +92,6 @@ impl Store {
             .optional()
     }
 
-    /// Persist a batch atomically. Only after this returns may the caller tell
-    /// the client the data is durable, and only then may anything be deleted
-    /// from the watch.
     pub fn store(&mut self, device_id: i64, records: &[Record]) -> Result<(), Error> {
         let records = thin_levels(self.newest_levels(device_id, records)?, records);
         let tx = self.conn.transaction()?;
@@ -128,8 +106,6 @@ impl Store {
                     window_secs,
                     context,
                 } => {
-                    // Every sample is an observation at an instant, so a
-                    // repeat of one is a duplicate.
                     tx.execute(
                         "INSERT INTO sample
                              (device_id, measured_at, kind, source, value, quality,
@@ -164,8 +140,6 @@ impl Store {
                     ended_at,
                     paused_secs,
                 } => {
-                    // The stop message may arrive without a start having been
-                    // seen, so insert rather than assume the row exists.
                     tx.execute(
                         "INSERT INTO workout (device_id, started_at, ended_at, subcategory, paused_secs)
                          VALUES (?1, ?2, ?3, 0, ?4)
@@ -182,12 +156,6 @@ impl Store {
                 }
                 Record::Activity(minute) => {
                     tx.execute(
-                        // A re-walk fills in what a window was stored without,
-                        // and never overwrites a value with a null: the fields
-                        // a record carries depend on what the request asked
-                        // for, so an earlier pass can hold columns this one
-                        // does not. That is what recovers the staging and the
-                        // activity recognition for windows already walked.
                         "INSERT INTO activity_minute (device_id, started_at, duration_secs,
                              steps, distance, ascent, descent, calories, met,
                              walk_level, run_level, reco_v1, reco_v2, sleep_level)
@@ -264,8 +232,6 @@ impl Store {
         tx.commit()
     }
 
-    /// The newest live sample already stored for each level kind the batch
-    /// carries, as kind id to (measured_at, value).
     fn newest_levels(
         &self,
         device_id: i64,
@@ -302,10 +268,6 @@ impl Store {
         Ok(newest)
     }
 
-    /// Keep a frame the decoder could not read.
-    ///
-    /// Silently dropping one loses whatever it carried with nothing to show
-    /// for it; kept, the bytes can be decoded later against a fixed parser.
     pub fn store_undecoded(
         &self,
         device_id: i64,
@@ -322,7 +284,6 @@ impl Store {
         Ok(())
     }
 
-    /// Watermarks to resume from, one per category the watch serves.
     pub fn watermarks(
         &self,
         device_id: i64,
@@ -361,7 +322,6 @@ impl Store {
         Ok(())
     }
 
-    /// Most recent value of a kind, as (measured_at_ms, value).
     pub fn latest(&self, device_id: i64, kind: i64) -> Result<Option<(i64, i64)>, Error> {
         self.conn
             .query_row(
@@ -374,11 +334,6 @@ impl Store {
             .optional()
     }
 
-    /// One kind of sample over a window, reduced to at most `max_points`.
-    ///
-    /// Reduction keeps the minimum and maximum of each bucket rather than an
-    /// average: averaging flattens the recovery dips between sets, which is
-    /// what the trace is being read for.
     pub fn series(
         &self,
         device_id: i64,
@@ -431,11 +386,6 @@ impl Store {
         self.with_neighbours(device_id, kind, from_ms, to_ms, inside)
     }
 
-    /// The same series with the nearest sample on each side of the window.
-    ///
-    /// Without them the trace starts and stops at the edges of the plot, so
-    /// panning makes the ends jump as points cross the boundary. The extra
-    /// points are drawn off-screen and only exist to carry the line out there.
     fn with_neighbours(
         &self,
         device_id: i64,
@@ -472,7 +422,6 @@ impl Store {
         Ok(out)
     }
 
-    /// Oldest and newest sample of a kind, for framing an initial window.
     pub fn extent(&self, device_id: i64, kind: i64) -> Result<Option<(i64, i64)>, Error> {
         self.conn
             .query_row(
@@ -487,7 +436,6 @@ impl Store {
             })
     }
 
-    /// Workouts newest first, as (id, started_at, ended_at, subcategory).
     pub fn workouts(
         &self,
         device_id: i64,
@@ -503,20 +451,9 @@ impl Store {
         rows.collect()
     }
 
-    /// Windows of the activity stream covering a span, oldest first, which is
-    /// the order [`wpp::activity::detect`] needs them in.
-    ///
-    /// A window that starts before `from_secs` but runs into the span is
-    /// included: the walk that a view opens in the middle of began earlier.
-    /// Whether the watch staged any sleep in a window.
-    ///
-    /// Cheap enough to step a night at a time over: the walk back to a night
-    /// with data is a handful of index lookups per day skipped.
-    ///
-    /// Overlap, not containment, and matching [`Store::activity_minutes`]
-    /// exactly. A window that opens before the span and runs into it counts for
-    /// both or neither — the two disagreeing is a night reported as having data
-    /// and then drawn empty, or skipped over while holding some.
+    /// Must match [`Store::activity_minutes`]'s windowing exactly: disagreeing
+    /// reports a night as having data and then draws it empty, or skips over
+    /// one while it still holds some.
     pub fn has_staging(&self, device_id: i64, from_secs: i64, to_secs: i64) -> Result<bool, Error> {
         self.conn.query_row(
             "SELECT EXISTS (SELECT 1 FROM activity_minute
@@ -563,7 +500,6 @@ impl Store {
         rows.collect()
     }
 
-    /// The workout still running, if any.
     pub fn active_workout(&self, device_id: i64) -> Result<Option<ActiveWorkout>, Error> {
         self.conn
             .query_row(
@@ -582,12 +518,6 @@ impl Store {
             .optional()
     }
 
-    /// Forget a recorded session, and the set marks that only divide it.
-    ///
-    /// The measurements it covers stay: nothing on the wire ties a sample to a
-    /// workout, so they are the day's readings that happen to fall inside it,
-    /// and the heart rate someone was at is true whether or not the session
-    /// around it is kept.
     pub fn delete_workout(&self, device_id: i64, id: i64) -> Result<(), Error> {
         let tx = self.conn.unchecked_transaction()?;
         tx.execute(
@@ -616,7 +546,6 @@ impl Store {
         Ok(())
     }
 
-    /// Set boundaries inside a window, as (at_ms, edge).
     pub fn markers(
         &self,
         device_id: i64,
@@ -633,14 +562,6 @@ impl Store {
         rows.collect()
     }
 
-    /// One recording: metadata plus its interleaved samples.
-    /// When the watch was on a charger, as (start, end) with an open end for a
-    /// charge still running.
-    ///
-    /// Derived from the `battery_state` series rather than stored separately:
-    /// the watch reports a state, and a charge is the stretch over which that
-    /// state was CHARGING. The sample before the window is included so a charge
-    /// already under way is not missed.
     pub fn charge_periods(
         &self,
         device_id: i64,
@@ -673,21 +594,12 @@ impl Store {
                 _ => {}
             }
         }
-        // A state holds until a reading contradicts it, and the series is
-        // written on change, so the last one saying CHARGING means the charge
-        // was still running at the end of the window. Ending it at that reading
-        // would report a charge as over for as long as the gap between two
-        // writes of an unchanged state.
         if let Some(start) = open {
             periods.push((start, None));
         }
         Ok(periods)
     }
 
-    /// Recordings the app can draw, newest first.
-    ///
-    /// Only signal types with a known lead layout: the same transfer path also
-    /// carries other stored measurements, which are not waveforms.
     pub fn ecgs(&self, device_id: i64) -> Result<Vec<(i64, i64, i64, i64, i64)>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT id, measured_at, signal_type, sampling_hz, length(samples)
@@ -701,9 +613,6 @@ impl Store {
         rows.collect()
     }
 
-    /// What the watch concluded about a recording, as (type, value, exponent).
-    /// Empty for one it said nothing about, and for every recording stored
-    /// before this was collected.
     pub fn ecg_measures(&self, ecg_id: i64) -> Result<Vec<(i64, i64, i64)>, Error> {
         let mut stmt = self
             .conn
@@ -733,15 +642,6 @@ impl Store {
     }
 }
 
-/// The records of a batch worth writing, given the newest live sample already
-/// stored for each level kind, as kind id to (measured_at, value).
-///
-/// A live level only says something when it changes or when enough time has
-/// passed that its holding is itself news, and the watch pushes one every
-/// ~20 s regardless. Everything else passes through untouched: a stored series
-/// is already the watch's own summary, and an instant is only ever about the
-/// moment it was taken at, so a repeat of one is a second observation rather
-/// than the same one restated.
 fn thin_levels(mut newest: HashMap<i64, (i64, i64)>, records: &[Record]) -> Vec<&Record> {
     let mut kept = Vec::with_capacity(records.len());
     for record in records {
@@ -804,8 +704,6 @@ fn store_ecg(tx: &rusqlite::Transaction<'_>, device_id: i64, signal: &Signal) ->
         ],
     )?;
 
-    // The insert above does nothing for a recording already stored, so the id
-    // has to be looked up rather than taken from the insert.
     let ecg_id: i64 = tx.query_row(
         "SELECT id FROM ecg WHERE device_id = ?1 AND measured_at = ?2 AND signal_type = ?3",
         params![device_id, measured_at, signal.meta.r#type],
@@ -867,7 +765,6 @@ mod tests {
         assert_eq!(read[0], minute);
     }
 
-    /// A window that opened before the span but runs into it is part of it.
     #[test]
     fn a_window_straddling_the_start_of_the_span_is_read() {
         let mut store = Store::open_in_memory().unwrap();
@@ -899,8 +796,6 @@ mod tests {
         assert_eq!(store.count("sample").unwrap(), 2);
     }
 
-    /// The same instant seen live and in the stored series are two different
-    /// observations, not a duplicate.
     #[test]
     fn live_and_stored_samples_coexist() {
         let mut store = Store::open_in_memory().unwrap();
@@ -998,7 +893,6 @@ mod tests {
             .unwrap();
         store.mark_set(device, 1_020_000, 0).unwrap();
         store.mark_set(device, 1_040_000, 1).unwrap();
-        // Outside the session, so not the session's to delete.
         store.mark_set(device, 1_200_000, 0).unwrap();
 
         let id = store.workouts(device, 10).unwrap()[0].0;
@@ -1026,7 +920,6 @@ mod tests {
                         ended_at: UnixTime(1100),
                         paused_secs: 0,
                     },
-                    // milliseconds, against a workout spanning 1000..1100 s
                     sample(999_000, 60, Source::Live),
                     sample(1_050_000, 120, Source::Live),
                     sample(1_200_000, 61, Source::Live),
@@ -1040,8 +933,6 @@ mod tests {
         assert_eq!(inside, 1, "only the sample within the workout window");
     }
 
-    /// The points on either side are off-screen; without them the trace stops
-    /// at the edge of the plot and panning makes the ends jump.
     #[test]
     fn a_series_reaches_one_point_past_each_end_of_the_window() {
         let mut store = Store::open_in_memory().unwrap();
@@ -1064,8 +955,6 @@ mod tests {
         let times: Vec<i64> = series.iter().map(|(t, _, _)| *t).collect();
         assert_eq!(times, vec![2_000, 3_000, 4_000], "one either side of 3000");
 
-        // At the ends of the data there is nothing to reach for, and asking
-        // must not invent a point or fail.
         let head = store.series(device, kind, 0, 1_500, 100).unwrap();
         assert_eq!(
             head.iter().map(|(t, _, _)| *t).collect::<Vec<_>>(),
@@ -1078,8 +967,6 @@ mod tests {
         );
     }
 
-    /// A charge is a stretch of the state series, not an event, so it has to
-    /// survive a window that starts or ends in the middle of one.
     #[test]
     fn charging_periods_come_out_of_the_state_series() {
         let mut store = Store::open_in_memory().unwrap();
@@ -1093,7 +980,6 @@ mod tests {
             window_secs: None,
             context: None,
         };
-        // ok, ok, charging, charging, ok, then charging to the end
         store
             .store(
                 device,
@@ -1114,7 +1000,6 @@ mod tests {
             "the last charge is still running, so it has no end"
         );
 
-        // A window opening mid-charge still shows one, from its own start.
         assert_eq!(
             store.charge_periods(device, 2_500, 4_500).unwrap(),
             vec![(2_500, Some(4_000))]
@@ -1133,8 +1018,6 @@ mod tests {
         }
     }
 
-    /// The watch pushes the battery every ~20 s; only the changes and a
-    /// ten-minute restatement are worth keeping.
     #[test]
     fn a_level_that_is_not_moving_is_stored_every_ten_minutes() {
         let mut store = Store::open_in_memory().unwrap();
@@ -1157,8 +1040,6 @@ mod tests {
         );
     }
 
-    /// Thinning must survive the batch boundary, or a stream that arrives one
-    /// record at a time is not thinned at all.
     #[test]
     fn a_repeat_arriving_in_a_later_batch_is_still_dropped() {
         let mut store = Store::open_in_memory().unwrap();
@@ -1173,8 +1054,6 @@ mod tests {
         );
     }
 
-    /// Only levels are thinned: a heart rate that reads the same twice is two
-    /// measurements, not one restated.
     #[test]
     fn instants_and_stored_series_pass_through_untouched() {
         let mut store = Store::open_in_memory().unwrap();

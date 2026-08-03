@@ -1,13 +1,3 @@
-//! The sync conversation, as a pure state machine.
-//!
-//! [`Client::handle`] takes an [`Event`] and returns [`Action`]s. It performs
-//! no I/O and holds no clock, so the same code drives a live BLE link and a
-//! replayed capture, and the tests below are the protocol spec.
-//!
-//! Deleting a stored measurement is irreversible on the watch, so
-//! [`Action::Delete`] is only ever produced after the host reports the data
-//! durable via [`Event::Stored`].
-
 use crate::activity::Minute;
 use crate::debug_dump::DebugDump;
 use crate::frame::Channel;
@@ -22,28 +12,20 @@ use crate::signal::{Signal, SignalCollector};
 use crate::units::{UnixMillis, UnixTime};
 use crate::{Command, Frame, WppObject};
 
-/// `TYPE_CMDERROR_ERR_DEVBUSY`: the watch is busy, not refusing.
 const ERR_DEVBUSY: i32 = -2;
 
-/// Does this error frame refuse the probe, rather than something asked
-/// alongside it? `Cmderror.cmd` names the command that was rejected.
 pub(crate) fn rejects_probe(frame: &Frame) -> bool {
     frame.objects.iter().any(|o| {
         matches!(o, WppObject::Cmderror(e)
             if e.cmd == Command::CMD_PROBE.0 || e.cmd == Command::CMD_PROBE_CHALLENGE.0)
     })
 }
-/// What the app tells the watch it is. The version is the official app's, and
-/// the watch does read it: firmware old enough to lack a command answers
-/// `CMDUNKN` rather than adapting, so claiming to be something older buys
-/// nothing.
 pub const APP_PROBE: AppProbe = AppProbe {
     os: 1,
     app: 1,
     version: 8070101,
 };
 
-/// The frame that opens every conversation, authenticated or not.
 pub fn probe_frame() -> Frame {
     Frame::new(
         Command::CMD_PROBE,
@@ -55,34 +37,14 @@ pub fn probe_frame() -> Frame {
 }
 
 const MAX_BUSY_RETRIES: u32 = 20;
-/// The watch asks for a sync every few seconds, and each one ends with a
-/// refresh. The daily totals do not change fast enough to be worth a request
-/// at that rate.
 const MIN_REFRESH_INTERVAL_MS: i64 = 300_000;
-/// The watch asks for a sync every few seconds. Walking every stream that
-/// often keeps its radio busy for no gain — it buffers, so a later walk
-/// collects exactly the same records in one pass.
 const MIN_WALK_INTERVAL_MS: i64 = 900_000;
-/// A drain empties the watch's buffer, so a second one straight after has
-/// nothing to collect. The watch asks for a sync once a minute regardless, and
-/// answering every one of those with a transfer would cost more than the
-/// asking does.
 const MIN_DUMP_INTERVAL_MS: i64 = 900_000;
-/// Silence after we have asked for something. A reply can be slow; this long
-/// after being asked, the watch is not going to answer.
 const SILENCE_TIMEOUT_MS: i64 = 90_000;
-/// `WAM_SCREEN_MAX_NUMBER`: the screen list is this many slots, zero-padded.
 const SCREEN_SLOTS: usize = 24;
-/// The quick-launch menu holds this many activities, zero-padded.
 const ACTIVITY_SLOTS: usize = 8;
-/// A session shorter than this is a start and a stop on the wrist with nothing
-/// in between, and is not a workout anyone means to keep.
-const MIN_WORKOUT_SECS: i64 = 10;
+const MIN_WORKOUT_SECS: i64 = 30;
 
-/// Shared secret established at association, and the watch's address.
-///
-/// The secret is the 32-character key sent as `AccountKey`/`AdvKey` by
-/// `CMD_ASSOCIATION_KEYS_SET`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Credentials {
     pub mac: String,
@@ -90,7 +52,6 @@ pub struct Credentials {
 }
 
 impl Credentials {
-    /// `SHA1(challenge || mac_ascii || secret_ascii)`, as the app computes it.
     pub fn answer(&self, challenge: &[u8]) -> Vec<u8> {
         let mut input = Vec::with_capacity(challenge.len() + self.mac.len() + self.secret.len());
         input.extend_from_slice(challenge);
@@ -100,26 +61,16 @@ impl Credentials {
     }
 }
 
-/// What the watch says it is, out of the `ProbeReply` that opens every session.
-///
-/// The association secret rides in the same object and is deliberately not kept
-/// here: it is already held as [`Credentials`], and a copy in the record store
-/// is a copy to leak.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceIdentity {
     pub name: String,
-    /// `soft_version`: the firmware, and the number its image is named after.
     pub firmware: u32,
     pub bootloader: u32,
-    /// `hard_version` and `rescue_version`, absent when the watch reports
-    /// [`DeviceIdentity::UNREPORTED`] for them — which this one does for both.
     pub hardware: Option<u32>,
     pub rescue: Option<u32>,
 }
 
 impl DeviceIdentity {
-    /// All-ones in the 24 bits the field uses. Not a version: the watch sends
-    /// it for the two it has nothing to say about.
     pub const UNREPORTED: u32 = 0xFF_FFFF;
 
     pub fn of(reply: &crate::objects::ProbeReply) -> DeviceIdentity {
@@ -134,40 +85,21 @@ impl DeviceIdentity {
     }
 }
 
-/// One entry of the quick-launch menu, as the watch is told it.
-///
-/// The glyphs are keyed by the image kind the watch declared on its screen
-/// list: it asks for a set of sizes and the reply has to answer each of them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorkoutScreen {
     pub id: u32,
     pub name: String,
-    /// What the watch's own workout face leads with: 2 paces, 3 speeds, 1
-    /// neither. Read off the activity's feature list.
     pub face_mode: u8,
-    /// 0 where the activity may wake the phone, 1 where it may not.
     pub flag: u16,
     pub glyphs: Vec<(u8, crate::image::Mono)>,
 }
 
-/// Who the watch thinks is wearing it.
-///
-/// The watch holds this and answers `CMD_TRACKER_USER_GET` with all of it, so
-/// it is the store of record rather than anything the phone owns. Written back
-/// whole by `CMD_TRACKER_USER_SET`: there is no way to change one field, which
-/// is why the fields nothing here understands are carried rather than dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserProfile {
-    /// The account the watch was associated under. Echoed back unchanged; the
-    /// watch chose nothing about it and neither does this.
     pub id: u32,
-    /// Grams.
     pub weight: u32,
-    /// Centimetres.
     pub height: u32,
-    /// Uninterpreted. Nothing here reads it, and a write has to preserve it.
     pub gender: u8,
-    /// Unix seconds, signed so that a birth before 1970 is representable.
     pub birth: i32,
     pub first_name: String,
 }
@@ -185,86 +117,50 @@ impl UserProfile {
     }
 }
 
-/// The next change of local offset from UTC. The watch is told about it so its
-/// clock follows a daylight-saving change with nothing connected to it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DstChange {
     pub at: UnixTime,
     pub gmt_offset: i32,
 }
 
-/// The watch's side of phone notifications, as it reports it.
-///
-/// Two independent switches come back from one request: whether the watch will
-/// talk to the phone's ANCS server, and whether it puts what it hears on the
-/// screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct NotificationConfig {
-    /// `AncsStatus.status`: the watch will act as a notification client.
     pub accepted: bool,
-    /// `NotificationsDisplayState.status`: it will show them.
     pub displayed: bool,
 }
 
-/// Which historical series to walk. The watch keeps them separately and each
-/// needs its own watermark.
-///
-/// Category 0 is the body stream, fetched with `CMD_BODY_VASISTAS_GET` and no
-/// type selector; it is the one carrying heart rate. Every other value is a
-/// `VasistasType` fetched with `CMD_VASISTAS_GET`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Category(pub u8);
 
 impl Category {
     pub const BODY: Category = Category(0);
-    /// The per-minute activity stream, fetched with `CMD_WAM_VASISTAS_GET`,
-    /// which like the body stream takes no type selector. Numbered outside the
-    /// range the watch uses for `VasistasType` so that it can keep a watermark
-    /// of its own without colliding with a typed one.
     pub const ACTIVITY: Category = Category(255);
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
-    /// The link is up and notifications are subscribed.
     Connected,
-    /// The link is gone. Everything scoped to it has to be let go here, or it
-    /// outlives the connection it described and poisons the next one.
     Disconnected,
-    /// A decoded frame and when the host received it. Live pushes carry no
-    /// timestamp of their own, so this is the only time they get.
     Frame {
         frame: Frame,
         received_at: UnixMillis,
     },
-    /// Everything handed over by [`Action::Store`] up to `token` is durable.
     Stored { token: u64 },
-    /// The host's clock, delivered on a timer whether or not anything arrived.
-    ///
-    /// Without it the client's only sense of time comes from inbound frames,
-    /// so it cannot tell a quiet watch from a stopped one, and every interval
-    /// it enforces freezes exactly when the link goes wrong.
     Tick { now: UnixMillis },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     Send(Frame),
-    /// Persist these records, then report back with [`Event::Stored`].
     Store {
         token: u64,
         records: Vec<Record>,
     },
-    /// Safe to remove from the watch: the data behind it is committed.
     Delete(Frame),
-    /// The sync finished; the link can be dropped.
     Finished,
-    /// The link is up but the watch has stopped answering. Tear it down and
-    /// start again; nothing else will resolve it.
     Reconnect,
 }
 
-/// What a sync produced, in wire units.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Record {
     Sample {
@@ -273,13 +169,7 @@ pub enum Record {
         value: i64,
         quality: Option<i64>,
         source: Source,
-        /// The window the reading covers. The streams tag every record with
-        /// one: a minute for an aggregated series, ~37 s for an HRV burst.
-        /// Absent for the live pushes and daily totals, which are instants.
         window_secs: Option<i64>,
-        /// What the watch says the reading is, where the stream annotates it —
-        /// `VasistasCbt.attrib`, one of its `ATTRIB_*`. A temperature measured
-        /// asleep is not the same claim as one measured at a desk.
         context: Option<i64>,
     },
     WorkoutStarted {
@@ -291,20 +181,12 @@ pub enum Record {
         ended_at: UnixTime,
         paused_secs: i64,
     },
-    /// A session that ran too briefly to be one. It is named rather than
-    /// omitted because its start may already have been stored.
     WorkoutDropped {
         started_at: UnixTime,
     },
-    /// One window of the per-minute activity stream. Kept whole rather than
-    /// split into samples: the counters describe a window, not an instant, and
-    /// the session detection reads them together.
     Activity(Minute),
     Ecg(Box<Signal>),
-    /// What the watch says it is. Restated on every connection, so this is an
-    /// update of the device row rather than a new observation.
     Identity(DeviceIdentity),
-    /// Who the watch says is wearing it. Also restated, and also an update.
     User(UserProfile),
 }
 
@@ -317,29 +199,11 @@ pub enum SampleKind {
     RespiratoryRate,
     BatteryPercent,
     Steps,
-    /// `BatteryStatus.battery_state`: 0 charging, 1 low, 2 ok, 3 critical.
-    /// Stored as its own series because a charge is only visible as a change
-    /// in it, and nothing on the wire announces one.
     BatteryState,
-    /// Cell voltage. It moves as soon as a charger is attached, well before
-    /// the percentage the gauge reports catches up.
     BatteryMillivolts,
-    /// Unused: the watch serves staging on the activity stream, one level per
-    /// window, so it lives in `activity_minute.sleep_level` where the window's
-    /// duration is kept with it. `sample_kind` row 10 is left in place because
-    /// dropping it would need a migration for nothing.
     SleepLevel,
-    /// Blood oxygen, with `VasistasSpo2.quality` alongside it. Carried by the
-    /// bulk streams the walk reads last.
     Spo2,
-    /// Climb, centimetres on the wire despite the object being called
-    /// `Stairs` — it matches the activity stream's `ascent` exactly, summed
-    /// over the day, and is a height rather than a count of floors.
     Ascent,
-    /// The rest of the day's running totals, in the same frame as the steps.
-    /// Calories are hundredths of a kilocalorie and cover resting as well as
-    /// earned; distance is centimetres; the duration is plain seconds and runs
-    /// from local midnight.
     Calories,
     Distance,
     TrackedDuration,
@@ -366,13 +230,6 @@ impl SampleKind {
         }
     }
 
-    /// Whether the value holds until it changes, rather than describing only
-    /// the instant it was taken at.
-    ///
-    /// The battery series are pushed every ~20 s and move a few hundred times
-    /// a week, so nearly every reading restates the one before it. A reader of
-    /// a level takes the last value as the current one, which is what makes
-    /// the repeats droppable in the first place.
     pub fn is_level(self) -> bool {
         matches!(
             self,
@@ -381,13 +238,9 @@ impl SampleKind {
     }
 }
 
-/// Which ingest path a sample arrived by; the two differ in resolution and
-/// must not overwrite each other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
-    /// Historical series pulled during a sync.
     Stored,
-    /// 1 Hz notifications during a live workout or measurement.
     Live,
 }
 
@@ -400,86 +253,47 @@ impl Source {
     }
 }
 
-/// Where the conversation has got to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Idle,
-    /// Probe sent, waiting for the watch's challenge.
     Probing,
-    /// Our answer sent, waiting for the watch to accept it.
     Authenticating,
-    /// Walking one category's history forward.
     Syncing,
     Finished,
-    /// The watch refused the challenge answer. The association secret is wrong
-    /// or no longer the one the watch holds.
     NotAuthenticated,
 }
 
 pub struct Client {
     credentials: Credentials,
     phase: Phase,
-    /// Categories still to walk this pass, and where each has been read up to.
     queue: Vec<(Category, UnixTime)>,
     current: Option<(Category, UnixTime)>,
-    /// Streams finished this pass, kept so their watermarks survive and the
-    /// walk can be run again without being reconstructed from storage.
     done: Vec<(Category, UnixTime)>,
-    /// Timestamp of the newest record seen in the batch being collected.
-    /// Newest record seen in the batch being collected, for the stream being
-    /// walked. Held per stream: compared by `max` across streams, one that is
-    /// up to date drags a stream that is behind past everything between them.
     batch_high_water: Option<(Category, UnixTime)>,
     signals: SignalCollector,
     next_token: u64,
-    /// Deletes held back until the matching Store is confirmed durable.
     pending_deletes: Vec<(u64, Frame)>,
-    /// Watermark the current category started from, for progress reporting.
     walk_started_from: Option<UnixTime>,
     busy_retries: u32,
     stream_total: u32,
-    /// Screens the watch reports it is showing, in its own order.
     screens: Option<Vec<u8>>,
-    /// Activities in the watch's quick-launch menu, in order.
     activities: Option<Vec<u32>>,
-    /// Where the watch says it is worn.
     wear_position: Option<u8>,
-    /// Whether the watch says it will accept phone notifications, and whether
-    /// it will show them. Both come back from one request.
     notifications: Option<NotificationConfig>,
-    /// The image sizes the watch declares it can hold, by type. Empty until
-    /// it has said, which it does with the workout screen list.
     image_formats: Vec<crate::image::ImageFormat>,
     records_emitted: u64,
-    /// Object types that decoded but no collector consumed, as
-    /// (command, type id, type name), first sighting only. Reported so a stream
-    /// the watch serves cannot go unnoticed the way its sleep staging did.
     unhandled: Vec<(u16, u16, &'static str)>,
-    /// Latest frame timestamp seen. The client holds no clock of its own, so
-    /// this is the only sense of "now" it has.
     now: Option<UnixMillis>,
-    /// When the watch was last heard from, and when we last asked it for
-    /// something. Silence only means anything once we have spoken into it.
     last_heard: Option<UnixMillis>,
     last_spoke: Option<UnixMillis>,
-    /// The measurement the watch is taking, if any, by category.
     measuring: Option<i16>,
-    /// Live waveform for the measurement in progress, in wire counts.
     live_samples: Vec<i16>,
     last_refresh: Option<UnixMillis>,
     last_walk: Option<UnixMillis>,
-    /// The watch's diagnostic buffer, and when it was last emptied.
     dump: DebugDump,
     last_dump: Option<UnixMillis>,
-    /// Whether the watch should accept phone notifications, if the host has
-    /// said. `None` leaves whatever the watch already holds.
     wanted_notifications: Option<bool>,
-    /// A stop sent to the watch, waiting to be confirmed by a status reply.
-    ///
-    /// The watch answers a stop with a bare `Null` whether it acted on it or
-    /// threw it away — a stop naming a start time it is not running is
-    /// discarded in silence — so the reply says nothing and the status that
-    /// follows says everything.
+    zone: Option<(i32, Option<DstChange>)>,
     pending_stop: Option<(UnixTime, UnixTime)>,
 }
 
@@ -516,12 +330,11 @@ impl Client {
             dump: DebugDump::new(),
             last_dump: None,
             wanted_notifications: None,
+            zone: None,
             pending_stop: None,
         }
     }
 
-    /// Where each category has been read up to. Persist this only after the
-    /// corresponding records are durable, so a crash re-reads rather than skips.
     pub fn watermarks(&self) -> Vec<(Category, UnixTime)> {
         let mut all = self.queue.clone();
         all.extend(self.done.iter().copied());
@@ -532,10 +345,6 @@ impl Client {
         all
     }
 
-    /// Walk every stream again from where it left off.
-    ///
-    /// A finished sync is only current as of the moment it finished; the watch
-    /// keeps sampling, so the walk has to be repeated to stay up to date.
     pub fn sync_now(&mut self) -> Vec<Action> {
         if let (Some(now), Some(last)) = (self.now, self.last_walk) {
             if now.0 - last.0 < MIN_WALK_INTERVAL_MS {
@@ -546,11 +355,6 @@ impl Client {
         self.noted(actions)
     }
 
-    /// Take the watch's diagnostic buffer, if this is the moment for it.
-    ///
-    /// Only the transfer lets the watch drop what it is holding, and until it
-    /// does it goes on asking to sync every minute. The walk and a measurement
-    /// each own the link while they run, so a drain waits for them.
     fn drain_dump(&mut self) -> Vec<Action> {
         if self.phase != Phase::Finished || self.measuring.is_some() || self.dump.running() {
             return Vec::new();
@@ -564,16 +368,10 @@ impl Client {
         self.dump.start().into_iter().map(Action::Send).collect()
     }
 
-    /// The same walk, ignoring the rate limit.
     pub fn walk_now(&mut self) -> Vec<Action> {
-        // A measurement needs the link. Walking the history through one makes
-        // the watch abandon the recording and start again — it asks for a sync
-        // anyway, so the request has to be declined here.
         if self.measuring.is_some() {
             return Vec::new();
         }
-        // The dump owns the link the same way, and it holds the watch's cursor
-        // into a transfer that a walk started underneath it would abandon.
         if self.dump.running() {
             return Vec::new();
         }
@@ -583,8 +381,6 @@ impl Client {
         if self.current.is_some() {
             return Vec::new();
         }
-        // Reversed so the queue pops in the same priority order as the first
-        // pass, body stream first.
         self.queue
             .extend(std::mem::take(&mut self.done).into_iter().rev());
         if self.queue.is_empty() {
@@ -596,12 +392,10 @@ impl Client {
         self.noted(actions)
     }
 
-    /// The measurement category the watch is taking, if one is running.
     pub fn measuring(&self) -> Option<i16> {
         self.measuring
     }
 
-    /// Live waveform accumulated for the measurement in progress.
     pub fn live_samples(&self) -> &[i16] {
         &self.live_samples
     }
@@ -610,35 +404,26 @@ impl Client {
         self.phase
     }
 
-    /// The category being walked, and the point it has been read up to.
     pub fn current(&self) -> Option<(Category, UnixTime)> {
         self.current
     }
 
-    /// Non-zero means data has been read from the watch but not yet committed.
     pub fn pending_deletes(&self) -> usize {
         self.pending_deletes.len()
     }
 
-    /// How far the history walk has come: where it started and where it is.
-    /// The caller supplies the end point, since the client holds no clock.
     pub fn walk_span(&self) -> Option<(UnixTime, UnixTime)> {
         Some((self.walk_started_from?, self.current?.1))
     }
 
-    /// Bytes received and expected for a signal transfer in progress.
     pub fn transfer_progress(&self) -> Option<(usize, usize)> {
         self.signals.transfer_progress()
     }
 
-    /// Records handed over for storage since this client was created.
     pub fn records_emitted(&self) -> u64 {
         self.records_emitted
     }
 
-    /// Position in the walk, as (streams finished, streams total). A fraction
-    /// within one stream restarts at every stream boundary, so on its own it
-    /// looks like the sync keeps starting over.
     pub fn stream_position(&self) -> (u32, u32) {
         let remaining = self.queue.len() + usize::from(self.current.is_some());
         (
@@ -658,9 +443,6 @@ impl Client {
         self.noted(actions)
     }
 
-    /// Record that a request went out, so silence afterwards can be judged.
-    /// Every path that can produce a send has to pass through here — the sends
-    /// that matter most are the timer-driven ones, which no event accompanies.
     fn noted(&mut self, actions: Vec<Action>) -> Vec<Action> {
         if actions.iter().any(|a| matches!(a, Action::Send(_))) {
             self.last_spoke = self.now;
@@ -673,51 +455,25 @@ impl Client {
         let Some(heard) = self.last_heard else {
             return Vec::new();
         };
-        // Silence only means something while the watch owes an answer. Idle at
-        // Phase::Finished it says nothing for minutes by design, and treating
-        // that as a dead link would reconnect all day.
-        //
-        // A handshake or a walk in progress owes one continuously: every reply
-        // is followed by another until the stream ends. That is why the wait is
-        // measured from the last thing heard rather than from the request —
-        // measuring from the request meant a walk that died after its first few
-        // frames left `heard` ahead of `spoke`, which read as a healthy link
-        // forever.
         let awaiting_reply = matches!(
             self.phase,
             Phase::Probing | Phase::Authenticating | Phase::Syncing
         ) || self.last_spoke.is_some_and(|spoke| spoke > heard);
-        // From whichever came last. Timing from the request alone forgives a
-        // walk that answered and then died; timing from the reply alone starts
-        // the clock before the request that is being waited on was even sent.
         let quiet_since =
             self.last_spoke
                 .map_or(heard, |spoke| if spoke.0 > heard.0 { spoke } else { heard });
         if awaiting_reply && now.0 - quiet_since.0 > SILENCE_TIMEOUT_MS {
-            // Reconnecting re-runs the handshake, so the walk starts over from
-            // its watermarks rather than waiting on a reply that never came.
             return vec![Action::Reconnect];
         }
         Vec::new()
     }
 
-    /// Let go of everything that belonged to the link that just died.
-    ///
-    /// One place, so that state added later cannot quietly forget to be reset:
-    /// both wedges found so far were per-connection state that outlived its
-    /// connection because each new field had to opt in individually.
     fn on_disconnected(&mut self) -> Vec<Action> {
         self.phase = Phase::Idle;
         self.busy_retries = 0;
         self.last_heard = None;
         self.last_spoke = None;
-        // A recording ends only with a stop from the watch, which cannot arrive
-        // for a link that no longer exists. Left set, it refuses every request
-        // this client is ever asked to make again.
         self.measuring = None;
-        // Whatever stream was in flight was never answered. Putting it back
-        // keeps the pass complete; dropping it left one stream unread until
-        // some later pass happened to pick it up.
         if let Some(interrupted) = self.current.take() {
             self.queue.push(interrupted);
         }
@@ -729,7 +485,6 @@ impl Client {
     }
 
     fn on_connected(&mut self) -> Vec<Action> {
-        // A link can come up without the old one reporting that it went down.
         self.on_disconnected();
         self.phase = Phase::Probing;
         self.last_heard = self.now;
@@ -765,18 +520,13 @@ impl Client {
         self.now = Some(received_at);
         self.last_heard = Some(received_at);
 
-        // Decoding does not depend on who asked for the data; the phase below
-        // only decides what to send next. This also lets a captured session be
-        // replayed through the same code.
         self.collect_passive(&frame, received_at, &mut records);
         self.collect_history(&frame, &mut records);
         self.live_samples.extend(self.signals.take_live());
         actions.extend(self.dump.on_frame(&frame).into_iter().map(Action::Send));
 
-        // A refused menu write takes the menu with it: the firmware erases the
-        // whole store before parsing, and again on every error path. What the
-        // watch holds afterwards is neither what it had nor what was asked
-        // for, so ask.
+        // A refused menu write erases the whole store on the watch, so the
+        // menu must be re-read after any error.
         if frame.command.opcode() == Command::CMD_ERROR.0
             && frame.objects.iter().any(|o| {
                 matches!(o, WppObject::Cmderror(e) if e.cmd == Command::CMD_WORKOUT_SCREEN_SET.0)
@@ -790,8 +540,6 @@ impl Client {
         }
 
         match frame.command.opcode() {
-            // The watch asks whether anything is showing the waveform, and only
-            // streams if told yes. Nothing else turns it on.
             c if c == Command::CMD_MEASURE_START.0 => {
                 let category = frame
                     .objects
@@ -813,22 +561,12 @@ impl Client {
                     ],
                 )));
             }
-            // Answered here rather than with the walk below, because the walk
-            // is rate limited and the phase decides whether it runs at all: an
-            // unanswered request is repeated for as long as the link is up, and
-            // the watch raises its connection rate while one is outstanding.
-            // The acknowledgement is what ends it, not the sync it asks for.
             c if c == Command::CMD_SYNC_REQUEST.0 => {
                 actions.push(Action::Send(Frame::new(
                     Command::CMD_SYNC_REQUEST.with_channel(Channel::SlaveRequest),
                     Vec::new(),
                 )));
             }
-            // The watch forgets this over a reboot and it is asked for on
-            // every pass, so putting the host's choice back whenever the two
-            // disagree is what makes it stick. Left to drift it is not a
-            // cosmetic setting: with notifications on, the watch halves its
-            // connection latency and never restores it.
             c if c == Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_GET.0 => {
                 if let (Some(wanted), Some(config)) =
                     (self.wanted_notifications, self.notifications)
@@ -840,9 +578,6 @@ impl Client {
             }
             c if c == Command::CMD_MEASURE_STOP.0 => {
                 self.measuring = None;
-                // The stop carries the identity of what was just recorded. The
-                // watch repeats it until acknowledged, and the recording is
-                // only transferred if it is then asked for by that identity.
                 actions.push(Action::Send(Frame::new(
                     Command::CMD_MEASURE_STOP.with_channel(Channel::SlaveRequest),
                     vec![WppObject::Null(Null {})],
@@ -873,7 +608,6 @@ impl Client {
                             WppObject::ProbeChallengeResponse(ProbeChallengeResponse {
                                 answer: self.credentials.answer(&challenge.challenge),
                             }),
-                            // Our own challenge; the watch answers it in kind.
                             WppObject::ProbeChallenge(ProbeChallenge {
                                 mac: self.credentials.mac.clone(),
                                 challenge: vec![0; 16],
@@ -882,27 +616,24 @@ impl Client {
                     )));
                 }
             }
-            // A rejected probe is terminal: without the right secret nothing
-            // else will be answered, and waiting forever looks identical to a
-            // watch that is merely slow. It has to be the probe that was
-            // rejected, though — everything else asked before the handshake
-            // finishes draws ERR_NOT_AUTH by design.
             (Phase::Probing | Phase::Authenticating, c)
                 if c == Command::CMD_ERROR.0 && rejects_probe(&frame) =>
             {
                 self.phase = Phase::NotAuthenticated;
             }
-            // The watch does not always challenge. Reconnecting quickly, it
-            // answers the probe outright with a `ProbeReply` and no
-            // `ProbeChallenge`, having decided the association still stands.
-            // Waiting for a challenge that is never coming leaves the client
-            // probing forever while the watch, which considers the link up,
-            // asks it to sync every two seconds and is ignored.
             (Phase::Probing | Phase::Authenticating, c) if c == Command::CMD_PROBE.0 => {
                 self.phase = Phase::Syncing;
-                // A workout that began while nothing was connected is only
-                // discoverable by asking: CMD_WORKOUT_START is pushed once and
-                // not replayed. The official app asks on every connect too.
+                if let (Some(now), Some((gmt_offset, next_change))) = (self.now, self.zone.clone())
+                {
+                    actions.extend(self.set_time(
+                        UnixTime(now.0 / 1000),
+                        gmt_offset,
+                        next_change,
+                    ));
+                }
+                // A workout that began while nothing was connected is
+                // undiscoverable otherwise: `CMD_WORKOUT_START` is pushed once
+                // and never replayed.
                 actions.push(Action::Send(Frame::new(
                     Command::CMD_WORKOUT_STATUS,
                     Vec::new(),
@@ -910,11 +641,6 @@ impl Client {
                 actions.extend(self.request_next());
             }
             (Phase::Finished, c) if c == Command::CMD_SYNC_REQUEST.0 => {
-                // The watch asks for a sync when it has data to hand over.
-                // History first: the walk is what the request is usually about,
-                // and it owns the link while it runs. The diagnostic buffer is
-                // the other thing it can be about, and it is worth taking only
-                // when the walk has nothing to do.
                 let walk = self.sync_now();
                 if walk.is_empty() {
                     actions.extend(self.drain_dump());
@@ -927,8 +653,6 @@ impl Client {
                     .objects
                     .iter()
                     .any(|o| matches!(o, WppObject::Cmderror(e) if e.err == ERR_DEVBUSY));
-                // The watch rejects requests it is too busy to serve; the data
-                // is still there, so ask again rather than skipping the window.
                 if busy && self.busy_retries < MAX_BUSY_RETRIES {
                     self.busy_retries += 1;
                     actions.extend(self.request_current());
@@ -936,24 +660,10 @@ impl Client {
             }
             (Phase::Syncing, _) => {
                 self.busy_retries = 0;
-                // One request is answered with the whole window: a run of
-                // frames carrying records, closed by a frame holding nothing
-                // but `TYPE_NULL`. `max: 0` asks for no limit and the watch
-                // takes it literally — 68 frames and 397 records in one reply,
-                // in the capture this was read from.
-                //
-                // Asking again for each of those frames queues a request per
-                // frame rather than per window. On the bulk streams that is
-                // thousands, they drain one at a time behind a link already
-                // carrying the batch, and each one that finally goes out asks
-                // from a watermark that moved thousands of records ago — so
-                // the watch sends the same records again.
                 let carries_records = frame
                     .objects
                     .iter()
                     .any(|o| matches!(o, WppObject::WamVasistasHead(_)));
-                // Resume one second past the newest record, but only on the
-                // strength of this stream's own records.
                 if let Some((seen, high)) = self.batch_high_water.take() {
                     if let Some((category, _)) = self.current {
                         if seen == category {
@@ -961,8 +671,6 @@ impl Client {
                         }
                     }
                 }
-                // A `Null` among records is a field the watch had nothing for;
-                // only a frame with no records at all closes the window.
                 let closed = !carries_records
                     && frame
                         .objects
@@ -1011,24 +719,20 @@ impl Client {
         received_at: UnixMillis,
         records: &mut Vec<Record>,
     ) {
-        // Only meaningful on the workout screen list reply; the same object
-        // rides in every request the watch makes for a picture.
         let declared = crate::image::ImageFormat::declared(frame);
         if !declared.is_empty() {
             self.image_formats = declared;
         }
 
-        // Whether the stop we sent was taken. The watch acknowledges one it
-        // discarded exactly as it acknowledges one it acted on, so the session
-        // being gone is the only evidence — and a session still running means
-        // the stop named a start time the watch is not holding.
         if frame.command.opcode() == Command::CMD_WORKOUT_STATUS.0 {
             let running = frame
                 .objects
                 .iter()
                 .any(|o| matches!(o, WppObject::Status(s) if s.value == 1));
             if let Some((started_at, ended_at)) = self.pending_stop.take() {
-                if !running {
+                if !running && ended_at.0 - started_at.0 < MIN_WORKOUT_SECS {
+                    records.push(Record::WorkoutDropped { started_at });
+                } else if !running {
                     records.push(Record::WorkoutEnded {
                         started_at,
                         ended_at,
@@ -1048,9 +752,6 @@ impl Client {
         for object in &frame.objects {
             self.signals.observe(object);
             match object {
-                // The probe reply is the only place the firmware version is
-                // stated, and it is stated on every connection whether or not
-                // the watch challenges first.
                 WppObject::ProbeReply(reply) => {
                     records.push(Record::Identity(DeviceIdentity::of(reply)));
                 }
@@ -1078,7 +779,6 @@ impl Client {
                     config.displayed = state.status == NotificationsDisplayState::STATUS_ENABLED;
                 }
                 WppObject::WamScreensList(list) => {
-                    // Fixed 24 slots, zero-padded; 0 means an empty slot.
                     self.screens = Some(
                         list.screen_numbers
                             .iter()
@@ -1087,10 +787,6 @@ impl Client {
                             .collect(),
                     );
                 }
-                // The watch reports running totals for the day. Stamping one
-                // with the day would keep a single row that only ever shows the
-                // latest figure; stamping it with the observation keeps the
-                // accumulation through the day. All four arrive together.
                 WppObject::Steps(steps) => {
                     records.push(Record::Sample {
                         measured_at: received_at,
@@ -1238,10 +934,6 @@ impl Client {
                     let Some(started) = started else { continue };
                     let started_at = UnixTime(started as i64);
                     let ended_at = UnixTime(end.value as i64);
-                    // Too short to be a session. The stop is what says so, and
-                    // the start it names may have gone out frames ago and
-                    // already be stored, so this is a drop rather than a
-                    // silence.
                     if ended_at.0 - started_at.0 < MIN_WORKOUT_SECS {
                         records.retain(|record| {
                             !matches!(
@@ -1263,13 +955,7 @@ impl Client {
         }
     }
 
-    /// Historical samples are grouped: a `WamVasistasHead` timestamp followed
-    /// by the values measured in that window.
     fn collect_history(&mut self, frame: &Frame, records: &mut Vec<Record>) {
-        // Only a vasistas reply is history. The daily totals carry a
-        // `WamVasistasHead` too — local midnight, the day they belong to — and
-        // letting that reach the watermark drags the walk back to the start of
-        // the day, so every refresh re-reads everything since.
         let opcode = frame.command.opcode();
         if opcode == Command::CMD_WAM_VASISTAS_GET.0 {
             return self.collect_activity(frame, records);
@@ -1278,8 +964,6 @@ impl Client {
             return;
         }
         let mut at: Option<UnixTime> = None;
-        // Every record is headed by its instant and the window it covers, in
-        // that order, so both are in hand by the time the values arrive.
         let mut window: Option<i64> = None;
         for object in &frame.objects {
             match object {
@@ -1305,12 +989,6 @@ impl Client {
                         });
                     }
                 }
-                // `ATTRIB_BASELINE` is the reference the fever algorithm
-                // compares against, not a reading: it arrives on the hour with
-                // a zero window and sits within a few hundredths of a degree
-                // all week, while real readings swing more than a degree.
-                // Stored alongside them it would be a measurement that never
-                // happened.
                 WppObject::VasistasCbt(cbt) if cbt.attrib != VasistasCbt::ATTRIB_BASELINE => {
                     if let Some(time) = at {
                         records.push(Record::Sample {
@@ -1325,8 +1003,6 @@ impl Client {
                     }
                 }
                 WppObject::VasistasCbt(_) => {}
-                // `error` is non-zero on readings the watch could not resolve,
-                // which are the majority of what the bulk streams carry.
                 WppObject::VasistasSpo2(spo2) if spo2.error == 0 && spo2.spo2 > 0 => {
                     if let Some(time) = at {
                         records.push(Record::Sample {
@@ -1375,24 +1051,14 @@ impl Client {
                         });
                     }
                 }
-                // Zero is the watch saying it did not measure, not a reading of
-                // nothing; the arms above take everything else.
                 WppObject::VasistasHeartrate(_) | WppObject::VasistasRr(_) => {}
-                // The request echoed back around the records, and the empty
-                // reply that closes a category.
                 WppObject::WamVasistasGet(_) | WppObject::VasistasType(_) | WppObject::Null(_) => {}
-                // Which measurements the body stream is set to carry and which
-                // it could. Capability bits rather than a reading, and the
-                // meaning of the individual bits is unknown, so there is
-                // nothing to store that could later be read back honestly.
                 WppObject::VasistasFlags(_) => {}
                 other => self.note_unhandled(frame, other),
             }
         }
     }
 
-    /// The activity stream, which unlike the sample streams puts several
-    /// counters under one head and has to be collected a window at a time.
     fn collect_activity(&mut self, frame: &Frame, records: &mut Vec<Record>) {
         let mut open: Option<Minute> = None;
         for object in &frame.objects {
@@ -1406,8 +1072,6 @@ impl Client {
                 continue;
             };
             match object {
-                // A window without one claims no span, and the detection
-                // then ignores it rather than guessing a minute.
                 WppObject::WamVasistasDuration(d) => minute.duration_secs = d.duration as i64,
                 WppObject::WamVasistasAwake(a) => {
                     minute.steps = Some(a.steps as i64);
@@ -1421,17 +1085,11 @@ impl Client {
                 }
                 WppObject::WamVasistasWalk(w) => minute.walk_level = Some(w.level as i64),
                 WppObject::WamVasistasRun(r) => minute.run_level = Some(r.level as i64),
-                // Useless without the official app's classifier, and gone
-                // from the watch's buffer within the day.
                 WppObject::VasistasActiRecoV1V2(r) => {
                     minute.reco_v1 = Some(r.reco_v1 as i64);
                     minute.reco_v2 = Some(r.reco_v2 as i64);
                 }
-                // A window is staged or it is awake; the watch sends one body
-                // or the other under the same head.
                 WppObject::WamVasistasSleep(s) => minute.sleep_level = Some(s.level as i64),
-                // The request echoed back around the records, and the empty
-                // reply that closes a walk.
                 WppObject::WamVasistasGet(_) | WppObject::VasistasType(_) | WppObject::Null(_) => {}
                 other => self.note_unhandled(frame, other),
             }
@@ -1439,12 +1097,6 @@ impl Client {
         records.extend(open.map(Record::Activity));
     }
 
-    /// An object that decoded but no collector consumed.
-    ///
-    /// A silent catch-all here cost ten nights of staging: the watch had been
-    /// sending `WamVasistasSleep` on the activity stream all along and the arm
-    /// that stored it sat in the branch for a different command. Anything this
-    /// records is either a type worth handling or one worth naming as ignored.
     fn note_unhandled(&mut self, frame: &Frame, object: &WppObject) {
         let seen = (frame.command.opcode(), object.type_id(), object.type_name());
         if !self.unhandled.contains(&seen) {
@@ -1462,21 +1114,14 @@ impl Client {
         });
     }
 
-    /// Object types the watch sent that nothing consumed, as
-    /// (command, type id, type name), and forget them.
-    ///
-    /// Empty is the expected answer. Anything here is data the watch is serving
-    /// and the client is discarding.
     pub fn take_unhandled(&mut self) -> Vec<(u16, u16, &'static str)> {
         std::mem::take(&mut self.unhandled)
     }
 
-    /// The screens the watch is currently showing, in order, once it has said.
     pub fn screens(&self) -> Option<Vec<u8>> {
         self.screens.clone()
     }
 
-    /// Ask the watch which screens it shows.
     pub fn request_screens(&self) -> Vec<Action> {
         vec![Action::Send(Frame::new(
             Command::CMD_WAM_SCREENS_LIST_GET,
@@ -1484,10 +1129,6 @@ impl Client {
         ))]
     }
 
-    /// Replace the watch's screen list. Order is the order it cycles them in.
-    ///
-    /// The list is a fixed number of slots; a short one silently drops screens,
-    /// so it is padded back out to full length with empty slots.
     pub fn set_screens(&self, ids: &[u8]) -> Vec<Action> {
         let mut slots = ids.to_vec();
         slots.truncate(SCREEN_SLOTS);
@@ -1499,7 +1140,6 @@ impl Client {
                     screen_numbers: slots,
                 })],
             )),
-            // Read back rather than assume: the watch may reject or reorder.
             Action::Send(Frame::new(Command::CMD_WAM_SCREENS_LIST_GET, Vec::new())),
         ]
     }
@@ -1512,8 +1152,6 @@ impl Client {
         self.wear_position
     }
 
-    /// Read the quick-launch activity menu, where the watch is worn, whether it
-    /// takes phone notifications, and who it thinks is wearing it.
     pub fn request_device_config(&self) -> Vec<Action> {
         vec![
             Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_LIST_GET, Vec::new())),
@@ -1522,17 +1160,10 @@ impl Client {
                 Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_GET,
                 Vec::new(),
             )),
-            // Empty payload; the watch answers with the whole record. The
-            // official app asks for it on every connection.
             Action::Send(Frame::new(Command::CMD_TRACKER_USER_GET, Vec::new())),
         ]
     }
 
-    /// Replace the profile the watch holds.
-    ///
-    /// The whole record goes out — the watch takes nothing smaller — so the
-    /// caller must edit one it read back rather than assemble a fresh one, or
-    /// the fields it does not set are zeroed on the watch.
     pub fn set_user(&self, profile: &UserProfile) -> Vec<Action> {
         vec![
             Action::Send(Frame::new(
@@ -1546,18 +1177,10 @@ impl Client {
                     first_name: profile.first_name.clone(),
                 })],
             )),
-            // The set is answered with Null, so the record is only confirmed by
-            // reading it back.
             Action::Send(Frame::new(Command::CMD_TRACKER_USER_GET, Vec::new())),
         ]
     }
 
-    /// Begin a session on the watch.
-    ///
-    /// The watch stamps the session with its own clock and does not take the
-    /// start time offered here — read the real one back from
-    /// `CMD_WORKOUT_STATUS`, which is also what makes the session appear as a
-    /// record. The reply to this is a bare acknowledgement.
     pub fn start_workout(&self, subcategory: i16, at: UnixTime) -> Vec<Action> {
         vec![
             Action::Send(Frame::new(
@@ -1571,21 +1194,10 @@ impl Client {
         ]
     }
 
-    /// End the session the watch is running.
-    ///
-    /// `started_at` has to be the exact second the watch stamped the session
-    /// with — it compares the two as integers and throws away a stop that does
-    /// not match, with no error and the same acknowledgement a successful one
-    /// gets. The watch never took the start time it was offered, so the only
-    /// source for this is a status reply. Hence taking it rather than reading
-    /// it from state: the caller has the watch's own answer.
-    ///
-    /// `at` is stamped by this host's clock but subtracted from a start the
-    /// watch stamped with its own, unsigned and without checking the order, so
-    /// an end earlier than the start is stored as a session lasting most of a
-    /// century. The two clocks only have to disagree by a second for a short
-    /// workout to land there, and the record cannot be deleted afterwards, so
-    /// an end before the start is moved to the start.
+    /// An end earlier than the start — which a second of clock skew between
+    /// host and watch is enough to cause — would otherwise be stored as an
+    /// undeletable session lasting nearly a century, so the end is moved up
+    /// to the start.
     pub fn stop_workout(&mut self, started_at: UnixTime, at: UnixTime) -> Vec<Action> {
         let ended_at = UnixTime(at.0.max(started_at.0));
         self.pending_stop = Some((started_at, ended_at));
@@ -1605,13 +1217,9 @@ impl Client {
         ]
     }
 
-    /// Replace the quick-launch activity menu, in the order given.
-    ///
-    /// The watch is not sent a list of ids. Each entry goes whole — what it is
-    /// called, how its face reads, and the glyph to draw for it at every size
-    /// it asked for — because it keeps no catalogue of its own and an id alone
-    /// means nothing to it. Sending the id array that the *read* returns
-    /// empties the menu rather than setting it.
+    /// Each entry must go whole, since the watch keeps no catalogue of its own
+    /// and an id alone means nothing to it; sending back the id array that a
+    /// read returns empties the menu instead of setting it.
     pub fn set_activities(&self, screens: &[WorkoutScreen]) -> Vec<Action> {
         let mut objects = Vec::new();
         for screen in screens.iter().take(ACTIVITY_SLOTS) {
@@ -1628,47 +1236,26 @@ impl Client {
             }
         }
 
-        // One terminator for the whole list, as the last object — the same
-        // shape as the glyph and icon replies. Where the frame boundaries fall
-        // is settled when this is written, not here.
         objects.push(WppObject::Null(Null {}));
 
         vec![
             Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_SET, objects)),
-            // Read back rather than assume: the watch may reject or reorder.
             Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_LIST_GET, Vec::new())),
         ]
     }
 
-    /// What the watch last said about phone notifications, once it has said.
     pub fn notifications(&self) -> Option<NotificationConfig> {
         self.notifications
     }
 
-    /// The image sizes the watch says it can hold. Empty until it has said.
     pub fn image_formats(&self) -> &[crate::image::ImageFormat] {
         &self.image_formats
     }
 
-    /// What the host wants, without saying so yet.
-    ///
-    /// The watch is only told once it has reported what it currently holds, so
-    /// a preference can be set before there is a link to send it over.
     pub fn prefer_notifications(&mut self, enabled: bool) {
         self.wanted_notifications = Some(enabled);
     }
 
-    /// Turn phone notifications on or off at the watch.
-    ///
-    /// This is only the watch's half. It governs whether the watch will go
-    /// looking for the phone's ANCS server at all; the server itself is the
-    /// host's to run, and with it switched on and no server listening the
-    /// watch simply finds nothing.
-    ///
-    /// Switching it off is what keeps the link at the slower connection
-    /// parameters: the watch asks for latency 15 only in order to run ANCS
-    /// discovery, and never asks for the slower ones back. It costs every
-    /// phone notification to have it.
     pub fn set_notifications(&mut self, enabled: bool) -> Vec<Action> {
         self.wanted_notifications = Some(enabled);
         vec![
@@ -1697,18 +1284,16 @@ impl Client {
         ]
     }
 
-    /// Set the watch's clock. `now` is UTC; `gmt_offset` is what the watch adds
-    /// to it to display local time.
-    ///
-    /// The watch answers with `TimeSetReply.drift`, the seconds it was out by.
+    pub fn set_zone(&mut self, gmt_offset: i32, next_change: Option<DstChange>) {
+        self.zone = Some((gmt_offset, next_change));
+    }
+
     pub fn set_time(
         &self,
         now: UnixTime,
         gmt_offset: i32,
         next_change: Option<DstChange>,
     ) -> Vec<Action> {
-        // A zone with no transition ahead of it still fills both fields: a
-        // change to the offset it already has is a change to nothing.
         let change = next_change.unwrap_or(DstChange {
             at: UnixTime(0),
             gmt_offset,
@@ -1724,11 +1309,8 @@ impl Client {
         ))]
     }
 
-    /// Replace the set of enabled health features.
-    ///
-    /// The watch has no read side for this, and the message carries the whole
-    /// set: anything left out is switched off. Callers must send every feature
-    /// they want kept, including ones they do not understand.
+    /// The watch has no read side for this and the write carries the whole
+    /// set: anything left out is silently switched off.
     pub fn set_features(&self, features: &[(u16, u32, u32)]) -> Vec<Action> {
         let mut objects: Vec<WppObject> = vec![WppObject::Id(Id { value: 0 })];
         objects.extend(features.iter().map(|(id, start, end)| {
@@ -1745,11 +1327,6 @@ impl Client {
         ))]
     }
 
-    /// Daily totals and battery are not pushed; they have to be asked for.
-    ///
-    /// Asking before the handshake finishes does not merely fail: the watch
-    /// answers ERR_NOT_AUTH, which is indistinguishable on the wire from a
-    /// refused probe.
     pub fn refresh(&mut self) -> Vec<Action> {
         if matches!(
             self.phase,
@@ -1766,11 +1343,6 @@ impl Client {
         self.noted(actions)
     }
 
-    /// Just the battery, for while someone is watching the charging state.
-    ///
-    /// Deliberately not the daily totals: this runs every few seconds when the
-    /// app is in front, and the totals neither change that fast nor matter to
-    /// the question being asked.
     pub fn poll_battery(&mut self) -> Vec<Action> {
         if self.measuring.is_some()
             || matches!(
@@ -1787,20 +1359,6 @@ impl Client {
         self.noted(actions)
     }
 
-    /// Erase the watch: settings, association secret and all, then reboot.
-    ///
-    /// The firmware runs a table of per-module reset callbacks and logs
-    /// "Erase all user settings..." on the way through; dropping the secret is
-    /// what puts it back into the state where it answers a probe without a
-    /// challenge, which is the only state an association can be established
-    /// from. Everything the watch is holding that has not been synced goes
-    /// with it.
-    ///
-    /// Sent with no payload, which is what the official app's
-    /// `SendFactoryResetConversation` does. The optional `FactoryResetMode`
-    /// governs what happens afterwards rather than how much is erased — the
-    /// watch reboots on `REBOOT` and stops on `COMA` — and the handler treats
-    /// a missing one as `REBOOT`.
     pub fn factory_reset(&mut self) -> Vec<Action> {
         let actions = vec![Action::Send(Frame::new(
             Command::CMD_FACTORY_RESET,
@@ -1809,7 +1367,6 @@ impl Client {
         self.noted(actions)
     }
 
-    /// The same request, ignoring the rate limit: someone asked for it.
     pub fn force_refresh(&mut self) -> Vec<Action> {
         if self.measuring.is_some() {
             return Vec::new();
@@ -1839,9 +1396,6 @@ impl Client {
             }
             None => {
                 self.phase = Phase::Finished;
-                // Asking for the daily totals while the walk is running gets
-                // ERR_DEVBUSY, and a busy reply to them is never retried. They
-                // are also freshest here, once the history is in.
                 let mut actions = vec![Action::Send(Frame::new(Command::CMD_SYNC_OK, Vec::new()))];
                 actions.extend(self.refresh());
                 actions
@@ -1860,9 +1414,6 @@ impl Client {
         let frame = if category == Category::BODY {
             Frame::new(Command::CMD_BODY_VASISTAS_GET, vec![window])
         } else if category == Category::ACTIVITY {
-            // Without it the watch serves the records without their activity
-            // recognition; the official app asks for 3 and gets
-            // `VasistasActiRecoV1V2` on every waking window.
             Frame::new(
                 Command::CMD_WAM_VASISTAS_GET,
                 vec![
@@ -1899,7 +1450,6 @@ fn delete_frame(signal: &Signal) -> Frame {
     )
 }
 
-/// SHA-1, so the crate keeps no dependencies. Only ever fed a challenge.
 fn sha1(data: &[u8]) -> [u8; 20] {
     let mut h: [u32; 5] = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0];
     let bit_len = (data.len() as u64) * 8;
@@ -1981,7 +1531,6 @@ mod tests {
             .collect()
     }
 
-    /// The exchange captured from the real watch.
     #[test]
     fn the_challenge_answer_matches_the_capture() {
         let challenge = [
@@ -2055,7 +1604,6 @@ mod tests {
             .any(|a| matches!(a, Action::Send(f) if f.command == Command::CMD_SYNC_OK)));
     }
 
-    /// The watermark must only move past data the host has committed.
     #[test]
     fn the_watermark_advances_past_the_newest_record_seen() {
         use crate::objects::{VasistasHeartrate, WamVasistasHead};
@@ -2113,7 +1661,6 @@ mod tests {
         );
     }
 
-    /// Nothing may be deleted from the watch before it is durable here.
     #[test]
     fn a_delete_waits_for_the_store_to_be_confirmed() {
         use crate::objects::{StoredSignalData, StoredSignalMetaExtend};
@@ -2162,8 +1709,6 @@ mod tests {
         ));
     }
 
-    /// An ECG spans hundreds of frames, so the transfer is the one part of a
-    /// sync that can report exact progress rather than an estimate.
     #[test]
     fn a_signal_transfer_reports_bytes_against_the_declared_total() {
         use crate::objects::{StoredSignalData, StoredSignalMetaExtend};
@@ -2252,8 +1797,6 @@ mod tests {
             .collect()
     }
 
-    /// Heart rate lives behind CMD_BODY_VASISTAS_GET, which takes no type
-    /// selector; the typed streams carry SpO2 and AHI instead.
     #[test]
     fn the_body_stream_uses_its_own_command_and_no_type() {
         let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(4000))]);
@@ -2284,14 +1827,11 @@ mod tests {
                 .any(|o| matches!(o, WppObject::VasistasType(_))),
             "the body stream takes no type selector"
         );
-        // The daily totals wait for the walk; asking now draws ERR_DEVBUSY.
         assert!(!requests
             .iter()
             .any(|f| f.command == Command::CMD_BATTERY_STATUS));
     }
 
-    /// The activity stream has its own command and, like the body stream, no
-    /// type selector.
     #[test]
     fn the_activity_stream_uses_its_own_command() {
         let mut client = Client::new(credentials(), vec![(Category::ACTIVITY, UnixTime(4000))]);
@@ -2326,8 +1866,6 @@ mod tests {
         );
     }
 
-    /// One window of the activity stream: a head, its duration, and the
-    /// counters for it, all of which belong to the same record.
     #[test]
     fn a_window_of_the_activity_stream_becomes_one_record() {
         use crate::objects::{
@@ -2377,8 +1915,6 @@ mod tests {
         );
     }
 
-    /// The stream sends window after window in one frame, and the counters
-    /// after a head belong to it and not to the one before.
     #[test]
     fn consecutive_windows_do_not_share_their_counters() {
         use crate::objects::{WamVasistasAwake, WamVasistasDuration, WamVasistasHead};
@@ -2396,7 +1932,6 @@ mod tests {
                     ascent: 0,
                     descent: 0,
                 }),
-                // An idle window: a head and a duration, nothing else.
                 WppObject::WamVasistasHead(WamVasistasHead { utc: 5060 }),
                 WppObject::WamVasistasDuration(WamVasistasDuration { duration: 960 }),
             ],
@@ -2424,7 +1959,6 @@ mod tests {
         assert_eq!(sent(&actions), vec![Command::CMD_PROBE]);
     }
 
-    /// DEVBUSY means "ask again", not "skip this window".
     #[test]
     fn a_busy_watch_is_asked_again_for_the_same_window() {
         use crate::objects::Cmderror;
@@ -2442,8 +1976,6 @@ mod tests {
         assert_eq!(client.current(), before, "and the watermark does not move");
     }
 
-    /// A finished sync goes stale the moment it finishes; the walk has to be
-    /// repeatable without losing where each stream got to.
     #[test]
     fn a_finished_sync_can_be_run_again_from_where_it_left_off() {
         use crate::objects::{Null, VasistasHeartrate, WamVasistasHead};
@@ -2484,7 +2016,6 @@ mod tests {
         assert_eq!(client.current(), Some((Category::BODY, UnixTime(5001))));
     }
 
-    /// The watch asks for a sync when it has something; that is the cue.
     #[test]
     fn a_sync_request_from_the_watch_restarts_the_walk() {
         use crate::objects::{Null, SyncRequest};
@@ -2508,9 +2039,6 @@ mod tests {
         );
     }
 
-    /// The watch goes on asking for as long as it holds an undelivered dump,
-    /// so a request the walk has nothing to answer is the one that means the
-    /// diagnostic buffer rather than history.
     #[test]
     fn a_request_the_walk_cannot_answer_takes_the_dump_instead() {
         use crate::objects::{Null, SyncRequest};
@@ -2548,11 +2076,9 @@ mod tests {
             "acknowledged, then the drain opens"
         );
 
-        // While it runs, a walk would abandon the transfer half way.
         assert!(client.walk_now().is_empty());
     }
 
-    /// The quick-launch menu is eight slots, zero-padded, like the screen list.
     #[test]
     fn the_activity_menu_is_padded_and_empty_slots_are_not_activities() {
         use crate::objects::WorkoutScreenList;
@@ -2566,10 +2092,6 @@ mod tests {
         assert_eq!(client.activities(), Some(vec![16, 2, 36, 28]));
     }
 
-    /// The watch answers one request with the whole window, across as many
-    /// frames as it takes. Asking again for each of them queued 11,437 writes
-    /// behind a link already busy carrying the reply, and every one that got
-    /// out asked from a watermark thousands of records stale.
     #[test]
     fn a_multi_frame_window_is_asked_for_once() {
         use crate::objects::{VasistasCbt, WamVasistasHead};
@@ -2600,9 +2122,6 @@ mod tests {
             );
         }
 
-        // Only the frame that carries no records at all closes the window,
-        // and that is what moves the walk on — here off the last stream, so
-        // the pass ends.
         let closing = client.handle(frame(
             Command::CMD_VASISTAS_GET,
             vec![WppObject::Null(Null {})],
@@ -2614,9 +2133,6 @@ mod tests {
         );
     }
 
-    /// The baseline is what the fever algorithm compares against, not a
-    /// reading: it arrives on the hour with a zero window and barely moves all
-    /// week. Stored beside the measurements it is a temperature nobody took.
     #[test]
     fn a_temperature_baseline_is_not_stored_but_a_sleeping_one_is() {
         use crate::objects::{VasistasCbt, WamVasistasDuration, WamVasistasHead};
@@ -2655,10 +2171,6 @@ mod tests {
         );
     }
 
-    /// The watch loses this over a reboot, and a watch that quietly comes back
-    /// with notifications on has also quietly halved its connection latency
-    /// for good. The preference is put back whenever the watch reports
-    /// otherwise, and left alone when it already agrees.
     #[test]
     fn a_notification_preference_is_restored_whenever_the_watch_has_lost_it() {
         use crate::objects::{AncsStatus, NotificationsDisplayState};
@@ -2693,8 +2205,6 @@ mod tests {
         );
     }
 
-    /// Both switches arrive together and mean different things: a watch can
-    /// agree to be a notification client and still not put anything on screen.
     #[test]
     fn the_two_notification_switches_are_read_separately() {
         use crate::objects::{AncsStatus, NotificationsDisplayState};
@@ -2730,8 +2240,6 @@ mod tests {
         );
     }
 
-    /// Features are write-only and the message carries the whole set, so a
-    /// write must name everything that should stay on.
     #[test]
     fn a_feature_write_carries_the_whole_set() {
         let client = authenticated();
@@ -2765,8 +2273,6 @@ mod tests {
         );
     }
 
-    /// The values are the ones the official app sent in the capture, which the
-    /// watch answered with a drift of one second.
     #[test]
     fn setting_the_clock_carries_the_offset_and_the_next_change() {
         let client = authenticated();
@@ -2793,7 +2299,6 @@ mod tests {
         );
     }
 
-    /// Somewhere that never changes offset still has to fill both fields.
     #[test]
     fn a_zone_with_no_transition_ahead_announces_the_offset_it_has() {
         let client = authenticated();
@@ -2812,7 +2317,6 @@ mod tests {
         );
     }
 
-    /// The list is fixed-length and zero-padded; a short write drops screens.
     #[test]
     fn a_screen_list_is_padded_and_empty_slots_are_not_screens() {
         use crate::objects::WamScreensList;
@@ -2843,8 +2347,6 @@ mod tests {
         assert!(list.screen_numbers[2..].iter().all(|s| *s == 0));
     }
 
-    /// A rejected handshake has to be visible; the alternative is a spinner
-    /// that never resolves.
     #[test]
     fn a_refused_challenge_ends_in_not_authenticated() {
         use crate::objects::Cmderror;
@@ -2866,10 +2368,6 @@ mod tests {
         assert_eq!(client.phase(), Phase::NotAuthenticated);
     }
 
-    /// Reconnecting quickly, the watch skips the challenge and answers the
-    /// probe outright. Waiting for one anyway leaves the client probing while
-    /// the watch believes the link is up and asks it to sync every two
-    /// seconds — which looks exactly like a watch that has gone quiet.
     #[test]
     fn a_probe_answered_without_a_challenge_still_starts_the_sync() {
         use crate::objects::ProbeReply;
@@ -2892,16 +2390,12 @@ mod tests {
         );
     }
 
-    /// Everything asked before the handshake finishes is refused with the same
-    /// code the watch uses to refuse a probe. Reading those as a refused probe
-    /// makes the client ignore the challenge it is waiting for.
     #[test]
     fn not_auth_for_another_command_does_not_abort_the_handshake() {
         use crate::objects::Cmderror;
         let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(0))]);
         client.handle(Event::Connected);
 
-        // CMD_BATTERY_STATUS, asked while the probe was still in flight.
         client.handle(frame(
             Command::CMD_ERROR,
             vec![WppObject::Cmderror(Cmderror { cmd: 1284, err: -5 })],
@@ -2922,9 +2416,6 @@ mod tests {
         assert_eq!(reply.command.opcode(), Command::CMD_PROBE_CHALLENGE.0);
     }
 
-    /// The daily totals are not part of the walk and have to be asked for, but
-    /// the watch answers ERR_DEVBUSY while a walk is running and nothing
-    /// retries them. They belong at the end.
     #[test]
     fn the_daily_totals_are_asked_for_once_the_walk_is_done() {
         use crate::objects::Null;
@@ -2963,9 +2454,6 @@ mod tests {
         assert!(commands.contains(&Command::CMD_BATTERY_STATUS.0));
     }
 
-    /// The watch asks for a sync every few seconds and each one ends with a
-    /// refresh, so without a limit the daily totals are re-requested at that
-    /// rate and every one of them writes a row.
     #[test]
     fn the_automatic_refresh_is_rate_limited_but_an_explicit_one_is_not() {
         let mut client = authenticated();
@@ -2984,23 +2472,18 @@ mod tests {
             "an interval on it is due again"
         );
 
-        // The button in the UI means "now", whatever the limit says.
         client.handle(at(MIN_REFRESH_INTERVAL_MS + 2));
         assert!(client.refresh().is_empty());
         assert!(!client.force_refresh().is_empty());
     }
 
-    /// A walk of every stream for each of the watch's sync requests is what
-    /// held its radio at a 100% duty cycle, and most of the replies were empty.
     #[test]
     fn the_stream_walk_is_rate_limited_but_an_explicit_one_is_not() {
         let mut client = authenticated();
-        // Ends the pass in progress, and carries the clock forward with it.
         let done = |ms: i64| Event::Frame {
             frame: Frame::new(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]),
             received_at: UnixMillis(ms),
         };
-        // Advances the clock without asking for anything.
         let idle = |ms: i64| Event::Frame {
             frame: Frame::new(Command::CMD_BATTERY_STATUS, Vec::new()),
             received_at: UnixMillis(ms),
@@ -3025,9 +2508,6 @@ mod tests {
         assert!(!client.walk_now().is_empty(), "the button still means now");
     }
 
-    /// The rate limit above governs the walk, not the answer. A request left
-    /// unanswered is repeated for as long as the link is up, and the watch
-    /// halves its connection latency while one is outstanding.
     #[test]
     fn every_sync_request_is_acknowledged_even_when_the_walk_is_not_due() {
         let mut client = authenticated();
@@ -3050,9 +2530,6 @@ mod tests {
         );
     }
 
-    /// `CMD_WORKOUT_START` is pushed once, to whoever is connected at the time.
-    /// Connecting midway through a workout has to recover it by asking, or the
-    /// live trace is attributed to nothing.
     #[test]
     fn a_workout_already_running_at_connect_is_picked_up() {
         use crate::objects::{ActivitySubcategory, StartTime, Status};
@@ -3086,8 +2563,6 @@ mod tests {
             }]
         );
 
-        // Status 0 is the ordinary case — nothing is running, and reporting a
-        // workout then would invent one on every connect.
         let idle = client.handle(frame(
             Command::CMD_WORKOUT_STATUS,
             vec![
@@ -3100,10 +2575,55 @@ mod tests {
         assert!(records(&idle).is_empty(), "no workout, no record");
     }
 
-    /// A stop the watch discarded and one it acted on are acknowledged
-    /// identically, so nothing but the session disappearing confirms it. Until
-    /// this was read off the status reply the app stayed in a workout the
-    /// watch had already finished.
+    #[test]
+    fn the_clock_is_put_right_as_soon_as_the_watch_will_answer() {
+        use crate::objects::{ProbeChallenge, ProbeReply, TimeSet};
+        let mut client = Client::new(credentials(), Vec::new());
+        client.set_zone(7200, None);
+        client.handle(Event::Connected);
+
+        let sent = |actions: &[Action]| -> Vec<Frame> {
+            actions
+                .iter()
+                .filter_map(|a| match a {
+                    Action::Send(f) if f.command == Command::CMD_TIME_SET => Some(f.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        let challenged = client.handle(Event::Frame {
+            frame: Frame::new(
+                Command::CMD_PROBE_CHALLENGE,
+                vec![WppObject::ProbeChallenge(ProbeChallenge {
+                    mac: "a4:7e:fa:44:d6:10".to_string(),
+                    challenge: vec![1; 16],
+                })],
+            ),
+            received_at: UnixMillis(1_785_000_000_000),
+        });
+        assert!(sent(&challenged).is_empty());
+
+        let opened = client.handle(Event::Frame {
+            frame: Frame::new(
+                Command::CMD_PROBE,
+                vec![WppObject::ProbeReply(ProbeReply::default())],
+            ),
+            received_at: UnixMillis(1_785_000_000_000),
+        });
+        let clock = sent(&opened);
+        assert_eq!(clock.len(), 1, "the clock goes out once the probe closes");
+        assert_eq!(
+            clock[0].objects,
+            vec![WppObject::TimeSet(TimeSet {
+                utc: 1_785_000_000,
+                gmt_offset: 7200,
+                dst_change_time: 0,
+                next_gmt_offset: 7200,
+            })],
+        );
+    }
+
     #[test]
     fn a_stop_is_confirmed_by_the_session_being_gone() {
         use crate::objects::{StartTime, Status};
@@ -3132,8 +2652,6 @@ mod tests {
 
         client.stop_workout(UnixTime(1_785_000_000), UnixTime(1_785_000_600));
 
-        // Still running: the watch did not take the stop, and saying it ended
-        // would close a session that is still going.
         let ended = |actions: &[Action]| -> Vec<Record> {
             records(actions)
                 .into_iter()
@@ -3152,12 +2670,40 @@ mod tests {
             }],
         );
 
-        // And only once — a later status must not close it again.
         assert!(ended(&client.handle(status(0))).is_empty());
     }
 
-    /// A start and a stop seconds apart is a mis-press, and the start may
-    /// already be stored by the time the stop says so.
+    #[test]
+    fn a_short_session_stopped_from_here_is_dropped_too() {
+        use crate::objects::{StartTime, Status};
+        let mut client = authenticated();
+
+        client.stop_workout(UnixTime(1_785_000_000), UnixTime(1_785_000_000 + 8));
+        let actions = client.handle(frame(
+            Command::CMD_WORKOUT_STATUS,
+            vec![
+                WppObject::Status(Status { value: 0 }),
+                WppObject::StartTime(StartTime {
+                    value: 1_785_000_000,
+                }),
+            ],
+        ));
+        let stored: Vec<Record> = actions
+            .iter()
+            .find_map(|a| match a {
+                Action::Store { records, .. } => Some(records.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        assert_eq!(
+            stored,
+            vec![Record::WorkoutDropped {
+                started_at: UnixTime(1_785_000_000),
+            }],
+            "eight seconds is a mis-press however it was stopped",
+        );
+    }
+
     #[test]
     fn a_session_too_short_to_be_one_is_dropped_rather_than_ended() {
         use crate::objects::{ActivitySubcategory, EndTime, StartTime, Status};
@@ -3181,7 +2727,6 @@ mod tests {
             }]
         );
 
-        // The same frame carrying its own start: neither half survives.
         let both = client.handle(frame(
             Command::CMD_WORKOUT_STATUS,
             vec![
@@ -3209,7 +2754,7 @@ mod tests {
                     value: 1_785_000_200,
                 }),
                 WppObject::EndTime(EndTime {
-                    value: 1_785_000_210,
+                    value: 1_785_000_230,
                 }),
             ],
         ));
@@ -3217,22 +2762,18 @@ mod tests {
             stored(&kept),
             vec![Record::WorkoutEnded {
                 started_at: UnixTime(1_785_000_200),
-                ended_at: UnixTime(1_785_000_210),
+                ended_at: UnixTime(1_785_000_230),
                 paused_secs: 0,
             }],
-            "ten seconds is a session"
+            "thirty seconds is a session"
         );
     }
 
-    /// The watch streams the waveform only while something says it is being
-    /// A walk that dies partway leaves the last thing heard ahead of the last
-    /// thing asked, which read as a healthy link and stalled the sync for good.
     #[test]
     fn a_walk_that_stops_replying_is_noticed() {
         let mut client = authenticated();
         assert_eq!(client.phase(), Phase::Syncing);
 
-        // The watch answers the walk request, then goes quiet mid-stream.
         client.handle(Event::Frame {
             received_at: UnixMillis(1_000_000),
             frame: Frame::new(Command::CMD_VASISTAS_GET, Vec::new()),
@@ -3254,8 +2795,6 @@ mod tests {
         );
     }
 
-    /// State scoped to a link must not outlive it. Both wedges found so far
-    /// were exactly this, so the reset is asserted field by field.
     #[test]
     fn a_disconnect_lets_go_of_everything_the_link_owned() {
         use crate::objects::MeasureCategory;
@@ -3283,8 +2822,6 @@ mod tests {
         );
     }
 
-    /// A measurement interrupted by the link dropping must not disable the
-    /// client for the life of the process.
     #[test]
     fn a_reconnect_clears_a_measurement_that_never_stopped() {
         use crate::objects::MeasureCategory;
@@ -3295,12 +2832,9 @@ mod tests {
         ));
         assert_eq!(client.measuring(), Some(1));
 
-        // The link dies here: no CMD_MEASURE_STOP will ever arrive for it.
         client.handle(Event::Connected);
         assert_eq!(client.measuring(), None, "a new link has no measurement");
 
-        // Once the new link has authenticated, the client must be usable
-        // again; before this fix every request was refused for good.
         client.handle(Event::Frame {
             received_at: UnixMillis(0),
             frame: Frame::new(
@@ -3322,8 +2856,6 @@ mod tests {
         assert!(client.current().is_some(), "and be walking a stream");
     }
 
-    /// looked at. Without the reply it records in silence and the live trace
-    /// is lost, since it is never stored at full rate.
     #[test]
     fn a_measurement_starting_arms_the_live_waveform() {
         use crate::objects::{MeasureCategory, MeasureLiveEcg};
@@ -3350,7 +2882,6 @@ mod tests {
             WppObject::MeasureLiveAppStatus(s) if s.app_live_screen_displayed == 1
         )));
 
-        // Two little-endian samples, as the watch sends them.
         client.handle(frame(
             Command::CMD_MEASURE_LIVE_DATA,
             vec![WppObject::MeasureLiveEcg(MeasureLiveEcg {
@@ -3359,13 +2890,10 @@ mod tests {
         ));
         assert_eq!(client.live_samples(), &[-126, 16]);
 
-        // Nothing may be asked of the watch while it records.
         assert!(client.sync_now().is_empty(), "no walk during a measurement");
         assert!(client.walk_now().is_empty(), "not even an explicit one");
         assert!(client.force_refresh().is_empty(), "nor the daily totals");
 
-        // The stop names what was recorded; without asking for it by that
-        // identity the waveform stays on the watch and is eventually dropped.
         use crate::objects::StoredMeasureMeta;
         let stopped = client.handle(frame(
             Command::CMD_MEASURE_STOP,
@@ -3395,9 +2923,6 @@ mod tests {
         assert!(sent.contains(&Command::CMD_STORED_MEASURE_SIGNAL_GET.0));
     }
 
-    /// A link can stay up while the watch stops answering: writes still
-    /// succeed and no disconnect is reported, so silence after a request is
-    /// the only evidence there is.
     #[test]
     fn silence_after_a_request_asks_for_a_reconnect() {
         let mut client = authenticated();
@@ -3405,16 +2930,13 @@ mod tests {
             now: UnixMillis(ms),
         };
 
-        // Nothing asked for yet, so silence means nothing.
         assert!(client.handle(tick(10_000)).is_empty());
 
-        // The walk finishes, so the watch has said its piece.
         client.handle(Event::Frame {
             frame: Frame::new(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]),
             received_at: UnixMillis(20_000),
         });
 
-        // A timer asks for more — the kind of send no event accompanies.
         client.handle(tick(1_000_000));
         assert!(!client.walk_now().is_empty(), "the walk asks for something");
 
@@ -3429,7 +2951,6 @@ mod tests {
             vec![Action::Reconnect]
         );
 
-        // A reply at any point clears it.
         client.handle(Event::Frame {
             frame: Frame::new(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]),
             received_at: UnixMillis(1_200_000),
@@ -3437,15 +2958,11 @@ mod tests {
         assert!(client.handle(tick(1_300_000)).is_empty(), "it answered");
     }
 
-    /// The daily totals are timestamped with the day they belong to. Treating
-    /// that as history rewinds the walk to midnight, and every refresh then
-    /// re-reads the whole day.
     #[test]
     fn the_daily_totals_do_not_move_the_walk_backwards() {
         use crate::objects::{Steps, WamVasistasHead};
         let mut client = authenticated();
 
-        // Read up to a point well into the day.
         client.handle(frame(
             Command::CMD_VASISTAS_GET,
             vec![
@@ -3463,7 +2980,6 @@ mod tests {
         ));
         let reached = client.watermarks();
 
-        // The totals arrive stamped with local midnight.
         client.handle(frame(
             Command::CMD_DISPLAYED_INFO_GET,
             vec![
@@ -3474,9 +2990,6 @@ mod tests {
         assert_eq!(client.watermarks(), reached, "midnight must not rewind it");
     }
 
-    /// Each stream is at its own point in time. Letting one stream's newest
-    /// record decide where another resumes silently skips whatever lies
-    /// between them — a night of sleep records, in the case that found this.
     #[test]
     fn one_stream_does_not_drag_another_forward() {
         use crate::objects::{VasistasCbt, WamVasistasHead};
@@ -3510,14 +3023,12 @@ mod tests {
         ));
         client.handle(frame(Command::CMD_PROBE, Vec::new()));
 
-        // The first stream is current, right up to now.
         client.handle(cbt(900_000));
         client.handle(frame(
             Command::CMD_VASISTAS_GET,
             vec![WppObject::Null(Null {})],
         ));
 
-        // The second is far behind, and keeps its own place.
         client.handle(cbt(2_000));
         client.handle(frame(
             Command::CMD_VASISTAS_GET,
@@ -3535,9 +3046,6 @@ mod tests {
         );
     }
 
-    /// Staging arrives on the activity stream, as the body of a window in place
-    /// of the step counts an awake one carries — not on the typed stream, where
-    /// a decoder for it sat unreachable while ten nights went unstored.
     #[test]
     fn a_staged_sleep_record_is_captured() {
         use crate::objects::{WamVasistasDuration, WamVasistasHead, WamVasistasSleep};
@@ -3573,8 +3081,6 @@ mod tests {
         );
     }
 
-    /// The failure that hid the staging was silent: a catch-all consumed an
-    /// object type no arm handled. Anything unread has to be reportable.
     #[test]
     fn an_object_nothing_reads_is_reported() {
         use crate::objects::{WamVasistasHead, WamVasistasSleepDbg};
@@ -3597,11 +3103,6 @@ mod tests {
         assert_eq!(client.take_unhandled(), vec![], "taking clears them");
     }
 
-    /// A whole session driven message by message, asserting what the client
-    /// sends at each step and the state it ends in.
-    /// The watch acknowledges nothing here — it erases and reboots — so what
-    /// is worth pinning is that the frame matches the one the official app
-    /// sends, payload and all.
     #[test]
     fn a_factory_reset_is_the_bare_command() {
         let mut client = authenticated();
@@ -3620,12 +3121,10 @@ mod tests {
         let mut client = Client::new(credentials(), vec![(Category(8), UnixTime(4000))]);
         assert_eq!(client.phase(), Phase::Idle);
 
-        // 1. link up -> probe
         let actions = client.handle(Event::Connected);
         assert_eq!(sent(&actions), vec![Command::CMD_PROBE]);
         assert_eq!(client.phase(), Phase::Probing);
 
-        // 2. the watch challenges us -> we answer it
         let actions = client.handle(frame(
             Command::CMD_PROBE_CHALLENGE,
             vec![WppObject::ProbeChallenge(ProbeChallenge {
@@ -3649,8 +3148,6 @@ mod tests {
             }
         )));
 
-        // 3. the watch accepts -> ask what it already knows (a workout in
-        //    progress, the nights it has staged), then start the history walk
         let actions = client.handle(frame(Command::CMD_PROBE, vec![]));
         assert_eq!(
             sent(&actions),
@@ -3672,9 +3169,6 @@ mod tests {
                 max: 0,
             })));
 
-        // 4. a window of samples -> stored. Nothing is asked for yet: the
-        //    watch is still streaming this window and only the terminator
-        //    that closes it moves the walk on.
         let actions = client.handle(frame(
             Command::CMD_VASISTAS_GET,
             vec![
@@ -3714,15 +3208,12 @@ mod tests {
                     quality: None,
                     source: Source::Stored,
                     window_secs: None,
-                    // The conditions the watch says it was taken under.
                     context: Some(VasistasCbt::ATTRIB_NORMAL as i64),
                 },
             ]
         );
         assert_eq!(client.current(), Some((Category(8), UnixTime(5001))));
 
-        // 5. nothing left -> the sync closes out and the daily totals, which
-        //    the walk kept the watch too busy to answer, are asked for
         let actions = client.handle(frame(
             Command::CMD_VASISTAS_GET,
             vec![WppObject::Null(Null {})],
@@ -3739,8 +3230,6 @@ mod tests {
         assert_eq!(client.phase(), Phase::Finished);
         assert_eq!(client.current(), None);
         assert_eq!(client.pending_deletes(), 0);
-        // Finishing must not discard where the walk got to; the next pass
-        // resumes from here rather than replaying the history.
         assert_eq!(client.watermarks(), vec![(Category(8), UnixTime(5001))]);
     }
 }
@@ -3751,8 +3240,6 @@ mod workout_screen_tests {
     use super::*;
     use crate::image::Mono;
 
-    /// A 34x34 glyph is 170 bytes on its own — larger than a frame — so the
-    /// message this builds only reaches the watch if the wire split works.
     fn screen(id: u32, name: &str) -> WorkoutScreen {
         WorkoutScreen {
             id,
@@ -3779,8 +3266,6 @@ mod workout_screen_tests {
         sent[0].clone()
     }
 
-    /// The whole menu goes as one message and is cut up on the way out, so
-    /// what has to hold is that no piece reaches the size that reboots it.
     #[test]
     fn no_frame_reaches_the_size_that_reboots_the_watch() {
         let client = authenticated();
@@ -3795,8 +3280,6 @@ mod workout_screen_tests {
         }
     }
 
-    /// The object run the official app sends: every entry whole, both declared
-    /// glyph sizes, and one terminator for the list rather than one per entry.
     #[test]
     fn the_menu_carries_every_entry_and_closes_once() {
         let client = authenticated();
@@ -3812,7 +3295,6 @@ mod workout_screen_tests {
             4,
             "both glyph sizes for both screens",
         );
-        // 20x20 packs to 60 bytes and 34x34 to 170, so one chunk and three.
         assert_eq!(
             sent.iter().filter(|t| **t == 2398).count(),
             2 * (1 + 3),
@@ -3822,8 +3304,6 @@ mod workout_screen_tests {
         assert_eq!(sent.last().copied(), Some(256), "the list closes with Null");
     }
 
-    /// Every object has to survive the split, in order, or the watch is told
-    /// about a screen whose picture went missing.
     #[test]
     fn splitting_keeps_every_object_in_order() {
         let client = authenticated();

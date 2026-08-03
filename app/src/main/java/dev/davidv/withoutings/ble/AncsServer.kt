@@ -16,24 +16,13 @@ import java.util.UUID
 import uniffi.wpp_ffi.AncsLink
 import uniffi.wpp_ffi.WatchService
 import uniffi.wpp_ffi.ancsUuids
+import dev.davidv.withoutings.WatchRepository
 
-/**
- * The phone's half of phone notifications.
- *
- * Everywhere else in this app the phone is the GATT client and the watch the
- * peripheral. Here it is the other way round: the watch connects back over the
- * link that is already up and reads notifications out of a server we run, so
- * nothing is advertised and there is no second connection to manage.
- *
- * Nothing here understands the format. Writes go straight to [WatchService],
- * which hands back the bytes to notify with.
- */
 class AncsServer(
     private val context: Context,
     private val service: () -> WatchService?,
 ) : AncsLink {
 
-    // Taken from Rust rather than repeated, so the two sides cannot drift.
     private val uuids = ancsUuids()
     private val serviceUuid = UUID.fromString(uuids.service)
     private val notificationSource = UUID.fromString(uuids.notificationSource)
@@ -42,14 +31,11 @@ class AncsServer(
 
     private var server: BluetoothGattServer? = null
     private var client: BluetoothDevice? = null
-    /** Until the watch negotiates otherwise, the BLE default. */
     private var mtu = DEFAULT_MTU
-    /** Characteristics the watch has subscribed to, by CCCD write. */
     private val subscribed = HashSet<UUID>()
 
+
     /**
-     * Notifications the stack has not taken yet.
-     *
      * A second notify before the first is confirmed is dropped silently, and
      * a long message is several notifies, so they go out one at a time.
      */
@@ -76,6 +62,7 @@ class AncsServer(
         client = null
         mtu = DEFAULT_MTU
         subscribed.clear()
+        WatchRepository.setListening(false)
         runCatching { server?.close() }
         server = null
     }
@@ -115,15 +102,6 @@ class AncsServer(
 
     override fun attributes(bytes: ByteArray) = enqueue(dataSource, bytes)
 
-    /**
-     * Queue a notification, if the watch has asked for them.
-     *
-     * The official app checks this before every announcement and drops the
-     * ones it cannot deliver, rather than holding them for a subscriber that
-     * may never arrive. Notifying a characteristic nobody subscribed to sends
-     * the packet anyway — Android's server role does not check the CCCD for
-     * you — so without this the watch receives traffic it never asked for.
-     */
     private fun enqueue(characteristic: UUID, bytes: ByteArray) {
         if (characteristic !in subscribed) {
             Log.w(TAG, "dropped ${bytes.size} bytes: the watch is not subscribed to $characteristic")
@@ -188,8 +166,7 @@ class AncsServer(
             if (device != client) return
             client = null
             subscribed.clear()
-            // The queue belongs to a session that no longer exists; keeping it
-            // would deliver one notification's fragments into the next.
+            WatchRepository.setListening(false)
             discard()
         }
 
@@ -220,8 +197,6 @@ class AncsServer(
                 Log.w(TAG, "write to ${characteristic.uuid}, which takes none")
                 return
             }
-            // The watch reads the answer off the Data Source, so a fragment can
-            // only be as big as one notification on this link.
             val payload = (mtu - ATT_HEADER).coerceAtLeast(1)
             Log.i(TAG, "control point <- ${value.hex()}")
             runCatching { service()?.onAncsWrite(value, payload.toUInt()) }
@@ -241,6 +216,7 @@ class AncsServer(
             val characteristic = descriptor.characteristic.uuid
             val on = value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
             if (on) subscribed.add(characteristic) else subscribed.remove(characteristic)
+            WatchRepository.setListening(notificationSource in subscribed)
             Log.i(TAG, "$characteristic notifications ${if (on) "on" else "off"}")
             if (responseNeeded) {
                 server?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null)
@@ -268,7 +244,6 @@ class AncsServer(
 
         fun ByteArray.hex(): String = joinToString(" ") { "%02x".format(it) }
         const val DEFAULT_MTU = 23
-        /** Opcode and handle, ahead of every notification payload. */
         const val ATT_HEADER = 3
         val CLIENT_CONFIG: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }

@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DragIndicator
@@ -52,28 +53,12 @@ import androidx.compose.ui.zIndex
 import dev.davidv.withoutings.ui.theme.AppTheme
 import kotlin.math.roundToInt
 
-/**
- * The pieces every screen is built from.
- *
- * They exist so that a tile on Now and a tile on the heart-rate screen are the
- * same tile: the design's fifth convention is that sibling tiles share one
- * internal format, and the surest way to hold that is for there to be only one
- * of each.
- */
-
-/// A tap target big enough for a thumb, whatever the glyph inside it.
 private val TOUCH = 40.dp
 
 @Composable
 private fun Modifier.tap(onClick: (() -> Unit)?): Modifier =
     if (onClick == null) this else clickable { onClick() }
 
-/**
- * A home screen: title block, then content that fills to the navigation bar.
- *
- * The status bar is the system's here rather than the drawn one in the mock,
- * so the header takes its top inset instead of a fixed 9dp.
- */
 @Composable
 fun HomeScaffold(
     title: String,
@@ -112,10 +97,6 @@ fun HomeScaffold(
     }
 }
 
-/**
- * A pushed screen: back arrow, title over its window, and whatever steps that
- * window on the right.
- */
 @Composable
 fun DetailScaffold(
     title: String,
@@ -148,7 +129,6 @@ fun DetailScaffold(
                         subtitle,
                         style = AppTheme.type.titleMeta,
                         color = AppTheme.colors.onSurfaceTertiary,
-                        // One line or the chevrons beside it de-centre.
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -164,7 +144,6 @@ fun DetailScaffold(
     }
 }
 
-/** A bare icon in a touch target, with no container of its own. */
 @Composable
 fun GlyphButton(
     icon: ImageVector,
@@ -193,20 +172,12 @@ fun GlyphButton(
     }
 }
 
-/** Steps a history screen a day at a time. Forward is off at the live edge. */
 @Composable
 fun DayStepper(canGoForward: Boolean, onStep: (Int) -> Unit) {
     GlyphButton(Icons.Rounded.ChevronLeft, "Earlier") { onStep(-1) }
     GlyphButton(Icons.Rounded.ChevronRight, "Later", enabled = canGoForward) { onStep(1) }
 }
 
-/**
- * Charge, as a pill.
- *
- * The design's only freshness indicator besides the wording, and deliberately
- * not an icon: a battery glyph invites a warning colour, which this palette
- * does not have.
- */
 @Composable
 fun BatteryPill(
     label: String,
@@ -233,7 +204,6 @@ fun BatteryPill(
     }
 }
 
-/** A mono, tracked-out, upper-case section marker. */
 @Composable
 fun Eyebrow(
     text: String,
@@ -244,7 +214,6 @@ fun Eyebrow(
     Text(text.uppercase(), modifier, style = style, color = color)
 }
 
-/** A words-not-eyebrow section heading, optionally with a text link opposite. */
 @Composable
 fun SectionHeader(title: String, action: String? = null, onAction: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -260,9 +229,6 @@ fun SectionHeader(title: String, action: String? = null, onAction: (() -> Unit)?
                 Modifier
                     .clip(AppTheme.pill)
                     .tap(onAction)
-                    // A text link still has to be a thumb-sized target, so the
-                    // padding is the target rather than the label's breathing
-                    // room.
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 style = AppTheme.type.buttonLabel.copy(
                     fontSize = AppTheme.type.chipLabel.fontSize,
@@ -273,7 +239,6 @@ fun SectionHeader(title: String, action: String? = null, onAction: (() -> Unit)?
     }
 }
 
-/** A plain tonal surface: the app's default container. */
 @Composable
 fun Tile(
     modifier: Modifier = Modifier,
@@ -291,12 +256,6 @@ fun Tile(
     )
 }
 
-/**
- * The accent surface, used once per screen at most.
- *
- * It is the app's way of saying "this is the thing" — so a second one on the
- * same screen takes the meaning away from the first.
- */
 @Composable
 fun AccentCard(
     modifier: Modifier = Modifier,
@@ -314,10 +273,6 @@ fun AccentCard(
     )
 }
 
-/**
- * The container a chart is drawn in: white, with a hairline inset instead of a
- * shadow. The design has almost no elevation anywhere.
- */
 @Composable
 fun ChartCard(
     modifier: Modifier = Modifier,
@@ -334,13 +289,6 @@ fun ChartCard(
     )
 }
 
-/**
- * One of a group of sibling metric tiles.
- *
- * Every field is required because that is the point: a group of these reads as
- * one comparison only while they all carry the same four things. No tile in a
- * group gets a chart or a bar the others lack.
- */
 @Composable
 fun MetricTile(
     icon: ImageVector,
@@ -387,10 +335,6 @@ fun MetricTile(
     }
 }
 
-/**
- * The same parallel format at stat size: mono eyebrow, value with unit, one
- * line of footer.
- */
 @Composable
 fun StatTile(
     eyebrow: String,
@@ -419,7 +363,6 @@ fun StatTile(
     }
 }
 
-/** A number with its unit sitting on the same baseline. */
 @Composable
 fun ValueWithUnit(
     value: String,
@@ -443,13 +386,6 @@ fun ValueWithUnit(
     }
 }
 
-/**
- * A row naming something that happened: a session, a recording, a spell.
- *
- * The leading tile is accent for anything the user started and tonal for
- * anything the watch merely counted, which is the same distinction the
- * activities list draws between a workout and a detected walk.
- */
 @Composable
 fun EntityRow(
     icon: ImageVector,
@@ -516,7 +452,6 @@ fun RowChevron() {
     )
 }
 
-/** The divider between list rows, inset past the leading tile. */
 @Composable
 fun RowDivider(inset: Dp = AppTheme.space.dividerInset) {
     Box(
@@ -528,10 +463,6 @@ fun RowDivider(inset: Dp = AppTheme.space.dividerInset) {
     )
 }
 
-/**
- * A row of chips where exactly one is selected. Selected is a fill, unselected
- * is an outline; neither is a Material chip, which brings its own metrics.
- */
 @Composable
 fun <T> ChipRow(
     options: List<Pair<T, String>>,
@@ -574,7 +505,6 @@ fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** The app's primary action: a filled block, not a floating button. */
 @Composable
 fun FilledAction(
     label: String,
@@ -601,7 +531,6 @@ fun FilledAction(
     }
 }
 
-/** A secondary action: an outlined pill in the primary colour. */
 @Composable
 fun OutlineAction(
     label: String,
@@ -630,13 +559,6 @@ fun OutlineAction(
     }
 }
 
-/**
- * A two-state pill.
- *
- * Off is drawn with a ringed knob rather than a paler fill, because "off" and
- * "not answered yet" must not look alike — the second is drawn as [disabled],
- * where the whole control recedes.
- */
 @Composable
 fun AppToggle(checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     val colors = AppTheme.colors
@@ -673,7 +595,6 @@ fun AppToggle(checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> 
     }
 }
 
-/** One pill cut into segments, exactly one of them chosen. */
 @Composable
 fun <T> Segmented(
     options: List<Pair<T, String>>,
@@ -727,12 +648,6 @@ fun <T> Segmented(
     }
 }
 
-/**
- * A filled track.
- *
- * A bar that came out below par is drawn neutral rather than warm: the design
- * forbids the app from implying an alarm, and a red bar is exactly that.
- */
 @Composable
 fun TrackBar(
     fraction: Float,
@@ -756,7 +671,6 @@ fun TrackBar(
     }
 }
 
-/** A swatch naming a shading used inside a chart. */
 @Composable
 fun LegendSwatch(color: Color, label: String) {
     Row(
@@ -772,13 +686,6 @@ fun LegendSwatch(color: Color, label: String) {
     }
 }
 
-/**
- * Where a value would go on a screen with nothing to put there.
- *
- * The design is explicit that an empty state keeps its layout and explains
- * itself rather than showing a zero, because a zero is a measurement and this
- * is the absence of one.
- */
 @Composable
 fun EmptyNote(text: String, modifier: Modifier = Modifier) {
     Text(
@@ -789,19 +696,8 @@ fun EmptyNote(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-/// Rows of one height, so a drag can be read as a whole number of them.
 val REORDER_ROW_HEIGHT = 52.dp
 
-/**
- * A short list, dragged into order.
- *
- * The order is the caller's — every crossing is reported as a whole new list
- * rather than kept here — because these lists are sent to the watch in the
- * order they are shown, and the watch is the one that decides what that means.
- *
- * The held row lifts rather than animating into a new position: the reorder is
- * local until the watch takes it, so nothing has happened yet.
- */
 @Composable
 fun <T> ReorderableColumn(
     order: List<T>,
@@ -874,7 +770,48 @@ fun <T> ReorderableColumn(
     }
 }
 
-/** A row that goes somewhere. */
+@Composable
+fun AppCheckbox(
+    checked: Boolean,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onChange: (Boolean) -> Unit,
+) {
+    val shape = RoundedCornerShape(AppTheme.radius.checkbox)
+    Box(
+        modifier
+            .size(26.dp)
+            .clip(shape)
+            .background(if (checked) MaterialTheme.colorScheme.primary else Color.Transparent)
+            .then(
+                if (checked) {
+                    Modifier
+                } else {
+                    Modifier.border(
+                        2.dp,
+                        if (enabled) {
+                            AppTheme.colors.onSurfaceDim
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        },
+                        shape,
+                    )
+                }
+            )
+            .clickable(enabled = enabled) { onChange(!checked) },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (checked) {
+            Icon(
+                Icons.Rounded.Check,
+                null,
+                Modifier.size(17.dp),
+                tint = MaterialTheme.colorScheme.onPrimary,
+            )
+        }
+    }
+}
+
 @Composable
 fun NavRow(title: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
@@ -890,13 +827,6 @@ fun NavRow(title: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     }
 }
 
-/**
- * A setting, and its control.
- *
- * [rationale] is for what the title cannot say — what a setting costs, or what
- * the app does not know. A line that only restates the title in more words is
- * left out, which is why this is nullable rather than always present.
- */
 @Composable
 fun SettingRow(
     title: String,

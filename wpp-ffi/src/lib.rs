@@ -1,10 +1,3 @@
-//! The Kotlin-facing surface.
-//!
-//! Deliberately narrow: flat records rather than domain types, and one call
-//! per screenful rather than per sample. The Store -> Stored -> Delete
-//! ordering that protects watch data is enforced in here, so no caller can
-//! delete a measurement that has not been committed.
-
 use std::sync::Mutex;
 
 use wpp::activity;
@@ -27,13 +20,6 @@ fn origin_of(source: i64) -> Origin {
     }
 }
 
-/// Series the watch keeps separately, each walked with its own watermark.
-/// Category 0 is the body stream carrying heart rate and 255 the per-minute
-/// activity stream, both of which have their own command; the rest are the
-/// VasistasType values the official app asks for.
-/// Taken from the end, so the order walked is: body (heart rate), activity,
-/// 10 (core temperature), 11 (HRV), 12 (respiratory rate), 6, then 8, 9, 5 —
-/// which carry SpO2 and AHI in bulk and would otherwise starve the rest.
 const CATEGORIES: [Category; 9] = [
     Category(5),
     Category(9),
@@ -48,8 +34,6 @@ const CATEGORIES: [Category; 9] = [
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum WatchError {
-    // Not named `message`: uniffi maps this onto a Kotlin exception, where
-    // that field collides with Throwable.
     #[error("storage: {reason}")]
     Storage { reason: String },
     #[error("protocol: {reason}")]
@@ -66,13 +50,10 @@ impl From<wpp_store::Error> for WatchError {
 
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Origin {
-    /// Historical series pulled during a sync.
     Stored,
-    /// 1 Hz push while connected.
     Live,
 }
 
-/// A series the watch records, as the UI refers to it.
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Metric {
     HeartRate,
@@ -83,8 +64,6 @@ pub enum Metric {
     Battery,
     Steps,
     Spo2,
-    /// Climb and the other running totals beside the steps, all reset at local
-    /// midnight. Metres, kilocalories, metres, hours once scaled.
     Ascent,
     Calories,
     Distance,
@@ -109,11 +88,9 @@ impl Metric {
         }
     }
 
-    /// Divisor from the stored wire value to the displayed unit.
     fn scale(self) -> f64 {
         match self {
             Metric::Temperature => 1000.0,
-            // Centimetres, and hundredths of a kilocalorie.
             Metric::Ascent | Metric::Distance | Metric::Calories => 100.0,
             Metric::TrackedDuration => 3600.0,
             _ => 1.0,
@@ -133,7 +110,6 @@ pub enum Progress {
     Connecting,
     Syncing,
     Finished,
-    /// The watch refused the association secret.
     NotAuthenticated,
 }
 
@@ -156,7 +132,6 @@ pub struct HrPoint {
     pub origin: Origin,
 }
 
-/// A point of any series, already converted to its display unit.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct Point {
     pub at_ms: i64,
@@ -164,7 +139,6 @@ pub struct Point {
     pub origin: Origin,
 }
 
-/// The window a series covers, for framing a first view of it.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct Extent {
     pub from_ms: i64,
@@ -175,20 +149,19 @@ pub struct Extent {
 pub struct WorkoutSummary {
     pub id: i64,
     pub started_at_ms: i64,
-    /// Absent while the workout is still running.
     pub ended_at_ms: Option<i64>,
     pub subcategory: i32,
-    /// The sport, named. Unknown ids keep their number rather than being
-    /// hidden — the watch may know activities this build does not.
     pub activity: String,
 }
 
-/// A stretch of walking or running found in the activity stream.
-///
-/// Not a [`WorkoutSummary`]: the watch reports those itself and they are what
-/// someone started deliberately. These are derived from step cadence here on
-/// the phone, the same division the official app makes, and they are only as
-/// good as that inference.
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct ActivityTotals {
+    pub steps: i64,
+    pub distance_metres: f64,
+    pub ascent_metres: f64,
+    pub calories: f64,
+}
+
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct DetectedActivity {
     pub started_at_ms: i64,
@@ -200,7 +173,6 @@ pub struct DetectedActivity {
     pub calories: f64,
 }
 
-/// Where the watch is worn, from `TYPE_TRACKER_WEAR_POS`.
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WearPosition {
     NotSet,
@@ -229,15 +201,12 @@ impl WearPosition {
     }
 }
 
-/// The next daylight-saving change the phone's time zone knows about. Absent
-/// for a zone that has none ahead of it.
 #[derive(uniffi::Record, Debug, Clone, Copy, PartialEq)]
 pub struct DstChange {
     pub at_ms: i64,
     pub gmt_offset_seconds: i32,
 }
 
-/// An activity in the watch's quick-launch menu.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct Activity {
     pub id: u32,
@@ -245,7 +214,6 @@ pub struct Activity {
     pub enabled: bool,
 }
 
-/// A health feature the watch can be told to measure.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct HealthFeature {
     pub id: u16,
@@ -254,7 +222,6 @@ pub struct HealthFeature {
     pub enabled: bool,
 }
 
-/// One screen the watch can cycle through.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct WatchScreen {
     pub id: u8,
@@ -262,8 +229,6 @@ pub struct WatchScreen {
     pub enabled: bool,
 }
 
-/// A reading with the time it was taken, so the UI can say how old it is
-/// rather than implying it is current.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct Temperature {
     pub celsius: f64,
@@ -274,21 +239,12 @@ pub struct Temperature {
 pub struct Battery {
     pub percent: u32,
     pub at_ms: i64,
-    /// Whether a charger is attached, or `None` when the last state reading is
-    /// too old to answer for the present.
-    ///
-    /// The distinction matters: reporting "not charging" from a stale reading
-    /// and reporting "we do not know" look the same on screen, but claiming
-    /// "charging" from one would assert the very thing being checked.
     pub charging: Option<bool>,
 }
 
-/// Daily totals belong to the day the watch counted them, which is not
-/// necessarily today.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct Steps {
     pub count: u32,
-    /// Local midnight of the day these cover, as the watch reported it.
     pub day_start_ms: i64,
 }
 
@@ -298,10 +254,6 @@ pub struct Marker {
     pub edge: SetEdge,
 }
 
-/// A stretch the watch staged, from `activity_minute.sleep_level`.
-///
-/// The watch's own classifier, not an inference: a window it did not stage
-/// produces no band rather than a guess.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct SleepBand {
     pub from_ms: i64,
@@ -317,8 +269,6 @@ pub enum SleepStage {
     Rem,
 }
 
-/// One band per run of the same stage. The watch dates a window per record, so
-/// a stretch of walking arrives as a dozen one-minute bands that are one thing.
 fn merge_adjacent(bands: impl Iterator<Item = SleepBand>) -> Vec<SleepBand> {
     bands.fold(Vec::new(), |mut out: Vec<SleepBand>, band| {
         match out.last_mut() {
@@ -342,8 +292,6 @@ impl SleepStage {
     }
 }
 
-/// A night out of 100, with the parts that made it so a total can be argued
-/// with. See `wpp::sleep` for what each one measures.
 #[derive(uniffi::Record, Debug, Clone, Copy, PartialEq)]
 pub struct SleepScore {
     pub total: u8,
@@ -354,57 +302,35 @@ pub struct SleepScore {
     pub continuity: u8,
 }
 
-/// One night's screen: what the watch staged, and the numbers read off it.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct Night {
-    /// What the watch staged, in order, and the only source of the sleep
-    /// period. Empty for a night it did not stage.
     pub stages: Vec<SleepBand>,
     pub asleep_from_ms: Option<i64>,
     pub asleep_to_ms: Option<i64>,
-    /// Absent for a night with no sleep staged in it.
     pub score: Option<SleepScore>,
 }
 
-/// What a sync is doing, for a progress indicator that means something.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct SyncProgress {
-    /// Fraction of the gap between the last sync and now that has been walked,
-    /// 0..1. An estimate: the watch may hold less history than the gap implies.
     pub history_fraction: Option<f64>,
-    /// A signal transfer in progress. Exact, unlike the history fraction.
     pub transfer_received: Option<u32>,
     pub transfer_total: Option<u32>,
-    /// Records committed since the connection opened.
     pub records_stored: u64,
-    /// Streams finished and streams in total; the fraction above covers only
-    /// the stream in progress.
     pub streams_done: u32,
     pub streams_total: u32,
 }
 
-/// What the watch says it is, out of the probe reply that opens every session.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct DeviceIdentity {
     pub name: String,
-    /// The firmware, as the number its image is named after — 3411, not a
-    /// dotted version. Nothing on the wire says it any other way.
     pub firmware: u32,
     pub bootloader: u32,
-    /// Absent where the watch reports no version rather than a version; this
-    /// one reports none for either.
     pub hardware: Option<u32>,
     pub rescue: Option<u32>,
 }
 
-/// Who the watch says is wearing it.
-///
-/// The watch holds this record and hands it back on request, so it is the store
-/// of record and not something this app owns. Editing it means writing the
-/// whole thing back with [`WatchService::set_user`].
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct UserProfile {
-    /// Unix seconds. Signed, so a birth before 1970 is representable.
     pub birth_secs: i64,
     pub weight_grams: u32,
     pub height_cm: u32,
@@ -414,35 +340,24 @@ pub struct UserProfile {
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct Snapshot {
     pub progress: Progress,
-    /// Absent until the watch has been probed once. Kept afterwards, so a
-    /// disconnected watch still has a version to print.
     pub device: Option<DeviceIdentity>,
-    /// Absent until the watch has been asked. Kept afterwards.
     pub user: Option<UserProfile>,
     pub battery: Option<Battery>,
     pub latest_hr: Option<HrPoint>,
     pub latest_temperature: Option<Temperature>,
     pub steps: Option<Steps>,
     pub active_workout: Option<WorkoutSummary>,
-    /// Data read from the watch but not yet committed here.
     pub pending_deletes: u32,
     pub sync: SyncProgress,
-    /// True while the watch is taking an ECG and streaming the waveform.
     pub measuring: bool,
 }
 
-/// One lead of a recording, already converted to millivolts.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct EcgLead {
     pub name: String,
     pub millivolts: Vec<f64>,
 }
 
-/// The watch's rhythm verdict on a recording.
-///
-/// Computed on the watch, by the classifier its firmware calls ECGSW2, and sent
-/// with the waveform. Nothing here reads a rhythm off the trace: reporting the
-/// watch's answer is a different act from making one up.
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EcgRhythm {
     NoAfib,
@@ -450,26 +365,16 @@ pub enum EcgRhythm {
     Inconclusive,
     PoorRecording,
     RateOutOfRange,
-    /// The watch ran, and declined to conclude.
     NoResult,
 }
 
-/// A recording as listed, without carrying its samples across the boundary.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct EcgSummary {
     pub id: i64,
     pub measured_at_ms: i64,
     pub seconds: f64,
     pub leads: u32,
-    /// Median rate over the recording, as the watch read it.
-    ///
-    /// Absent when the watch sent none, which it does for a recording too noisy
-    /// to count beats in — 3 of 21 in the official app's own history, and
-    /// exactly the 3 it classified as a poor recording. Reading a rate off a
-    /// trace the watch declined to read is not a rate, so nothing is shown.
     pub heart_rate: Option<u32>,
-    /// Absent where the watch sent no classification — every recording synced
-    /// before this app collected them, and any it declines to judge.
     pub rhythm: Option<EcgRhythm>,
 }
 
@@ -483,52 +388,26 @@ pub struct EcgRecording {
     pub rhythm: Option<EcgRhythm>,
 }
 
-/// What the host must do on the Rust side's behalf.
 #[uniffi::export(callback_interface)]
 pub trait Transport: Send + Sync {
-    /// Write one frame to the watch's characteristic.
-    fn write(&self, bytes: Vec<u8>);
-    /// Something the UI displays has changed; re-query.
+    fn write(&self, frames: Vec<Vec<u8>>);
     fn changed(&self);
-    /// Drop the link and establish it again.
     fn reconnect(&self);
 }
 
-/// The phone's ANCS server, which the host runs and this crate drives.
-///
-/// Separate from [`Transport`] because it is a different link in the opposite
-/// direction: here the phone is the GATT server and the watch the client.
 #[uniffi::export(callback_interface)]
 pub trait AncsLink: Send + Sync {
-    /// Notify the Notification Source characteristic. Always eight bytes.
     fn announce(&self, bytes: Vec<u8>);
-    /// Notify the Data Source characteristic. One call per fragment, in order.
     fn attributes(&self, bytes: Vec<u8>);
 }
 
-/// Drawing, which needs a font and a canvas and so belongs to the host.
-///
-/// Both calls must return a bitmap of exactly the size asked for, or an empty
-/// one when there is nothing to draw — an unknown app, or a codepoint the
-/// host's fonts do not cover.
 #[uniffi::export(callback_interface)]
 pub trait Rasterizer: Send + Sync {
-    /// One character, white on transparent.
     fn glyph(&self, codepoint: u32, width: u8, height: u8) -> Bitmap;
-    /// The icon for an installed app, by package name.
     fn icon(&self, app_id: String, width: u8, height: u8) -> Bitmap;
-    /// The glyph for an activity, by the id the quick-launch menu uses.
-    ///
-    /// The watch keeps no icons of its own, so writing the menu means drawing
-    /// one for every entry at every size it asked for.
     fn activity_glyph(&self, activity: u32, width: u8, height: u8) -> Bitmap;
 }
 
-/// A rendered bitmap on its way to the watch, in ARGB8888 and row-major —
-/// what `Bitmap.getPixels` hands over.
-///
-/// It is reduced to one bit per pixel on this side rather than the host's, so
-/// the threshold and the packing stay with the rest of the protocol.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct Bitmap {
     pub width: u8,
@@ -537,8 +416,6 @@ pub struct Bitmap {
 }
 
 impl Bitmap {
-    /// Reject a bitmap whose pixels do not match its declared size instead of
-    /// packing past the end of it.
     fn pack(self) -> Mono {
         if self.pixels.len() != self.width as usize * self.height as usize {
             return Mono::empty();
@@ -547,7 +424,6 @@ impl Bitmap {
     }
 }
 
-/// Where a notification lands on the watch. `AncsConfig.type`.
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationCategory {
     Other,
@@ -583,17 +459,12 @@ impl From<NotificationCategory> for ancs::Category {
     }
 }
 
-/// What the watch says about phone notifications.
 #[derive(uniffi::Record, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NotificationConfig {
-    /// The watch will act as a notification client.
     pub accepted: bool,
-    /// It will put what it hears on the screen.
     pub displayed: bool,
 }
 
-/// The UUIDs of the ANCS server the host has to stand up, so the two sides
-/// cannot drift apart.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct AncsUuids {
     pub service: String,
@@ -625,10 +496,7 @@ pub struct WatchService {
     ancs: Box<dyn AncsLink>,
     rasterizer: Box<dyn Rasterizer>,
     device_id: i64,
-    /// Enabled features as (id, start, end). Write-only on the wire, so this is
-    /// the only record of them.
     features: Mutex<Vec<(u16, u32, u32)>>,
-    /// Notifications the watch has been told about and can still ask about.
     notifications: Mutex<NotificationCenter>,
 }
 
@@ -665,15 +533,12 @@ impl WatchService {
     pub fn on_connected(&self) -> Result<(), WatchError> {
         let actions = {
             let mut inner = self.inner.lock().unwrap();
-            // A fresh link starts a fresh byte stream.
             inner.reassembler.reset();
             inner.client.handle(Event::Connected)
         };
         self.dispatch(actions)
     }
 
-    /// Ask only for the battery. Cheap enough to run while the charging state
-    /// is on screen, where a reading minutes old is worse than none.
     pub fn poll_battery(&self) -> Result<(), WatchError> {
         let actions = {
             let mut inner = self.inner.lock().unwrap();
@@ -682,8 +547,6 @@ impl WatchService {
         self.dispatch(actions)
     }
 
-    /// The host's clock, on a timer. This is the client's only way to notice
-    /// that time has passed without the watch saying anything.
     pub fn tick(&self) -> Result<(), WatchError> {
         let actions = {
             let mut inner = self.inner.lock().unwrap();
@@ -694,9 +557,6 @@ impl WatchService {
         self.dispatch(actions)
     }
 
-    /// Object types the watch sent that nothing read, one line each, and forget
-    /// them. Empty is the expected answer; anything here is data being thrown
-    /// away, which is how ten nights of sleep staging went missing.
     pub fn unhandled_objects(&self) -> Vec<String> {
         self.inner
             .lock()
@@ -713,7 +573,6 @@ impl WatchService {
             .collect()
     }
 
-    /// Feed one GATT notification. Frames span several of these.
     pub fn on_bytes(&self, bytes: Vec<u8>, received_at_ms: i64) -> Result<(), WatchError> {
         let mut pending = Vec::new();
         let mut frames = Vec::new();
@@ -730,8 +589,6 @@ impl WatchService {
                         }));
                         frames.push(frame);
                     }
-                    // Whatever it held is lost to this build, and the only way
-                    // to find out what that was is to keep the bytes.
                     StreamItem::Desync { bytes, .. } => undecoded.push(bytes),
                 }
             }
@@ -749,8 +606,6 @@ impl WatchService {
                 )?;
             }
         }
-        // Drawing calls back into the host, which cannot happen while the
-        // client is locked: the host is free to call back in on that thread.
         for frame in &frames {
             self.draw(frame);
         }
@@ -761,35 +616,21 @@ impl WatchService {
         {
             let mut inner = self.inner.lock().unwrap();
             inner.reassembler.reset();
-            // Discarded, not dispatched: there is no link left to send on.
             inner.client.handle(Event::Disconnected);
         }
         self.transport.changed();
     }
 
-    /// Walk every stream again from its watermark. Cheap when there is nothing
-    /// new: each stream answers with one empty reply.
     pub fn sync_now(&self) -> Result<(), WatchError> {
         let actions = self.inner.lock().unwrap().client.sync_now();
         self.dispatch(actions)
     }
 
-    /// Erase the watch and let go of it.
-    ///
-    /// The association secret goes with everything else, which is what makes
-    /// the watch pairable again — by anything, including something that is not
-    /// this app. There is no undo and no confirmation from the watch: it
-    /// erases and reboots, and the link dies with it.
     pub fn factory_reset(&self) -> Result<(), WatchError> {
         let actions = self.inner.lock().unwrap().client.factory_reset();
         self.dispatch(actions)
     }
 
-    /// Bring everything up to date: the numbers the watch does not push
-    /// (daily totals, battery) and another pass over the history.
-    ///
-    /// Asking only for the pushed numbers looks like a refresh that does
-    /// nothing, because the readings on screen come from the history walk.
     pub fn request_refresh(&self) -> Result<(), WatchError> {
         let actions = {
             let mut inner = self.inner.lock().unwrap();
@@ -800,12 +641,6 @@ impl WatchService {
         self.dispatch(actions)
     }
 
-    /// How far the link has got, without the readings that go with it.
-    ///
-    /// [`Self::snapshot`] answers the same question but reads the database to
-    /// do it. The host asks this one for every notification the watch sends,
-    /// which during a sync is thousands in a row on the thread delivering
-    /// them, so it touches nothing but the client's own state.
     pub fn progress(&self) -> Progress {
         let inner = self.inner.lock().unwrap();
         Progress::of(inner.client.phase())
@@ -823,8 +658,6 @@ impl WatchService {
                 SyncProgress {
                     history_fraction: inner.client.walk_span().and_then(|(from, at)| {
                         let span = now / 1000 - from.0;
-                        // A first sync starts from the epoch, where a fraction
-                        // of the gap would be meaningless.
                         if span <= 0 || from.0 <= 0 {
                             None
                         } else {
@@ -898,8 +731,6 @@ impl WatchService {
         })
     }
 
-    /// Heart rate over a window, reduced to at most `max_points` for drawing.
-    /// The reduction keeps peaks and troughs; the stored data is untouched.
     pub fn hr_series(
         &self,
         from_ms: i64,
@@ -918,7 +749,6 @@ impl WatchService {
             .collect())
     }
 
-    /// Any series over a window, reduced for drawing the same way heart rate is.
     pub fn series(
         &self,
         metric: Metric,
@@ -939,7 +769,6 @@ impl WatchService {
             .collect())
     }
 
-    /// Most recent value of a series, in its display unit.
     pub fn latest_value(&self, metric: Metric) -> Result<Option<Point>, WatchError> {
         let store = self.store.lock().unwrap();
         let scale = metric.scale();
@@ -952,7 +781,6 @@ impl WatchService {
             }))
     }
 
-    /// When a series starts and ends, or nothing if it has no samples.
     pub fn extent(&self, metric: Metric) -> Result<Option<Extent>, WatchError> {
         let store = self.store.lock().unwrap();
         Ok(store
@@ -975,8 +803,6 @@ impl WatchService {
             .collect())
     }
 
-    /// Forget a recorded session and the set marks inside it. What the watch
-    /// measured during it is the day's history and stays.
     pub fn delete_workout(&self, id: i64) -> Result<(), WatchError> {
         let store = self.store.lock().unwrap();
         store.delete_workout(self.device_id, id)?;
@@ -985,12 +811,26 @@ impl WatchService {
         Ok(())
     }
 
-    /// Walks and runs found in the activity stream over a window, oldest
-    /// first.
-    ///
-    /// Derived on every call rather than stored: the segmentation is an
-    /// inference over the records, and a later sync filling in the middle of a
-    /// walk has to be able to change its mind about where that walk ended.
+    pub fn activity_totals(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<ActivityTotals, WatchError> {
+        let store = self.store.lock().unwrap();
+        let minutes = store.activity_minutes(
+            self.device_id,
+            from_ms.div_euclid(1000),
+            to_ms.div_euclid(1000),
+        )?;
+        let summed = activity::totals(&minutes);
+        Ok(ActivityTotals {
+            steps: summed.steps,
+            distance_metres: summed.distance.0,
+            ascent_metres: summed.ascent.0,
+            calories: summed.calories.0,
+        })
+    }
+
     pub fn detected_activities(
         &self,
         from_ms: i64,
@@ -1016,8 +856,6 @@ impl WatchService {
             .collect())
     }
 
-    /// Screens the watch shows, enabled ones first in the order it cycles them.
-    /// Empty until the watch has answered [`Self::request_screens`].
     pub fn screens(&self) -> Vec<WatchScreen> {
         let current = self.inner.lock().unwrap().client.screens();
         let Some(current) = current else {
@@ -1031,8 +869,6 @@ impl WatchService {
                 enabled: true,
             })
             .collect();
-        // Only offer screens we can name. An unnamed number is one this watch
-        // has never reported having, and enabling it is a shot in the dark.
         for (id, name) in KNOWN_SCREENS {
             if !current.contains(id) {
                 screens.push(WatchScreen {
@@ -1050,19 +886,11 @@ impl WatchService {
         self.dispatch(actions)
     }
 
-    /// Replace the watch's screens. The order given is the order it cycles.
     pub fn set_screens(&self, ids: Vec<u8>) -> Result<(), WatchError> {
         let actions = self.inner.lock().unwrap().client.set_screens(&ids);
         self.dispatch(actions)
     }
 
-    /// Change the profile the watch holds.
-    ///
-    /// The watch takes the record whole, so the fields not offered here — the
-    /// account id it was associated under, and the gender byte nothing in this
-    /// app interprets — are carried over from the one it last reported. Without
-    /// a profile read back there is nothing to carry, and this refuses rather
-    /// than writing zeroes into the fields it cannot see.
     pub fn set_user(
         &self,
         birth_secs: i64,
@@ -1091,9 +919,6 @@ impl WatchService {
         self.dispatch(actions)
     }
 
-    /// Start a session on the watch, by the activity ids its quick-launch menu
-    /// uses. The watch stamps it with its own clock; the session appears once
-    /// it reports the start back.
     pub fn start_workout(&self, activity: u32) -> Result<(), WatchError> {
         let actions = self
             .inner
@@ -1104,8 +929,6 @@ impl WatchService {
         self.dispatch(actions)
     }
 
-    /// Stop the session the watch is running. Does nothing when it is running
-    /// none: the watch ignores a stop that does not name the session it has.
     pub fn stop_workout(&self) -> Result<(), WatchError> {
         let Some(active) = self.store.lock().unwrap().active_workout(self.device_id)? else {
             return Ok(());
@@ -1140,82 +963,22 @@ impl WatchService {
         self.dispatch(actions)
     }
 
-    /// Set the watch's clock from the phone's. The caller supplies the time and
-    /// the zone: the watch's clock is the phone's clock, and only the phone has
-    /// a time zone database to read the offsets out of.
-    pub fn set_time(
-        &self,
-        at_ms: i64,
-        gmt_offset_seconds: i32,
-        next_change: Option<DstChange>,
-    ) -> Result<(), WatchError> {
-        let actions = self.inner.lock().unwrap().client.set_time(
-            UnixMillis(at_ms).to_seconds(),
-            gmt_offset_seconds,
-            next_change.map(|change| wpp::client::DstChange {
-                at: UnixMillis(change.at_ms).to_seconds(),
-                gmt_offset: change.gmt_offset_seconds,
+    pub fn set_zone(&self, gmt_offset: i32, next_change: Option<DstChange>) {
+        self.inner.lock().unwrap().client.set_zone(
+            gmt_offset,
+            next_change.map(|c| wpp::client::DstChange {
+                at: UnixMillis(c.at_ms).to_seconds(),
+                gmt_offset: c.gmt_offset_seconds,
             }),
         );
-        self.dispatch(actions)
     }
 
-    /// Send a frame of exactly `total_bytes` to find where the watch stops
-    /// accepting them.
-    ///
-    /// The length check happens during reassembly, before the command is even
-    /// looked at, so the command here is a harmless read and the payload is
-    /// padding: what is being measured is the frame, not what it says. Over
-    /// the limit the watch logs "Command too long" and takes a deliberate
-    /// panic, so a probe that reboots it is the answer, not a failure.
-    ///
-    /// Deliberately bypasses the size guard in `write`, which exists to stop
-    /// exactly this happening by accident.
-    pub fn probe_frame(&self, total_bytes: u32) -> Result<(), WatchError> {
-        // Sized by construction rather than arithmetic: the padding object is
-        // length-prefixed, and guessing its overhead is how the first version
-        // of this managed to send nothing at all.
-        let build = |payload: usize| {
-            Frame::new(
-                wpp::commands::Command::CMD_WORKOUT_SCREEN_LIST_GET,
-                vec![wpp::objects::WppObject::ImageData(
-                    wpp::objects::ImageData {
-                        data: vec![0; payload],
-                    },
-                )],
-            )
-        };
-        let want = total_bytes as usize;
-        let mut payload = want.saturating_sub(build(0).to_bytes().len());
-        let mut frame = build(payload);
-        // One correction is enough — the relationship is linear — but loop so
-        // a padding type that ever stops being so cannot lie about the size.
-        for _ in 0..4 {
-            let len = frame.to_bytes().len();
-            if len == want {
-                break;
-            }
-            payload = (payload + want).saturating_sub(len);
-            frame = build(payload);
-        }
-        let bytes = frame.to_bytes();
-        if bytes.len() != want {
-            return Err(WatchError::Protocol {
-                reason: format!("cannot build a frame of exactly {want} bytes"),
-            });
-        }
-        self.transport.write(bytes);
-        Ok(())
-    }
 
-    /// Read the quick-launch menu and wear position from the watch.
     pub fn request_device_config(&self) -> Result<(), WatchError> {
         let actions = self.inner.lock().unwrap().client.request_device_config();
         self.dispatch(actions)
     }
 
-    /// The quick-launch menu, chosen ones first in the order the watch shows
-    /// them, then everything else that can be added.
     pub fn activities(&self) -> Vec<Activity> {
         let current = self
             .inner
@@ -1244,14 +1007,7 @@ impl WatchService {
         activities
     }
 
-    /// Replace the quick-launch menu.
-    ///
-    /// Each entry is sent whole — name, face mode, wake flag, and a glyph at
-    /// every size the watch declared on its screen list. The watch holds no
-    /// catalogue to look an id up in, so a list of ids alone empties the menu.
     pub fn set_activities(&self, ids: Vec<u32>) -> Result<(), WatchError> {
-        // Every size the watch declared, in the order it declared them. It
-        // draws the menu at both, preferring the larger.
         let formats = self.inner.lock().unwrap().client.image_formats().to_vec();
         if formats.is_empty() {
             return Err(WatchError::Protocol {
@@ -1291,10 +1047,6 @@ impl WatchService {
         self.dispatch(actions)
     }
 
-    /// Health features, as last written by this app.
-    ///
-    /// The watch has no read side for these, so this reflects what we told it,
-    /// seeded from what the official app had configured.
     pub fn health_features(&self) -> Vec<HealthFeature> {
         let enabled = self.features.lock().unwrap().clone();
         HEALTH_FEATURES
@@ -1308,9 +1060,6 @@ impl WatchService {
             .collect()
     }
 
-    /// Turn one feature on or off, sending the whole set as the protocol
-    /// requires. Features this app does not know about are carried through
-    /// untouched rather than being silently switched off.
     pub fn set_health_feature(&self, id: u16, enabled: bool) -> Result<(), WatchError> {
         let features = {
             let mut features = self.features.lock().unwrap();
@@ -1324,7 +1073,6 @@ impl WatchService {
         self.dispatch(actions)
     }
 
-    /// What the watch last said about phone notifications, once it has said.
     pub fn notification_config(&self) -> Option<NotificationConfig> {
         self.inner
             .lock()
@@ -1337,18 +1085,11 @@ impl WatchService {
             })
     }
 
-    /// Turn the watch's half of phone notifications on or off.
-    ///
-    /// The host's ANCS server is the other half and is started separately;
-    /// with this on and no server running, the watch finds nothing to talk to.
     pub fn set_notifications(&self, enabled: bool) -> Result<(), WatchError> {
         let actions = self.inner.lock().unwrap().client.set_notifications(enabled);
         self.dispatch(actions)
     }
 
-    /// The setting the host holds, applied to the watch whenever it reports
-    /// something else. Safe before a link exists, and needed after a watch
-    /// reboot puts notifications back on by itself.
     pub fn prefer_notifications(&self, enabled: bool) {
         self.inner
             .lock()
@@ -1357,8 +1098,6 @@ impl WatchService {
             .prefer_notifications(enabled);
     }
 
-    /// Announce a notification. The returned id dismisses it, and is what the
-    /// watch quotes back when it asks what the notification says.
     pub fn post_notification(
         &self,
         app_id: String,
@@ -1378,7 +1117,6 @@ impl WatchService {
         id.0
     }
 
-    /// Take a notification off the watch. Silent if it was never posted.
     pub fn dismiss_notification(&self, id: u32) {
         let announcement = self
             .notifications
@@ -1390,12 +1128,6 @@ impl WatchService {
         }
     }
 
-    /// Feed one Control Point write from the watch.
-    ///
-    /// `max_payload` is what a single Data Source notification can carry: the
-    /// negotiated ATT MTU less its three-byte header. A long message is split
-    /// across several, so getting this wrong truncates messages rather than
-    /// failing outright.
     pub fn on_ancs_write(&self, bytes: Vec<u8>, max_payload: u32) -> Result<(), WatchError> {
         if max_payload == 0 {
             return Err(WatchError::Protocol {
@@ -1408,8 +1140,6 @@ impl WatchService {
             })?;
         let response = {
             let center = self.notifications.lock().unwrap();
-            // An id never posted, or already dismissed. The watch asking about
-            // one is normal after a restart, and there is nothing to say.
             let Some(notification) = center.get(request.id) else {
                 return Ok(());
             };
@@ -1433,18 +1163,10 @@ impl WatchService {
         Ok(())
     }
 
-    /// Everything one night's screen draws, in a single call.
-    ///
-    /// The window is asked for far wider than the sleep in it — evening through
-    /// late morning — because where the night falls inside it is what this is
-    /// working out.
     pub fn night(&self, from_ms: i64, to_ms: i64) -> Result<Night, WatchError> {
         let store = self.store.lock().unwrap();
         let minutes = store.activity_minutes(self.device_id, from_ms / 1000, to_ms / 1000)?;
 
-        // A window the watch staged but whose level this build does not know is
-        // dropped rather than guessed at: the level field is five bits wide and
-        // only four values have ever been seen.
         let levels: Vec<(i64, i64, SleepStage)> = minutes
             .iter()
             .filter_map(|minute| {
@@ -1457,9 +1179,6 @@ impl WatchService {
             })
             .collect();
 
-        // The watch's own staging, and nothing else. A night it did not stage
-        // has no sleep period: inferring one from heart rate scored lying awake
-        // and still as sleep, which is worse than saying nothing.
         let asleep = levels
             .iter()
             .filter(|(_, _, stage)| *stage != SleepStage::Awake)
@@ -1470,10 +1189,6 @@ impl WatchService {
                 })
             });
 
-        // Getting up switches the watch from writing staged records to writing
-        // activity ones, so a window inside the night carrying steps and no
-        // level is time out of bed — not time the watch failed to measure. Left
-        // as a hole it reads as missing data, which is what it is not.
         let stages = merge_adjacent(minutes.iter().filter_map(|minute| {
             let (from_ms, to_ms) = (minute.at.0 * 1000, minute.ended_at().0 * 1000);
             let stage = match minute.sleep_level {
@@ -1493,9 +1208,6 @@ impl WatchService {
             })
         }));
 
-        // Scored on the bands as drawn, gap-fills included: time out of bed is
-        // time not asleep, and leaving it out would score a broken night as if
-        // it had been unbroken.
         let score = wpp::sleep::score(
             &stages
                 .iter()
@@ -1528,15 +1240,11 @@ impl WatchService {
         })
     }
 
-    /// Whether the watch staged any sleep in a window, for stepping past the
-    /// nights it was not worn without loading each one.
     pub fn has_staging(&self, from_ms: i64, to_ms: i64) -> Result<bool, WatchError> {
         let store = self.store.lock().unwrap();
         Ok(store.has_staging(self.device_id, from_ms / 1000, to_ms / 1000)?)
     }
 
-    /// Charging periods over a window, as the same start/end markers a chart
-    /// shades. An open period runs to the end of the window.
     pub fn charging(&self, from_ms: i64, to_ms: i64) -> Result<Vec<Marker>, WatchError> {
         let store = self.store.lock().unwrap();
         let mut out = Vec::new();
@@ -1571,13 +1279,6 @@ impl WatchService {
             .collect())
     }
 
-    /// A whole recording in one call; crossing per-sample would be absurd at
-    /// 300 Hz across two leads.
-    /// Every recording held, newest first.
-    /// The waveform of the measurement in progress, oldest sample first.
-    ///
-    /// Live samples are never stored on the watch, so this is the only place
-    /// they exist until the recording finishes and transfers.
     pub fn live_ecg(&self) -> Vec<f64> {
         let inner = self.inner.lock().unwrap();
         inner
@@ -1597,7 +1298,6 @@ impl WatchService {
                 let leads = wpp::signal::SignalKind::from_type_id(signal_type as u16)
                     .map(|k| k.leads().len())
                     .unwrap_or(1);
-                // Two bytes a sample, shared out between the leads.
                 let per_lead = bytes / 2 / leads.max(1) as i64;
                 let verdict = verdict_of(&store, id);
                 EcgSummary {
@@ -1645,8 +1345,6 @@ impl WatchService {
     }
 }
 
-/// What the watch itself said about a recording: its median rate, and its
-/// rhythm. Both absent for a recording it sent no conclusions with.
 fn verdict_of(store: &wpp_store::Store, id: i64) -> (Option<u32>, Option<EcgRhythm>) {
     let Ok(measures) = store.ecg_measures(id) else {
         return (None, None);
@@ -1673,19 +1371,10 @@ fn verdict_of(store: &wpp_store::Store, id: i64) -> (Option<u32>, Option<EcgRhyt
     (rate, rhythm)
 }
 
-/// `BatteryStatus.battery_state` when a charger is attached.
 const CHARGING_STATE: i64 = 0;
 
-/// How recent a state reading has to be to describe the present. The watch is
-/// polled every few minutes in the background, and bringing the app to the
-/// front forces one, so anything older than this means nobody has looked.
 const CHARGE_STATE_FRESH_MS: i64 = 180_000;
 
-/// Screen numbers and names, recovered from the official app's `DeviceScreen`
-/// table by pairing `embeddedId` with `name`.
-///
-/// That table is populated per device from Withings' API, so another model may
-/// number its screens differently.
 const KNOWN_SCREENS: &[(u8, &str)] = &[
     (1, "Steps"),
     (2, "Distance"),
@@ -1712,22 +1401,13 @@ fn screen_name(id: u8) -> String {
         .unwrap_or_else(|| format!("Screen {id}"))
 }
 
-/// What the official app had enabled on this watch, read out of its
-/// `PlatformFeature` table. Used as the starting set because the watch will not
-/// say what it currently has.
-/// The set the watch had enabled when it was first read, including the four
-/// ids this APK version has no constant for.
-///
-/// There is no read side: the message carries the whole enabled set, so an id
-/// left out is switched off. Omitting 100 and 105 — which nothing in the app
-/// names, and which no user-facing setting corresponds to — coincided with the
-/// activity stream going silent, so they are carried whether or not we can say
-/// what they do.
+/// The message carries the whole enabled set, so an id left out is switched
+/// off. Omitting 100 and 105 coincided with the activity stream going
+/// silent, so they are carried though nothing names them.
 const DEFAULT_FEATURES: &[u16] = &[
     3, 5, 9, 10, 11, 14, 17, 19, 20, 27, 53, 71, 88, 100, 105, 113,
 ];
 
-/// User-facing features, named from `ConstantsWs.FEATURE_ID_*`.
 const HEALTH_FEATURES: &[(u16, &str, &str)] = &[
     (17, "Signs of AFib", "Monitor for irregular heartbeat"),
     (
@@ -1766,60 +1446,53 @@ const HEALTH_FEATURES: &[(u16, &str, &str)] = &[
     (19, "Notifications", "Phone notifications on the watch"),
 ];
 
-/// Activity ids and names, from `ConstantsWs.WITHINGS_ACTIVITY_SUBCATEGORY_*`.
-/// How each activity's workout face reads, and whether it may wake the phone.
-///
-/// `face_mode`: 2 where the activity has a pace, 3 where it has a speed, 1
-/// where it has neither. `flag`: 0 where its feature list allows waking the
-/// phone, 1 where it does not. Both are read off the same feature strings the
-/// official app keeps per category.
 const ACTIVITY_FACES: &[(u32, u8, u16)] = &[
-    (1, 2, 0),   // Walking
-    (2, 2, 0),   // Running
-    (3, 2, 0),   // Hiking
-    (4, 1, 1),   // Skating
-    (5, 1, 1),   // BMX
-    (6, 3, 0),   // Cycling
-    (7, 1, 1),   // Swimming
-    (8, 1, 1),   // Surfing
-    (9, 1, 1),   // Kitesurfing
-    (10, 3, 1),  // Windsurfing
-    (11, 1, 1),  // Bodyboard
-    (12, 1, 1),  // Tennis
-    (13, 1, 1),  // Table tennis
-    (14, 1, 1),  // Squash
-    (15, 1, 1),  // Badminton
-    (16, 1, 1),  // Weights
-    (17, 1, 1),  // Calisthenics
-    (18, 1, 0),  // Elliptical
-    (19, 1, 1),  // Pilates
-    (20, 1, 1),  // Basketball
-    (21, 1, 1),  // Soccer
-    (22, 1, 1),  // Football
-    (23, 1, 1),  // Rugby
-    (24, 1, 1),  // Volleyball
-    (25, 1, 1),  // Water polo
-    (26, 3, 0),  // Horse riding
-    (27, 1, 1),  // Golf
-    (28, 1, 1),  // Yoga
-    (29, 1, 1),  // Dancing
-    (30, 1, 1),  // Boxing
-    (31, 1, 1),  // Fencing
-    (32, 1, 1),  // Wrestling
-    (33, 1, 1),  // Martial arts
-    (34, 3, 0),  // Skiing
-    (35, 3, 0),  // Snowboarding
-    (36, 3, 0),  // Other
-    (187, 3, 0), // Rowing
-    (188, 1, 1), // Zumba
-    (191, 1, 1), // Baseball
-    (192, 1, 1), // Handball
-    (193, 1, 1), // Hockey
-    (194, 1, 1), // Ice hockey
-    (195, 1, 1), // Climbing
-    (196, 1, 1), // Ice skating
-    (306, 2, 1), // Indoor walk
-    (307, 1, 0), // Indoor running
+    (1, 2, 0),
+    (2, 2, 0),
+    (3, 2, 0),
+    (4, 1, 1),
+    (5, 1, 1),
+    (6, 3, 0),
+    (7, 1, 1),
+    (8, 1, 1),
+    (9, 1, 1),
+    (10, 3, 1),
+    (11, 1, 1),
+    (12, 1, 1),
+    (13, 1, 1),
+    (14, 1, 1),
+    (15, 1, 1),
+    (16, 1, 1),
+    (17, 1, 1),
+    (18, 1, 0),
+    (19, 1, 1),
+    (20, 1, 1),
+    (21, 1, 1),
+    (22, 1, 1),
+    (23, 1, 1),
+    (24, 1, 1),
+    (25, 1, 1),
+    (26, 3, 0),
+    (27, 1, 1),
+    (28, 1, 1),
+    (29, 1, 1),
+    (30, 1, 1),
+    (31, 1, 1),
+    (32, 1, 1),
+    (33, 1, 1),
+    (34, 3, 0),
+    (35, 3, 0),
+    (36, 3, 0),
+    (187, 3, 0),
+    (188, 1, 1),
+    (191, 1, 1),
+    (192, 1, 1),
+    (193, 1, 1),
+    (194, 1, 1),
+    (195, 1, 1),
+    (196, 1, 1),
+    (306, 2, 1),
+    (307, 1, 0),
 ];
 
 const ACTIVITIES: &[(u32, &str)] = &[
@@ -1887,13 +1560,7 @@ fn now_ms() -> i64 {
 }
 
 impl WatchService {
-    /// Run the actions a step produced. Deletes only ever appear here as the
-    /// result of a commit, so watch data cannot be dropped before it is safe.
     fn dispatch(&self, actions: Vec<Action>) -> Result<(), WatchError> {
-        // A queue, not a stack. The order a step produced its actions in is
-        // the order the watch has to see them: a write followed by the read
-        // that confirms it, or a run of frames that only means anything read
-        // front to back.
         let mut actions: std::collections::VecDeque<Action> = actions.into();
         let mut changed = false;
         while let Some(action) = actions.pop_front() {
@@ -1928,27 +1595,17 @@ impl WatchService {
         Ok(())
     }
 
-    /// Everything this crate sends leaves through here, which is why the size
-    /// ceiling is applied here and nowhere else: a message is what the watch
-    /// is being told, a frame is what fits, and nothing upstream should carry
-    /// a byte budget it cannot influence.
     fn write(&self, message: &Frame) {
-        for frame in message.to_wire() {
-            self.transport.write(frame.to_bytes());
-        }
+        self.transport
+            .write(message.to_wire().iter().map(Frame::to_bytes).collect());
     }
 
-    /// Answer the two requests the watch makes for pictures.
-    ///
-    /// Neither goes through [`Client`]: they need a font and a canvas, and the
-    /// reply depends on nothing the sync state machine knows.
     fn draw(&self, frame: &Frame) {
         let glyph = GlyphRequest::parse(frame);
         let icon = IconRequest::parse(frame);
         if glyph.is_none() && icon.is_none() {
             return;
         }
-        // Copied out rather than held: rasterising calls back into the host.
         let formats = self.inner.lock().unwrap().client.image_formats().to_vec();
 
         if let Some(request) = glyph {
@@ -1972,31 +1629,19 @@ impl WatchService {
     }
 }
 
-/// A watch a key is already held for, as the host keeps it.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct KnownWatch {
-    /// The identity from `ProbeChallenge.mac`, not the advertised address.
     pub mac: String,
     pub secret: String,
 }
 
-/// How far pairing has got, for the screen driving it.
 #[derive(uniffi::Enum, Debug, Clone, PartialEq, Eq)]
 pub enum PairingProgress {
-    /// No link yet, or one that went away before anything was agreed.
     Idle,
-    /// Asking the watch whether it is free.
     Probing,
-    /// Keys sent, waiting for the watch to store them, then for it to accept
-    /// that setup is over — which is what puts authentication back on.
     Associating,
-    /// A watch we already had a key for; answering its challenge rather than
-    /// giving it anything new.
     Readopting,
-    /// Done. These are what the link needs from here on.
     Paired { mac: String, secret: String },
-    /// The watch belongs to something else already. Only a factory reset,
-    /// performed by whoever holds it now, will free it.
     AlreadyAssociated,
 }
 
@@ -2018,12 +1663,6 @@ impl PairingProgress {
     }
 }
 
-/// The association conversation over a live link.
-///
-/// Deliberately not a [`WatchService`]: pairing has no database to write to —
-/// it does not yet know which watch it is talking to — no notifications to
-/// serve and nothing to draw. It ends by handing back credentials, and a
-/// `WatchService` built from those is what does the rest.
 #[derive(uniffi::Object)]
 pub struct PairingService {
     inner: Mutex<PairingInner>,
@@ -2037,11 +1676,6 @@ struct PairingInner {
 
 #[uniffi::export]
 impl PairingService {
-    /// `secret` is the key a watch with none will be given and challenge
-    /// against forever after, so it comes from the host's own randomness
-    /// rather than from anything derivable here. `known` is every watch a key
-    /// is already held for; one of those is answered rather than given a new
-    /// key, and nothing on it is changed.
     #[uniffi::constructor]
     pub fn new(
         secret: String,
@@ -2083,9 +1717,6 @@ impl PairingService {
                 .into_iter()
                 .filter_map(|item| match item {
                     StreamItem::Frame { frame, .. } => Some(frame),
-                    // A desync during pairing has nowhere to be recorded and
-                    // nothing to say: there is no database yet and the whole
-                    // exchange is four frames long.
                     StreamItem::Desync { .. } => None,
                 })
                 .flat_map(|frame| inner.pairing.on_frame(&frame))
@@ -2107,11 +1738,6 @@ impl PairingService {
 }
 
 impl PairingService {
-    /// Run one step and tell the host if it moved.
-    ///
-    /// The steps that matter most send nothing: reaching `Paired` is a reply
-    /// being absorbed, and a screen watching for outbound frames would never
-    /// hear about the one transition it is waiting for.
     fn step(&self, act: impl FnOnce(&mut PairingInner) -> Vec<Frame>) {
         let (frames, moved) = {
             let mut inner = self.inner.lock().unwrap();
@@ -2120,8 +1746,9 @@ impl PairingService {
             let moved = *inner.pairing.state() != before;
             (frames, moved)
         };
-        for frame in frames {
-            self.transport.write(frame.to_bytes());
+        for message in frames {
+            self.transport
+                .write(message.to_wire().iter().map(Frame::to_bytes).collect());
         }
         if moved {
             self.transport.changed();

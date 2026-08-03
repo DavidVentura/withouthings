@@ -37,14 +37,6 @@ import uniffi.wpp_ffi.UserProfile
 
 private val birthFormat = SimpleDateFormat("d MMMM yyyy", Locale.getDefault())
 
-/**
- * Who the watch thinks is wearing it.
- *
- * The watch is the store of record here, not this app: it holds the profile
- * and hands it back on request, and a write replaces the whole record. So the
- * page refuses to invent one — with nothing read back there is nothing to edit,
- * and writing a fresh record would zero the fields this app cannot see.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WatchUserScreen(
@@ -172,8 +164,6 @@ fun WatchUserScreen(
     }
 }
 
-/// What the watch will take. Outside these the record is not a person, and a
-/// write replaces the whole thing.
 private const val MIN_WEIGHT_G = 20_000
 private const val MAX_WEIGHT_G = 300_000
 private const val MIN_HEIGHT_CM = 50

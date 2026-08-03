@@ -46,13 +46,6 @@ import uniffi.wpp_ffi.Activity
 import uniffi.wpp_ffi.Night
 import uniffi.wpp_ffi.SleepStage
 
-/**
- * The glance the app is opened for: what is true right now.
- *
- * Four sibling tiles and no hero. At any given moment there is no single most
- * important number in this app, so nothing here is bigger than anything else,
- * and no tile gets a chart or a bar the others lack.
- */
 @Composable
 fun NowScreen(
     state: UiState,
@@ -127,28 +120,11 @@ fun NowScreen(
     }
 }
 
-/// Tall enough for the label row, the value, and a context line that never
-/// wraps — the four have to be the same height or they stop reading as a set.
 private val TILE_HEIGHT = 104.dp
 
-/// Enough recent activity to recognise the week without becoming the
-/// activities list, which is one tap away.
 private const val RECENT_ROWS = 5
 private const val RECENT_SPAN_MS = 7 * DAY_MS
 
-/**
- * A workout runs on the watch, and can be told to start from here.
- *
- * The session itself still belongs to the watch: this asks, and what comes back
- * is the watch's own start time on the watch's own clock. So the button does
- * not switch the screen into a session — the report of one does, exactly as it
- * does for a session begun on the wrist.
- *
- * The choices are every activity the watch knows, with its own quick-launch
- * menu first. The menu is what the watch's screen offers, not what the protocol
- * accepts, so making it the whole list would refuse sessions the watch would
- * happily record — and would refuse everything before the menu has been read.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SessionBlock(
@@ -169,10 +145,6 @@ private fun SessionBlock(
     }
 
     var picking by remember { mutableStateOf(false) }
-    // The watch takes any activity id, not only the ones in its quick-launch
-    // menu — that menu governs what the watch's own screen offers, not what the
-    // protocol accepts. So the menu only decides the order here, and an app
-    // that has not yet heard the menu can still start a session.
     val menu = state.activities.sortedByDescending { it.enabled }
     val ready = state.link == LinkState.Ready && menu.isNotEmpty()
 
@@ -201,16 +173,6 @@ private fun SessionBlock(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Text(
-            if (state.link == LinkState.Ready) {
-                "The session runs on the watch and this screen mirrors it."
-            } else {
-                "Needs the watch connected."
-            },
-            style = AppTheme.type.tileContext,
-            color = AppTheme.colors.onSurfaceTertiary,
-            modifier = Modifier.padding(top = 3.dp),
-        )
     }
 
     if (!picking) return
@@ -220,15 +182,17 @@ private fun SessionBlock(
                 .padding(horizontal = AppTheme.space.screen)
                 .padding(bottom = 32.dp)
         ) {
-            Eyebrow("start on the watch", Modifier.padding(bottom = 4.dp))
             menu.forEachIndexed { index, activity ->
-                if (index > 0) RowDivider(inset = 0.dp)
-                // The watch's own menu first, then everything else it knows.
                 if (index > 0 && menu[index - 1].enabled && !activity.enabled) {
-                    Eyebrow(
-                        "not on the watch's menu",
-                        Modifier.padding(top = 12.dp, bottom = 4.dp),
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                            .height(1.dp)
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant)
                     )
+                } else if (index > 0) {
+                    RowDivider(inset = 0.dp)
                 }
                 Row(
                     Modifier
@@ -253,12 +217,6 @@ private fun SessionBlock(
     }
 }
 
-/**
- * Last night, as one line of shape.
- *
- * The strip is the night's staging at a glance; the screen behind it is where
- * the same night is read properly.
- */
 @Composable
 private fun LastNightCard(night: Night?, onOpen: () -> Unit) {
     Column(
@@ -312,21 +270,12 @@ private fun Night.asleepMs(): Long = stages
     .filter { it.stage != SleepStage.AWAKE }
     .sumOf { it.toMs - it.fromMs }
 
-/** What a home tile says, once the series behind it has been consulted. */
 private data class Tile(val value: String, val unit: String, val context: String)
 
-/**
- * Every figure here is derived on-device from local history, and every context
- * line is a comparison against the person's own past or a plain count. Where
- * the watch has measured nothing, the line says so rather than the value
- * reading zero.
- */
 @Composable
 private fun homeTile(style: MetricStyle, state: UiState, nowMs: Long): Tile {
     val home = state.home
     val reading = state.latest[style]
-    // Past its freshness horizon the timestamp moves to the front of the
-    // string, rather than a warning icon appearing beside it.
     val staleAt = reading?.atMs?.takeIf { nowMs - it > style.freshFor }
 
     fun aged(line: String) = staleAt?.let { "${freshness(it, nowMs)} · $line" } ?: line
@@ -359,8 +308,6 @@ private fun homeTile(style: MetricStyle, state: UiState, nowMs: Long): Tile {
         }
 
         MetricStyle.Calories -> {
-            // Only the walks the watch found carry an energy figure of their
-            // own, so "active" is what those account for and nothing more.
             val active = home.today.filterIsInstance<DetectedEntry>().sumOf { it.detected.calories }
             Tile(
                 value = home.calories?.let { grouped(it, 0) } ?: "—",
@@ -393,10 +340,6 @@ private fun homeTile(style: MetricStyle, state: UiState, nowMs: Long): Tile {
     }
 }
 
-/**
- * Freshness as behaviour rather than a badge: the charge, and how long ago the
- * watch was last heard from. No cloud or connection iconography anywhere.
- */
 private fun batteryLabel(state: UiState): String {
     val battery = state.snapshot?.battery ?: return "no reading"
     if (battery.charging == true) return "${battery.percent}% ⚡"
@@ -410,13 +353,6 @@ private fun linkDot(state: UiState) = when (state.link) {
     else -> AppTheme.colors.sleepRem
 }
 
-/**
- * "Today · 13:52 · 19 min · 650 m", with whatever the entry actually knows.
- *
- * A list already grouped by day passes [withDay] as false: repeating
- * "Saturday" under a heading that says Saturday is noise, and the hour is the
- * only part of the timestamp that is still telling you something.
- */
 fun entryMeta(entry: ActivityEntry, nowMs: Long, withDay: Boolean = true): String = sessionMeta(
     entry.startedAtMs,
     entry.endedAtMs,
@@ -427,12 +363,6 @@ fun entryMeta(entry: ActivityEntry, nowMs: Long, withDay: Boolean = true): Strin
     } ?: emptyList(),
 )
 
-/**
- * A night's staging as one proportional bar, in chronological order.
- *
- * Not the four-lane hypnogram — that is the sleep screen's job. This is the
- * shape of the night in the width of a card.
- */
 @Composable
 fun HypnogramStrip(stages: List<uniffi.wpp_ffi.SleepBand>, modifier: Modifier = Modifier) {
     val ordered = stages.sortedBy { it.fromMs }

@@ -14,15 +14,6 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-/**
- * The palette expressed as Material 3 roles.
- *
- * The design was chosen to be expressible as a tonal scheme, so the roles carry
- * it and screens can go on using [MaterialTheme.colorScheme]. What has no role
- * — data strokes, sleep stages, ECG paper — lives on [AppTheme] instead of
- * being forced into `tertiary` and friends, where the name would say nothing
- * about what the colour is for.
- */
 private fun schemeOf(palette: Palette) = lightColorScheme(
     primary = palette.primary,
     onPrimary = palette.onPrimary,
@@ -51,10 +42,6 @@ private fun schemeOf(palette: Palette) = lightColorScheme(
     outlineVariant = palette.outlineVariant,
     inverseSurface = palette.onSurface,
     inverseOnSurface = palette.surface,
-    // The app has no error state to draw. Destructive actions are worded
-    // rather than coloured, and the design forbids reds outright — but a
-    // stock dialog will still reach for these, so they resolve to something
-    // that belongs on screen.
     error = palette.onSurfaceVariant,
     onError = palette.onPrimary,
     errorContainer = palette.surfaceContainerHigh,
@@ -75,7 +62,6 @@ private val LocalRadii = staticCompositionLocalOf { DefaultRadii }
 private val LocalAppTypography = staticCompositionLocalOf { appTypography() }
 private val LocalChartTokens = staticCompositionLocalOf { DefaultChartTokens }
 
-/** Everything the design asks for that Material 3 has no role for. */
 object AppTheme {
     val colors: Palette
         @Composable @ReadOnlyComposable get() = LocalPalette.current
@@ -92,7 +78,6 @@ object AppTheme {
     val chart: ChartTokens
         @Composable @ReadOnlyComposable get() = LocalChartTokens.current
 
-    /** Shorthand for the shapes named often enough to be worth one. */
     val pill: Shape
         @Composable @ReadOnlyComposable
         get() = androidx.compose.foundation.shape.RoundedCornerShape(LocalRadii.current.pill)
@@ -100,13 +85,6 @@ object AppTheme {
     val square: Shape get() = RectangleShape
 }
 
-/**
- * Light only, and not tinted by the system wallpaper.
- *
- * Material You would repaint a palette that the design leans on for meaning —
- * the green tonal set is what lets an elevated heart rate be shown without
- * implying an alarm, and a wallpaper-derived orange would undo exactly that.
- */
 @Composable
 fun WithoutingsTheme(
     palette: Palette = LightPalette,
@@ -116,8 +94,6 @@ fun WithoutingsTheme(
     chart: ChartTokens = DefaultChartTokens,
     content: @Composable () -> Unit,
 ) {
-    // The window draws behind the status bar; without this the system clock and
-    // icons stay light-on-light over the app's background.
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {

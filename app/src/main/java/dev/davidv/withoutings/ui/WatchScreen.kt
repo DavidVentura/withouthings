@@ -42,20 +42,8 @@ import uniffi.wpp_ffi.NotificationConfig
 import uniffi.wpp_ffi.WatchScreen as WatchScreenEntry
 import uniffi.wpp_ffi.WearPosition
 
-/** The watch's quick-launch menu holds eight. */
 private const val ACTIVITY_SLOTS = 8
 
-/**
- * The physical device, and nothing else.
- *
- * App-level settings live behind the gear on Now. The split is deliberate:
- * "Watch" means the thing on the wrist, so a setting here always changes
- * something over the air.
- *
- * The three long lists — sensors, the quick-launch menu, the screen order —
- * are pages of their own. Each is edited locally and then sent as one whole,
- * and a list that long inlined here buries everything under it.
- */
 @Composable
 fun WatchTab(
     state: UiState,
@@ -64,7 +52,6 @@ fun WatchTab(
     onNotifications: (Boolean) -> Unit,
     onSync: () -> Unit,
     onReconnect: () -> Unit,
-    onSetTime: () -> Unit,
     onOpenBattery: () -> Unit,
     onOpenUser: () -> Unit,
     onOpenSensors: () -> Unit,
@@ -92,8 +79,6 @@ fun WatchTab(
         ) {
             DeviceRow(state, nowMs, onOpenBattery)
 
-            // Equal heights: a filled button and an outlined one are built
-            // differently and would otherwise sit at two sizes side by side.
             Row(
                 Modifier.height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -111,10 +96,6 @@ fun WatchTab(
                     Modifier.weight(1f).fillMaxHeight(),
                     onClick = onReconnect,
                 )
-            }
-
-            SettingRow("Set watch time to current") {
-                OutlineAction("Set", onClick = onSetTime)
             }
 
             Eyebrow("worn on", Modifier.padding(top = 4.dp))
@@ -142,18 +123,9 @@ fun WatchTab(
     }
 }
 
-/**
- * What the app knows about the watch, and how recently.
- *
- * Freshness is expressed as behaviour rather than a badge: a sentence, with no
- * cloud or connection iconography anywhere. The pill's own dot is the only one
- * — a second beside the name said the same thing twice.
- */
 @Composable
 private fun DeviceRow(state: UiState, nowMs: Long, onOpenBattery: () -> Unit) {
     val newest = state.latest.values.maxOfOrNull { it.atMs }
-    // Both come from the probe reply, which is kept, so a disconnected watch
-    // still names itself and its firmware.
     val device = state.snapshot?.device
     Column(
         Modifier
@@ -181,8 +153,6 @@ private fun DeviceRow(state: UiState, nowMs: Long, onOpenBattery: () -> Unit) {
             else -> "connected, nothing synced yet"
         }
         Text(
-            // The watch states its firmware as a bare number and nothing else,
-            // so that is what is shown; a dotted version would be invented.
             device?.let { "$link · firmware ${it.firmware}" } ?: link,
             style = AppTheme.type.rowMeta,
             color = AppTheme.colors.onSurfaceTertiary,
@@ -193,18 +163,10 @@ private fun DeviceRow(state: UiState, nowMs: Long, onOpenBattery: () -> Unit) {
 @Composable
 private fun NotificationRow(config: NotificationConfig?, onChange: (Boolean) -> Unit) {
     SettingRow("Show notifications on the watch", "Lowers battery life") {
-        // Off and "not answered yet" are different things, and drawing the
-        // second as the first states something we do not know — so an
-        // unanswered watch leaves the switch disabled rather than off.
         AppToggle(config?.accepted == true, enabled = config != null) { onChange(it) }
     }
 }
 
-/**
- * What the watch is told to measure.
- *
- * Each switch goes out on its own, so there is nothing to send at the end.
- */
 @Composable
 fun WatchSensorsScreen(
     features: List<HealthFeature>,
@@ -213,8 +175,6 @@ fun WatchSensorsScreen(
     onAcknowledge: () -> Unit,
     onBack: () -> Unit,
 ) {
-    // The notification tag rides with the switch on the page behind this one;
-    // it is not something the watch measures.
     val sensors = features.filter { it.id != NOTIFICATION_FEATURE }
     var edits by remember { mutableStateOf(emptyMap<UShort, Boolean>()) }
     LaunchedEffect(sensors) { if (edits.isEmpty()) edits = emptyMap() }
@@ -253,13 +213,6 @@ fun WatchSensorsScreen(
 }
 
 
-/**
- * Whether a description is worth the line it takes.
- *
- * The watch's own strings often restate the name — "Respiratory monitoring"
- * described as "Continuous respiratory monitoring" — and a subtitle that only
- * repeats the title trains the reader to stop reading subtitles.
- */
 private fun String.saysSomethingBeyond(title: String): Boolean {
     fun squash(text: String) = text.lowercase().filter { it.isLetterOrDigit() }
     val description = squash(this)
@@ -268,7 +221,6 @@ private fun String.saysSomethingBeyond(title: String): Boolean {
     return !description.contains(name) && !name.contains(description)
 }
 
-/** The eight the watch offers from its own menu, sent as one list, in order. */
 @Composable
 fun WatchActivitiesScreen(
     activities: List<Activity>,
@@ -277,11 +229,6 @@ fun WatchActivitiesScreen(
     onAcknowledge: () -> Unit,
     onBack: () -> Unit,
 ) {
-    // The menu is the chosen ones in the order the watch lists them, which is
-    // the order they arrive in, so it is the whole of the local state: being
-    // on the menu is being in this list. The rest are the catalogue to add
-    // from, by name — the watch knows fifty-odd activities and hunting for one
-    // in the order they happen to be numbered is hopeless.
     var menu by remember { mutableStateOf(activities.filter { it.enabled }) }
     var edited by remember { mutableStateOf(false) }
     LaunchedEffect(activities) { if (!edited) menu = activities.filter { it.enabled } }
@@ -302,15 +249,15 @@ fun WatchActivitiesScreen(
                 EmptyNote("Nothing on the menu yet — turn one on below.")
             }
             ReorderableColumn(menu, onReorder = { edited = true; menu = it }) { activity, _ ->
+                AppCheckbox(true, Modifier.padding(start = 12.dp)) {
+                    edited = true
+                    menu = menu.filterNot { it.id == activity.id }
+                }
                 Text(
                     activity.name,
                     Modifier.weight(1f).padding(start = 12.dp),
                     style = AppTheme.type.rowTitle,
                 )
-                AppToggle(true) {
-                    edited = true
-                    menu = menu.filterNot { it.id == activity.id }
-                }
             }
             Spacer(Modifier.height(20.dp))
             SectionHeader("All activities")
@@ -320,13 +267,19 @@ fun WatchActivitiesScreen(
                     Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(activity.name, Modifier.weight(1f), style = AppTheme.type.rowTitle)
-                    // The menu holds eight; refuse the ninth rather than
-                    // letting the watch silently drop it.
-                    AppToggle(false, enabled = menu.size < ACTIVITY_SLOTS) {
+                    AppCheckbox(
+                        false,
+                        Modifier.padding(start = 36.dp),
+                        enabled = menu.size < ACTIVITY_SLOTS,
+                    ) {
                         edited = true
                         menu = menu + activity.copy(enabled = true)
                     }
+                    Text(
+                        activity.name,
+                        Modifier.weight(1f).padding(start = 12.dp),
+                        style = AppTheme.type.rowTitle,
+                    )
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -343,13 +296,6 @@ fun WatchActivitiesScreen(
     }
 }
 
-/**
- * Which screens the watch cycles, and in what order.
- *
- * Screens are numbered, not named: the official app gets its names from the
- * Withings backend, so there is no table to read. Enable one, look at the
- * watch, and write down what it was.
- */
 @Composable
 fun WatchScreensScreen(
     screens: List<WatchScreenEntry>,
@@ -359,9 +305,6 @@ fun WatchScreensScreen(
     onAcknowledge: () -> Unit,
     onBack: () -> Unit,
 ) {
-    // Edited locally, then sent as one list: the watch takes the whole set.
-    // Not keyed on `screens`: that list is re-read on every background refresh,
-    // which would wipe an edit in progress.
     var order by remember { mutableStateOf(screens) }
     var edited by remember { mutableStateOf(false) }
     LaunchedEffect(screens) { if (!edited) order = screens }
@@ -402,18 +345,10 @@ fun WatchScreensScreen(
 }
 
 /**
- * The bottom of a page that is edited locally and then handed over.
- *
- * The pending state is shown rather than assumed. The button stays down while
- * the watch is being waited on, the page leaves only once the watch has taken
- * the list, and a failure says so and hands the button back rather than
- * closing on a change that never landed.
- *
- * Nothing to save is not the same as saving nothing, so the button is dead
- * until something has actually been changed. Every one of these lists is sent
- * whole and replaces what the watch holds — and a list read before the watch
- * has answered looks exactly like a list with everything switched off, so a
- * blind press on a page that had not loaded yet would wipe the real one.
+ * Every one of these lists is sent whole and replaces what the watch holds —
+ * a list read before the watch has answered looks exactly like a list with
+ * everything switched off, so a blind press on a page that had not loaded yet
+ * would wipe the real one.
  */
 @Composable
 internal fun SaveFooter(

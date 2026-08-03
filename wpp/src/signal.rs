@@ -1,18 +1,9 @@
-//! Biosignal reassembly.
-//!
-//! A stored signal arrives as a [`StoredSignalMeta`] describing the encoding, a
-//! [`StoredSignalMetaExtend`] giving its total length, then a run of
-//! [`StoredSignalData`] chunks. Samples are signed 16-bit little-endian ADC
-//! counts, interleaved across the leads the signal type carries; this mirrors
-//! `EcgSampleParser.decodeRaw` in the Withings app.
-
 use crate::objects::{
     StoredMeasureData, StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend,
     UnitConversionParameters,
 };
 use crate::WppObject;
 
-/// A single ECG lead, from `EcgLeadType` in the app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lead {
     Di,
@@ -36,7 +27,6 @@ impl Lead {
     }
 }
 
-/// What a signal's `StoredSignalMeta.type` means, from `EcgSignalType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignalKind {
     Di,
@@ -58,8 +48,6 @@ impl SignalKind {
         }
     }
 
-    /// Leads interleaved in the sample stream, in order, from
-    /// `EcgSignalType.includedLeads`.
     pub fn leads(self) -> &'static [Lead] {
         match self {
             SignalKind::Di => &[Lead::Di],
@@ -83,13 +71,9 @@ impl SignalKind {
     }
 }
 
-/// Sample encoding, from `StoredSignalMeta.format`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SampleFormat {
-    /// Plain samples.
     Raw,
-    /// Compressed; the app decodes these in `libecg`, which this crate does not
-    /// reimplement.
     Delta,
 }
 
@@ -102,42 +86,21 @@ impl SampleFormat {
     }
 }
 
-/// What the watch concluded about a recording, from `StoredMeasureData.type`.
-///
-/// These are `ConstantsWs.MEASURE_TYPE_*` in the app; only the two the watch
-/// sends with an ECG are named here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MeasureType(pub u16);
 
 impl MeasureType {
-    /// The median rate the watch read off its own recording.
     pub const HEART_RATE: MeasureType = MeasureType(11);
-    /// The rhythm classification. Computed **on the watch** — the firmware
-    /// logs it as `[ECG DIAGNOSIS] ECGSW2 WS Diagnosis` — not by the phone and
-    /// not by a server.
     pub const AFIB_RESULT: MeasureType = MeasureType(130);
 }
 
-/// The rhythm the watch reports, from `ConstantsWs.AFIB_*`.
-///
-/// The codes are finer than any app shows: Health Mate collapses them into
-/// three outcomes through its own string table. They are kept apart here
-/// because the watch draws the distinction, and a reading of "normal heart
-/// rate" is a different claim from "no atrial fibrillation".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rhythm {
-    /// 0, 9, 10.
     NoAfib,
-    /// 1, 11, 12.
     Afib,
-    /// 2, 8.
     Inconclusive,
-    /// 5, 3 — too noisy to read.
     PoorRecording,
-    /// 6, 7 — the rate itself put the recording outside what the classifier
-    /// will judge.
     RateOutOfRange,
-    /// -3, -2, -1, 4, and anything unrecognised: the watch declined to say.
     NoResult,
 }
 
@@ -154,15 +117,12 @@ impl Rhythm {
     }
 }
 
-/// One reassembled signal and the descriptors that came with it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signal {
     pub meta: StoredSignalMeta,
     pub extend: StoredSignalMetaExtend,
     pub units: Option<UnitConversionParameters>,
     pub measure: Option<StoredMeasureMeta>,
-    /// What the watch worked out about the recording, in wire form. Empty for
-    /// a recording it said nothing about.
     pub measures: Vec<StoredMeasureData>,
     pub data: Vec<u8>,
 }
@@ -180,13 +140,10 @@ impl Signal {
         self.meta.sampling_freq
     }
 
-    /// Bytes the descriptor said this signal would occupy.
     pub fn declared_size(&self) -> usize {
         self.extend.total_size as usize
     }
 
-    /// Whether every declared byte arrived. A short signal is still decodable,
-    /// it just stops early.
     pub fn is_complete(&self) -> bool {
         self.data.len() == self.declared_size()
     }
@@ -195,7 +152,6 @@ impl Signal {
         self.meta.channel.max(1) as usize
     }
 
-    /// Samples per lead.
     pub fn samples_per_lead(&self) -> usize {
         self.data.len() / 2 / self.lead_count()
     }
@@ -204,11 +160,6 @@ impl Signal {
         self.samples_per_lead() as f64 / self.sampling_freq().max(1) as f64
     }
 
-    /// De-interleave into one column per lead. Leads are named when the signal
-    /// type is known, and fall back to positional channels when it is not.
-    ///
-    /// Returns nothing for [`SampleFormat::Delta`], whose samples are
-    /// compressed rather than plain.
     pub fn leads(&self) -> Vec<(Option<Lead>, Vec<i16>)> {
         if self.format() == SampleFormat::Delta {
             return Vec::new();
@@ -237,7 +188,6 @@ struct Pending {
     data: Vec<u8>,
 }
 
-/// Reassembles signals from a stream of decoded objects.
 #[derive(Default)]
 pub struct SignalCollector {
     pending: Pending,
@@ -250,10 +200,6 @@ impl SignalCollector {
         SignalCollector::default()
     }
 
-    /// Drop a transfer that will never finish.
-    ///
-    /// A signal arrives across many frames; if the link dies partway the bytes
-    /// held here belong to nothing, and the next transfer would append to them.
     pub fn reset(&mut self) {
         self.pending = Pending::default();
         self.live_ecg.clear();
@@ -262,8 +208,6 @@ impl SignalCollector {
     pub fn observe(&mut self, object: &WppObject) {
         match object {
             WppObject::StoredSignalMeta(meta) => {
-                // The descriptor is repeated during a transfer; only a
-                // different one starts a new signal.
                 if self.pending.meta.as_ref() != Some(meta) {
                     self.close();
                     self.pending.meta = Some(meta.clone());
@@ -273,17 +217,12 @@ impl SignalCollector {
             }
             WppObject::StoredSignalMetaExtend(extend) => self.pending.extend = Some(extend.clone()),
             WppObject::UnitConversionParameters(units) => self.pending.units = Some(units.clone()),
-            // Identifies the recording the values below belong to, so a new
-            // one leaves the previous recording's conclusions behind.
             WppObject::StoredMeasureMeta(measure) => {
                 if self.pending.measure.as_ref() != Some(measure) {
                     self.pending.measure = Some(measure.clone());
                     self.pending.measures.clear();
                 }
             }
-            // The watch's own conclusions about the recording — its median rate
-            // and its rhythm classification. They arrive with the measure that
-            // announces the recording, before the waveform is asked for.
             WppObject::StoredMeasureData(data) => {
                 if !self.pending.measures.contains(data) {
                     self.pending.measures.push(data.clone());
@@ -322,9 +261,6 @@ impl SignalCollector {
         self.pending.data.clear();
     }
 
-    /// Bytes received and expected for a transfer in progress, if one is.
-    /// A signal spans hundreds of frames, so this is the one place a sync has
-    /// an exact completion figure rather than an estimate.
     pub fn transfer_progress(&self) -> Option<(usize, usize)> {
         let declared = self.pending.extend.as_ref()?.total_size as usize;
         if self.pending.data.is_empty() {
@@ -333,13 +269,10 @@ impl SignalCollector {
         Some((self.pending.data.len(), declared))
     }
 
-    /// Signals finished so far, leaving any transfer still in progress alone.
-    /// A signal spans many frames, so draining must not disturb the pending one.
     pub fn take_completed(&mut self) -> Vec<Signal> {
         std::mem::take(&mut self.signals)
     }
 
-    /// Live samples received so far, clearing them from the collector.
     pub fn take_live(&mut self) -> Vec<i16> {
         std::mem::take(&mut self.live_ecg)
             .chunks_exact(2)
@@ -347,7 +280,6 @@ impl SignalCollector {
             .collect()
     }
 
-    /// Completed signals, plus the live ECG stream if the capture held one.
     pub fn finish(mut self) -> (Vec<Signal>, Vec<i16>) {
         self.close();
         let live = self
@@ -375,7 +307,6 @@ mod tests {
         }
     }
 
-    /// Two leads interleaved sample-by-sample, as the ScanWatch 2 sends them.
     #[test]
     fn two_lead_samples_de_interleave() {
         let signal = Signal {
@@ -388,7 +319,6 @@ mod tests {
             units: None,
             measure: None,
             measures: Vec::new(),
-            // 1, -1, 2, -2 as little-endian i16
             data: vec![0x01, 0x00, 0xff, 0xff, 0x02, 0x00, 0xfe, 0xff],
         };
         assert_eq!(
@@ -402,7 +332,6 @@ mod tests {
         assert_eq!(signal.samples_per_lead(), 2);
     }
 
-    /// A descriptor repeated mid-transfer must not discard what came before.
     #[test]
     fn a_repeated_descriptor_continues_the_same_signal() {
         let mut collector = SignalCollector::new();
@@ -466,9 +395,6 @@ mod tests {
         assert!(signal.leads().is_empty());
     }
 
-    /// The watch announces a recording with its own conclusions about it, then
-    /// the waveform is fetched. The verdict must survive that gap, and must not
-    /// leak onto the next recording.
     #[test]
     fn a_recording_keeps_the_verdict_that_was_announced_with_it() {
         use crate::objects::{StoredMeasureData, StoredMeasureMeta};
@@ -518,7 +444,6 @@ mod tests {
             .collect();
         assert_eq!(codes, vec![(11, 62), (130, 9)]);
 
-        // A different recording replaces them rather than adding to them.
         for object in announce(2, 5) {
             collector.observe(&object);
         }

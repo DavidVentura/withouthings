@@ -1,34 +1,16 @@
 package dev.davidv.withoutings.ui
 
-/**
- * Everything a history screen says, worked out from the series it plots.
- *
- * The design's requirement is that the chart and the copy must agree — three
- * crossings of 100 totalling 82 minutes, a three-minute spike at 16:04 that no
- * session accounts for — so this takes the same lists the chart is handed and
- * returns the strings. Nothing on the screen is authored.
- */
 data class MetricSummary(
-    /// What the headline figure is, in words: the design leads with the
-    /// meaningful aggregate rather than the latest value.
     val headline: String,
     val value: String,
     val unit: String,
-    /// The quiet aside: the instantaneous value, which the home screen owns.
     val aside: String,
-    /// The range this person's readings usually sit in, drawn as a horizontal
-    /// band. A fact about them, not about their calendar.
-    val band: ClosedFloatingPointRange<Double>?,
-    /// The headline figure itself, drawn as a dashed line.
     val guide: Double?,
     val spells: List<Spell>,
     val stats: List<StatFigure>,
-    /// What the "where it went up" list is called for this series, or null for
-    /// a series where being high is not an event.
     val listTitle: String?,
 )
 
-/** One of the three parallel stat tiles: identical format, always three. */
 data class StatFigure(
     val eyebrow: String,
     val value: String,
@@ -36,11 +18,6 @@ data class StatFigure(
     val footer: String,
 )
 
-/**
- * @param window what the chart is showing
- * @param baseline a fortnight of the same series, never plotted
- * @param sessions everything recorded, for attribution
- */
 fun metricSummary(
     style: MetricStyle,
     window: List<ChartPoint>,
@@ -62,10 +39,6 @@ fun metricSummary(
     }
 }
 
-/**
- * Resting is what carries meaning across days, so it leads and the
- * instantaneous value becomes an aside.
- */
 private fun restingSummary(
     style: MetricStyle,
     window: List<ChartPoint>,
@@ -83,7 +56,6 @@ private fun restingSummary(
         value = today?.let { formatValue(it, style.decimals) } ?: "—",
         unit = style.unit,
         aside = aside,
-        band = personalBand(baseline),
         guide = today,
         spells = spells,
         stats = listOf(
@@ -110,10 +82,6 @@ private fun restingSummary(
     )
 }
 
-/**
- * Temperature is read against the person's own baseline, and a deviation is a
- * deviation in either direction — the app never calls one of them a warning.
- */
 private fun baselineSummary(
     style: MetricStyle,
     window: List<ChartPoint>,
@@ -122,7 +90,6 @@ private fun baselineSummary(
     aside: String,
 ): MetricSummary {
     val centre = percentile(baseline.map { it.value }, 0.5)
-    val band = centre?.let { (it - BASELINE_MARGIN)..(it + BASELINE_MARGIN) }
     val spells = centre?.let { spellsAbove(window, it + BASELINE_MARGIN, sessions) } ?: emptyList()
     val peak = window.maxOfOrNull { it.value }
 
@@ -131,7 +98,6 @@ private fun baselineSummary(
         value = centre?.let { formatValue(it, style.decimals) } ?: "—",
         unit = style.unit,
         aside = aside,
-        band = band,
         guide = centre,
         spells = spells,
         stats = listOf(
@@ -158,15 +124,8 @@ private fun baselineSummary(
     )
 }
 
-/// How far from the baseline still counts as being at it.
 private const val BASELINE_MARGIN = 0.3
 
-/**
- * A running total the watch resets at local midnight.
- *
- * The comparison is against the person's own days, not a goal: the app has no
- * goal-setting, so "66% of 12 000 steps" has nothing to be a percentage of.
- */
 private fun dailyTotalSummary(
     style: MetricStyle,
     window: List<ChartPoint>,
@@ -187,7 +146,6 @@ private fun dailyTotalSummary(
         value = todayTotal?.let { grouped(it, style.decimals) } ?: "—",
         unit = style.unit,
         aside = aside,
-        band = average?.let { it..it },
         guide = average,
         spells = emptyList(),
         stats = listOf(
@@ -214,7 +172,6 @@ private fun dailyTotalSummary(
     )
 }
 
-/** A series with no aggregate more meaningful than what it has been doing. */
 private fun plainSummary(
     style: MetricStyle,
     window: List<ChartPoint>,
@@ -231,7 +188,6 @@ private fun plainSummary(
         }?.let { formatValue(it, style.decimals) } ?: "—",
         unit = style.unit,
         aside = aside,
-        band = personalBand(baseline),
         guide = fortnight,
         spells = emptyList(),
         stats = listOf(

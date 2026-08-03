@@ -27,13 +27,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.ui.theme.AppTheme
 
-/**
- * The four places the app is, as opposed to the places it goes.
- *
- * App-level settings are deliberately not here — the gear on Now opens those.
- * "Watch" is strictly about the physical device, which is what keeps the two
- * kinds of setting from being looked for in the same place.
- */
 enum class Tab(val route: String, val label: String, val icon: ImageVector) {
     Now("now", "Now", Icons.Rounded.Home),
     Today("today", "Today", Icons.Rounded.ViewDay),

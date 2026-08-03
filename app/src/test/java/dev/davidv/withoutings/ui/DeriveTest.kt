@@ -26,8 +26,6 @@ class PercentileTest {
 
     @Test
     fun `resting sits near the bottom of the spread`() {
-        // A day at rest around 55 with a workout pushing into the 140s: the
-        // resting figure must not be dragged up by the session.
         val day = List(100) { 55.0 + it % 5 } + List(20) { 140.0 }
         val resting = restingRate(day.mapIndexed { i, v -> ChartPoint(i * MINUTE, v) })!!
         assertTrue("resting $resting should stay under 60", resting < 60)
@@ -88,8 +86,6 @@ class SpellsTest {
 
     @Test
     fun `the session covering most of a spell wins`() {
-        // The spell runs 11–25; the brief session covers one minute of it and
-        // the long one covers the rest.
         val brief = Session(Span(0, 12 * MINUTE), "Weights", started = true)
         val long = Session(Span(10 * MINUTE, 60 * MINUTE), "Walking", started = false)
         val points = series(11L to 130.0, 20L to 140.0, 25L to 135.0)
@@ -110,8 +106,6 @@ class DaysSinceLowerTest {
 
     @Test
     fun `counts back to the last day at least as low`() {
-        // Today is the last entry. Going back, 59 and 57 are both higher, and
-        // 52 three days ago is not — so today is the lowest in three days.
         val days = history(60.0, 58.0, 52.0, 59.0, 57.0, 54.0)
         assertEquals(3, daysSinceLower(days, 54.0))
     }
@@ -119,23 +113,6 @@ class DaysSinceLowerTest {
     @Test
     fun `no earlier day was lower`() {
         assertNull(daysSinceLower(history(60.0, 58.0, 57.0, 50.0), 50.0))
-    }
-}
-
-class BandTest {
-    @Test
-    fun `the band brackets the bulk of the readings`() {
-        val points = (0..99).map { ChartPoint(it * MINUTE, 50.0 + it % 20) }
-        val band = personalBand(points)!!
-        assertTrue(band.start >= 50.0)
-        assertTrue(band.endInclusive <= 70.0)
-        assertTrue(band.start < band.endInclusive)
-    }
-
-    @Test
-    fun `a flat series has no band to draw`() {
-        val points = (0..20).map { ChartPoint(it * MINUTE, 60.0) }
-        assertNull(personalBand(points))
     }
 }
 
@@ -167,7 +144,6 @@ class FormattingTest {
         assertEquals("12:04", stopwatch(724_000L))
         assertEquals("59:59", stopwatch(3_599_000L))
         assertEquals("1:00:00", stopwatch(3_600_000L))
-        // The bug this replaces: a day-old start read as "1440:30".
         assertEquals("24:00:30", stopwatch(86_430_000L))
         assertEquals("0:00", stopwatch(-5_000L))
     }
@@ -200,15 +176,8 @@ class FormattingTest {
 
 class HeartRateZoneTest {
 
-    /**
-     * The numbers here are the ones read out of the official app's own
-     * database, not chosen: for a user born 1990-06-01, its per-day zone
-     * totals put the light/moderate boundary in (92, 94], moderate/intense in
-     * (129, 130] and intense/peak in (165, 167] while that user was 35.
-     */
     @Test
     fun `zone floors match the boundaries the official app used`() {
-        // 2026-01-15, so the 1990-06-01 birthday has not come round: age 35.
         val whileThirtyFive = maxHeartRate(644198400L, 1768435200000L)
         assertEquals(185, whileThirtyFive)
         assertEquals(listOf(0, 93, 130, 167), zoneFloors(whileThirtyFive))
@@ -216,7 +185,6 @@ class HeartRateZoneTest {
 
     @Test
     fun `the maximum drops by one on the birthday`() {
-        // 2026-05-31 and 2026-06-02, either side of a 1990-06-01 birth date.
         assertEquals(185, maxHeartRate(644198400L, 1780185600000L))
         assertEquals(184, maxHeartRate(644198400L, 1780358400000L))
     }
@@ -227,7 +195,6 @@ class HeartRateZoneTest {
         assertEquals(HeartRateZone.Moderate, zoneOf(93.0, 185))
         assertEquals(HeartRateZone.Intense, zoneOf(130.0, 185))
         assertEquals(HeartRateZone.Peak, zoneOf(167.0, 185))
-        // Nothing to divide by is not zone one; it is no answer.
         assertNull(zoneOf(140.0, null))
     }
 }

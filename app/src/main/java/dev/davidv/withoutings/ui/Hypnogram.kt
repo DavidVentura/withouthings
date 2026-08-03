@@ -19,13 +19,8 @@ import dev.davidv.withoutings.ui.theme.AppTheme
 import uniffi.wpp_ffi.SleepBand
 import uniffi.wpp_ffi.SleepStage
 
-/**
- * Top to bottom, so that read downwards the lanes run awake, REM, light, deep
- * — shallowest to deepest, which is how a hypnogram is read.
- */
 private val lanes = listOf(SleepStage.AWAKE, SleepStage.REM, SleepStage.LIGHT, SleepStage.DEEP)
 
-/** Wide enough for "Awake" beside the lanes, in the mono the labels are set in. */
 val SLEEP_GUTTER = 42.dp
 
 fun stageName(stage: SleepStage): String = when (stage) {
@@ -35,7 +30,6 @@ fun stageName(stage: SleepStage): String = when (stage) {
     SleepStage.DEEP -> "Deep"
 }
 
-/** The stage order the design gives, deepest first, for lists and totals. */
 val STAGE_ORDER = listOf(SleepStage.DEEP, SleepStage.REM, SleepStage.LIGHT, SleepStage.AWAKE)
 
 @Composable
@@ -49,13 +43,6 @@ fun stageColor(stage: SleepStage): Color {
     }
 }
 
-/**
- * The watch's own staging, lane by lane.
- *
- * Deliberately not interactive: the night is a shape to be seen rather than a
- * series to be scrubbed, and the numbers under it say everything a cursor
- * would.
- */
 @Composable
 fun Hypnogram(
     stages: List<SleepBand>,
@@ -113,8 +100,6 @@ fun Hypnogram(
                 drawRoundRect(
                     color = colors.getValue(band.stage),
                     topLeft = Offset(left, mid - barHeight / 2),
-                    // A one-minute window at a night's zoom is under a pixel
-                    // wide, and a stage that is invisible reads as absent.
                     size = Size((right - left).coerceAtLeast(2f), barHeight),
                     cornerRadius = CornerRadius(2f, 2f),
                 )

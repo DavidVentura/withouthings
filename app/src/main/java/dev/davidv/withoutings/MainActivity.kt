@@ -70,9 +70,6 @@ private object Routes {
     const val WATCH_SCREENS = "watch-screens"
 }
 
-/// How often the clock in a header and the elapsed time on a session are
-/// redrawn. Fast enough that a minute never reads as stale, slow enough that
-/// an idle screen is not recomposing for nothing.
 private const val CLOCK_TICK_MS = 1_000L
 
 class MainActivity : ComponentActivity() {
@@ -87,8 +84,6 @@ private fun App(model: WatchViewModel = viewModel()) {
     val context = LocalContext.current
     val settings = remember { Settings(context) }
     var configured by remember { mutableStateOf(settings.configured) }
-    // Pairing needs the radio before there is anything to connect to, so the
-    // prompt cannot wait for a watch to be configured the way it used to.
     var radio by remember { mutableStateOf(false) }
 
     val permissions = rememberLauncherForActivityResult(
@@ -117,8 +112,6 @@ private fun App(model: WatchViewModel = viewModel()) {
         return
     }
 
-    // The background cadence is deliberately slow, so without this what is on
-    // screen would be stale every time you opened the app.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -131,9 +124,6 @@ private fun App(model: WatchViewModel = viewModel()) {
     Navigation(
         model,
         rememberNavController(),
-        // Keeping the key is what makes this repeatable: the watch challenges
-        // on the way back in and the challenge names the identity, so a watch
-        // whose key is still here is taken back on without being touched.
         onUnpair = {
             settings.forgetWatch()
             WatchConnectionService.stop(context)
@@ -150,12 +140,6 @@ private fun App(model: WatchViewModel = viewModel()) {
     )
 }
 
-/**
- * Claiming a watch that holds no key.
- *
- * The scan runs for as long as this is on screen: the watch advertises rarely
- * enough that a scan with a deadline is mostly a way to miss it.
- */
 @Composable
 private fun Pairing(settings: Settings, radio: Boolean, onPaired: () -> Unit) {
     val context = LocalContext.current
@@ -166,9 +150,6 @@ private fun Pairing(settings: Settings, radio: Boolean, onPaired: () -> Unit) {
     DisposableEffect(Unit) {
         onDispose {
             PairingSession.stopScan(context)
-            // Reset rather than stop: leaving with a paired watch behind must
-            // not leave the answer sitting there to be applied a second time
-            // the next time this screen opens.
             PairingSession.reset()
         }
     }
@@ -205,6 +186,7 @@ private fun Navigation(
     val metricStyle by model.metricStyle.collectAsState()
     val metricWindow by model.metricWindow.collectAsState()
     val selected by model.selectedActivity.collectAsState()
+    val selectedTotals by model.selectedTotals.collectAsState()
     val ecg by model.ecg.collectAsState()
     val ecgWindow by model.ecgWindow.collectAsState()
     val liveWindow by model.liveWindow.collectAsState()
@@ -212,9 +194,6 @@ private fun Navigation(
     val saving by model.save.collectAsState()
     val nightWindow by model.nightWindow.collectAsState()
 
-    // Wall-clock time, ticked here rather than read at each callsite: a header
-    // that says "18:58" and a session that says "12:04" have to agree, and two
-    // independent reads of the clock do not.
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -223,11 +202,6 @@ private fun Navigation(
         }
     }
 
-    // A workout is a place you go, not a state the home screen turns into:
-    // taking over the start destination left nowhere for Back to go. It is
-    // also a place that stops existing — when the watch ends the session the
-    // screen has nothing left to mirror, so it leaves rather than counting up
-    // from a start time that is now history.
     val activeStartedAt = state.snapshot?.activeWorkout?.startedAtMs
     LaunchedEffect(activeStartedAt) {
         val onLive = nav.currentBackStackEntry?.destination?.route == Routes.LIVE
@@ -237,9 +211,6 @@ private fun Navigation(
         }
     }
 
-    // Read the watch's configuration once the link is up, rather than when
-    // the settings screen opens. Asked there, the round trip happens while
-    // the screen is already showing values it does not have yet.
     LaunchedEffect(state.link) {
         if (state.link == LinkState.Ready) {
             model.requestDeviceConfig()
@@ -247,8 +218,6 @@ private fun Navigation(
         }
     }
 
-    // The waveform is only sent while something is showing it, so the screen
-    // has to be up for the recording to be captured at all.
     val measuring = state.snapshot?.measuring == true
     LaunchedEffect(measuring) {
         if (measuring) nav.navigate(Routes.LIVE_ECG)
@@ -257,14 +226,8 @@ private fun Navigation(
     val entry by nav.currentBackStackEntryAsState()
     val tab = Tab.entries.firstOrNull { it.route == entry?.destination?.route }
 
-    // Switching tab is not the same as pushing a screen: it unwinds back to
-    // the tab and keeps what that tab had. Going to Activity from a link on
-    // Now has to do this too, or the bottom bar and the back stack end up
-    // telling different stories about where you are.
     fun selectTab(target: Tab) {
         nav.navigate(target.route) {
-            // Qualified: the screen's own `saveState` is in scope here and
-            // shadows the builder's property of the same name.
             popUpTo(Tab.Now.route) { this.saveState = true }
             launchSingleTop = true
             restoreState = true
@@ -278,9 +241,6 @@ private fun Navigation(
             modifier = Modifier.weight(1f),
         ) {
             composable(Tab.Now.route) {
-                // The charging state is only shown here, so it is only worth
-                // asking for here — not behind a workout, which is exactly when
-                // the extra traffic would cost something.
                 DisposableEffect(Unit) {
                     model.watchCharging(true)
                     onDispose { model.watchCharging(false) }
@@ -343,16 +303,13 @@ private fun Navigation(
                     state = state,
                     nowMs = nowMs,
                     onWearPosition = { model.setWearPosition(it) },
-                    // Remembered as well as sent: the watch drops the setting
-                    // over a reboot, and coming back with notifications on
-                    // costs half the idle radio until something notices.
                     onNotifications = {
                         settings.notifications = it
                         model.setNotifications(it)
+                        WatchConnectionService.setNotifications(context, it)
                     },
                     onSync = { model.requestDeviceConfig(); model.requestRefresh() },
                     onReconnect = { WatchConnectionService.reconnect(context) },
-                    onSetTime = { model.setWatchTime() },
                     onOpenBattery = {
                         model.showMetric(MetricStyle.Battery)
                         nav.navigate(Routes.METRIC)
@@ -362,10 +319,6 @@ private fun Navigation(
                         model.requestDeviceConfig()
                         nav.navigate(Routes.WATCH_SENSORS)
                     },
-                    // The menu cannot be written until the watch has said what
-                    // size glyphs it wants, and it only says so on the screen
-                    // list reply. Asking on the way in leaves the round trip
-                    // to finish while the list is being chosen.
                     onOpenActivities = {
                         model.requestDeviceConfig()
                         nav.navigate(Routes.WATCH_ACTIVITIES)
@@ -423,9 +376,6 @@ private fun Navigation(
             composable(Routes.LIVE) {
                 LiveWorkoutScreen(
                     state = state,
-                    // Only ever the session the watch is running. Falling back
-                    // to whatever was last opened made a finished walk look
-                    // like a workout that had been going for a day.
                     workout = state.snapshot?.activeWorkout,
                     window = state.hrWindow,
                     nowMs = nowMs,
@@ -446,6 +396,7 @@ private fun Navigation(
                     entry = selected,
                     window = state.hrWindow,
                     nowMs = nowMs,
+                    totals = selectedTotals,
                     onWindowChange = { model.zoom(it) },
                     onDelete = { model.deleteActivity(it); nav.popBackStack() },
                     onBack = { nav.popBackStack() },
@@ -506,10 +457,9 @@ private fun Navigation(
 
             composable(Routes.SETTINGS) {
                 val testNotification by model.testNotification.collectAsState()
+                val listening by WatchRepository.listening.collectAsState()
                 AppSettingsScreen(
-                    onProbeFrame = { model.probeFrame(it) },
-                    // The watch has to hear the reset before its key is
-                    // dropped, so only that half needs a link to say it over.
+                    listening = listening,
                     connected = state.link == LinkState.Ready,
                     testNotification = testNotification,
                     onPostTestNotification = { model.postTestNotification() },
@@ -521,8 +471,6 @@ private fun Navigation(
             }
         }
 
-        // Only the four tabs carry it; a pushed screen is somewhere you came
-        // from, and the way back is the arrow it already has.
         if (tab != null) {
             BottomNav(tab) { target -> if (target != tab) selectTab(target) }
         }

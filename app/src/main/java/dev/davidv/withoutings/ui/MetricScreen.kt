@@ -35,17 +35,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.ui.theme.AppTheme
 
-/**
- * The sensor-history template.
- *
- * Reached by tapping any tile on Now, and the same skeleton for every series:
- * an accent summary card carrying the metric's meaningful aggregate and its
- * own-history delta, range chips, a chart with a personal-baseline band and
- * session attribution, three parallel stats, then an attribution list.
- *
- * It replaced a screen that showed Latest / Min / Max over a bare line — three
- * numbers that told the reader nothing they could act on.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MetricScreen(
@@ -63,8 +52,6 @@ fun MetricScreen(
     var switching by remember { mutableStateOf(false) }
     val sheet = rememberModalBottomSheetState()
 
-    // The series carries a point beyond each edge so the line can leave the
-    // plot; they are not part of what is being summarised.
     val visible = state.metric.filter { it.atMs in window }
     val sessions = state.activityLog
         .map { it.session(nowMs) }
@@ -116,21 +103,11 @@ fun MetricScreen(
                     onScrub = { scrubAtMs = it },
                     sessions = sessions.chartSessions(),
                     labelSessions = true,
-                    bands = summary.band?.let {
-                        listOf(ValueBand(it.start, it.endInclusive, AppTheme.chart.bandAlpha))
-                    } ?: emptyList(),
                     guides = summary.guide?.let { listOf(Guide(it)) } ?: emptyList(),
                     unit = " ${style.unit}",
                 )
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (summary.band != null) {
-                        LegendSwatch(
-                            MaterialTheme.colorScheme.primary
-                                .copy(alpha = AppTheme.chart.legendBandAlpha),
-                            "Your usual range, 14 days",
-                        )
-                    }
                     if (sessions.isNotEmpty()) {
                         LegendSwatch(
                             MaterialTheme.colorScheme.primary
@@ -175,12 +152,6 @@ fun MetricScreen(
 
 private val CHART_HEIGHT = 190.dp
 
-/**
- * The accent card, and the only one on the screen.
- *
- * The headline is the aggregate that carries meaning across days; the
- * instantaneous value is a quiet aside because Now already owns it.
- */
 @Composable
 private fun SummaryCard(summary: MetricSummary) {
     AccentCard(Modifier.fillMaxWidth()) {
@@ -208,12 +179,6 @@ private fun SummaryCard(summary: MetricSummary) {
     }
 }
 
-/**
- * Where it went up, and what was happening at the time.
- *
- * A stretch no session accounts for is named as such rather than hidden or
- * alarmed: it is the honest answer to "what about short spikes".
- */
 @Composable
 private fun SpellList(
     summary: MetricSummary,
@@ -250,7 +215,6 @@ private fun SpellList(
                     spell.session?.name ?: "Not in a session",
                     Modifier.weight(1f),
                     style = AppTheme.type.body.copy(fontSize = AppTheme.type.sectionTitle.fontSize),
-                    // Not an entity, so it is not styled like one.
                     color = if (spell.session != null) {
                         MaterialTheme.colorScheme.onSurface
                     } else {
@@ -267,13 +231,6 @@ private fun SpellList(
     }
 }
 
-/**
- * Which series to look at.
- *
- * Only four fit on Now, and the rest are as real as those four; putting them
- * behind the title keeps the home screen to its four parallel tiles without
- * making the other eight unreachable.
- */
 @Composable
 private fun SeriesPicker(current: MetricStyle, onSelect: (MetricStyle) -> Unit) {
     Column(Modifier.padding(horizontal = AppTheme.space.screen).padding(bottom = 32.dp)) {
@@ -324,7 +281,6 @@ private fun SeriesPicker(current: MetricStyle, onSelect: (MetricStyle) -> Unit) 
     }
 }
 
-/** A window's width, said the way the range chips say it. */
 private fun spanLabel(ms: Long): String {
     RangeSpan.matching(ms)?.let { return it.label.lowercase() }
     val minutes = ms / 60_000

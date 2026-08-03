@@ -1,11 +1,3 @@
-//! Replay a capture through the sync client into a SQLite file.
-//!
-//! Usage: wppingest <btsnoop_hci.log> <out.db> [--mac AA:BB:..]
-//!
-//! This is the whole ingest path minus Bluetooth: the same `Client` and the
-//! same `Store` an app would use, driven by a recorded session instead of a
-//! live link. Actions that would go back to the watch are counted, not sent.
-
 use std::process::ExitCode;
 
 use wpp::capture::{frames, Direction, StreamItem};
@@ -55,8 +47,6 @@ fn main() -> ExitCode {
     let device = store.device(&mac).expect("device row");
     let watermarks = store.watermarks(device, &CATEGORIES).expect("watermarks");
 
-    // The secret only matters for answering a live challenge; a replay never
-    // needs one.
     let mut client = Client::new(
         Credentials {
             mac: mac.clone(),
@@ -92,7 +82,6 @@ fn main() -> ExitCode {
                         eprintln!("store failed: {err}");
                         return ExitCode::FAILURE;
                     }
-                    // Only now is deleting from the watch permissible.
                     queue.extend(client.handle(Event::Stored { token }));
                 }
             }

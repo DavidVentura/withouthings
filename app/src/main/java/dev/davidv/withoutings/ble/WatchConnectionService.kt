@@ -17,23 +17,16 @@ import android.util.Log
 import dev.davidv.withoutings.LinkState
 import dev.davidv.withoutings.Settings
 import dev.davidv.withoutings.WatchRepository
+import dev.davidv.withoutings.declareZone
 import uniffi.wpp_ffi.Progress
 import uniffi.wpp_ffi.Transport
 import uniffi.wpp_ffi.WatchService
 
-/**
- * Holds the GATT link and hands every notification straight to Rust.
- *
- * Nothing here understands the protocol; it moves bytes and keeps the process
- * alive. Framing, decoding, storage and the delete-after-commit rule all live
- * on the other side of [WatchService].
- */
 class WatchConnectionService : Service() {
 
     private var link: GattLink? = null
     private var service: WatchService? = null
     private var ancs: AncsServer? = null
-    /// Consecutive failed attempts, cleared once a link carries real traffic.
     private var retries = 0
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var scanning = false
@@ -65,9 +58,6 @@ class WatchConnectionService : Service() {
         }
 
         if (service == null) {
-            // The watch reads notifications out of a server we run, so it has
-            // to be listening before the link comes up rather than after the
-            // first notification is posted.
             val ancs = AncsServer(this) { service }
             this.ancs = ancs
             service = WatchService(
@@ -78,33 +68,25 @@ class WatchConnectionService : Service() {
                 ancs = ancs,
                 rasterizer = AndroidRasterizer(this),
             ).also { WatchRepository.attach(it) }
-            // Told before the link comes up, so the watch is corrected on the
-            // first pass rather than after a notification has been missed.
             service?.preferNotifications(settings.notifications)
             if (settings.notifications) ancs.start()
+        }
+
+        if (intent?.action == ACTION_NOTIFICATIONS) {
+            val enabled = intent.getBooleanExtra(EXTRA_ENABLED, true)
+            Log.i(TAG, "ANCS server ${if (enabled) "on" else "off"}")
+            if (enabled) ancs?.start() else ancs?.stop()
         }
 
         if (link == null) {
             val adapter = (getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager).adapter
             connect(adapter, mac)
         }
-        // The link is the point of this service; restart it if we are killed.
         return START_STICKY
     }
 
-    /**
-     * Find the watch by its advertised name, not its address.
-     *
-     * The address in the protocol (`ProbeChallenge.mac`) identifies the watch
-     * for the authentication hash; over the air it advertises under a random
-     * address that changes, so no address filter can match it. The name is the
-     * only stable handle, and the connection is made to whatever address the
-     * advertisement carried.
-     */
     @SuppressLint("MissingPermission")
     private fun connect(adapter: BluetoothAdapter, mac: String) {
-        // Both of these are transient — the adapter comes back — so they have
-        // to leave a retry behind. Returning bare strands the service for good.
         if (!adapter.isEnabled) {
             WatchRepository.setLink(LinkState.Disconnected)
             Log.e(TAG, "bluetooth is off")
@@ -117,16 +99,11 @@ class WatchConnectionService : Service() {
             retryLater("no BLE scanner")
             return
         }
-        // Android rejects a second scan on the same callback, and the refusal
-        // arrives as a failure that looks like the first scan dying.
         if (scanning) {
             Log.i(TAG, "already scanning")
             return
         }
 
-        // A connected peripheral does not advertise, so if anything still holds
-        // the link — including a GATT client left behind by a killed process —
-        // scanning can never find it. Bonded devices can be reached directly.
         val bonded = runCatching {
             adapter.bondedDevices.firstOrNull { it.name?.startsWith(DEVICE_NAME_PREFIX) == true }
         }.getOrNull()
@@ -150,24 +127,11 @@ class WatchConnectionService : Service() {
         handler.postDelayed(heartbeat, HEARTBEAT_MS)
     }
 
-    /**
-     * A finished sync is only current as of when it finished, and the watch
-     * only volunteers a sync request sometimes, so walk again on a timer.
-     */
     private fun scheduleResync() {
         handler.removeCallbacks(resync)
         handler.postDelayed(resync, RESYNC_MS)
     }
 
-    /**
-     * Everything between deciding to connect and having a working protocol
-     * link, on one deadline.
-     *
-     * A connection attempt at the edge of range can produce no GATT callback
-     * at all — neither connected nor disconnected — and the handshake that
-     * follows has no timeout of its own either. Both failures look identical
-     * from outside: "connecting", forever, until the app is restarted.
-     */
     private fun armLinkWatchdog() {
         handler.removeCallbacks(linkWatchdog)
         handler.postDelayed(linkWatchdog, LINK_TIMEOUT_MS)
@@ -177,17 +141,9 @@ class WatchConnectionService : Service() {
         retryLater("no working link within ${LINK_TIMEOUT_MS / 1000}s")
     }
 
-    /**
-     * The client has no clock of its own; every interval it enforces is
-     * measured against the last thing it heard. Without this it cannot tell a
-     * quiet watch from a stopped one, and its own rate limits freeze exactly
-     * when the link goes wrong.
-     */
     private val tick = object : Runnable {
         override fun run() {
             runCatching { service?.tick() }.onFailure { Log.e(TAG, "tick", it) }
-            // The watch sent it, we decoded it, and nothing read it. Silence
-            // here once cost ten nights of sleep staging.
             runCatching {
                 service?.unhandledObjects()?.forEach { Log.w(TAG, "unread: $it") }
             }.onFailure { Log.e(TAG, "unhandled", it) }
@@ -205,8 +161,6 @@ class WatchConnectionService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun stopScan() {
-        // Unconditional: the flag tracks our intent, not what the Bluetooth
-        // stack has registered, and those disagree after a failed start.
         scanning = false
         runCatching {
             (getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager)
@@ -214,12 +168,6 @@ class WatchConnectionService : Service() {
         }
     }
 
-    /**
-     * The watch advertises rarely — minutes can pass between packets — so a
-     * scan that hears nothing is not evidence of anything. Counting everything
-     * else on the air is what distinguishes "the watch is quiet" from "we are
-     * deaf".
-     */
     private val heartbeat = object : Runnable {
         override fun run() {
             if (!scanning) return
@@ -254,8 +202,6 @@ class WatchConnectionService : Service() {
         }
     }
 
-    /// Whether a retry waits out the backoff or goes now. Asking by hand is
-    /// evidence that something changed, which the backoff cannot know.
     private enum class Retry { Backoff, Now }
 
     private val retry = Runnable {
@@ -269,18 +215,6 @@ class WatchConnectionService : Service() {
         connect(adapter, mac)
     }
 
-    /**
-     * Tear the link down and try again later.
-     *
-     * Reachable from six places, several of which can fire for the same
-     * failure, so the retry is a named callback that replaces any already
-     * scheduled. As a lambda it could not be cancelled, and each caller added
-     * another connection attempt to the same moment.
-     *
-     * The delay grows while attempts keep failing: a watch that is off or out
-     * of range is not coming back within ten seconds, and each attempt is radio
-     * work. It resets as soon as a link actually carries traffic.
-     */
     @SuppressLint("MissingPermission")
     private fun retryLater(reason: String, pace: Retry = Retry.Backoff) {
         val backoff = when (pace) {
@@ -307,11 +241,6 @@ class WatchConnectionService : Service() {
         handler.postDelayed(retry, backoff)
     }
 
-    /**
-     * The link's half of the conversation. Everything the protocol needs is
-     * behind [GattLink]; what is left here is the service's own bookkeeping —
-     * the watchdog, the retry counter and what the notification says.
-     */
     private fun openLink(): GattLink = GattLink(this, listener).also {
         link?.close()
         link = it
@@ -330,9 +259,7 @@ class WatchConnectionService : Service() {
             handler.postDelayed(tick, TICK_MS)
             runCatching { service?.onConnected() }
                 .onFailure { Log.e(TAG, "onConnected", it) }
-            // Before anything is read off the watch, so what comes back is
-            // stamped with a clock that agrees with this one.
-            runCatching { service?.let { svc -> syncWatchClock(svc) } }
+            runCatching { service?.let { svc -> declareZone(svc) } }
                 .onFailure { Log.w(TAG, "clock sync", it) }
         }
 
@@ -340,16 +267,11 @@ class WatchConnectionService : Service() {
             runCatching {
                 retries = 0
                 service?.onBytes(bytes, System.currentTimeMillis())
-                // Not snapshot(): that reads the database, on the thread
-                // delivering notifications, thousands of them back to back
-                // during a sync. A notification we are too slow to take is a
-                // frame lost, and frames span notifications.
                 val progress = service?.progress()
                 if (progress != lastProgress) {
                     lastProgress = progress
                     Log.i(TAG, "progress=$progress")
                 }
-                // The link is doing its job; stop counting against it.
                 if (progress != null && progress != Progress.CONNECTING) {
                     handler.removeCallbacks(linkWatchdog)
                 }
@@ -361,8 +283,6 @@ class WatchConnectionService : Service() {
             notify("Disconnected")
             service?.onDisconnected()
             handler.removeCallbacks(resync)
-            // The address it advertised under may not be reused, so find it by
-            // name again rather than reconnecting blind.
             retryLater("status=$status")
         }
 
@@ -372,16 +292,14 @@ class WatchConnectionService : Service() {
     }
 
     private inner class GattTransport : Transport {
-        override fun write(bytes: ByteArray) {
-            link?.write(bytes)
+        override fun write(frames: List<ByteArray>) {
+            link?.write(frames)
         }
 
         override fun changed() {
             WatchRepository.invalidate()
         }
 
-        // The client decided the watch has stopped answering; only the shell
-        // can do anything about it.
         override fun reconnect() {
             handler.post { retryLater("the watch stopped answering") }
         }
@@ -421,6 +339,8 @@ class WatchConnectionService : Service() {
 
     companion object {
         private const val ACTION_RECONNECT = "dev.davidv.withoutings.RECONNECT"
+        private const val ACTION_NOTIFICATIONS = "dev.davidv.withoutings.NOTIFICATIONS"
+        private const val EXTRA_ENABLED = "enabled"
         private const val TAG = "WatchLink"
         private const val CHANNEL_ID = "watch-link"
         private const val NOTIFICATION_ID = 1
@@ -441,16 +361,21 @@ class WatchConnectionService : Service() {
             context.stopService(Intent(context, WatchConnectionService::class.java))
         }
 
-        /**
-         * Drop the link and build a new one, now.
-         *
-         * The service outlives the activity, so closing the app leaves a stuck
-         * link exactly as stuck. Short of force-stopping the process from
-         * Android's own settings there was no way back from one.
-         */
         fun reconnect(context: Context) {
             context.startForegroundService(
                 Intent(context, WatchConnectionService::class.java).setAction(ACTION_RECONNECT)
+            )
+        }
+
+        /**
+         * A server that was never opened cannot be subscribed to, so every
+         * announcement is dropped while the setting reads as on.
+         */
+        fun setNotifications(context: Context, enabled: Boolean) {
+            context.startForegroundService(
+                Intent(context, WatchConnectionService::class.java)
+                    .setAction(ACTION_NOTIFICATIONS)
+                    .putExtra(EXTRA_ENABLED, enabled)
             )
         }
     }

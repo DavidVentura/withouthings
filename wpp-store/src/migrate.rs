@@ -1,8 +1,5 @@
-//! Schema versioning through `PRAGMA user_version`.
-//!
-//! `user_version` holds the number of migrations a database has run, so it is
-//! the index into [`MIGRATIONS`] of the next one to apply. Each runs in its own
-//! transaction together with the bump, so a database is never left between two.
+//! Each migration runs in its own transaction together with the `user_version`
+//! bump, so a database is never left between two if the process dies partway.
 
 use rusqlite::{Connection, Error};
 
@@ -52,13 +49,10 @@ mod tests {
         run(&conn).unwrap();
         assert_eq!(version(&conn), MIGRATIONS.len());
 
-        // Running again must find nothing to do rather than replay anything.
         run(&conn).unwrap();
         assert_eq!(version(&conn), MIGRATIONS.len());
     }
 
-    /// A database left partway through the sequence takes up where it stands
-    /// and keeps what it holds.
     #[test]
     fn a_partly_migrated_database_carries_its_rows_forward() {
         let conn = Connection::open_in_memory().unwrap();

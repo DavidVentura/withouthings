@@ -33,13 +33,6 @@ import dev.davidv.withoutings.ui.theme.AppTheme
 import uniffi.wpp_ffi.EcgRhythm
 import uniffi.wpp_ffi.EcgSummary
 
-/**
- * Everything timed, in one list.
- *
- * ECG recordings live here rather than in a list of their own, because a
- * recording is a timed event like any other. There is no "record ECG" action:
- * recordings are taken on the watch and the phone is a viewer.
- */
 @Composable
 fun ActivitiesScreen(
     entries: List<ActivityEntry>,
@@ -90,15 +83,12 @@ fun ActivitiesScreen(
             return@Column
         }
 
-        // Grouped by day so a run of rows is read as one day's worth rather
-        // than as a stream.
         val byDay = shown.groupBy { dayStart(it.atMs) }
         LazyColumn(
             Modifier.weight(1f).navigationBarsPadding(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 start = AppTheme.space.screen,
                 end = AppTheme.space.screen,
-                // Reserve height rather than letting the last row slice.
                 bottom = 24.dp,
             ),
         ) {
@@ -133,18 +123,10 @@ fun ActivitiesScreen(
     }
 }
 
-/**
- * "08:46 · 60 bpm".
- *
- * The length is left out: every recording the watch takes is 30 seconds, so
- * printing it on each row says nothing. One that is not gets to keep it.
- */
 private fun ecgMeta(summary: EcgSummary): String = listOfNotNull(
     clock(summary.measuredAtMs),
     "${summary.seconds.toInt()} s".takeIf { summary.seconds.toInt() != STANDARD_ECG_SECONDS },
     summary.heartRate?.let { "$it bpm" },
-    // The watch's verdict, where it sent one. Short enough for a row; the
-    // recording itself says whose reading it is.
     when (summary.rhythm) {
         EcgRhythm.NO_AFIB -> "no AFib"
         EcgRhythm.AFIB -> "AFib"
@@ -157,7 +139,6 @@ private fun ecgMeta(summary: EcgSummary): String = listOfNotNull(
 
 private const val STANDARD_ECG_SECONDS = 30
 
-/** "TODAY · 6631 STEPS", or a count of entries when the day held no walks. */
 private fun dayHeading(dayMs: Long, items: List<Item>, nowMs: Long): String {
     val steps = items
         .filterIsInstance<Item.Activity>()
@@ -170,7 +151,6 @@ private fun dayHeading(dayMs: Long, items: List<Item>, nowMs: Long): String {
     return "$name · ${grouped(steps)} steps"
 }
 
-/** A row in the list: something the watch recorded, whatever kind it is. */
 private sealed interface Item {
     val atMs: Long
     val kind: String

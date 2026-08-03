@@ -31,13 +31,6 @@ import uniffi.wpp_ffi.Night
 import uniffi.wpp_ffi.SleepScore
 import uniffi.wpp_ffi.SleepStage
 
-/**
- * One night, read.
- *
- * Everything on the screen comes from the watch's own staging. A window it did
- * not stage produces no band rather than a guess, which is why the empty state
- * says so instead of drawing a flat line.
- */
 @Composable
 fun SleepScreen(
     night: Night?,
@@ -124,13 +117,6 @@ fun SleepScreen(
     }
 }
 
-/**
- * The score, and what it is made of.
- *
- * The sentence beside the ring is assembled from the components rather than
- * written: a total can then be argued with, which is the point of showing the
- * parts at all.
- */
 @Composable
 private fun ScoreCard(night: Night, asleepMs: Long, inBedMs: Long) {
     AccentCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(AppTheme.radius.hero)) {
@@ -167,12 +153,6 @@ private fun ScoreCard(night: Night, asleepMs: Long, inBedMs: Long) {
     }
 }
 
-/**
- * The night named by its own components.
- *
- * Nothing here interprets: it reports which part of the score came out
- * strongest and which weakest, which is a fact about the number beside it.
- */
 private fun scoreHeadline(score: SleepScore?): String {
     if (score == null) return "No score for this night"
     val parts = listOf(
@@ -188,7 +168,6 @@ private fun scoreHeadline(score: SleepScore?): String {
     return "${best.first.replaceFirstChar { it.uppercase() }} led, ${worst.first} lagged"
 }
 
-/// Under this, no component stands out enough to be worth naming.
 private const val EVEN_NIGHT_SPREAD = 15
 
 @Composable
@@ -220,12 +199,6 @@ private fun ScoreRing(score: Int) {
     }
 }
 
-/**
- * What the score is made of.
- *
- * A component that came out below par gets a neutral bar, never a warm one:
- * this app does not tell anyone their night was a problem.
- */
 @Composable
 private fun QualityList(score: SleepScore) {
     Tile(Modifier.fillMaxWidth()) {
@@ -274,22 +247,12 @@ private fun QualityList(score: SleepScore) {
     }
 }
 
-/// Where a component stops being drawn in the primary colour. Neutral below,
-/// never warm.
 private const val BELOW_PAR = 50
 
-/**
- * The window the sleep charts open on.
- *
- * The night is fetched far wider than this — evening through late morning,
- * because the heart-rate detection takes its levels from the waking hours —
- * but those hours are not what the screen is for.
- */
 fun Night.sleepWindow(): LongRange? {
     val from = asleepFromMs ?: return null
     val to = asleepToMs ?: return null
     return (from - SLEEP_MARGIN_MS)..(to + SLEEP_MARGIN_MS)
 }
 
-/// Enough either side to see the night end, not enough to lose it in the day.
 private const val SLEEP_MARGIN_MS = 10 * 60_000L

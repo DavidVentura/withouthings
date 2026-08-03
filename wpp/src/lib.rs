@@ -1,9 +1,3 @@
-//! Withings Proprietary Protocol (WPP).
-//!
-//! The object layouts, command ids and enum values in [`objects`] and
-//! [`commands`] are generated from the Withings Android app by
-//! `tools/extract_wpp.py`; see `tools/wpp.json` for the extracted description.
-
 pub mod activity;
 pub mod analysis;
 pub mod ancs;
@@ -43,7 +37,6 @@ mod tests {
 
     #[test]
     fn battery_status_matches_the_apk_layout() {
-        // type 0x0504, size 0x000a, 62%, state OK, 4180 mV, reserved 0
         let bytes = [
             0x01, 0x05, 0x04, 0x00, 0x0e, 0x05, 0x04, 0x00, 0x0a, 0x3e, 0x02, 0x00, 0x00, 0x10,
             0x54, 0x00, 0x00, 0x00, 0x00,

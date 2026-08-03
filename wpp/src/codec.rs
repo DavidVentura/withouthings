@@ -1,15 +1,7 @@
-//! Primitive reads and writes shared by every generated object.
-//!
-//! WPP is big-endian throughout; arrays and strings carry a single-byte
-//! element count, matching `WppObject.read*Array` in the Withings app.
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Wanted `needed` more bytes than the object's payload holds.
     Truncated { needed: usize, available: usize },
-    /// The payload was longer than the extracted layout accounts for.
     TrailingBytes { remaining: usize },
-    /// A `readString` field that is not valid UTF-8.
     InvalidUtf8,
 }
 
@@ -147,8 +139,6 @@ impl Writer {
         self.buf.is_empty()
     }
 
-    /// Zero-fill up to an absolute offset. Objects whose `getDataSize()` is a
-    /// maximum rather than an exact length are padded out to it.
     pub fn pad_to(&mut self, end: usize) {
         if end > self.buf.len() {
             self.buf.resize(end, 0);
@@ -191,8 +181,9 @@ impl Writer {
         self.u64(v as u64);
     }
 
-    /// Length-prefixed byte run. Lengths above 255 are truncated by the
-    /// protocol's single-byte count, so callers must keep runs short.
+    /// A length above 255 wraps in the single-byte count while the full bytes
+    /// are still written after it, corrupting the frame with no error
+    /// surfaced.
     pub fn bytes(&mut self, v: &[u8]) {
         self.u8(v.len() as u8);
         self.raw(v);
@@ -232,21 +223,14 @@ pub trait WppObjectCodec: Sized {
     const TYPE_NAME: &'static str;
     const CLASS_NAME: &'static str;
 
-    /// The size the app hardcodes for this type, when it has one. For objects
-    /// holding a length-prefixed field this is the maximum, and the payload is
-    /// zero-padded out to it.
     const FIXED_DATA_SIZE: Option<usize>;
 
-    /// Encoded length of this object's payload, excluding the type and size
-    /// header. Mirrors `getDataSize()` in the app.
     fn data_size(&self) -> usize;
 
     fn parse(r: &mut Reader<'_>) -> Result<Self, ParseError>;
     fn write(&self, w: &mut Writer);
 }
 
-/// Decode one object payload, accepting the zero padding that fixed-size types
-/// carry after a short length-prefixed field.
 pub fn parse_object<T: WppObjectCodec>(data: &[u8]) -> Result<T, ParseError> {
     let mut r = Reader::new(data);
     let object = T::parse(&mut r)?;

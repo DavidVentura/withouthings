@@ -28,14 +28,6 @@ import dev.davidv.withoutings.ble.Discovered
 import dev.davidv.withoutings.ble.PairingStage
 import dev.davidv.withoutings.ui.theme.AppTheme
 
-/**
- * Finding a watch and claiming it.
- *
- * Every device in range is listed rather than only the ones that look like a
- * watch: the address is random and rotates, the advertisement carries no
- * service UUID, and a name filter that misses is indistinguishable from a
- * watch that is not there.
- */
 @Composable
 fun PairingScreen(
     devices: List<Discovered>,

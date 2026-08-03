@@ -22,19 +22,10 @@ import dev.davidv.withoutings.ui.theme.AppTheme
 import uniffi.wpp_ffi.EcgRhythm
 import uniffi.wpp_ffi.EcgRecording
 
-/// The rate the watch streams and records a waveform at.
 const val LIVE_ECG_HZ = 300
 
-/// Six seconds is what a clinical strip shows on one line at 25 mm/s.
 private const val STRIP_SECONDS = 6
 
-/**
- * A recording, on paper.
- *
- * The warm surface here is the only one in the app, and it is warm because
- * that is what an ECG has always been printed on — the pink graph paper is
- * what makes a rhythm strip readable rather than decorative.
- */
 @Composable
 fun EcgDetailScreen(
     recording: EcgRecording?,
@@ -49,9 +40,6 @@ fun EcgDetailScreen(
         .orEmpty()
     val step = recording?.let { 1000.0 / it.samplingHz.toDouble() } ?: 1.0
     val traces = shown.map { lead ->
-        // Electrode DC would push the trace off a fixed axis. Only the offset
-        // goes; the millivolt scale is untouched, so the squares still measure
-        // what they claim to.
         val baseline = if (lead.millivolts.isEmpty()) 0.0 else {
             lead.millivolts.sorted()[lead.millivolts.size / 2]
         }
@@ -112,15 +100,6 @@ fun EcgDetailScreen(
     }
 }
 
-/**
- * The rhythm, as the watch read it.
- *
- * The classifier runs on the watch and its answer arrives with the waveform, so
- * this reports a result rather than making one. Nothing here reads a rhythm off
- * the trace: that would be the medical claim the design forbids, and it stays
- * forbidden. A recording that arrived without a verdict — every one synced
- * before this app began collecting them — says so plainly.
- */
 @Composable
 private fun ResultCard(rhythm: EcgRhythm?) {
     AccentCard(Modifier.fillMaxWidth()) {
@@ -140,7 +119,6 @@ private fun ResultCard(rhythm: EcgRhythm?) {
     }
 }
 
-/** The warm paper card the strips are printed on. */
 @Composable
 private fun PaperCard(content: @Composable () -> Unit) {
     val shape = RoundedCornerShape(AppTheme.radius.small)
@@ -156,13 +134,6 @@ private fun PaperCard(content: @Composable () -> Unit) {
     }
 }
 
-/**
- * A recording as it is taken.
- *
- * These samples exist nowhere else until the recording finishes and transfers,
- * which is why the screen has to stay up: the watch stops sending the waveform
- * when nothing is showing it.
- */
 @Composable
 fun LiveEcgScreen(
     millivolts: List<Double>,
@@ -176,8 +147,6 @@ fun LiveEcgScreen(
     val seconds = millivolts.size.toDouble() / samplingHz
     val span = (STRIP_SECONDS * 1000).toLong()
     val end = (millivolts.size * step).toLong()
-    // The window slides with the newest sample rather than compressing to fit,
-    // so it reads like paper coming out of a machine.
     val follow = (end - span).coerceAtLeast(0L)
     val shown = window ?: if (recording) follow..(follow + span) else 0L..span
     val baseline = if (millivolts.isEmpty()) 0.0 else {

@@ -1,12 +1,5 @@
-//! Heart rate from an ECG lead.
-//!
-//! A Pan-Tompkins style detector: differentiate to emphasise the QRS slope,
-//! square, integrate over a QRS-width window, then take peaks above an
-//! adaptive threshold with a physiological refractory period.
-
 use crate::units::{Bpm, Millis};
 
-/// R-wave positions found in a lead, with the rate they imply.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RPeaks {
     pub indices: Vec<usize>,
@@ -14,7 +7,6 @@ pub struct RPeaks {
 }
 
 impl RPeaks {
-    /// Intervals between successive R waves.
     pub fn rr_intervals(&self) -> Vec<Millis> {
         let freq = self.sampling_freq.max(1) as f64;
         self.indices
@@ -23,8 +15,6 @@ impl RPeaks {
             .collect()
     }
 
-    /// Median instantaneous rate. The median rather than the mean so that a
-    /// single missed or doubled beat does not drag the answer.
     pub fn heart_rate(&self) -> Option<Bpm> {
         let mut rates: Vec<f64> = self
             .rr_intervals()
@@ -39,8 +29,6 @@ impl RPeaks {
         Some(Bpm(rates[rates.len() / 2].round() as u16))
     }
 
-    /// Spread of the RR intervals; a large value means the detector is
-    /// probably missing or doubling beats rather than that the rhythm varies.
     pub fn rr_stddev(&self) -> Option<Millis> {
         let rr: Vec<f64> = self.rr_intervals().iter().map(|m| m.0).collect();
         if rr.len() < 2 {
@@ -52,8 +40,6 @@ impl RPeaks {
     }
 }
 
-/// Emphasise the QRS complex: 5-point derivative, squared, then integrated
-/// over a window about as wide as a QRS.
 fn energy(samples: &[i16], sampling_freq: u16) -> Vec<f64> {
     let derivative: Vec<f64> = (0..samples.len())
         .map(|i| {
@@ -75,13 +61,9 @@ fn energy(samples: &[i16], sampling_freq: u16) -> Vec<f64> {
     integrated
 }
 
-/// Locate R waves in a single lead.
-///
-/// Returns an empty result rather than guessing when the lead is too short to
-/// hold a beat.
 pub fn detect_r_peaks(samples: &[i16], sampling_freq: u16) -> RPeaks {
     let freq = sampling_freq.max(1);
-    let refractory = (freq as f64 * 0.20) as usize; // 200 ms; 300 bpm ceiling
+    let refractory = (freq as f64 * 0.20) as usize;
     if samples.len() < refractory * 2 {
         return RPeaks {
             indices: Vec::new(),
@@ -98,7 +80,6 @@ pub fn detect_r_peaks(samples: &[i16], sampling_freq: u16) -> RPeaks {
         };
     }
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    // QRS energy sits far above the bulk of the signal.
     let threshold = sorted[sorted.len() * 9 / 10] * 0.5;
 
     let mut indices: Vec<usize> = Vec::new();
@@ -108,8 +89,6 @@ pub fn detect_r_peaks(samples: &[i16], sampling_freq: u16) -> RPeaks {
             i += 1;
             continue;
         }
-        // Take the highest point of this excursion, then step past the
-        // refractory period so one QRS yields one peak.
         let start = i;
         let mut best = i;
         while i < integrated.len() && integrated[i] >= threshold {
@@ -121,8 +100,6 @@ pub fn detect_r_peaks(samples: &[i16], sampling_freq: u16) -> RPeaks {
         if i == start {
             i += 1;
         }
-        // The integration window delays the energy peak; walk back to the
-        // steepest point of the raw lead.
         let window = ((freq as f64 * 0.150) as usize).max(1);
         let from = best.saturating_sub(window);
         let peak = (from..=best.min(samples.len() - 1))
@@ -142,7 +119,6 @@ pub fn detect_r_peaks(samples: &[i16], sampling_freq: u16) -> RPeaks {
 mod tests {
     use super::*;
 
-    /// A synthetic 75 bpm rhythm: one narrow spike every 0.8 s at 300 Hz.
     fn synthetic(bpm: f64, seconds: f64, freq: u16) -> Vec<i16> {
         let n = (seconds * freq as f64) as usize;
         let period = (60.0 / bpm * freq as f64) as usize;
@@ -151,7 +127,7 @@ mod tests {
                 0 => 1500,
                 1 => 900,
                 2 => -400,
-                _ => (i % 7) as i16 - 3, // low-level noise
+                _ => (i % 7) as i16 - 3,
             })
             .collect()
     }

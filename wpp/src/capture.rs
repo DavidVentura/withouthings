@@ -1,14 +1,7 @@
-//! Recovering WPP frames from an Android `btsnoop_hci.log`.
-//!
-//! Two layers of reassembly sit between the log and a frame: ACL fragments
-//! carry an L2CAP packet, and a WPP frame can span several ATT notifications.
-
 use crate::frame::{Frame, FrameError, PROTOCOL_VERSION};
 use crate::units::UnixMillis;
 use std::collections::HashMap;
 
-/// btsnoop stamps records in microseconds since 0000-01-01; this is the Unix
-/// epoch on that scale.
 const BTSNOOP_EPOCH_US: i64 = 0x00dc_ddb3_0f2f_8000;
 
 const BTSNOOP_MAGIC: &[u8] = b"btsnoop\0";
@@ -25,9 +18,7 @@ const ATT_HANDLE_VALUE_INDICATION: u8 = 0x1d;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Direction {
-    /// Phone to watch.
     Sent,
-    /// Watch to phone.
     Received,
 }
 
@@ -57,7 +48,6 @@ impl core::fmt::Display for CaptureError {
 
 impl std::error::Error for CaptureError {}
 
-/// One ATT payload carrying protocol bytes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AttPacket {
     pub direction: Direction,
@@ -66,7 +56,6 @@ pub struct AttPacket {
     pub value: Vec<u8>,
 }
 
-/// Split a btsnoop file into ATT writes and notifications.
 pub fn att_packets(file: &[u8]) -> Result<Vec<AttPacket>, CaptureError> {
     if file.len() < BTSNOOP_HEADER_LEN || &file[..8] != BTSNOOP_MAGIC {
         return Err(CaptureError::NotBtsnoop);
@@ -118,7 +107,6 @@ pub fn att_packets(file: &[u8]) -> Result<Vec<AttPacket>, CaptureError> {
             slot.extend_from_slice(body);
         }
 
-        // An L2CAP packet is complete once its declared length has arrived.
         if slot.len() < 4 {
             continue;
         }
@@ -153,17 +141,12 @@ pub fn att_packets(file: &[u8]) -> Result<Vec<AttPacket>, CaptureError> {
     Ok(packets)
 }
 
-/// What a byte stream produced: a frame, or a stretch that could not be one.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamItem {
-    /// A decoded frame together with the bytes it came from, so callers can
-    /// check that re-encoding reproduces the wire exactly.
     Frame { frame: Frame, bytes: Vec<u8> },
-    /// Bytes dropped while looking for a frame header.
     Desync { bytes: Vec<u8>, cause: FrameError },
 }
 
-/// Reassembles one direction of one characteristic into frames.
 #[derive(Default)]
 pub struct FrameReassembler {
     buf: Vec<u8>,
@@ -174,15 +157,10 @@ impl FrameReassembler {
         FrameReassembler::default()
     }
 
-    /// Bytes held back waiting for the rest of a frame.
     pub fn pending(&self) -> usize {
         self.buf.len()
     }
 
-    /// Drop a partial frame.
-    ///
-    /// A link that goes away mid-frame leaves bytes that will never be
-    /// completed; keeping them corrupts the first frame of the next link.
     pub fn reset(&mut self) {
         self.buf.clear();
     }
@@ -191,8 +169,6 @@ impl FrameReassembler {
         self.buf.extend_from_slice(bytes);
         let mut items = Vec::new();
         loop {
-            // The length field is only meaningful once the version byte says
-            // this really is the start of a frame.
             if let Some(&first) = self.buf.first() {
                 if first != PROTOCOL_VERSION {
                     self.buf.remove(0);
@@ -215,10 +191,6 @@ impl FrameReassembler {
                     items.push(StreamItem::Frame { frame, bytes });
                 }
                 Err(cause) => {
-                    // The declared length is trustworthy even when the body is
-                    // not, so the whole frame goes: rescanning from the second
-                    // byte resyncs on some 0x01 inside this payload and parses
-                    // the frames after it against a false boundary.
                     let bytes: Vec<u8> = self.buf.drain(..needed).collect();
                     items.push(StreamItem::Desync { bytes, cause });
                 }
@@ -227,17 +199,14 @@ impl FrameReassembler {
     }
 }
 
-/// A stream item with the context needed to attribute and time it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Captured {
     pub direction: Direction,
     pub att_handle: u16,
-    /// When the host saw the last fragment of this item.
     pub received_at: UnixMillis,
     pub item: StreamItem,
 }
 
-/// Decode every WPP frame in a btsnoop file, keyed by stream.
 pub fn frames(file: &[u8]) -> Result<Vec<Captured>, CaptureError> {
     let mut streams: HashMap<(Direction, u16), FrameReassembler> = HashMap::new();
     let mut out = Vec::new();
@@ -311,17 +280,9 @@ mod tests {
         );
     }
 
-    /// A frame spanning two notifications, of which the second never arrived:
-    /// its head is left glued to whatever came next. The whole thing has to be
-    /// consumed — rescanning from inside it parses the following frames against
-    /// a false boundary — and the join is what says a notification went missing
-    /// rather than the watch having sent something unreadable.
     #[test]
     fn a_frame_missing_a_notification_is_consumed_whole_and_shows_the_join() {
         let whole = battery_frame().to_bytes();
-        // Cut inside an object header. Cutting on an object boundary can leave
-        // a frame that decodes with the next one's bytes read as data — a lost
-        // notification is not always a lost frame.
         let mut stream = whole[..7].to_vec();
         stream.extend(&whole);
         stream.extend(&whole);
@@ -343,11 +304,9 @@ mod tests {
         );
     }
 
-    /// The other fault: a frame that is all there and simply will not decode.
     #[test]
     fn a_frame_that_is_merely_unreadable_shows_no_join() {
         let mut bytes = battery_frame().to_bytes();
-        // An object claiming more bytes than the payload holds.
         bytes[8] = 0xff;
         assert!(Frame::parse(&bytes).is_err());
         assert_eq!(Frame::splice_offset(&bytes), None);
