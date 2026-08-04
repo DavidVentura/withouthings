@@ -9,6 +9,16 @@ import kotlin.math.roundToInt
 
 data class ChartPoint(val atMs: Long, val value: Double)
 
+// The samples straddling the edges are what let a trace reach the sides of the
+// plot rather than stopping at the first one inside the window.
+fun List<ChartPoint>.spanning(window: LongRange): List<ChartPoint> {
+    val from = indexOfFirst { it.atMs >= window.first }
+    if (from < 0) return listOfNotNull(lastOrNull())
+    val to = indexOfLast { it.atMs <= window.last }
+    if (to < 0) return listOf(first())
+    return subList((from - 1).coerceAtLeast(0), (to + 2).coerceAtMost(size))
+}
+
 data class Span(val fromMs: Long, val toMs: Long) {
     val durationMs: Long get() = toMs - fromMs
 

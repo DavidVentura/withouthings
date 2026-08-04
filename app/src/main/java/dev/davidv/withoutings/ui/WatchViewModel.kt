@@ -6,12 +6,20 @@ import androidx.lifecycle.viewModelScope
 import dev.davidv.withoutings.LinkState
 import dev.davidv.withoutings.WatchRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.scan
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -63,7 +71,6 @@ data class UiState(
     val dailyTotals: Map<Long, Double> = emptyMap(),
     val dailyTotalsFor: MetricStyle? = null,
     val screens: List<WatchScreen> = emptyList(),
-    val metric: List<ChartPoint> = emptyList(),
     val latest: Map<MetricStyle, ChartPoint> = emptyMap(),
     val wearPosition: WearPosition = WearPosition.NOT_SET,
     val activities: List<Activity> = emptyList(),
@@ -73,7 +80,6 @@ data class UiState(
     val workoutTemp: List<ChartPoint> = emptyList(),
     val ecgs: List<EcgSummary> = emptyList(),
     val liveEcg: List<Double> = emptyList(),
-    val charging: List<Marker> = emptyList(),
     val metricBaseline: List<ChartPoint> = emptyList(),
     val home: HomeState = HomeState(),
 )
@@ -130,10 +136,18 @@ sealed interface SaveState {
 
 private const val TAG = "WatchViewModel"
 
+private fun spanEndingNow(spanMs: Long): LongRange {
+    val now = System.currentTimeMillis()
+    return (now - spanMs)..now
+}
+
 class WatchViewModel : ViewModel() {
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    private var refreshing = false
+    private var refreshAgain = false
 
     private val _window = MutableStateFlow<LongRange?>(null)
     val window: StateFlow<LongRange?> = _window.asStateFlow()
@@ -169,8 +183,54 @@ class WatchViewModel : ViewModel() {
     private val _metricStyle = MutableStateFlow(MetricStyle.HeartRate)
     val metricStyle: StateFlow<MetricStyle> = _metricStyle.asStateFlow()
 
-    private val _metricWindow = MutableStateFlow<LongRange?>(null)
-    val metricWindow: StateFlow<LongRange?> = _metricWindow.asStateFlow()
+    private val _metricWindow = MutableStateFlow(spanEndingNow(MetricStyle.HeartRate.defaultSpan))
+    val metricWindow: StateFlow<LongRange> = _metricWindow.asStateFlow()
+
+    private data class MetricRequest(
+        val style: MetricStyle,
+        val load: LoadWindow,
+        val revision: Long,
+    )
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val metricSeries: StateFlow<MetricSeries> = run {
+        val initial = MetricRequest(_metricStyle.value, loadWindow(_metricWindow.value), -1L)
+        combine(_metricStyle, _metricWindow, WatchRepository.revision, ::Triple)
+            .scan(initial) { previous, (style, window, revision) ->
+                if (previous.style != style || previous.revision != revision) {
+                    return@scan MetricRequest(style, loadWindow(window), revision)
+                }
+                val reload = reloadFor(previous.load, window) ?: return@scan previous
+                MetricRequest(style, reload, revision)
+            }
+            .distinctUntilChanged()
+            .mapLatest { request ->
+                withContext(Dispatchers.IO) { runCatching { loadMetric(request) }.getOrNull() }
+            }
+            .filterNotNull()
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                MetricSeries(initial.style, initial.load),
+            )
+    }
+
+    private fun loadMetric(request: MetricRequest): MetricSeries? {
+        val service = WatchRepository.get() ?: return null
+        val range = request.load.range
+        return MetricSeries(
+            style = request.style,
+            load = request.load,
+            points = service
+                .series(request.style.metric, range.first, range.last, LOAD_POINTS)
+                .map { p: Point -> ChartPoint(p.atMs, p.value) },
+            charging = if (request.style == MetricStyle.Battery) {
+                service.charging(range.first, range.last)
+            } else {
+                emptyList()
+            },
+        )
+    }
 
     private val _save = MutableStateFlow<SaveState>(SaveState.Idle)
     val save: StateFlow<SaveState> = _save.asStateFlow()
@@ -201,98 +261,92 @@ class WatchViewModel : ViewModel() {
             _state.value = _state.value.copy(link = WatchRepository.link.value)
             return
         }
+        if (refreshing) {
+            refreshAgain = true
+            return
+        }
+        refreshing = true
         viewModelScope.launch {
             val next = withContext(Dispatchers.IO) {
-                runCatching {
-                    val snapshot = service.snapshot()
-                    val active = snapshot.activeWorkout
-                    val now = System.currentTimeMillis()
-                    val range = _window.value ?: followSpanMs?.let { (now - it)..now } ?: run {
-                        val from = active?.startedAtMs ?: (now - DEFAULT_WINDOW_MS)
-                        from..now
-                    }
-                    val previous = _state.value
-                    val rebuildLog = now - previous.activityLogAtMs > ACTIVITY_LOG_MAX_AGE_MS
-                    val log = if (rebuildLog) {
-                        (
-                            service.workouts(50u).map(::RecordedEntry) +
-                                service
-                                    .detectedActivities(now - DETECTED_HISTORY_MS, now)
-                                    .map(::DetectedEntry)
-                            ).sortedByDescending { it.startedAtMs }
-                    } else {
-                        previous.activityLog
-                    }
-                    val steps = if (rebuildLog) {
-                        (0..DETECTED_HISTORY_DAYS).associate { back ->
-                            val day = dayStart(now - back * DAY_MS)
-                            day to service.activityTotals(day, day + DAY_MS - 1000).steps
-                        }
-                    } else {
-                        previous.dailySteps
-                    }
-                    val style = _metricStyle.value
-                    val totals = if (rebuildLog || previous.dailyTotalsFor != style) {
-                        dailyTotals(service, style, now)
-                    } else {
-                        previous.dailyTotals
-                    }
-                    UiState(
-                        link = WatchRepository.link.value,
-                        snapshot = snapshot,
-                        hrWindow = range,
-                        hr = service.hrSeries(range.first, range.last, MAX_CHART_POINTS),
-                        workoutTemp = service
-                            .series(Metric.TEMPERATURE, range.first, range.last, MAX_CHART_POINTS)
-                            .map { p: Point -> ChartPoint(p.atMs, p.value) },
-                        markers = service.markers(range.first, range.last),
-                        activityLog = log,
-                        activityLogAtMs = if (rebuildLog) now else previous.activityLogAtMs,
-                        dailySteps = steps,
-                        dailyTotals = totals,
-                        dailyTotalsFor = style,
-                        home = home(service, log, previous.home, now),
-                        ecgs = service.ecgs(),
-                        liveEcg = if (snapshot.measuring) {
-                            service.liveEcg()
-                        } else {
-                            _state.value.liveEcg
-                        },
-                        screens = service.screens(),
-                        wearPosition = service.wearPosition(),
-                        activities = service.activities(),
-                        features = service.healthFeatures(),
-                        notifications = service.notificationConfig(),
-                        metric = service
-                            .series(
-                                _metricStyle.value.metric,
-                                metricRange().first,
-                                metricRange().last,
-                                MAX_CHART_POINTS,
-                            )
-                            .map { p: Point -> ChartPoint(p.atMs, p.value) },
-                        charging = if (_metricStyle.value == MetricStyle.Battery) {
-                            service.charging(metricRange().first, metricRange().last)
-                        } else {
-                            emptyList()
-                        },
-                        metricBaseline = service
-                            .series(
-                                _metricStyle.value.metric,
-                                now - BASELINE_MS,
-                                now,
-                                MAX_CHART_POINTS,
-                            )
-                            .map { p: Point -> ChartPoint(p.atMs, p.value) },
-                        latest = MetricStyle.entries.mapNotNull { style ->
-                            service.latestValue(style.metric)
-                                ?.let { style to ChartPoint(it.atMs, it.value) }
-                        }.toMap(),
-                    )
-                }.getOrNull()
+                runCatching { buildState(service) }.getOrNull()
             }
             if (next != null) _state.value = next
+            refreshing = false
+            if (refreshAgain) {
+                refreshAgain = false
+                refresh()
+            }
         }
+    }
+
+    private fun buildState(service: WatchService): UiState {
+        val snapshot = service.snapshot()
+        val active = snapshot.activeWorkout
+        val now = System.currentTimeMillis()
+        val range = _window.value ?: followSpanMs?.let { (now - it)..now } ?: run {
+            val from = active?.startedAtMs ?: (now - DEFAULT_WINDOW_MS)
+            from..now
+        }
+        val previous = _state.value
+        val rebuildLog = now - previous.activityLogAtMs > ACTIVITY_LOG_MAX_AGE_MS
+        val log = if (rebuildLog) {
+            (
+                service.workouts(50u).map(::RecordedEntry) +
+                    service
+                        .detectedActivities(now - DETECTED_HISTORY_MS, now)
+                        .map(::DetectedEntry)
+                ).sortedByDescending { it.startedAtMs }
+        } else {
+            previous.activityLog
+        }
+        val steps = if (rebuildLog) {
+            (0..DETECTED_HISTORY_DAYS).associate { back ->
+                val day = dayStart(now - back * DAY_MS)
+                day to service.activityTotals(day, day + DAY_MS - 1000).steps
+            }
+        } else {
+            previous.dailySteps
+        }
+        val style = _metricStyle.value
+        val totals = if (rebuildLog || previous.dailyTotalsFor != style) {
+            dailyTotals(service, style, now)
+        } else {
+            previous.dailyTotals
+        }
+        return UiState(
+            link = WatchRepository.link.value,
+            snapshot = snapshot,
+            hrWindow = range,
+            hr = service.hrSeries(range.first, range.last, MAX_CHART_POINTS),
+            workoutTemp = service
+                .series(Metric.TEMPERATURE, range.first, range.last, MAX_CHART_POINTS)
+                .map { p: Point -> ChartPoint(p.atMs, p.value) },
+            markers = service.markers(range.first, range.last),
+            activityLog = log,
+            activityLogAtMs = if (rebuildLog) now else previous.activityLogAtMs,
+            dailySteps = steps,
+            dailyTotals = totals,
+            dailyTotalsFor = style,
+            home = home(service, log, previous.home, now),
+            ecgs = service.ecgs(),
+            liveEcg = if (snapshot.measuring) {
+                service.liveEcg()
+            } else {
+                previous.liveEcg
+            },
+            screens = service.screens(),
+            wearPosition = service.wearPosition(),
+            activities = service.activities(),
+            features = service.healthFeatures(),
+            notifications = service.notificationConfig(),
+            metricBaseline = service
+                .series(style.metric, now - BASELINE_MS, now, MAX_CHART_POINTS)
+                .map { p: Point -> ChartPoint(p.atMs, p.value) },
+            latest = MetricStyle.entries.mapNotNull { entry ->
+                service.latestValue(entry.metric)
+                    ?.let { entry to ChartPoint(it.atMs, it.value) }
+            }.toMap(),
+        )
     }
 
     private fun dailyTotals(
@@ -344,15 +398,9 @@ class WatchViewModel : ViewModel() {
         )
     }
 
-    private fun metricRange(): LongRange {
-        _metricWindow.value?.let { return it }
-        val now = System.currentTimeMillis()
-        return (now - _metricStyle.value.defaultSpan)..now
-    }
-
     fun showMetric(style: MetricStyle) {
         _metricStyle.value = style
-        _metricWindow.value = null
+        _metricWindow.value = spanEndingNow(style.defaultSpan)
         refresh()
     }
 
@@ -405,13 +453,10 @@ class WatchViewModel : ViewModel() {
 
     fun metricZoom(range: LongRange) {
         _metricWindow.value = range
-        refresh()
     }
 
     fun metricRangeSpan(span: Long) {
-        val now = System.currentTimeMillis()
-        _metricWindow.value = (now - span)..now
-        refresh()
+        _metricWindow.value = spanEndingNow(span)
     }
 
     fun zoom(range: LongRange?) {

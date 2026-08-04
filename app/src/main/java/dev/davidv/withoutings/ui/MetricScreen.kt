@@ -40,6 +40,7 @@ import dev.davidv.withoutings.ui.theme.AppTheme
 fun MetricScreen(
     style: MetricStyle,
     state: UiState,
+    series: MetricSeries,
     window: LongRange,
     nowMs: Long,
     onWindowChange: (LongRange) -> Unit,
@@ -52,7 +53,7 @@ fun MetricScreen(
     var switching by remember { mutableStateOf(false) }
     val sheet = rememberModalBottomSheetState()
 
-    val visible = state.metric.filter { it.atMs in window }
+    val visible = series.points.filter { it.atMs in window }
     val sessions = state.activityLog
         .map { it.session(nowMs) }
         .filter { it.span.overlaps(Span(window.first, window.last)) }
@@ -91,7 +92,7 @@ fun MetricScreen(
                     color = AppTheme.colors.onSurfaceDim,
                 )
                 ValueChart(
-                    points = state.metric,
+                    points = series.points,
                     window = window,
                     axis = style.axis,
                     decimals = style.decimals,

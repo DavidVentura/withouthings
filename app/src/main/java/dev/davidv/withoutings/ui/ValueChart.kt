@@ -196,7 +196,8 @@ fun ValueChart(
             val plotHeight = size.height - axisHeight - labelStrip
             if (size.width <= 0 || plotHeight <= 0) return@Canvas
 
-            val visible = points.filter { it.atMs in window }
+            val nearby = points.spanning(window)
+            val visible = nearby.filter { it.atMs in window }
             val (lo, hi) = valueBounds(visible, axis, grid)
             val spanMs = (window.last - window.first).coerceAtLeast(1L)
 
@@ -246,9 +247,7 @@ fun ValueChart(
                 )
             }
 
-            if (visible.isNotEmpty() || points.isNotEmpty()) {
-                drawTrace(points, ::x, ::y, plotHeight, lineColor, fillColor, tokens)
-            }
+            drawTrace(nearby, ::x, ::y, plotHeight, lineColor, fillColor, tokens)
 
             if (showTimeAxis) {
                 val tickMs = when (grid) {
@@ -299,7 +298,7 @@ fun ValueChart(
 
             val cursor = scrubAtMs?.takeIf { it in window }
             if (cursor != null) {
-                val nearest = points.minByOrNull { abs(it.atMs - cursor) }
+                val nearest = nearby.minByOrNull { abs(it.atMs - cursor) }
                 val at = x(nearest?.atMs ?: cursor)
                 drawLine(
                     scheme.onSurface.copy(alpha = cursorAlpha),

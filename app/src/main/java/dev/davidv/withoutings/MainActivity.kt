@@ -185,6 +185,7 @@ private fun Navigation(
     val elapsed by model.elapsed.collectAsState()
     val metricStyle by model.metricStyle.collectAsState()
     val metricWindow by model.metricWindow.collectAsState()
+    val metricSeries by model.metricSeries.collectAsState()
     val selected by model.selectedActivity.collectAsState()
     val selectedTotals by model.selectedTotals.collectAsState()
     val ecg by model.ecg.collectAsState()
@@ -408,8 +409,8 @@ private fun Navigation(
                 MetricScreen(
                     style = metricStyle,
                     state = state,
-                    window = metricWindow
-                        ?: ((nowMs - metricStyle.defaultSpan)..nowMs),
+                    series = metricSeries,
+                    window = metricWindow,
                     nowMs = nowMs,
                     onWindowChange = { model.metricZoom(it) },
                     onRange = { model.metricRangeSpan(it) },
