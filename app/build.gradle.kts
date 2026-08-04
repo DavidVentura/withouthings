@@ -16,16 +16,25 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Only arm64 gets a libwpp_ffi.so, so JNA's other six ABIs are dead weight.
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
+    }
+    lint {
+        // Lint cannot follow the supertype chain of androidx.activity.ComponentActivity
+        // and claims every Kotlin activity is not an Activity; reproducible on an empty project.
+        disable += "Instantiatable"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

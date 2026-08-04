@@ -5,6 +5,15 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
+# JNA binds the uniffi types to the native ABI by reflection: Structure field
+# names and declaration order, and the method names on Library/Callback types.
+-keep class com.sun.jna.** { *; }
+-keep class * extends com.sun.jna.Structure { *; }
+-keep class * implements com.sun.jna.Callback { *; }
+-keep interface * extends com.sun.jna.Library { *; }
+-keep class uniffi.wpp_ffi.** { *; }
+-dontwarn java.awt.**
+
 # If your project uses WebView with JS, uncomment the following
 # and specify the fully qualified class name to the JavaScript interface
 # class:
