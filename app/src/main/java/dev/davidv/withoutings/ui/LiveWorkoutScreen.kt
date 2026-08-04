@@ -16,9 +16,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -70,7 +70,7 @@ fun LiveWorkoutScreen(
             Column(Modifier.weight(1f).padding(start = 2.dp)) {
                 Text(workout?.activity ?: "Session ended", style = AppTheme.type.cardTitle)
                 Text(
-                    started?.let { "started ${clock(it)} · on watch" }
+                    started?.let { "started ${clock(it)}" }
                         ?: "the watch is no longer recording",
                     style = AppTheme.type.rowMeta,
                     color = AppTheme.colors.onSurfaceTertiary,
@@ -91,10 +91,9 @@ fun LiveWorkoutScreen(
         ) {
             FocalHeartRate(hr)
             ZoneBar(hr.maxByOrNull { it.atMs }?.value, maxRate)
-            Observation(hr, state.workoutTemp)
 
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                Eyebrow("hr · this session", Modifier.weight(1f))
+                Eyebrow("hr", Modifier.weight(1f))
                 Eyebrow(
                     hr.firstOrNull()?.let { first ->
                         "${first.value.toInt()} → ${hr.maxOf { it.value }.toInt()}"
@@ -155,12 +154,6 @@ fun LiveWorkoutScreen(
             if (started != null) {
                 OutlineAction("Finish session", Modifier.fillMaxWidth(), onClick = onStopWorkout)
             }
-            Text(
-                "The rest timer is this app's own. Finishing asks the watch, which " +
-                    "is where the session actually ends; pausing is on the watch.",
-                style = AppTheme.type.axisSmall,
-                color = AppTheme.colors.onSurfaceDim,
-            )
         }
     }
 }
@@ -234,72 +227,9 @@ private fun ZoneBar(bpm: Double?, maxRate: Int?) {
 }
 
 @Composable
-private fun Observation(hr: List<ChartPoint>, temperature: List<ChartPoint>) {
-    if (hr.isEmpty()) {
-        AccentCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(AppTheme.radius.card)) {
-            Text(
-                "Nothing measured yet",
-                style = AppTheme.type.sectionTitle,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                "The watch sends the session's samples as it takes them.",
-                style = AppTheme.type.body,
-                color = AppTheme.colors.onAccentSecondary,
-            )
-        }
-        return
-    }
-
-    val peak = hr.maxOf { it.value }
-    val nearPeak = hr.filter { it.value >= peak - CEILING_BAND_BPM }
-    val ceilingMs = nearPeak.size * samplingIntervalMs(hr)
-    val rise = temperature.takeIf { it.size > 1 }?.let {
-        val ordered = it.sortedBy { point -> point.atMs }
-        ordered.last().value - ordered.first().value
-    }
-
-    AccentCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(AppTheme.radius.card)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.AutoMirrored.Rounded.TrendingUp,
-                null,
-                Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                "${compactDuration(ceilingMs)} within " +
-                    "${CEILING_BAND_BPM.toInt()} of this session's peak",
-                Modifier.padding(start = 8.dp),
-                style = AppTheme.type.sectionTitle,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
-        Text(
-            buildString {
-                append("Peak ${peak.toInt()} bpm")
-                if (rise != null) {
-                    append(", skin temperature ")
-                    append(if (rise >= 0) "up " else "down ")
-                    append(grouped(abs(rise), 1))
-                    append(" °C since it started")
-                }
-                append(".")
-            },
-            Modifier.padding(top = 4.dp),
-            style = AppTheme.type.body,
-            color = AppTheme.colors.onAccentSecondary,
-        )
-    }
-}
-
-private const val CEILING_BAND_BPM = 5.0
-
-@Composable
 private fun SkinTempTile(temperature: List<ChartPoint>, modifier: Modifier) {
-    val ordered = temperature.sortedBy { it.atMs }
-    val latest = ordered.lastOrNull()?.value
-    val rise = if (ordered.size > 1) ordered.last().value - ordered.first().value else null
+    val latest = temperature.maxByOrNull { it.atMs }?.value
+    val rise = temperatureRise(temperature)
     Tile(modifier) {
         Eyebrow("skin temp")
         Spacer(Modifier.height(4.dp))
@@ -310,7 +240,7 @@ private fun SkinTempTile(temperature: List<ChartPoint>, modifier: Modifier) {
             )
             if (rise != null && abs(rise) >= 0.1) {
                 Icon(
-                    Icons.Rounded.ArrowUpward,
+                    if (rise >= 0) Icons.Rounded.ArrowUpward else Icons.Rounded.ArrowDownward,
                     null,
                     Modifier.padding(start = 4.dp, bottom = 3.dp).size(17.dp),
                     tint = MaterialTheme.colorScheme.primary,
@@ -336,7 +266,7 @@ private fun SkinTempTile(temperature: List<ChartPoint>, modifier: Modifier) {
 @Composable
 private fun RestTile(sets: Int, resting: Boolean, elapsedMs: Long, modifier: Modifier) {
     Tile(modifier) {
-        Eyebrow(if (resting) "set ${sets + 1} · rest" else "sets timed")
+        Eyebrow(if (resting) "set ${sets + 1} · rest" else "sets")
         Spacer(Modifier.height(4.dp))
         Text(
             if (resting) stopwatch(elapsedMs) else sets.toString(),
@@ -345,12 +275,6 @@ private fun RestTile(sets: Int, resting: Boolean, elapsedMs: Long, modifier: Mod
         Spacer(Modifier.height(6.dp))
         if (resting) {
             TrackBar(1f, Modifier.fillMaxWidth(), height = 5.dp)
-        } else {
-            Text(
-                "start a rest to mark one",
-                style = AppTheme.type.tileContext,
-                color = AppTheme.colors.onSurfaceTertiary,
-            )
         }
     }
 }

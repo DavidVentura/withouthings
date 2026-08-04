@@ -116,6 +116,38 @@ class DaysSinceLowerTest {
     }
 }
 
+class TemperatureRiseTest {
+    private fun warmingSession(tail: List<Double>): List<ChartPoint> {
+        val climb = List(36) { 37.1 + it * 0.025 }
+        return (climb + tail).mapIndexed { i, v -> ChartPoint(i * MINUTE, v) }
+    }
+
+    @Test
+    fun `a cool-down at the end does not erase the rise`() {
+        val rise = temperatureRise(warmingSession(listOf(37.4, 36.9)))!!
+        assertEquals(0.85, rise, 0.06)
+    }
+
+    @Test
+    fun `a session that only warms reads the same as one that cools at the end`() {
+        val plain = temperatureRise(warmingSession(emptyList()))!!
+        val cooled = temperatureRise(warmingSession(listOf(37.4, 36.9)))!!
+        assertEquals(plain, cooled, 0.03)
+    }
+
+    @Test
+    fun `a single hot sample does not carry the figure`() {
+        val flat = List(30) { ChartPoint(it * MINUTE, 33.0) }
+        val spiked = flat + ChartPoint(30 * MINUTE, 39.0)
+        assertEquals(0.0, temperatureRise(spiked)!!, 0.05)
+    }
+
+    @Test
+    fun `too few samples have no rise`() {
+        assertNull(temperatureRise(series(0L to 33.0, 1L to 34.0, 2L to 35.0)))
+    }
+}
+
 class FormattingTest {
     @Test
     fun `counts are run together, not grouped`() {

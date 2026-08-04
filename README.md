@@ -13,6 +13,22 @@ Handles:
 - Most settings
 - Notifications (only sends a test notification, does not forward system notifications)
 
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="screenshots/now.png" width="220" alt="Now"></td>
+    <td><img src="screenshots/activities.png" width="220" alt="Activities"></td>
+    <td><img src="screenshots/static_activity.png" width="220" alt="Activity detail"></td>
+    <td><img src="screenshots/stats.png" width="220" alt="Stats"></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/sleep.png" width="220" alt="Sleep"></td>
+    <td><img src="screenshots/ecg.png" width="220" alt="ECG"></td>
+    <td><img src="screenshots/watch_settings.png" width="220" alt="Watch settings"></td>
+    <td></td>
+  </tr>
+</table>
 
 Notes:
 

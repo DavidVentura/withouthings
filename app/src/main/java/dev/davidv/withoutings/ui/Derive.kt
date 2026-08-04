@@ -104,6 +104,21 @@ fun unattributedTime(spells: List<Spell>): Long =
 fun mean(points: List<ChartPoint>): Double? =
     if (points.isEmpty()) null else points.sumOf { it.value } / points.size
 
+private const val BASELINE_WINDOW_MS = 3 * MINUTE_MS
+private const val SETTLED_PERCENTILE = 0.95
+private const val RISE_MIN_SAMPLES = 5
+
+// The last samples of a session catch the cool-down, so an endpoint difference
+// reads a stretch at the end as a session that never warmed up.
+fun temperatureRise(points: List<ChartPoint>): Double? {
+    if (points.size < RISE_MIN_SAMPLES) return null
+    val ordered = points.sortedBy { it.atMs }
+    val opening = ordered.takeWhile { it.atMs - ordered.first().atMs <= BASELINE_WINDOW_MS }
+    val baseline = percentile(opening.map { it.value }, 0.5)!!
+    val settled = percentile(ordered.map { it.value }, SETTLED_PERCENTILE)!!
+    return settled - baseline
+}
+
 fun grouped(value: Long): String = value.toString()
 
 fun grouped(value: Double, decimals: Int): String =

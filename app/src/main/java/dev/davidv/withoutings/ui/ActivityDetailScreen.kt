@@ -95,12 +95,6 @@ fun ActivityDetailScreen(
                     MaterialTheme.colorScheme.primary.copy(alpha = AppTheme.chart.legendSessionAlpha),
                     "Set timed here",
                 )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "pinch to zoom · drag axis to pan",
-                    style = AppTheme.type.axisSmall,
-                    color = AppTheme.colors.onSurfaceDim,
-                )
             }
         }
 
@@ -154,8 +148,7 @@ fun ActivityDetailScreen(
 
 @Composable
 private fun SummaryRail(hr: List<ChartPoint>, temperature: List<ChartPoint>) {
-    val ordered = temperature.sortedBy { it.atMs }
-    val rise = if (ordered.size > 1) ordered.last().value - ordered.first().value else null
+    val rise = temperatureRise(temperature)
     Row(
         Modifier.fillMaxWidth().height(64.dp),
         verticalAlignment = Alignment.CenterVertically,
