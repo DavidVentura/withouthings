@@ -135,7 +135,6 @@ fun WatchUserScreen(
             weightGrams?.toUInt() != user.weightGrams ||
             height?.toUInt() != user.heightCm
         SaveFooter(
-            edited = edited,
             saveState = saveState,
             enabled = valid && edited,
             onAcknowledge = onAcknowledge,

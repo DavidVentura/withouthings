@@ -1,7 +1,10 @@
 package dev.davidv.withoutings
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -45,6 +48,7 @@ import dev.davidv.withoutings.ui.NowScreen
 import dev.davidv.withoutings.ui.PairingScreen
 import dev.davidv.withoutings.ui.RecordedEntry
 import dev.davidv.withoutings.ui.SleepScreen
+import dev.davidv.withoutings.ui.StorageScreen
 import dev.davidv.withoutings.ui.Tab
 import dev.davidv.withoutings.ui.TodayScreen
 import dev.davidv.withoutings.ui.WatchActivitiesScreen
@@ -103,6 +107,30 @@ private fun App(model: WatchViewModel = viewModel()) {
         )
     }
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var storage by remember { mutableStateOf(Environment.isExternalStorageManager()) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                storage = Environment.isExternalStorageManager()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (!storage) {
+        StorageScreen {
+            context.startActivity(
+                Intent(
+                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.fromParts("package", context.packageName, null),
+                )
+            )
+        }
+        return
+    }
+
     LaunchedEffect(configured, radio) {
         if (configured && radio) WatchConnectionService.start(context)
     }
@@ -112,7 +140,6 @@ private fun App(model: WatchViewModel = viewModel()) {
         return
     }
 
-    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) model.requestRefresh()

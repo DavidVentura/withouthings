@@ -43,6 +43,11 @@ impl Store {
     }
 
     fn prepare(conn: Connection) -> Result<Store, Error> {
+        // The database lives on shared storage, which is FUSE-backed and cannot
+        // be relied on to mmap the -shm file WAL normally needs. Taking the
+        // exclusive lock first keeps that index in heap memory instead, at the
+        // cost of allowing only this one connection for as long as it is open.
+        conn.pragma_update(None, "locking_mode", "EXCLUSIVE")?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         migrate::run(&conn)?;

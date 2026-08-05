@@ -10,6 +10,12 @@
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="s" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- The history is worth more than the app: it has to survive an uninstall,
+         and shared storage is the only path that does. Scoped storage has no
+         way to hand SQLite a real file path, and a document URI cannot carry
+         the -wal sibling, so nothing narrower than this grant works. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />

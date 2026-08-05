@@ -197,7 +197,6 @@ fun WatchSensorsScreen(
         }
         val edited = edits.any { (id, on) -> sensors.first { it.id == id }.enabled != on }
         SaveFooter(
-            edited = edited,
             saveState = saveState,
             enabled = edited,
             onAcknowledge = onAcknowledge,
@@ -285,7 +284,6 @@ fun WatchActivitiesScreen(
             Spacer(Modifier.height(16.dp))
         }
         SaveFooter(
-            edited = edited,
             saveState = saveState,
             enabled = edited && menu.isNotEmpty(),
             onAcknowledge = onAcknowledge,
@@ -333,7 +331,6 @@ fun WatchScreensScreen(
             Spacer(Modifier.height(16.dp))
         }
         SaveFooter(
-            edited = edited,
             saveState = saveState,
             enabled = edited && order.any { it.enabled },
             onAcknowledge = onAcknowledge,
@@ -352,7 +349,6 @@ fun WatchScreensScreen(
  */
 @Composable
 internal fun SaveFooter(
-    edited: Boolean,
     saveState: SaveState,
     enabled: Boolean,
     onAcknowledge: () -> Unit,
@@ -389,13 +385,6 @@ internal fun SaveFooter(
             .padding(top = 12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (edited && !saving) {
-            Text(
-                "Not saved yet. Changes are local until the watch takes them.",
-                style = AppTheme.type.rowMeta,
-                color = AppTheme.colors.onSurfaceTertiary,
-            )
-        }
         FilledAction(
             if (saving) "Saving…" else "Save and close",
             Modifier.fillMaxWidth(),

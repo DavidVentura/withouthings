@@ -63,23 +63,33 @@ impl Rasterizer for Handle {
     }
 }
 
-fn service(recorder: &Arc<Recorder>) -> (WatchService, String) {
-    let path = format!(
+fn db_path() -> String {
+    format!(
         "/tmp/wpp-ffi-test-{}.db",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()
-    );
-    let service = WatchService::new(
-        path.clone(),
+    )
+}
+
+// The store takes the database exclusively for as long as it is open, so a test
+// that wants rows in place beforehand has to seed them and close before this.
+fn service_at(recorder: &Arc<Recorder>, path: String) -> WatchService {
+    WatchService::new(
+        path,
         "a4:7e:fa:44:d6:10".to_string(),
         "gUf8Np69A4GvJxjY1XOcIHKQm2HcPZnO".to_string(),
         Box::new(Handle(recorder.clone())),
         Box::new(Handle(recorder.clone())),
         Box::new(Handle(recorder.clone())),
     )
-    .expect("service");
+    .expect("service")
+}
+
+fn service(recorder: &Arc<Recorder>) -> (WatchService, String) {
+    let path = db_path();
+    let service = service_at(recorder, path.clone());
     (service, path)
 }
 
@@ -379,7 +389,7 @@ fn reducing_a_series_for_drawing_keeps_peaks_and_troughs() {
     use wpp::units::UnixMillis;
 
     let recorder = Arc::new(Recorder::default());
-    let (service, path) = service(&recorder);
+    let path = db_path();
 
     let mut store = wpp_store::Store::open(&path).unwrap();
     let device = store.device("a4:7e:fa:44:d6:10").unwrap();
@@ -397,6 +407,7 @@ fn reducing_a_series_for_drawing_keeps_peaks_and_troughs() {
     store.store(device, &records).unwrap();
     drop(store);
 
+    let service = service_at(&recorder, path.clone());
     let full = service.hr_series(1_000_000, 1_600_000, 10_000).unwrap();
     assert_eq!(full.len(), 600, "under the cap, nothing is dropped");
 

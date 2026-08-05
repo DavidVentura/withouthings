@@ -1203,14 +1203,18 @@ impl WatchService {
             let (from_ms, to_ms) = (minute.at.0 * 1000, minute.ended_at().0 * 1000);
             let stage = match minute.sleep_level {
                 Some(level) => SleepStage::of(activity::SleepLevel::from_wire(level)?),
-                None => {
-                    let (night_from, night_to) = asleep?;
-                    if from_ms < night_from || to_ms > night_to {
-                        return None;
-                    }
-                    SleepStage::Awake
-                }
+                None => SleepStage::Awake,
             };
+            // The night runs from the first minute asleep to the last, so being
+            // awake outside that is time in bed and not part of it. The watch
+            // reports those minutes as Awake rather than leaving them out, which
+            // is indistinguishable from the gaps filled in above.
+            if stage == SleepStage::Awake {
+                let (night_from, night_to) = asleep?;
+                if from_ms < night_from || to_ms > night_to {
+                    return None;
+                }
+            }
             Some(SleepBand {
                 from_ms,
                 to_ms,

@@ -14,10 +14,12 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
+import dev.davidv.withoutings.DbLocation
 import dev.davidv.withoutings.LinkState
 import dev.davidv.withoutings.Settings
 import dev.davidv.withoutings.WatchRepository
 import dev.davidv.withoutings.declareZone
+import dev.davidv.withoutings.watchDb
 import uniffi.wpp_ffi.Progress
 import uniffi.wpp_ffi.Transport
 import uniffi.wpp_ffi.WatchService
@@ -51,6 +53,14 @@ class WatchConnectionService : Service() {
             return START_NOT_STICKY
         }
 
+        val location = watchDb(this)
+        if (location !is DbLocation.Ready) {
+            WatchRepository.setLink(LinkState.Disconnected)
+            Log.e(TAG, "storage not reachable, no all-files grant")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         if (intent?.action == ACTION_RECONNECT) {
             Log.i(TAG, "reconnect asked for by hand ${transportState()}")
             retryLater("asked to reconnect", Retry.Now)
@@ -61,7 +71,7 @@ class WatchConnectionService : Service() {
             val ancs = AncsServer(this) { service }
             this.ancs = ancs
             service = WatchService(
-                dbPath = getDatabasePath("watch.db").also { it.parentFile?.mkdirs() }.absolutePath,
+                dbPath = location.path,
                 mac = mac,
                 secret = secret,
                 transport = GattTransport(),
