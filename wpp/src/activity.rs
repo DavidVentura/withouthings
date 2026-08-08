@@ -1,13 +1,14 @@
 use crate::units::{Kilocalories, Metres, UnixTime, ACTIVITY_HUNDREDTHS};
+use std::ops::Range;
 
 pub const WALK: u16 = 1;
 pub const RUN: u16 = 2;
 
-const MIN_CADENCE_SPM: i64 = 50;
+const WALKING_FLOOR_SPM: i64 = 30;
 
 const RUN_CADENCE_SPM: i64 = 140;
 
-const MAX_BREAK_SECS: i64 = 300;
+const STILLNESS_BUDGET_SECS: i64 = 600;
 
 const MIN_SESSION_SECS: i64 = 300;
 
@@ -111,35 +112,78 @@ pub fn totals(minutes: &[Minute]) -> Totals {
     }
 }
 
+/// Scaled by sixty so the floor can be charged per second without dividing.
+/// A window with no duration earns nothing: steps over no time are not a pace.
+fn earned(minute: &Minute) -> i64 {
+    if minute.duration_secs <= 0 {
+        return 0;
+    }
+    minute.steps.unwrap_or(0) * 60 - WALKING_FLOOR_SPM * minute.duration_secs
+}
+
 pub fn detect(minutes: &[Minute]) -> Vec<Session> {
     let mut sessions = Vec::new();
-    let mut open: Vec<Minute> = Vec::new();
-    for minute in minutes {
-        if minute.cadence().unwrap_or(0) < MIN_CADENCE_SPM {
-            continue;
-        }
-        if let Some(last) = open.last() {
-            if minute.at.0 - last.ended_at().0 > MAX_BREAK_SECS {
-                sessions.extend(close(&open));
-                open.clear();
-            }
-        }
-        open.push(*minute);
+    let mut from = 0;
+    while let Some(span) = next_span(minutes, from) {
+        sessions.extend(close(&minutes[span.start..span.end]));
+        from = span.end;
     }
-    sessions.extend(close(&open));
     sessions
+}
+
+fn next_span(minutes: &[Minute], from: usize) -> Option<Range<usize>> {
+    let start = from
+        + minutes[from..]
+            .iter()
+            .position(|minute| earned(minute) > 0)?;
+
+    // Stillness before the opening window belongs to whatever came before.
+    let mut total = earned(&minutes[start]);
+    let mut peak = total;
+    let mut last_moving = start;
+    for (i, minute) in minutes.iter().enumerate().skip(start + 1) {
+        // Windows tile the day only while the watch has something to report; an
+        // untiled gap is time spent standing still like any other.
+        let still = (minute.at.0 - minutes[i - 1].ended_at().0).max(0);
+        let credit = earned(minute) - WALKING_FLOOR_SPM * still;
+        total += credit;
+        if credit > 0 {
+            last_moving = i;
+        }
+        peak = peak.max(total);
+        if peak - total > WALKING_FLOOR_SPM * STILLNESS_BUDGET_SECS {
+            break;
+        }
+    }
+    // Trimmed to the last window of walking, leaving out the pause that ended it.
+    Some(start..last_moving + 1)
 }
 
 fn close(minutes: &[Minute]) -> Option<Session> {
     let started_at = minutes.first()?.at;
     let ended_at = minutes.last()?.ended_at();
-    if ended_at.0 - started_at.0 < MIN_SESSION_SECS {
+    let span_secs = ended_at.0 - started_at.0;
+    if span_secs < MIN_SESSION_SECS {
         return None;
     }
 
+    // The budget clears window by window, so the odd step every few minutes can
+    // stitch together a stretch nobody walked.
     let summed = totals(minutes);
-    let moving_secs: i64 = minutes.iter().map(|m| m.duration_secs).sum();
-    let cadence = summed.steps * 60 / moving_secs.max(1);
+    if summed.steps * 60 < WALKING_FLOOR_SPM * span_secs {
+        return None;
+    }
+
+    // Pauses would drag a run's cadence down into walking territory.
+    let moving = minutes.iter().filter(|minute| earned(minute) > 0);
+    let (moving_steps, moving_secs) = moving.fold((0, 0), |(steps, secs), minute| {
+        (
+            steps + minute.steps.unwrap_or(0),
+            secs + minute.duration_secs,
+        )
+    });
+    let cadence = moving_steps * 60 / moving_secs;
+
     Some(Session {
         started_at,
         ended_at,
@@ -171,6 +215,13 @@ mod tests {
 
     fn walk(from: i64, minutes: i64, steps: i64) -> Vec<Minute> {
         (0..minutes).map(|i| minute(from + i * 60, steps)).collect()
+    }
+
+    fn idle(at: i64, secs: i64) -> Minute {
+        Minute {
+            duration_secs: secs,
+            ..Minute::opened(UnixTime(at))
+        }
     }
 
     #[test]
@@ -248,6 +299,73 @@ mod tests {
         });
         minutes.extend(walk(1_000 + 27 * 60, 12, 95));
         assert_eq!(detect(&minutes).len(), 2);
+    }
+
+    #[test]
+    fn waiting_at_a_crossing_is_still_the_same_walk() {
+        let mut minutes = walk(1_000, 15, 90);
+        minutes.push(idle(1_900, 480));
+        minutes.extend(walk(2_380, 15, 90));
+        let found = detect(&minutes);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].started_at, UnixTime(1_000));
+        assert_eq!(found[0].ended_at, UnixTime(3_280));
+    }
+
+    #[test]
+    fn a_stop_the_walk_never_pays_back_ends_it() {
+        let mut minutes = walk(1_000, 15, 90);
+        minutes.push(idle(1_900, 720));
+        minutes.extend(walk(2_620, 15, 90));
+        let found = detect(&minutes);
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].ended_at, UnixTime(1_900));
+        assert_eq!(found[1].started_at, UnixTime(2_620));
+    }
+
+    #[test]
+    fn the_steps_taken_during_a_pause_belong_to_the_walk() {
+        let mut minutes = walk(1_000, 10, 90);
+        minutes.push(minute(1_600, 20));
+        minutes.extend(walk(1_660, 10, 90));
+        let found = detect(&minutes);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].steps, 10 * 90 + 20 + 10 * 90);
+    }
+
+    #[test]
+    fn a_walk_ends_where_the_walking_did_rather_than_where_the_data_did() {
+        let mut minutes = walk(1_000, 10, 90);
+        minutes.push(idle(1_600, 420));
+        minutes.push(minute(2_020, 20));
+        let found = detect(&minutes);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].ended_at, UnixTime(1_600));
+    }
+
+    #[test]
+    fn an_afternoon_of_odd_errands_is_not_one_long_walk() {
+        let minutes: Vec<Minute> = (0..12)
+            .flat_map(|i| [minute(1_000 + i * 360, 90), idle(1_060 + i * 360, 300)])
+            .collect();
+        assert!(detect(&minutes).is_empty());
+    }
+
+    #[test]
+    fn a_stretch_with_no_windows_at_all_is_time_spent_standing_still() {
+        let mut minutes = walk(1_000, 10, 90);
+        minutes.extend(walk(2_800, 10, 90));
+        assert_eq!(detect(&minutes).len(), 2);
+    }
+
+    #[test]
+    fn a_breather_does_not_demote_a_run_to_a_walk() {
+        let mut minutes = walk(1_000, 10, 165);
+        minutes.push(idle(1_600, 480));
+        minutes.extend(walk(2_080, 10, 165));
+        let found = detect(&minutes);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].subcategory, RUN);
     }
 
     #[test]
