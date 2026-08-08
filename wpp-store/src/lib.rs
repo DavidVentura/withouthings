@@ -529,23 +529,26 @@ impl Store {
                 AND started_at + duration_secs >= ?2
               ORDER BY started_at",
         )?;
-        let rows = stmt.query_map(params![device_id, from_secs, to_secs, LONGEST_WINDOW_SECS], |r| {
-            Ok(Minute {
-                at: UnixTime(r.get(0)?),
-                duration_secs: r.get(1)?,
-                steps: r.get(2)?,
-                distance: r.get(3)?,
-                ascent: r.get(4)?,
-                descent: r.get(5)?,
-                calories: r.get(6)?,
-                met: r.get(7)?,
-                walk_level: r.get(8)?,
-                run_level: r.get(9)?,
-                reco_v1: r.get(10)?,
-                reco_v2: r.get(11)?,
-                sleep_level: r.get(12)?,
-            })
-        })?;
+        let rows = stmt.query_map(
+            params![device_id, from_secs, to_secs, LONGEST_WINDOW_SECS],
+            |r| {
+                Ok(Minute {
+                    at: UnixTime(r.get(0)?),
+                    duration_secs: r.get(1)?,
+                    steps: r.get(2)?,
+                    distance: r.get(3)?,
+                    ascent: r.get(4)?,
+                    descent: r.get(5)?,
+                    calories: r.get(6)?,
+                    met: r.get(7)?,
+                    walk_level: r.get(8)?,
+                    run_level: r.get(9)?,
+                    reco_v1: r.get(10)?,
+                    reco_v2: r.get(11)?,
+                    sleep_level: r.get(12)?,
+                })
+            },
+        )?;
         rows.collect()
     }
 
