@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.LinkState
 import dev.davidv.withoutings.ui.theme.AppTheme
 import uniffi.wpp_ffi.Activity
+import uniffi.wpp_ffi.ArmedScan
 import uniffi.wpp_ffi.HealthFeature
 import uniffi.wpp_ffi.NotificationConfig
 import uniffi.wpp_ffi.WatchScreen as WatchScreenEntry
@@ -170,8 +171,10 @@ private fun NotificationRow(config: NotificationConfig?, onChange: (Boolean) -> 
 @Composable
 fun WatchSensorsScreen(
     features: List<HealthFeature>,
+    respiratoryScan: ArmedScan?,
     saveState: SaveState,
     onApply: (List<Pair<UShort, Boolean>>) -> Unit,
+    onArmRespiratoryScan: (Boolean) -> Unit,
     onAcknowledge: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -193,6 +196,8 @@ fun WatchSensorsScreen(
                     AppToggle(on) { edits = edits + (feature.id to it) }
                 }
             }
+            if (sensors.isNotEmpty()) RowDivider(inset = 0.dp)
+            RespiratoryScanRow(respiratoryScan, onArmRespiratoryScan)
             Spacer(Modifier.height(16.dp))
         }
         val edited = edits.any { (id, on) -> sensors.first { it.id == id }.enabled != on }
@@ -211,6 +216,34 @@ fun WatchSensorsScreen(
     }
 }
 
+
+// The watch keeps the optical sensor on for the whole window, so this is armed
+// a night at a time rather than left on.
+@Composable
+private fun RespiratoryScanRow(armed: ArmedScan?, onArm: (Boolean) -> Unit) {
+    val rationale = if (armed == null) {
+        "Runs overnight, once. Lowers battery life."
+    } else {
+        "Running until ${clock(armed.endsAt * 1000)}"
+    }
+    SettingRow("Respiratory monitoring", rationale = rationale) {
+        FilledAction(
+            if (armed == null) "Scan tonight" else "Cancel",
+            shape = AppTheme.pill,
+            container = if (armed == null) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            },
+            content = if (armed == null) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            onClick = { onArm(armed == null) },
+        )
+    }
+}
 
 private fun String.saysSomethingBeyond(title: String): Boolean {
     fun squash(text: String) = text.lowercase().filter { it.isLetterOrDigit() }

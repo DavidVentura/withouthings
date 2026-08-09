@@ -264,6 +264,39 @@ pub enum Phase {
     NotAuthenticated,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FeatureId(pub u16);
+
+/// A feature the watch runs on its own schedule is permanent; one that holds a
+/// sensor on until it is done gets a window the watch expires by itself.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FeatureSchedule {
+    Permanent,
+    Window { start: UnixTime, end: UnixTime },
+}
+
+impl FeatureSchedule {
+    fn wire(self) -> (u32, u32) {
+        match self {
+            FeatureSchedule::Permanent => (0, 0),
+            FeatureSchedule::Window { start, end } => (start.0 as u32, end.0 as u32),
+        }
+    }
+
+    pub fn expired_at(self, now: UnixTime) -> bool {
+        match self {
+            FeatureSchedule::Permanent => false,
+            FeatureSchedule::Window { end, .. } => end <= now,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Feature {
+    pub id: FeatureId,
+    pub schedule: FeatureSchedule,
+}
+
 pub struct Client {
     credentials: Credentials,
     phase: Phase,
@@ -296,10 +329,15 @@ pub struct Client {
     wanted_notifications: Option<bool>,
     zone: Option<(i32, Option<DstChange>)>,
     pending_stop: Option<(UnixTime, UnixTime)>,
+    features: Vec<Feature>,
 }
 
 impl Client {
-    pub fn new(credentials: Credentials, watermarks: Vec<(Category, UnixTime)>) -> Client {
+    pub fn new(
+        credentials: Credentials,
+        watermarks: Vec<(Category, UnixTime)>,
+        features: Vec<Feature>,
+    ) -> Client {
         let stream_total = watermarks.len() as u32;
         Client {
             credentials,
@@ -333,6 +371,7 @@ impl Client {
             wanted_notifications: None,
             zone: None,
             pending_stop: None,
+            features,
         }
     }
 
@@ -628,6 +667,10 @@ impl Client {
                 {
                     actions.extend(self.set_time(UnixTime(now.0 / 1000), gmt_offset, next_change));
                 }
+                // Scheduled features are armed for one window at a time, so the
+                // set has to be re-asserted on every connection or a nightly
+                // one never runs again. The reference app does the same.
+                actions.extend(self.write_features());
                 // A workout that began while nothing was connected is
                 // undiscoverable otherwise: `CMD_WORKOUT_START` is pushed once
                 // and never replayed.
@@ -1245,6 +1288,14 @@ impl Client {
         self.notifications
     }
 
+    pub fn features(&self, now: UnixTime) -> Vec<Feature> {
+        self.features
+            .iter()
+            .filter(|f| !f.schedule.expired_at(now))
+            .copied()
+            .collect()
+    }
+
     pub fn image_formats(&self) -> &[crate::image::ImageFormat] {
         &self.image_formats
     }
@@ -1308,13 +1359,25 @@ impl Client {
 
     /// The watch has no read side for this and the write carries the whole
     /// set: anything left out is silently switched off.
-    pub fn set_features(&self, features: &[(u16, u32, u32)]) -> Vec<Action> {
+    pub fn set_features(&mut self, features: Vec<Feature>) -> Vec<Action> {
+        self.features = features;
+        self.write_features()
+    }
+
+    /// A window the watch has already run out is off, and resending it would
+    /// arm it a second time.
+    fn write_features(&mut self) -> Vec<Action> {
+        if let Some(now) = self.now {
+            let now = now.to_seconds();
+            self.features.retain(|f| !f.schedule.expired_at(now));
+        }
         let mut objects: Vec<WppObject> = vec![WppObject::Id(Id { value: 0 })];
-        objects.extend(features.iter().map(|(id, start, end)| {
+        objects.extend(self.features.iter().map(|feature| {
+            let (start_time, end_time) = feature.schedule.wire();
             WppObject::FeatureTagsDeprecated(FeatureTagsDeprecated {
-                id: *id,
-                start_time: *start,
-                end_time: *end,
+                id: feature.id.0,
+                start_time,
+                end_time,
             })
         }));
         objects.push(WppObject::Null(Null {}));
@@ -1544,7 +1607,11 @@ mod tests {
 
     #[test]
     fn connecting_probes_then_answers_the_challenge() {
-        let mut client = Client::new(credentials(), vec![(Category(8), UnixTime(1000))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category(8), UnixTime(1000))],
+            Vec::new(),
+        );
         let actions = client.handle(Event::Connected);
         assert!(matches!(actions[0], Action::Send(ref f) if f.command == Command::CMD_PROBE));
 
@@ -1570,7 +1637,11 @@ mod tests {
     }
 
     pub(super) fn authenticated() -> Client {
-        let mut client = Client::new(credentials(), vec![(Category(8), UnixTime(1000))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category(8), UnixTime(1000))],
+            Vec::new(),
+        );
         client.handle(Event::Connected);
         client.handle(Event::Frame {
             received_at: UnixMillis(0),
@@ -1796,7 +1867,11 @@ mod tests {
 
     #[test]
     fn the_body_stream_uses_its_own_command_and_no_type() {
-        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(4000))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category::BODY, UnixTime(4000))],
+            Vec::new(),
+        );
         client.handle(Event::Connected);
         client.handle(frame(
             Command::CMD_PROBE_CHALLENGE,
@@ -1831,7 +1906,11 @@ mod tests {
 
     #[test]
     fn the_activity_stream_uses_its_own_command() {
-        let mut client = Client::new(credentials(), vec![(Category::ACTIVITY, UnixTime(4000))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category::ACTIVITY, UnixTime(4000))],
+            Vec::new(),
+        );
         client.handle(Event::Connected);
         client.handle(frame(
             Command::CMD_PROBE_CHALLENGE,
@@ -1869,7 +1948,11 @@ mod tests {
             VasistasActiRecoV1V2, WamVasistasAwake, WamVasistasDuration, WamVasistasHead,
             WamVasistasMetCalEarned, WamVasistasWalk,
         };
-        let mut client = Client::new(credentials(), vec![(Category::ACTIVITY, UnixTime(0))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category::ACTIVITY, UnixTime(0))],
+            Vec::new(),
+        );
         client.handle(Event::Connected);
         client.handle(frame(Command::CMD_PROBE, vec![]));
         let actions = client.handle(frame(
@@ -1915,7 +1998,11 @@ mod tests {
     #[test]
     fn consecutive_windows_do_not_share_their_counters() {
         use crate::objects::{WamVasistasAwake, WamVasistasDuration, WamVasistasHead};
-        let mut client = Client::new(credentials(), vec![(Category::ACTIVITY, UnixTime(0))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category::ACTIVITY, UnixTime(0))],
+            Vec::new(),
+        );
         client.handle(Event::Connected);
         client.handle(frame(Command::CMD_PROBE, vec![]));
         let actions = client.handle(frame(
@@ -1951,7 +2038,11 @@ mod tests {
 
     #[test]
     fn nothing_is_asked_for_before_the_probe_completes() {
-        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(0))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category::BODY, UnixTime(0))],
+            Vec::new(),
+        );
         let actions = client.handle(Event::Connected);
         assert_eq!(sent(&actions), vec![Command::CMD_PROBE]);
     }
@@ -1976,7 +2067,11 @@ mod tests {
     #[test]
     fn a_finished_sync_can_be_run_again_from_where_it_left_off() {
         use crate::objects::{Null, VasistasHeartrate, WamVasistasHead};
-        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(4000))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category::BODY, UnixTime(4000))],
+            Vec::new(),
+        );
         client.handle(Event::Connected);
         client.handle(frame(
             Command::CMD_PROBE_CHALLENGE,
@@ -2237,23 +2332,143 @@ mod tests {
         );
     }
 
+    fn permanent(id: u16) -> Feature {
+        Feature {
+            id: FeatureId(id),
+            schedule: FeatureSchedule::Permanent,
+        }
+    }
+
+    fn tags(actions: &[Action]) -> Vec<FeatureTagsDeprecated> {
+        actions
+            .iter()
+            .filter_map(|a| match a {
+                Action::Send(f) if f.command == Command::CMD_FEATURE_TAGS_SET_DEPRECATED_V2 => {
+                    Some(f)
+                }
+                _ => None,
+            })
+            .flat_map(|f| {
+                f.objects.iter().filter_map(|o| match o {
+                    WppObject::FeatureTagsDeprecated(t) => Some(t.clone()),
+                    _ => None,
+                })
+            })
+            .collect()
+    }
+
     #[test]
     fn a_feature_write_carries_the_whole_set() {
-        let client = authenticated();
-        let actions = client.set_features(&[(14, 0, 0), (17, 0, 0), (9, 100, 200)]);
+        let mut client = authenticated();
+        let actions = client.set_features(vec![
+            permanent(14),
+            permanent(17),
+            Feature {
+                id: FeatureId(9),
+                schedule: FeatureSchedule::Window {
+                    start: UnixTime(100),
+                    end: UnixTime(200),
+                },
+            },
+        ]);
         let Action::Send(frame) = &actions[0] else {
             panic!()
         };
-        let ids: Vec<u16> = frame
-            .objects
-            .iter()
-            .filter_map(|o| match o {
-                WppObject::FeatureTagsDeprecated(t) => Some(t.id),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(ids, vec![14, 17, 9]);
+        assert!(matches!(frame.objects.first(), Some(WppObject::Id(_))));
         assert!(matches!(frame.objects.last(), Some(WppObject::Null(_))));
+        assert_eq!(
+            tags(&actions),
+            vec![
+                FeatureTagsDeprecated {
+                    id: 14,
+                    start_time: 0,
+                    end_time: 0
+                },
+                FeatureTagsDeprecated {
+                    id: 17,
+                    start_time: 0,
+                    end_time: 0
+                },
+                FeatureTagsDeprecated {
+                    id: 9,
+                    start_time: 100,
+                    end_time: 200
+                },
+            ]
+        );
+    }
+
+    /// The window is armed one night at a time and the watch only ever hears
+    /// about it on connect, so a connection that brings nothing new still has
+    /// to restate the set.
+    #[test]
+    fn the_set_is_restated_on_every_connection() {
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category(8), UnixTime(1000))],
+            vec![permanent(20)],
+        );
+        client.handle(Event::Connected);
+        client.handle(Event::Frame {
+            received_at: UnixMillis(0),
+            frame: Frame::new(
+                Command::CMD_PROBE_CHALLENGE,
+                vec![WppObject::ProbeChallenge(ProbeChallenge {
+                    mac: "a4:7e:fa:44:d6:10".to_string(),
+                    challenge: vec![1; 16],
+                })],
+            ),
+        });
+        let actions = client.handle(Event::Frame {
+            received_at: UnixMillis(0),
+            frame: Frame::new(Command::CMD_PROBE, Vec::new()),
+        });
+        assert_eq!(
+            tags(&actions),
+            vec![FeatureTagsDeprecated {
+                id: 20,
+                start_time: 0,
+                end_time: 0
+            }]
+        );
+    }
+
+    #[test]
+    fn a_window_the_watch_has_run_out_is_not_armed_again() {
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category(8), UnixTime(1000))],
+            vec![
+                permanent(20),
+                Feature {
+                    id: FeatureId(9),
+                    schedule: FeatureSchedule::Window {
+                        start: UnixTime(100),
+                        end: UnixTime(200),
+                    },
+                },
+            ],
+        );
+        client.handle(Event::Connected);
+        client.handle(Event::Frame {
+            received_at: UnixMillis(300_000),
+            frame: Frame::new(
+                Command::CMD_PROBE_CHALLENGE,
+                vec![WppObject::ProbeChallenge(ProbeChallenge {
+                    mac: "a4:7e:fa:44:d6:10".to_string(),
+                    challenge: vec![1; 16],
+                })],
+            ),
+        });
+        let actions = client.handle(Event::Frame {
+            received_at: UnixMillis(300_000),
+            frame: Frame::new(Command::CMD_PROBE, Vec::new()),
+        });
+        assert_eq!(
+            tags(&actions).iter().map(|t| t.id).collect::<Vec<_>>(),
+            vec![20]
+        );
+        assert_eq!(client.features(UnixTime(300)), vec![permanent(20)]);
     }
 
     #[test]
@@ -2347,7 +2562,11 @@ mod tests {
     #[test]
     fn a_refused_challenge_ends_in_not_authenticated() {
         use crate::objects::Cmderror;
-        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(0))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category::BODY, UnixTime(0))],
+            Vec::new(),
+        );
         client.handle(Event::Connected);
         client.handle(frame(
             Command::CMD_PROBE_CHALLENGE,
@@ -2368,7 +2587,11 @@ mod tests {
     #[test]
     fn a_probe_answered_without_a_challenge_still_starts_the_sync() {
         use crate::objects::ProbeReply;
-        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(0))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category::BODY, UnixTime(0))],
+            Vec::new(),
+        );
         client.handle(Event::Connected);
         assert_eq!(client.phase(), Phase::Probing);
 
@@ -2390,7 +2613,11 @@ mod tests {
     #[test]
     fn not_auth_for_another_command_does_not_abort_the_handshake() {
         use crate::objects::Cmderror;
-        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(0))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category::BODY, UnixTime(0))],
+            Vec::new(),
+        );
         client.handle(Event::Connected);
 
         client.handle(frame(
@@ -2416,7 +2643,11 @@ mod tests {
     #[test]
     fn the_daily_totals_are_asked_for_once_the_walk_is_done() {
         use crate::objects::Null;
-        let mut client = Client::new(credentials(), vec![(Category::BODY, UnixTime(0))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category::BODY, UnixTime(0))],
+            Vec::new(),
+        );
         client.handle(Event::Connected);
         client.handle(frame(
             Command::CMD_PROBE_CHALLENGE,
@@ -2575,7 +2806,7 @@ mod tests {
     #[test]
     fn the_clock_is_put_right_as_soon_as_the_watch_will_answer() {
         use crate::objects::{ProbeChallenge, ProbeReply, TimeSet};
-        let mut client = Client::new(credentials(), Vec::new());
+        let mut client = Client::new(credentials(), Vec::new(), Vec::new());
         client.set_zone(7200, None);
         client.handle(Event::Connected);
 
@@ -3009,6 +3240,7 @@ mod tests {
                 (Category(11), UnixTime(1_000)),
                 (Category(6), UnixTime(1_000)),
             ],
+            Vec::new(),
         );
         client.handle(Event::Connected);
         client.handle(frame(
@@ -3115,7 +3347,11 @@ mod tests {
     fn a_scripted_session_reaches_the_expected_end_state() {
         use crate::objects::{Null, VasistasCbt, VasistasHeartrate, WamVasistasHead};
 
-        let mut client = Client::new(credentials(), vec![(Category(8), UnixTime(4000))]);
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category(8), UnixTime(4000))],
+            Vec::new(),
+        );
         assert_eq!(client.phase(), Phase::Idle);
 
         let actions = client.handle(Event::Connected);
@@ -3148,7 +3384,11 @@ mod tests {
         let actions = client.handle(frame(Command::CMD_PROBE, vec![]));
         assert_eq!(
             sent(&actions),
-            vec![Command::CMD_WORKOUT_STATUS, Command::CMD_VASISTAS_GET]
+            vec![
+                Command::CMD_FEATURE_TAGS_SET_DEPRECATED_V2,
+                Command::CMD_WORKOUT_STATUS,
+                Command::CMD_VASISTAS_GET
+            ]
         );
         assert_eq!(client.phase(), Phase::Syncing);
         assert_eq!(client.current(), Some((Category(8), UnixTime(4000))));

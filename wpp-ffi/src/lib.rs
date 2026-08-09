@@ -3,7 +3,9 @@ use std::sync::Mutex;
 use wpp::activity;
 use wpp::ancs::{self, NotificationCenter, NotificationId};
 use wpp::capture::{FrameReassembler, StreamItem};
-use wpp::client::{Action, Category, Client, Credentials, Event, Phase};
+use wpp::client::{
+    Action, Category, Client, Credentials, Event, Feature, FeatureId, FeatureSchedule, Phase,
+};
 use wpp::image::{GlyphRequest, IconRequest, Mono};
 use wpp::pairing::{Pairing, PairingState};
 use wpp::units::{Celsius, Millivolts, UnixMillis, UnixTime};
@@ -221,6 +223,13 @@ pub struct HealthFeature {
     pub name: String,
     pub description: String,
     pub enabled: bool,
+}
+
+/// A scan the watch runs for one night and then stops, reported as the unix
+/// second its window ends.
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct ArmedScan {
+    pub ends_at: i64,
 }
 
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
@@ -497,7 +506,6 @@ pub struct WatchService {
     ancs: Box<dyn AncsLink>,
     rasterizer: Box<dyn Rasterizer>,
     device_id: i64,
-    features: Mutex<Vec<(u16, u32, u32)>>,
     notifications: Mutex<NotificationCenter>,
 }
 
@@ -512,10 +520,11 @@ impl WatchService {
         ancs: Box<dyn AncsLink>,
         rasterizer: Box<dyn Rasterizer>,
     ) -> Result<Self, WatchError> {
-        let store = Store::open(&db_path)?;
+        let mut store = Store::open(&db_path)?;
         let device_id = store.device(&mac)?;
         let watermarks = store.watermarks(device_id, &CATEGORIES)?;
-        let client = Client::new(Credentials { mac, secret }, watermarks);
+        let features = store.features_or_seed(device_id, &default_features())?;
+        let client = Client::new(Credentials { mac, secret }, watermarks, features);
         Ok(WatchService {
             inner: Mutex::new(Inner {
                 client,
@@ -526,7 +535,6 @@ impl WatchService {
             ancs,
             rasterizer,
             device_id,
-            features: Mutex::new(DEFAULT_FEATURES.iter().map(|id| (*id, 0, 0)).collect()),
             notifications: Mutex::new(NotificationCenter::new()),
         })
     }
@@ -1058,29 +1066,62 @@ impl WatchService {
     }
 
     pub fn health_features(&self) -> Vec<HealthFeature> {
-        let enabled = self.features.lock().unwrap().clone();
+        let enabled = self.enabled_features();
         HEALTH_FEATURES
             .iter()
             .map(|(id, name, description)| HealthFeature {
                 id: *id,
                 name: name.to_string(),
                 description: description.to_string(),
-                enabled: enabled.iter().any(|(known, _, _)| known == id),
+                enabled: enabled.iter().any(|f| f.id == FeatureId(*id)),
             })
             .collect()
     }
 
     pub fn set_health_feature(&self, id: u16, enabled: bool) -> Result<(), WatchError> {
-        let features = {
-            let mut features = self.features.lock().unwrap();
-            features.retain(|(known, _, _)| *known != id);
-            if enabled {
-                features.push((id, 0, 0));
-            }
-            features.clone()
-        };
-        let actions = self.inner.lock().unwrap().client.set_features(&features);
-        self.dispatch(actions)
+        let id = FeatureId(id);
+        let mut features = self.enabled_features();
+        features.retain(|f| f.id != id);
+        if enabled {
+            features.push(Feature {
+                id,
+                schedule: FeatureSchedule::Permanent,
+            });
+        }
+        self.commit_features(features)
+    }
+
+    /// Reports the respiratory scan's window if one is still running. The scan
+    /// is never left on: it is armed a night at a time, so a caller that wants
+    /// another one calls [`WatchService::arm_respiratory_scan`] again.
+    pub fn respiratory_scan(&self) -> Option<ArmedScan> {
+        self.enabled_features()
+            .iter()
+            .find(|f| f.id == RESPIRATORY_SCAN_MONITORING)
+            .and_then(|f| match f.schedule {
+                FeatureSchedule::Window { end, .. } => Some(ArmedScan { ends_at: end.0 }),
+                FeatureSchedule::Permanent => None,
+            })
+    }
+
+    pub fn arm_respiratory_scan(&self) -> Result<(), WatchError> {
+        let start = now_seconds();
+        let mut features = self.enabled_features();
+        features.retain(|f| f.id != RESPIRATORY_SCAN_MONITORING);
+        features.push(Feature {
+            id: RESPIRATORY_SCAN_MONITORING,
+            schedule: FeatureSchedule::Window {
+                start,
+                end: UnixTime(start.0 + SCAN_WINDOW_SECS),
+            },
+        });
+        self.commit_features(features)
+    }
+
+    pub fn cancel_respiratory_scan(&self) -> Result<(), WatchError> {
+        let mut features = self.enabled_features();
+        features.retain(|f| f.id != RESPIRATORY_SCAN_MONITORING);
+        self.commit_features(features)
     }
 
     pub fn notification_config(&self) -> Option<NotificationConfig> {
@@ -1415,12 +1456,28 @@ fn screen_name(id: u8) -> String {
         .unwrap_or_else(|| format!("Screen {id}"))
 }
 
+/// `FEATURE_ID_RESPIRATORY_SCAN_MONITORING`. It holds the optical sensor on
+/// through the night, and the reference app never sends it permanent: it is
+/// the one id in the whole capture that arrives with a window.
+const RESPIRATORY_SCAN_MONITORING: FeatureId = FeatureId(9);
+
+const SCAN_WINDOW_SECS: i64 = 24 * 60 * 60;
+
 /// The message carries the whole enabled set, so an id left out is switched
 /// off. Omitting 100 and 105 coincided with the activity stream going
-/// silent, so they are carried though nothing names them.
-const DEFAULT_FEATURES: &[u16] = &[
-    3, 5, 9, 10, 11, 14, 17, 19, 20, 27, 53, 71, 88, 100, 105, 113,
-];
+/// silent, so they are carried though nothing names them. 9 is absent
+/// deliberately — see [`RESPIRATORY_SCAN_MONITORING`].
+const DEFAULT_FEATURES: &[u16] = &[3, 5, 10, 11, 14, 17, 19, 20, 27, 53, 71, 88, 100, 105, 113];
+
+fn default_features() -> Vec<Feature> {
+    DEFAULT_FEATURES
+        .iter()
+        .map(|id| Feature {
+            id: FeatureId(*id),
+            schedule: FeatureSchedule::Permanent,
+        })
+        .collect()
+}
 
 const HEALTH_FEATURES: &[(u16, &str, &str)] = &[
     (17, "Signs of AFib", "Monitor for irregular heartbeat"),
@@ -1436,11 +1493,6 @@ const HEALTH_FEATURES: &[(u16, &str, &str)] = &[
         11,
         "Respiratory scan (smart)",
         "Choose when to measure automatically",
-    ),
-    (
-        9,
-        "Respiratory monitoring",
-        "Continuous respiratory monitoring",
     ),
     (71, "Body temperature", "Skin and core temperature"),
     (27, "Electrocardiogram", "On-demand ECG recording"),
@@ -1573,7 +1625,27 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+fn now_seconds() -> UnixTime {
+    UnixMillis(now_ms()).to_seconds()
+}
+
 impl WatchService {
+    fn enabled_features(&self) -> Vec<Feature> {
+        self.inner.lock().unwrap().client.features(now_seconds())
+    }
+
+    /// The store is the only record of the set, so it is written before the
+    /// watch: a write that never reaches the watch is re-asserted on the next
+    /// connection, where the reverse would lose the change entirely.
+    fn commit_features(&self, features: Vec<Feature>) -> Result<(), WatchError> {
+        self.store
+            .lock()
+            .unwrap()
+            .set_features(self.device_id, &features)?;
+        let actions = self.inner.lock().unwrap().client.set_features(features);
+        self.dispatch(actions)
+    }
+
     fn dispatch(&self, actions: Vec<Action>) -> Result<(), WatchError> {
         let mut actions: std::collections::VecDeque<Action> = actions.into();
         let mut changed = false;

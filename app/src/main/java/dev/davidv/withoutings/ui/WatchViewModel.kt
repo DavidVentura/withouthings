@@ -35,6 +35,7 @@ import uniffi.wpp_ffi.Night
 import uniffi.wpp_ffi.Snapshot
 import uniffi.wpp_ffi.Activity
 import uniffi.wpp_ffi.ActivityTotals
+import uniffi.wpp_ffi.ArmedScan
 import uniffi.wpp_ffi.HealthFeature
 import uniffi.wpp_ffi.Point
 import uniffi.wpp_ffi.WearPosition
@@ -75,6 +76,7 @@ data class UiState(
     val wearPosition: WearPosition = WearPosition.NOT_SET,
     val activities: List<Activity> = emptyList(),
     val features: List<HealthFeature> = emptyList(),
+    val respiratoryScan: ArmedScan? = null,
     val notifications: NotificationConfig? = null,
     val hrWindow: LongRange = 0L..0L,
     val workoutTemp: List<ChartPoint> = emptyList(),
@@ -338,6 +340,7 @@ class WatchViewModel : ViewModel() {
             wearPosition = service.wearPosition(),
             activities = service.activities(),
             features = service.healthFeatures(),
+            respiratoryScan = service.respiratoryScan(),
             notifications = service.notificationConfig(),
             metricBaseline = service
                 .series(style.metric, now - BASELINE_MS, now, MAX_CHART_POINTS)
@@ -578,6 +581,20 @@ class WatchViewModel : ViewModel() {
             confirm = null,
             unconfirmed = "",
         )
+    }
+
+    // Arming is an action rather than an edit: it takes effect on its own and
+    // does not close the screen the way the save footer does.
+    fun setRespiratoryScan(armed: Boolean) {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    if (armed) service.armRespiratoryScan() else service.cancelRespiratoryScan()
+                }.onFailure { Log.w(TAG, "respiratory scan: the write failed", it) }
+            }
+            refresh()
+        }
     }
 
     fun applyUser(birthSecs: Long, weightGrams: UInt, heightCm: UInt) {

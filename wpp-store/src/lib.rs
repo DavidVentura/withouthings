@@ -4,7 +4,9 @@ use std::collections::{BTreeSet, HashMap};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use wpp::activity::Minute;
-use wpp::client::{Category, DeviceIdentity, Record, Source, UserProfile};
+use wpp::client::{
+    Category, DeviceIdentity, Feature, FeatureId, FeatureSchedule, Record, Source, UserProfile,
+};
 use wpp::signal::Signal;
 use wpp::units::UnixTime;
 
@@ -102,6 +104,75 @@ impl Store {
                 },
             )
             .optional()
+    }
+
+    /// The watch cannot be asked what it is running, so a device that has never
+    /// been told anything is given the defaults here rather than being left
+    /// with whatever a previous owner of the pairing set.
+    pub fn features_or_seed(
+        &mut self,
+        device_id: i64,
+        defaults: &[Feature],
+    ) -> Result<Vec<Feature>, Error> {
+        let seeded: bool = self.conn.query_row(
+            "SELECT features_seeded FROM device WHERE id = ?1",
+            params![device_id],
+            |r| r.get(0),
+        )?;
+        if seeded {
+            return self.features(device_id);
+        }
+        self.set_features(device_id, defaults)?;
+        self.conn.execute(
+            "UPDATE device SET features_seeded = 1 WHERE id = ?1",
+            params![device_id],
+        )?;
+        self.features(device_id)
+    }
+
+    pub fn features(&self, device_id: i64) -> Result<Vec<Feature>, Error> {
+        self.conn
+            .prepare(
+                "SELECT feature_id, starts_at, expires_at
+                   FROM feature WHERE device_id = ?1 ORDER BY feature_id",
+            )?
+            .query_map(params![device_id], |r| {
+                let (id, starts_at, expires_at): (u16, i64, i64) =
+                    (r.get(0)?, r.get(1)?, r.get(2)?);
+                Ok(Feature {
+                    id: FeatureId(id),
+                    schedule: match expires_at {
+                        0 => FeatureSchedule::Permanent,
+                        end => FeatureSchedule::Window {
+                            start: UnixTime(starts_at),
+                            end: UnixTime(end),
+                        },
+                    },
+                })
+            })?
+            .collect()
+    }
+
+    /// The write the watch takes carries the whole set, so this replaces rather
+    /// than merges: the table has to be able to say a feature is off.
+    pub fn set_features(&mut self, device_id: i64, features: &[Feature]) -> Result<(), Error> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "DELETE FROM feature WHERE device_id = ?1",
+            params![device_id],
+        )?;
+        for feature in features {
+            let (starts_at, expires_at) = match feature.schedule {
+                FeatureSchedule::Permanent => (0, 0),
+                FeatureSchedule::Window { start, end } => (start.0, end.0),
+            };
+            tx.execute(
+                "INSERT INTO feature (device_id, feature_id, starts_at, expires_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![device_id, feature.id.0, starts_at, expires_at],
+            )?;
+        }
+        tx.commit()
     }
 
     pub fn store(&mut self, device_id: i64, records: &[Record]) -> Result<(), Error> {
@@ -788,6 +859,43 @@ mod tests {
             window_secs: Some(60),
             context: None,
         }
+    }
+
+    fn permanent(id: u16) -> Feature {
+        Feature {
+            id: FeatureId(id),
+            schedule: FeatureSchedule::Permanent,
+        }
+    }
+
+    #[test]
+    fn a_scheduled_feature_keeps_its_window_across_the_round_trip() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let armed = Feature {
+            id: FeatureId(9),
+            schedule: FeatureSchedule::Window {
+                start: UnixTime(100),
+                end: UnixTime(86_500),
+            },
+        };
+        store.set_features(device, &[permanent(20), armed]).unwrap();
+        assert_eq!(store.features(device).unwrap(), vec![armed, permanent(20)]);
+    }
+
+    #[test]
+    fn the_defaults_are_seeded_once_and_an_emptied_set_stays_empty() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let defaults = vec![permanent(20), permanent(27)];
+
+        assert_eq!(store.features_or_seed(device, &defaults).unwrap(), defaults);
+
+        store.set_features(device, &[]).unwrap();
+        assert!(store
+            .features_or_seed(device, &defaults)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

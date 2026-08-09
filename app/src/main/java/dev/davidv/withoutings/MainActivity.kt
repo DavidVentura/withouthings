@@ -374,8 +374,10 @@ private fun Navigation(
             composable(Routes.WATCH_SENSORS) {
                 WatchSensorsScreen(
                     features = state.features,
+                    respiratoryScan = state.respiratoryScan,
                     saveState = saving,
                     onApply = { model.applyFeatures(it) },
+                    onArmRespiratoryScan = { model.setRespiratoryScan(it) },
                     onAcknowledge = { model.acknowledgeSave() },
                     onBack = { nav.popBackStack() },
                 )

@@ -53,6 +53,7 @@ fn main() -> ExitCode {
             secret: String::new(),
         },
         watermarks,
+        store.features(device).expect("features"),
     );
 
     let (mut sends, mut deletes, mut batches, mut records) = (0usize, 0usize, 0usize, 0usize);
