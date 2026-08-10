@@ -421,3 +421,71 @@ fn reducing_a_series_for_drawing_keeps_peaks_and_troughs() {
 
     cleanup(&path);
 }
+
+#[test]
+fn a_toggle_and_save_leaves_an_armed_scan_alone() {
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+
+    service.arm_respiratory_scan().unwrap();
+    let armed = service.respiratory_scan().expect("armed");
+
+    // What the sensors screen does on save: one call per changed row.
+    service.set_health_feature(27, false).unwrap();
+    recorder.written.lock().unwrap().clear();
+    service.set_health_feature(27, true).unwrap();
+
+    assert_eq!(service.respiratory_scan(), Some(armed.clone()));
+    assert!(
+        service
+            .health_features()
+            .iter()
+            .any(|f| f.id == 27 && f.enabled),
+        "the toggled feature came back on"
+    );
+
+    // A set this long does not fit one frame, so the write arrives split the
+    // way the reference app splits it.
+    let sent: Vec<(u16, u32, u32)> = recorder
+        .written
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|buf| wpp::Frame::parse(buf).ok())
+        .inspect(|f| {
+            assert_eq!(
+                f.command.opcode(),
+                wpp::Command::CMD_FEATURE_TAGS_SET_DEPRECATED_V2.0
+            )
+        })
+        .flat_map(|f| {
+            f.objects
+                .iter()
+                .filter_map(|o| match o {
+                    wpp::WppObject::FeatureTagsDeprecated(t) => {
+                        Some((t.id, t.start_time, t.end_time))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let scan = sent
+        .iter()
+        .find(|(id, _, _)| *id == 9)
+        .expect("the scan is still in the set that went to the watch");
+    assert_eq!(scan.2 as i64, armed.ends_at);
+    assert!(scan.1 > 0, "and still as a window, not permanent");
+    assert!(sent.iter().any(|(id, _, _)| *id == 27), "as is the toggle");
+
+    drop(service);
+    let service = service_at(&recorder, path.clone());
+    assert_eq!(
+        service.respiratory_scan(),
+        Some(armed),
+        "and it survives a restart"
+    );
+
+    drop(service);
+    cleanup(&path);
+}

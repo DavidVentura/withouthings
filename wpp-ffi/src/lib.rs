@@ -1464,10 +1464,10 @@ const RESPIRATORY_SCAN_MONITORING: FeatureId = FeatureId(9);
 const SCAN_WINDOW_SECS: i64 = 24 * 60 * 60;
 
 /// The message carries the whole enabled set, so an id left out is switched
-/// off. Omitting 100 and 105 coincided with the activity stream going
-/// silent, so they are carried though nothing names them. 9 is absent
-/// deliberately — see [`RESPIRATORY_SCAN_MONITORING`].
-const DEFAULT_FEATURES: &[u16] = &[3, 5, 10, 11, 14, 17, 19, 20, 27, 53, 71, 88, 100, 105, 113];
+/// off. This is what the reference app sends, minus 9, which is armed a window
+/// at a time instead — see [`RESPIRATORY_SCAN_MONITORING`]. 88 and 113 have no
+/// constant in the APK but the reference app sends them, so they are carried.
+const DEFAULT_FEATURES: &[u16] = &[3, 5, 10, 11, 14, 17, 19, 20, 27, 53, 71, 88, 113];
 
 fn default_features() -> Vec<Feature> {
     DEFAULT_FEATURES

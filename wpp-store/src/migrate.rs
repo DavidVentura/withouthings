@@ -13,6 +13,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0007_watch_user.sql"),
     include_str!("migrations/0008_ecg_measure.sql"),
     include_str!("migrations/0009_feature.sql"),
+    include_str!("migrations/0010_drop_unnamed_features.sql"),
 ];
 
 pub fn run(conn: &Connection) -> Result<(), Error> {
