@@ -67,11 +67,12 @@ fun ActivityDetailScreen(
             return@DetailScaffold
         }
 
-        SummaryRail(hr, temperature)
+        FigureRail(summaryFigures(hr, temperature))
 
-        if (totals != null && totals.steps > 0) {
+        val effort = effortFigures(totals, entry.calories)
+        if (effort.isNotEmpty()) {
             RowDivider(inset = 0.dp)
-            StepRail(totals)
+            FigureRail(effort)
         }
 
         ChartTitle("Heart rate")
@@ -146,45 +147,39 @@ fun ActivityDetailScreen(
     )
 }
 
-@Composable
-private fun SummaryRail(hr: List<ChartPoint>, temperature: List<ChartPoint>) {
+private data class Figure(val eyebrow: String, val value: String, val unit: String)
+
+private fun summaryFigures(hr: List<ChartPoint>, temperature: List<ChartPoint>): List<Figure> {
     val rise = temperatureRise(temperature)
-    Row(
-        Modifier.fillMaxWidth().height(64.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SummaryFigure(
-            "peak",
-            hr.maxOfOrNull { it.value }?.toInt()?.toString() ?: "—",
-            "bpm",
-            Modifier.weight(1f),
-        )
-        RailRule()
-        SummaryFigure(
-            "average",
-            mean(hr)?.toInt()?.toString() ?: "—",
-            "bpm",
-            Modifier.weight(1f),
-        )
-        RailRule()
-        SummaryFigure(
+    return listOf(
+        Figure("peak", hr.maxOfOrNull { it.value }?.toInt()?.toString() ?: "—", "bpm"),
+        Figure("average", mean(hr)?.toInt()?.toString() ?: "—", "bpm"),
+        Figure(
             "temp rise",
             rise?.let { (if (it >= 0) "+" else "−") + grouped(abs(it), 1) } ?: "—",
             "°C",
-            Modifier.weight(1f),
-        )
+        ),
+    )
+}
+
+private fun effortFigures(totals: ActivityTotals?, calories: Double?): List<Figure> = buildList {
+    if (totals != null && totals.steps > 0) {
+        add(Figure("steps", grouped(totals.steps), ""))
+        add(Figure("climbed", grouped(totals.ascentMetres, 0), "m"))
     }
+    if (calories != null) add(Figure("energy", grouped(calories, 0), "kcal"))
 }
 
 @Composable
-private fun StepRail(totals: ActivityTotals) {
+private fun FigureRail(figures: List<Figure>) {
     Row(
         Modifier.fillMaxWidth().height(64.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SummaryFigure("steps", grouped(totals.steps), "", Modifier.weight(1f))
-        RailRule()
-        SummaryFigure("climbed", grouped(totals.ascentMetres, 0), "m", Modifier.weight(1f))
+        figures.forEachIndexed { index, figure ->
+            if (index > 0) RailRule()
+            SummaryFigure(figure.eyebrow, figure.value, figure.unit, Modifier.weight(1f))
+        }
     }
 }
 

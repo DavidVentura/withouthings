@@ -106,6 +106,24 @@ fun attribution(span: Span, sessions: List<Session>): Session? = sessions
 private fun overlapMs(a: Span, b: Span): Long =
     (minOf(a.toMs, b.toMs) - maxOf(a.fromMs, b.fromMs)).coerceAtLeast(0)
 
+// A workout the wearer started is the better account of the stretch it covers,
+// so the step detector's take on the same minutes is dropped rather than added
+// to it.
+fun activeCalories(entries: List<ActivityEntry>, nowMs: Long): Double {
+    val recorded = entries.filterIsInstance<RecordedEntry>()
+    val started = recorded.map { spanOf(it, nowMs) }
+    val detected = entries.filterIsInstance<DetectedEntry>()
+        .filterNot { entry -> started.any { it.overlaps(spanOf(entry, nowMs)) } }
+    return (recorded + detected).sumOf { it.calories ?: 0.0 }
+}
+
+private fun spanOf(entry: ActivityEntry, nowMs: Long) =
+    Span(entry.startedAtMs, entry.endedAtMs ?: nowMs)
+
+fun caloriesByDay(entries: List<ActivityEntry>, nowMs: Long): Map<Long, Double> =
+    entries.groupBy { dayStart(it.startedAtMs) }
+        .mapValues { (_, ofDay) -> activeCalories(ofDay, nowMs) }
+
 fun timeAbove(spells: List<Spell>): Long = spells.sumOf { it.span.durationMs }
 
 fun unattributedTime(spells: List<Spell>): Long =

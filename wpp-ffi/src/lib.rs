@@ -6,9 +6,10 @@ use wpp::capture::{FrameReassembler, StreamItem};
 use wpp::client::{
     Action, Category, Client, Credentials, Event, Feature, FeatureId, FeatureSchedule, Phase,
 };
+use wpp::energy::{self, Beat, Wearer};
 use wpp::image::{GlyphRequest, IconRequest, Mono};
 use wpp::pairing::{Pairing, PairingState};
-use wpp::units::{Celsius, Millivolts, UnixMillis, UnixTime};
+use wpp::units::{Bpm, Celsius, Millivolts, UnixMillis, UnixTime};
 use wpp::Frame;
 use wpp_store::Store;
 
@@ -155,6 +156,9 @@ pub struct WorkoutSummary {
     pub ended_at_ms: Option<i64>,
     pub subcategory: i32,
     pub activity: String,
+    /// Estimated from heart rate: the watch reports calories only for the
+    /// motion it counts as steps, which a workout on the spot never is.
+    pub calories: Option<f64>,
 }
 
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
@@ -683,13 +687,14 @@ impl WatchService {
             )
         };
         let progress_phase = phase;
+        let wearer = store.watch_user(self.device_id)?;
         Ok(Snapshot {
             progress: progress_phase,
-            user: store.watch_user(self.device_id)?.map(|user| UserProfile {
+            user: wearer.as_ref().map(|user| UserProfile {
                 birth_secs: user.birth as i64,
                 weight_grams: user.weight,
                 height_cm: user.height,
-                first_name: user.first_name,
+                first_name: user.first_name.clone(),
             }),
             device: store
                 .identity(self.device_id)?
@@ -725,15 +730,23 @@ impl WatchService {
                 count: value as u32,
                 day_start_ms: at,
             }),
-            active_workout: store
-                .active_workout(self.device_id)?
-                .map(|active| WorkoutSummary {
+            active_workout: match store.active_workout(self.device_id)? {
+                None => None,
+                Some(active) => Some(WorkoutSummary {
                     id: active.id,
                     started_at_ms: active.started_at.0 * 1000,
                     ended_at_ms: None,
                     subcategory: active.subcategory as i32,
                     activity: activity_name(active.subcategory as u32),
+                    calories: workout_calories(
+                        &store,
+                        self.device_id,
+                        wearer.as_ref(),
+                        active.started_at.0 * 1000,
+                        now_ms(),
+                    )?,
                 }),
+            },
             pending_deletes: pending,
             sync: progress,
             measuring,
@@ -813,17 +826,29 @@ impl WatchService {
 
     pub fn workouts(&self, limit: u32) -> Result<Vec<WorkoutSummary>, WatchError> {
         let store = self.store.lock().unwrap();
-        Ok(store
+        let user = store.watch_user(self.device_id)?;
+        store
             .workouts(self.device_id, limit)?
             .into_iter()
-            .map(|(id, start, end, sub)| WorkoutSummary {
-                id,
-                started_at_ms: start * 1000,
-                ended_at_ms: end.map(|e| e * 1000),
-                subcategory: sub as i32,
-                activity: activity_name(sub as u32),
+            .map(|(id, start, end, sub)| {
+                let started_at_ms = start * 1000;
+                let ended_at_ms = end.map(|e| e * 1000);
+                Ok(WorkoutSummary {
+                    id,
+                    started_at_ms,
+                    ended_at_ms,
+                    subcategory: sub as i32,
+                    activity: activity_name(sub as u32),
+                    calories: workout_calories(
+                        &store,
+                        self.device_id,
+                        user.as_ref(),
+                        started_at_ms,
+                        ended_at_ms.unwrap_or_else(now_ms),
+                    )?,
+                })
             })
-            .collect())
+            .collect()
     }
 
     pub fn delete_workout(&self, id: i64) -> Result<(), WatchError> {
@@ -1616,6 +1641,28 @@ fn activity_name(id: u32) -> String {
         .find(|(known, _)| *known == id)
         .map(|(_, name)| name.to_string())
         .unwrap_or_else(|| format!("Activity {id}"))
+}
+
+fn workout_calories(
+    store: &Store,
+    device_id: i64,
+    user: Option<&wpp::client::UserProfile>,
+    from_ms: i64,
+    to_ms: i64,
+) -> Result<Option<f64>, WatchError> {
+    let Some(wearer) = user.and_then(|user| Wearer::of(user, UnixMillis(from_ms).to_seconds()))
+    else {
+        return Ok(None);
+    };
+    let beats: Vec<Beat> = store
+        .samples_between(device_id, Metric::HeartRate.kind(), from_ms, to_ms)?
+        .into_iter()
+        .map(|(at, bpm)| Beat {
+            at: UnixMillis(at),
+            rate: Bpm(bpm as u16),
+        })
+        .collect();
+    Ok(Some(energy::burned(wearer, &beats).0))
 }
 
 fn now_ms() -> i64 {

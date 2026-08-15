@@ -84,7 +84,10 @@ fun ActivitiesScreen(
             return@Column
         }
 
+        // Both figures cover the whole day, so the chip filter narrows the rows
+        // under a heading without changing what the heading accounts for.
         val byDay = shown.groupBy { dayStart(it.atMs) }
+        val dailyCalories = caloriesByDay(entries, nowMs)
         LazyColumn(
             Modifier.weight(1f).navigationBarsPadding(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -96,7 +99,7 @@ fun ActivitiesScreen(
             byDay.forEach { (day, dayItems) ->
                 item(key = "head-$day") {
                     Eyebrow(
-                        dayHeading(day, dayItems, dailySteps[day], nowMs),
+                        dayHeading(day, dayItems, dailySteps[day], dailyCalories[day], nowMs),
                         Modifier.padding(top = 14.dp, bottom = 4.dp),
                         style = AppTheme.type.eyebrowLarge,
                     )
@@ -140,12 +143,23 @@ private fun ecgMeta(summary: EcgSummary): String = listOfNotNull(
 
 private const val STANDARD_ECG_SECONDS = 30
 
-private fun dayHeading(dayMs: Long, items: List<Item>, steps: Long?, nowMs: Long): String {
-    val name = dayName(dayMs, nowMs)
-    if (steps == null || steps <= 0) {
-        return "$name · ${items.size} recorded"
+private fun dayHeading(
+    dayMs: Long,
+    items: List<Item>,
+    steps: Long?,
+    calories: Double?,
+    nowMs: Long,
+): String {
+    val counted = if (steps != null && steps > 0) {
+        "${grouped(steps)} steps"
+    } else {
+        "${items.size} recorded"
     }
-    return "$name · ${grouped(steps)} steps"
+    return listOfNotNull(
+        dayName(dayMs, nowMs),
+        counted,
+        calories?.takeIf { it >= 1.0 }?.let { "${grouped(it, 0)} kcal" },
+    ).joinToString(" · ")
 }
 
 private sealed interface Item {

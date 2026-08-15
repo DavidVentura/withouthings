@@ -47,18 +47,21 @@ sealed interface ActivityEntry {
     val startedAtMs: Long
     val endedAtMs: Long?
     val name: String
+    val calories: Double?
 }
 
 data class RecordedEntry(val workout: WorkoutSummary) : ActivityEntry {
     override val startedAtMs = workout.startedAtMs
     override val endedAtMs = workout.endedAtMs
     override val name = workout.activity
+    override val calories = workout.calories
 }
 
 data class DetectedEntry(val detected: DetectedActivity) : ActivityEntry {
     override val startedAtMs = detected.startedAtMs
     override val endedAtMs = detected.endedAtMs
     override val name = detected.activity
+    override val calories = detected.calories
 }
 
 data class UiState(

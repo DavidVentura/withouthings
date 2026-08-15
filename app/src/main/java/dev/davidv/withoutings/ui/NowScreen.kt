@@ -312,14 +312,14 @@ private fun homeTile(style: MetricStyle, state: UiState, nowMs: Long): Tile {
         }
 
         MetricStyle.Calories -> {
-            val active = home.today.filterIsInstance<DetectedEntry>().sumOf { it.detected.calories }
+            val active = activeCalories(home.today, nowMs)
             Tile(
                 value = home.calories?.let { grouped(it, 0) } ?: "—",
                 unit = if (home.calories == null) "" else "kcal",
                 context = when {
                     home.calories == null -> "not counted today"
                     active <= 0 -> "no recorded activity yet"
-                    else -> "${grouped(active, 0)} kcal in walks"
+                    else -> "${grouped(active, 0)} kcal in activity"
                 },
             )
         }

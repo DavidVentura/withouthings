@@ -6,6 +6,7 @@ pub mod client;
 pub mod codec;
 pub mod commands;
 pub mod debug_dump;
+pub mod energy;
 pub mod frame;
 pub mod image;
 pub mod objects;
@@ -20,6 +21,7 @@ pub use ancs::{AncsError, ControlPoint, Notification, NotificationCenter, Notifi
 pub use client::{Action, Category, Client, Credentials, Event, Record, SampleKind, Source};
 pub use codec::{ParseError, Reader, WppObjectCodec, Writer};
 pub use commands::Command;
+pub use energy::{burned, Beat, Sex, Wearer};
 pub use frame::{Channel, Frame, FrameError, PROTOCOL_VERSION};
 pub use image::{GlyphRequest, IconRequest, ImageFormat, Mono};
 pub use objects::WppObject;

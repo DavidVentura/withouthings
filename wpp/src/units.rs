@@ -27,12 +27,19 @@ quantity!(BreathsPerMinute, u16);
 quantity!(Metres, f64);
 quantity!(Kilocalories, f64);
 quantity!(Met, f64);
+quantity!(Years, f64);
 quantity!(UnixTime, i64);
 quantity!(UnixMillis, i64);
+
+const SECONDS_PER_YEAR: f64 = 365.2425 * 24.0 * 60.0 * 60.0;
 
 impl UnixTime {
     pub fn with_offset(self, seconds: i32) -> UnixTime {
         UnixTime(self.0 + seconds as i64)
+    }
+
+    pub fn years_since(self, earlier: UnixTime) -> Years {
+        Years((self.0 - earlier.0) as f64 / SECONDS_PER_YEAR)
     }
 
     pub fn to_millis(self) -> UnixMillis {

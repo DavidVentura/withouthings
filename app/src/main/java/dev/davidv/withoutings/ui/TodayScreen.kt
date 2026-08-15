@@ -253,16 +253,20 @@ private fun EventCard(entry: ActivityEntry, nowMs: Long, onOpen: () -> Unit) {
                 color = AppTheme.colors.onSurfaceTertiary,
             )
         }
-        val detail = (entry as? DetectedEntry)?.let {
-            listOf(
-                "${grouped(it.detected.steps)} steps",
-                distance(it.detected.distanceMetres),
-                "${grouped(it.detected.calories, 0)} kcal",
+        val kcal = entry.calories?.let { "${grouped(it, 0)} kcal" }
+        val detail = when (entry) {
+            is DetectedEntry -> listOfNotNull(
+                "${grouped(entry.detected.steps)} steps",
+                distance(entry.detected.distanceMetres),
+                kcal,
             ).joinToString(" · ")
-        } ?: (
-            entry.endedAtMs?.let { "recorded on the watch" }
-                ?: "in progress · ${stopwatch(nowMs - entry.startedAtMs)}"
-            )
+
+            is RecordedEntry -> listOfNotNull(
+                entry.endedAtMs?.let { "recorded on the watch" }
+                    ?: "in progress · ${stopwatch(nowMs - entry.startedAtMs)}",
+                kcal,
+            ).joinToString(" · ")
+        }
         Text(
             detail,
             Modifier.padding(top = 3.dp),

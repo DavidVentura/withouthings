@@ -540,6 +540,24 @@ impl Store {
         Ok(out)
     }
 
+    pub fn samples_between(
+        &self,
+        device_id: i64,
+        kind: i64,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<Vec<(i64, i64)>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT measured_at, value FROM sample
+              WHERE device_id = ?1 AND kind = ?2 AND measured_at BETWEEN ?3 AND ?4
+              ORDER BY measured_at",
+        )?;
+        let rows = stmt.query_map(params![device_id, kind, from_ms, to_ms], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?;
+        rows.collect()
+    }
+
     pub fn extent(&self, device_id: i64, kind: i64) -> Result<Option<(i64, i64)>, Error> {
         self.conn
             .query_row(
