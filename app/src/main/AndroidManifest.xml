@@ -51,6 +51,18 @@
             android:name=".ble.WatchConnectionService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- Deliberately open: any app that knows a session has started may start
+             one here. The worst a stranger can do with it is record a workout
+             nobody did, which is not worth a permission and a shared signing key. -->
+        <receiver
+            android:name=".ipc.WorkoutRequestReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.davidv.withoutings.action.START_WORKOUT" />
+                <action android:name="dev.davidv.withoutings.action.STOP_WORKOUT" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>
