@@ -262,16 +262,18 @@ private fun EventCard(entry: ActivityEntry, nowMs: Long, onOpen: () -> Unit) {
             ).joinToString(" · ")
 
             is RecordedEntry -> listOfNotNull(
-                entry.endedAtMs?.let { "recorded on the watch" }
-                    ?: "in progress · ${stopwatch(nowMs - entry.startedAtMs)}",
+                "in progress · ${stopwatch(nowMs - entry.startedAtMs)}"
+                    .takeIf { entry.endedAtMs == null },
                 kcal,
             ).joinToString(" · ")
         }
-        Text(
-            detail,
-            Modifier.padding(top = 3.dp),
-            style = AppTheme.type.rowMeta,
-            color = AppTheme.colors.onSurfaceTertiary,
-        )
+        if (detail.isNotEmpty()) {
+            Text(
+                detail,
+                Modifier.padding(top = 3.dp),
+                style = AppTheme.type.rowMeta,
+                color = AppTheme.colors.onSurfaceTertiary,
+            )
+        }
     }
 }
