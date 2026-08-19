@@ -16,8 +16,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
-import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.MonitorHeart
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,7 +25,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.ui.theme.AppTheme
 import uniffi.wpp_ffi.EcgRhythm
@@ -108,7 +105,7 @@ fun ActivitiesScreen(
                     if (index > 0) RowDivider()
                     when (item) {
                         is Item.Activity -> EntityRow(
-                            icon = item.icon,
+                            icon = activityGlyph(item.entry.subcategory),
                             title = item.entry.name,
                             meta = entryMeta(item.entry, nowMs, withDay = false),
                             accent = item.entry is RecordedEntry,
@@ -169,12 +166,6 @@ private sealed interface Item {
     data class Activity(val entry: ActivityEntry) : Item {
         override val atMs = entry.startedAtMs
         override val kind = entry.name
-        val icon: ImageVector
-            get() = if (entry is RecordedEntry) {
-                Icons.Rounded.FitnessCenter
-            } else {
-                Icons.AutoMirrored.Rounded.DirectionsWalk
-            }
     }
 
     data class Recording(val summary: EcgSummary) : Item {

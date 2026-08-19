@@ -47,6 +47,10 @@ sealed interface ActivityEntry {
     val startedAtMs: Long
     val endedAtMs: Long?
     val name: String
+    val subcategory: Int
+    // Steps and metres climbed come off the pedometer, which describes what the
+    // wearer did only when their own feet carried them through it.
+    val onFoot: Boolean
     val calories: Double?
 }
 
@@ -54,6 +58,8 @@ data class RecordedEntry(val workout: WorkoutSummary) : ActivityEntry {
     override val startedAtMs = workout.startedAtMs
     override val endedAtMs = workout.endedAtMs
     override val name = workout.activity
+    override val subcategory = workout.subcategory
+    override val onFoot = workout.onFoot
     override val calories = workout.calories
 }
 
@@ -61,6 +67,8 @@ data class DetectedEntry(val detected: DetectedActivity) : ActivityEntry {
     override val startedAtMs = detected.startedAtMs
     override val endedAtMs = detected.endedAtMs
     override val name = detected.activity
+    override val subcategory = detected.subcategory
+    override val onFoot = detected.onFoot
     override val calories = detected.calories
 }
 
@@ -72,8 +80,6 @@ data class UiState(
     val activityLog: List<ActivityEntry> = emptyList(),
     val activityLogAtMs: Long = 0,
     val dailySteps: Map<Long, Long> = emptyMap(),
-    val dailyTotals: Map<Long, Double> = emptyMap(),
-    val dailyTotalsFor: MetricStyle? = null,
     val screens: List<WatchScreen> = emptyList(),
     val latest: Map<MetricStyle, ChartPoint> = emptyMap(),
     val wearPosition: WearPosition = WearPosition.NOT_SET,
@@ -85,7 +91,6 @@ data class UiState(
     val workoutTemp: List<ChartPoint> = emptyList(),
     val ecgs: List<EcgSummary> = emptyList(),
     val liveEcg: List<Double> = emptyList(),
-    val metricBaseline: List<ChartPoint> = emptyList(),
     val home: HomeState = HomeState(),
 )
 
@@ -95,6 +100,7 @@ data class HomeState(
     val respiratory: List<ChartPoint> = emptyList(),
     val fortnightHr: List<ChartPoint> = emptyList(),
     val fortnightTemperature: List<ChartPoint> = emptyList(),
+    val sleep: SleepSpans = SleepSpans.none,
     val lastNight: Night? = null,
     val today: List<ActivityEntry> = emptyList(),
     val distanceMetres: Double? = null,
@@ -223,13 +229,35 @@ class WatchViewModel : ViewModel() {
     private fun loadMetric(request: MetricRequest): MetricSeries? {
         val service = WatchRepository.get() ?: return null
         val range = request.load.range
+        val style = request.style
+        val now = System.currentTimeMillis()
+        // The figures a window is read against are the fortnight's, whichever
+        // stretch of history the chart itself is showing.
+        val known = minOf(range.first, now - BASELINE_MS)..maxOf(range.last, now)
         return MetricSeries(
-            style = request.style,
+            style = style,
             load = request.load,
             points = service
-                .series(request.style.metric, range.first, range.last, LOAD_POINTS)
+                .series(style.metric, range.first, range.last, LOAD_POINTS)
                 .map { p: Point -> ChartPoint(p.atMs, p.value) },
-            charging = if (request.style == MetricStyle.Battery) {
+            baseline = if (style.accumulates) {
+                emptyList()
+            } else {
+                service
+                    .series(style.metric, now - BASELINE_MS, now, MAX_CHART_POINTS)
+                    .map { p: Point -> ChartPoint(p.atMs, p.value) }
+            },
+            sleep = if (style.comparesModes) {
+                sleepSpans(service, known.first, known.last)
+            } else {
+                SleepSpans.none
+            },
+            dailyTotals = if (style.accumulates) {
+                dailyTotals(service, style, daysCovering(known), now)
+            } else {
+                emptyMap()
+            },
+            charging = if (style == MetricStyle.Battery) {
                 service.charging(range.first, range.last)
             } else {
                 emptyList()
@@ -312,12 +340,6 @@ class WatchViewModel : ViewModel() {
         } else {
             previous.dailySteps
         }
-        val style = _metricStyle.value
-        val totals = if (rebuildLog || previous.dailyTotalsFor != style) {
-            dailyTotals(service, style, now)
-        } else {
-            previous.dailyTotals
-        }
         return UiState(
             link = WatchRepository.link.value,
             snapshot = snapshot,
@@ -330,8 +352,6 @@ class WatchViewModel : ViewModel() {
             activityLog = log,
             activityLogAtMs = if (rebuildLog) now else previous.activityLogAtMs,
             dailySteps = steps,
-            dailyTotals = totals,
-            dailyTotalsFor = style,
             home = home(service, log, previous.home, now),
             ecgs = service.ecgs(),
             liveEcg = if (snapshot.measuring) {
@@ -345,9 +365,6 @@ class WatchViewModel : ViewModel() {
             features = service.healthFeatures(),
             respiratoryScan = service.respiratoryScan(),
             notifications = service.notificationConfig(),
-            metricBaseline = service
-                .series(style.metric, now - BASELINE_MS, now, MAX_CHART_POINTS)
-                .map { p: Point -> ChartPoint(p.atMs, p.value) },
             latest = MetricStyle.entries.mapNotNull { entry ->
                 service.latestValue(entry.metric)
                     ?.let { entry to ChartPoint(it.atMs, it.value) }
@@ -356,25 +373,29 @@ class WatchViewModel : ViewModel() {
     }
 
     private fun dailyTotals(
-        service: uniffi.wpp_ffi.WatchService,
+        service: WatchService,
         style: MetricStyle,
+        days: List<Long>,
         nowMs: Long,
     ): Map<Long, Double> {
-        if (style.summary != SummaryKind.DailyTotal) return emptyMap()
-        val days = (BASELINE_DAYS downTo 0).map { dayStart(nowMs - it * DAY_MS) }
+        val counted = days.filter { it <= nowMs }
+        if (counted.isEmpty()) return emptyMap()
         // The watch keeps reporting yesterday's total for the first minutes of a
         // day, so a day's count runs from its own rollover to the next one.
         val found = service.windowedMax(
             style.metric,
-            days.map { it + COUNTER_ROLLOVER_MS } + nowMs,
+            counted.map { it + COUNTER_ROLLOVER_MS } + (counted.last() + DAY_MS),
         )
-        return days.zip(found)
+        return counted.zip(found)
             .mapNotNull { (day, total) -> total?.let { day to it } }
             .toMap()
     }
 
+    private fun sleepSpans(service: WatchService, fromMs: Long, toMs: Long): SleepSpans =
+        SleepSpans.of(service.sleepSpans(fromMs, toMs).map { Span(it.fromMs, it.toMs) })
+
     private fun home(
-        service: uniffi.wpp_ffi.WatchService,
+        service: WatchService,
         log: List<ActivityEntry>,
         previous: HomeState,
         nowMs: Long,
@@ -394,6 +415,7 @@ class WatchViewModel : ViewModel() {
             respiratory = series(Metric.RESPIRATORY_RATE, midnight),
             fortnightHr = series(Metric.HEART_RATE, fortnightAgo),
             fortnightTemperature = series(Metric.TEMPERATURE, fortnightAgo),
+            sleep = sleepSpans(service, fortnightAgo, nowMs),
             lastNight = runCatching { service.night(nightRange.first, nightRange.last) }.getOrNull(),
             today = log.filter { it.startedAtMs >= midnight },
             distanceMetres = service.latestValue(Metric.DISTANCE)

@@ -43,7 +43,13 @@ import kotlin.math.floor
 
 enum class GridStyle { Time, EcgPaper }
 
-data class Guide(val value: Double, val label: String? = null)
+data class Guide(val value: Double, val label: String? = null, val within: Span? = null)
+
+sealed interface ChartForm {
+    data object Line : ChartForm
+
+    data class Bars(val widthMs: Long) : ChartForm
+}
 
 data class ChartSession(val span: Span, val label: String)
 
@@ -58,6 +64,8 @@ private const val ECG_MV_PER_LARGE_SQUARE = 0.5
 private const val ECG_MV_PER_SMALL_SQUARE = 0.1
 
 private val NICE_STEPS = listOf(1.0, 2.0, 5.0)
+
+private const val BAR_GAP_FRACTION = 0.15f
 
 private val AXIS_STRIP = 16.dp
 private val SESSION_LABEL_STRIP = 13.dp
@@ -110,6 +118,8 @@ fun ValueChart(
     sessions: List<ChartSession> = emptyList(),
     labelSessions: Boolean = false,
     guides: List<Guide> = emptyList(),
+    form: ChartForm = ChartForm.Line,
+    connectWithin: Long = Long.MAX_VALUE,
     grid: GridStyle = GridStyle.Time,
     limit: LongRange? = null,
     showTimeAxis: Boolean = true,
@@ -236,10 +246,13 @@ fun ValueChart(
             for (guide in guides) {
                 if (guide.value < lo || guide.value > hi) continue
                 val at = y(guide.value)
+                val from = guide.within?.let { x(it.fromMs).coerceAtLeast(0f) } ?: 0f
+                val to = guide.within?.let { x(it.toMs).coerceAtMost(size.width) } ?: size.width
+                if (to <= from) continue
                 drawLine(
                     fillColor,
-                    Offset(0f, at),
-                    Offset(size.width, at),
+                    Offset(from, at),
+                    Offset(to, at),
                     tokens.cursor.toPx(),
                     pathEffect = PathEffect.dashPathEffect(
                         floatArrayOf(4.dp.toPx(), 4.dp.toPx()),
@@ -247,7 +260,19 @@ fun ValueChart(
                 )
             }
 
-            drawTrace(nearby, ::x, ::y, plotHeight, lineColor, fillColor, tokens)
+            when (form) {
+                is ChartForm.Line ->
+                    drawTrace(nearby, connectWithin, ::x, ::y, plotHeight, lineColor, fillColor, tokens)
+
+                is ChartForm.Bars -> drawBars(
+                    nearby,
+                    size.width * form.widthMs.toFloat() / spanMs,
+                    ::x,
+                    ::y,
+                    plotHeight,
+                    fillColor,
+                )
+            }
 
             if (showTimeAxis) {
                 val tickMs = when (grid) {
@@ -298,8 +323,16 @@ fun ValueChart(
 
             val cursor = scrubAtMs?.takeIf { it in window }
             if (cursor != null) {
-                val nearest = nearby.minByOrNull { abs(it.atMs - cursor) }
-                val at = x(nearest?.atMs ?: cursor)
+                val nearest = when (form) {
+                    is ChartForm.Line -> nearby.minByOrNull { abs(it.atMs - cursor) }
+                    is ChartForm.Bars ->
+                        nearby.firstOrNull { cursor in Span(it.atMs, it.atMs + form.widthMs) }
+                }
+                val at = when {
+                    nearest == null -> x(cursor)
+                    form is ChartForm.Bars -> x(nearest.atMs + form.widthMs / 2)
+                    else -> x(nearest.atMs)
+                }
                 drawLine(
                     scheme.onSurface.copy(alpha = cursorAlpha),
                     Offset(at, 0f),
@@ -317,7 +350,11 @@ fun ValueChart(
                             measurer,
                             tooltipStyle,
                             scheme.onSurface,
-                            "${formatValue(nearest.value, decimals)}$unit · ${clock(nearest.atMs)}",
+                            "${formatValue(nearest.value, decimals)}$unit · " +
+                                when (form) {
+                                    is ChartForm.Line -> clock(nearest.atMs)
+                                    is ChartForm.Bars -> dayAndMonth(nearest.atMs)
+                                },
                             at,
                             size.width,
                         )
@@ -333,8 +370,20 @@ private fun atX(x: Float, width: Int, window: LongRange): Long {
     return window.first + ((window.last - window.first) * fraction).toLong()
 }
 
+fun List<ChartPoint>.runsWithin(gapMs: Long): List<List<ChartPoint>> = sortedBy { it.atMs }
+    .fold(mutableListOf<MutableList<ChartPoint>>()) { runs, point ->
+        val current = runs.lastOrNull()
+        if (current != null && point.atMs - current.last().atMs <= gapMs) {
+            current.add(point)
+        } else {
+            runs.add(mutableListOf(point))
+        }
+        runs
+    }
+
 private fun DrawScope.drawTrace(
     points: List<ChartPoint>,
+    connectWithin: Long,
     x: (Long) -> Float,
     y: (Double) -> Float,
     plotHeight: Float,
@@ -343,40 +392,68 @@ private fun DrawScope.drawTrace(
     tokens: dev.davidv.withoutings.ui.theme.ChartTokens,
 ) {
     if (points.isEmpty()) return
-    val ordered = points.sortedBy { it.atMs }
-    val path = Path()
-    ordered.forEachIndexed { index, point ->
-        val px = x(point.atMs)
-        val py = y(point.value)
-        if (index == 0) path.moveTo(px, py) else path.lineTo(px, py)
-    }
+    val runs = points.runsWithin(connectWithin)
+    val dotted = runs.sumOf { it.size } <= 60
 
     clipRect(left = 0f, top = 0f, right = size.width, bottom = plotHeight) {
-        val fill = Path().apply {
-            addPath(path)
-            lineTo(x(ordered.last().atMs), plotHeight)
-            lineTo(x(ordered.first().atMs), plotHeight)
-            close()
-        }
-        drawPath(fill, fillColor.copy(alpha = tokens.areaAlpha), style = Fill)
-        drawPath(
-            path,
-            lineColor,
-            style = Stroke(
-                width = tokens.trace.toPx(),
-                cap = StrokeCap.Round,
-                join = StrokeJoin.Round,
-            ),
-        )
-
-        if (ordered.size <= 60) {
-            ordered.forEach {
-                drawCircle(
-                    lineColor,
-                    radius = tokens.trace.toPx(),
-                    center = Offset(x(it.atMs), y(it.value)),
-                )
+        for (run in runs) {
+            val path = Path()
+            run.forEachIndexed { index, point ->
+                val px = x(point.atMs)
+                val py = y(point.value)
+                if (index == 0) path.moveTo(px, py) else path.lineTo(px, py)
             }
+            val fill = Path().apply {
+                addPath(path)
+                lineTo(x(run.last().atMs), plotHeight)
+                lineTo(x(run.first().atMs), plotHeight)
+                close()
+            }
+            drawPath(fill, fillColor.copy(alpha = tokens.areaAlpha), style = Fill)
+            drawPath(
+                path,
+                lineColor,
+                style = Stroke(
+                    width = tokens.trace.toPx(),
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round,
+                ),
+            )
+            // A stretch on its own has no line to be seen by.
+            if (dotted || run.size == 1) {
+                run.forEach {
+                    drawCircle(
+                        lineColor,
+                        radius = tokens.trace.toPx(),
+                        center = Offset(x(it.atMs), y(it.value)),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun DrawScope.drawBars(
+    points: List<ChartPoint>,
+    pitch: Float,
+    x: (Long) -> Float,
+    y: (Double) -> Float,
+    plotHeight: Float,
+    fillColor: Color,
+) {
+    val gap = (pitch * BAR_GAP_FRACTION).coerceAtMost(2.dp.toPx())
+    val radius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+    clipRect(left = 0f, top = 0f, right = size.width, bottom = plotHeight) {
+        for (point in points) {
+            val left = x(point.atMs) + gap / 2
+            val width = (pitch - gap).coerceAtLeast(1f)
+            val top = y(point.value).coerceIn(0f, plotHeight)
+            drawRoundRect(
+                fillColor,
+                topLeft = Offset(left, top),
+                size = Size(width, plotHeight - top),
+                cornerRadius = radius,
+            )
         }
     }
 }

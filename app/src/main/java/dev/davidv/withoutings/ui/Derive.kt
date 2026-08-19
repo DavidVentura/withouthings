@@ -23,6 +23,61 @@ data class Span(val fromMs: Long, val toMs: Long) {
     val durationMs: Long get() = toMs - fromMs
 
     fun overlaps(other: Span): Boolean = fromMs < other.toMs && other.fromMs < toMs
+
+    operator fun contains(atMs: Long): Boolean = atMs in fromMs until toMs
+}
+
+enum class Mode { Asleep, Awake }
+
+data class ModeSpan(val span: Span, val mode: Mode)
+
+@JvmInline
+value class SleepSpans private constructor(val spans: List<Span>) {
+    fun modeAt(atMs: Long): Mode {
+        val found = spans.binarySearch { span ->
+            when {
+                span.toMs <= atMs -> -1
+                span.fromMs > atMs -> 1
+                else -> 0
+            }
+        }
+        return if (found >= 0) Mode.Asleep else Mode.Awake
+    }
+
+    fun segments(window: Span): List<ModeSpan> {
+        val edges = spans
+            .filter { it.overlaps(window) }
+            .flatMap { listOf(it.fromMs, it.toMs) }
+            .filter { it in window }
+            .sorted()
+        return (listOf(window.fromMs) + edges + window.toMs)
+            .zipWithNext { from, to -> ModeSpan(Span(from, to), modeAt(from)) }
+            .filter { it.span.durationMs > 0 }
+    }
+
+    companion object {
+        val none = SleepSpans(emptyList())
+
+        // Ordered and apart from one another, which is what the search for the
+        // span holding an instant rests on.
+        fun of(spans: List<Span>): SleepSpans = SleepSpans(spans.sortedBy { it.fromMs })
+    }
+}
+
+data class Baselines(val awake: Double?, val asleep: Double?) {
+    operator fun get(mode: Mode): Double? = when (mode) {
+        Mode.Awake -> awake
+        Mode.Asleep -> asleep
+    }
+}
+
+// A body asleep sits below where it sits awake for every metric that tracks
+// effort, so one figure over both only ever says which of the two the window
+// held more of.
+fun baselines(points: List<ChartPoint>, sleep: SleepSpans, fraction: Double): Baselines {
+    val byMode = points.groupBy { sleep.modeAt(it.atMs) }
+    fun at(mode: Mode) = percentile(byMode[mode].orEmpty().map { it.value }, fraction)
+    return Baselines(awake = at(Mode.Awake), asleep = at(Mode.Asleep))
 }
 
 data class Session(val span: Span, val name: String, val started: Boolean)
@@ -48,6 +103,9 @@ fun percentile(values: List<Double>, fraction: Double): Double? {
 fun restingRate(points: List<ChartPoint>): Double? =
     percentile(points.map { it.value }, RESTING_PERCENTILE)
 
+fun restingRates(points: List<ChartPoint>, sleep: SleepSpans): Baselines =
+    baselines(points, sleep, RESTING_PERCENTILE)
+
 fun restingByDay(points: List<ChartPoint>, dayStartOf: (Long) -> Long): List<Pair<Long, Double>> =
     points.groupBy { dayStartOf(it.atMs) }
         .mapNotNull { (day, samples) -> restingRate(samples)?.let { day to it } }
@@ -62,11 +120,13 @@ fun daysSinceLower(history: List<Pair<Long, Double>>, today: Double): Int? {
 
 fun spellsAbove(
     points: List<ChartPoint>,
-    threshold: Double,
     sessions: List<Session> = emptyList(),
     gapMs: Long = SPELL_GAP_MS,
+    threshold: (ChartPoint) -> Double?,
 ): List<Spell> {
-    val over = points.filter { it.value > threshold }.sortedBy { it.atMs }
+    val over = points
+        .filter { point -> threshold(point)?.let { point.value > it } == true }
+        .sortedBy { it.atMs }
     if (over.isEmpty()) return emptyList()
 
     val runs = mutableListOf<MutableList<ChartPoint>>()
@@ -174,6 +234,11 @@ fun dayStart(atMs: Long): Long = Calendar.getInstance().apply {
     set(Calendar.SECOND, 0)
     set(Calendar.MILLISECOND, 0)
 }.timeInMillis
+
+fun daysCovering(range: LongRange): List<Long> =
+    generateSequence(dayStart(range.first)) { it + DAY_MS }
+        .takeWhile { it <= range.last }
+        .toList()
 
 // A wall clock time names two instants in a session that ran past midnight, so
 // the one meant is the later of them still inside the session.

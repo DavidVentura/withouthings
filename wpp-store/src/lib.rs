@@ -620,6 +620,31 @@ impl Store {
         )
     }
 
+    /// Windowed like [`Store::activity_minutes`], and holding every minute the
+    /// watch staged, awake ones included: which of them count as asleep is the
+    /// caller's to decide.
+    pub fn sleep_minutes(
+        &self,
+        device_id: i64,
+        from_secs: i64,
+        to_secs: i64,
+    ) -> Result<Vec<(i64, i64, i64)>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT started_at, duration_secs, sleep_level
+               FROM activity_minute
+              WHERE device_id = ?1 AND started_at <= ?3
+                AND started_at >= ?2 - ?4
+                AND started_at + duration_secs >= ?2
+                AND sleep_level IS NOT NULL
+              ORDER BY started_at",
+        )?;
+        let rows = stmt.query_map(
+            params![device_id, from_secs, to_secs, LONGEST_WINDOW_SECS],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+        rows.collect()
+    }
+
     pub fn activity_minutes(
         &self,
         device_id: i64,

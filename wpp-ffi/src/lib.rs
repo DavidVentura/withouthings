@@ -158,6 +158,7 @@ pub struct WorkoutSummary {
     pub ended_at_ms: Option<i64>,
     pub subcategory: i32,
     pub activity: String,
+    pub on_foot: bool,
     /// Estimated from heart rate: the watch reports calories only for the
     /// motion it counts as steps, which a workout on the spot never is.
     pub calories: Option<f64>,
@@ -177,6 +178,7 @@ pub struct DetectedActivity {
     pub ended_at_ms: i64,
     pub subcategory: i32,
     pub activity: String,
+    pub on_foot: bool,
     pub steps: i64,
     pub distance_metres: f64,
     pub calories: f64,
@@ -275,6 +277,12 @@ pub struct SleepBand {
     pub from_ms: i64,
     pub to_ms: i64,
     pub stage: SleepStage,
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct SleepSpan {
+    pub from_ms: i64,
+    pub to_ms: i64,
 }
 
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -740,6 +748,7 @@ impl WatchService {
                     ended_at_ms: None,
                     subcategory: active.subcategory as i32,
                     activity: activity_name(active.subcategory as u32),
+                    on_foot: on_foot(active.subcategory as u32),
                     calories: workout_calories(
                         &store,
                         self.device_id,
@@ -900,6 +909,7 @@ impl WatchService {
                 ended_at_ms: session.ended_at.to_millis().0,
                 subcategory: session.subcategory as i32,
                 activity: activity_name(session.subcategory as u32),
+                on_foot: on_foot(session.subcategory as u32),
                 steps: session.steps,
                 distance_metres: session.distance.0,
                 calories: session.calories.0,
@@ -1045,7 +1055,7 @@ impl WatchService {
                 enabled: true,
             })
             .collect();
-        for (id, name) in ACTIVITIES {
+        for (id, name, _) in ACTIVITIES {
             if !current.contains(id) {
                 activities.push(Activity {
                     id: *id,
@@ -1327,6 +1337,36 @@ impl WatchService {
         })
     }
 
+    /// A few minutes awake in the middle of a night leave the body on its
+    /// sleeping baseline, so a stretch survives them as one span.
+    pub fn sleep_spans(&self, from_ms: i64, to_ms: i64) -> Result<Vec<SleepSpan>, WatchError> {
+        const AWAKE_BRIDGE_MS: i64 = 45 * 60 * 1000;
+
+        let store = self.store.lock().unwrap();
+        let minutes = store.sleep_minutes(self.device_id, from_ms / 1000, to_ms / 1000)?;
+        Ok(minutes
+            .into_iter()
+            .filter(|(_, _, level)| {
+                !matches!(
+                    activity::SleepLevel::from_wire(*level),
+                    None | Some(activity::SleepLevel::Awake)
+                )
+            })
+            .fold(Vec::new(), |mut out: Vec<SleepSpan>, (at, duration, _)| {
+                let (from, to) = (at * 1000, (at + duration) * 1000);
+                match out.last_mut() {
+                    Some(last) if from - last.to_ms <= AWAKE_BRIDGE_MS => {
+                        last.to_ms = last.to_ms.max(to)
+                    }
+                    _ => out.push(SleepSpan {
+                        from_ms: from,
+                        to_ms: to,
+                    }),
+                }
+                out
+            }))
+    }
+
     pub fn has_staging(&self, from_ms: i64, to_ms: i64) -> Result<bool, WatchError> {
         let store = self.store.lock().unwrap();
         Ok(store.has_staging(self.device_id, from_ms / 1000, to_ms / 1000)?)
@@ -1593,61 +1633,81 @@ const ACTIVITY_FACES: &[(u32, u8, u16)] = &[
     (307, 1, 0),
 ];
 
-const ACTIVITIES: &[(u32, &str)] = &[
-    (1, "Walking"),
-    (2, "Running"),
-    (3, "Hiking"),
-    (4, "Skating"),
-    (5, "BMX"),
-    (6, "Cycling"),
-    (7, "Swimming"),
-    (8, "Surfing"),
-    (9, "Kitesurfing"),
-    (10, "Windsurfing"),
-    (11, "Bodyboard"),
-    (12, "Tennis"),
-    (13, "Table tennis"),
-    (14, "Squash"),
-    (15, "Badminton"),
-    (16, "Weights"),
-    (17, "Calisthenics"),
-    (18, "Elliptical"),
-    (19, "Pilates"),
-    (20, "Basketball"),
-    (21, "Soccer"),
-    (22, "Football"),
-    (23, "Rugby"),
-    (24, "Volleyball"),
-    (25, "Water polo"),
-    (26, "Horse riding"),
-    (27, "Golf"),
-    (28, "Yoga"),
-    (29, "Dancing"),
-    (30, "Boxing"),
-    (31, "Fencing"),
-    (32, "Wrestling"),
-    (33, "Martial arts"),
-    (34, "Skiing"),
-    (35, "Snowboarding"),
-    (36, "Other"),
-    (187, "Rowing"),
-    (188, "Zumba"),
-    (191, "Baseball"),
-    (192, "Handball"),
-    (193, "Hockey"),
-    (194, "Ice hockey"),
-    (195, "Climbing"),
-    (196, "Ice skating"),
-    (306, "Indoor walk"),
-    (307, "Indoor running"),
+/// Whether the wearer's own feet carry them through an activity. The pedometer
+/// keeps counting either way — a wrist swings on a bike too — so this is what
+/// says whether the steps and the metres climbed under a session describe it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Gait {
+    OnFoot,
+    Otherwise,
+}
+
+use Gait::OnFoot;
+use Gait::Otherwise;
+
+const ACTIVITIES: &[(u32, &str, Gait)] = &[
+    (1, "Walking", OnFoot),
+    (2, "Running", OnFoot),
+    (3, "Hiking", OnFoot),
+    (4, "Skating", Otherwise),
+    (5, "BMX", Otherwise),
+    (6, "Cycling", Otherwise),
+    (7, "Swimming", Otherwise),
+    (8, "Surfing", Otherwise),
+    (9, "Kitesurfing", Otherwise),
+    (10, "Windsurfing", Otherwise),
+    (11, "Bodyboard", Otherwise),
+    (12, "Tennis", OnFoot),
+    (13, "Table tennis", OnFoot),
+    (14, "Squash", OnFoot),
+    (15, "Badminton", OnFoot),
+    (16, "Weights", OnFoot),
+    (17, "Calisthenics", OnFoot),
+    (18, "Elliptical", OnFoot),
+    (19, "Pilates", OnFoot),
+    (20, "Basketball", OnFoot),
+    (21, "Soccer", OnFoot),
+    (22, "Football", OnFoot),
+    (23, "Rugby", OnFoot),
+    (24, "Volleyball", OnFoot),
+    (25, "Water polo", Otherwise),
+    (26, "Horse riding", Otherwise),
+    (27, "Golf", OnFoot),
+    (28, "Yoga", OnFoot),
+    (29, "Dancing", OnFoot),
+    (30, "Boxing", OnFoot),
+    (31, "Fencing", OnFoot),
+    (32, "Wrestling", OnFoot),
+    (33, "Martial arts", OnFoot),
+    (34, "Skiing", Otherwise),
+    (35, "Snowboarding", Otherwise),
+    (36, "Other", OnFoot),
+    (187, "Rowing", Otherwise),
+    (188, "Zumba", OnFoot),
+    (191, "Baseball", OnFoot),
+    (192, "Handball", OnFoot),
+    (193, "Hockey", OnFoot),
+    (194, "Ice hockey", Otherwise),
+    (195, "Climbing", OnFoot),
+    (196, "Ice skating", Otherwise),
+    (306, "Indoor walk", OnFoot),
+    (307, "Indoor running", OnFoot),
 ];
 
 fn activity_name(id: u32) -> String {
     ACTIVITIES
         .iter()
-        .find(|(known, _)| *known == id)
-        .map(|(_, name)| name.to_string())
+        .find(|(known, _, _)| *known == id)
+        .map(|(_, name, _)| name.to_string())
         .unwrap_or_else(|| format!("Activity {id}"))
+}
+
+/// An activity the table has never heard of is not credited with a gait, so
+/// what the pedometer holds over it goes unshown rather than unexplained.
+fn on_foot(id: u32) -> bool {
+    ACTIVITIES
+        .iter()
+        .any(|(known, _, gait)| *known == id && *gait == OnFoot)
 }
 
 fn summarise(
@@ -1664,6 +1724,7 @@ fn summarise(
         ended_at_ms,
         subcategory: row.subcategory as i32,
         activity: activity_name(row.subcategory as u32),
+        on_foot: on_foot(row.subcategory as u32),
         calories: workout_calories(
             store,
             device_id,

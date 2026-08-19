@@ -25,54 +25,78 @@ enum class MetricStyle(
     val axis: ClosedFloatingPointRange<Double>,
     val freshFor: Long,
     val summary: SummaryKind,
+    // The longest quiet stretch the trace still crosses as one line. Past it the
+    // watch was not measuring, and a line drawn over the gap invents a reading
+    // for every minute of it.
+    val connectWithin: Long,
+    // Where a day's total sits, which is not the range the counter sweeps
+    // through the day: a body that did nothing still burns most of its energy.
+    val dailyAxis: ClosedFloatingPointRange<Double>? = null,
     val elevatedAbove: Double? = null,
 ) {
     HeartRate(
         Metric.HEART_RATE, "Heart rate", "bpm", 0, Icons.Rounded.Favorite,
-        50.0..150.0, 20 * MINUTE, SummaryKind.Resting, elevatedAbove = 100.0,
+        50.0..150.0, 20 * MINUTE, SummaryKind.Resting, HOUR, elevatedAbove = 100.0,
     ),
     Temperature(
         Metric.TEMPERATURE, "Temperature", "°C", 1, Icons.Rounded.Thermostat,
-        35.0..38.5, 10 * MINUTE, SummaryKind.Baseline,
+        35.0..38.5, 10 * MINUTE, SummaryKind.Baseline, HOUR,
     ),
     Steps(
         Metric.STEPS, "Steps", "steps", 0, Icons.AutoMirrored.Rounded.DirectionsWalk,
-        0.0..15000.0, DAY_MS, SummaryKind.DailyTotal,
+        0.0..15000.0, DAY_MS, SummaryKind.DailyTotal, DAY_MS,
     ),
     Calories(
         Metric.CALORIES, "Energy", "kcal", 0, Icons.Rounded.LocalFireDepartment,
-        0.0..3000.0, DAY_MS, SummaryKind.DailyTotal,
+        0.0..2500.0, DAY_MS, SummaryKind.DailyTotal, DAY_MS,
+        dailyAxis = 1000.0..2500.0,
     ),
     Respiratory(
         Metric.RESPIRATORY_RATE, "Respiratory", "br/min", 0, Icons.Rounded.Air,
-        0.0..30.0, 4 * HOUR, SummaryKind.Average,
+        0.0..30.0, 4 * HOUR, SummaryKind.Average, HOUR,
     ),
     HrvSdnn(
         Metric.HRV_SDNN, "HRV (SDNN)", "ms", 0, Icons.Rounded.MonitorHeart,
-        0.0..200.0, 3 * HOUR, SummaryKind.Average,
+        0.0..200.0, 3 * HOUR, SummaryKind.Average, HOUR,
     ),
     HrvRmssd(
         Metric.HRV_RMSSD, "HRV (RMSSD)", "ms", 0, Icons.Rounded.MonitorHeart,
-        0.0..200.0, 3 * HOUR, SummaryKind.Average,
+        0.0..200.0, 3 * HOUR, SummaryKind.Average, HOUR,
     ),
+    // Measured only while asleep, so the nights are islands: connecting them
+    // draws a line across every waking day.
     Spo2(
         Metric.SPO2, "Blood oxygen", "%", 0, Icons.Rounded.Bloodtype,
-        90.0..100.0, 3 * HOUR, SummaryKind.Average,
+        90.0..100.0, 3 * HOUR, SummaryKind.Average, HOUR,
     ),
     Ascent(
         Metric.ASCENT, "Climbed", "m", 1, Icons.Rounded.Terrain,
-        0.0..30.0, DAY_MS, SummaryKind.DailyTotal,
+        0.0..30.0, DAY_MS, SummaryKind.DailyTotal, DAY_MS,
     ),
     Distance(
         Metric.DISTANCE, "Distance", "m", 0, Icons.Rounded.Route,
-        0.0..10000.0, DAY_MS, SummaryKind.DailyTotal,
+        0.0..10000.0, DAY_MS, SummaryKind.DailyTotal, DAY_MS,
     ),
     Battery(
         Metric.BATTERY, "Battery", "%", 0, Icons.Rounded.BatteryFull,
-        0.0..100.0, HOUR, SummaryKind.Latest,
+        0.0..100.0, HOUR, SummaryKind.Latest, DAY_MS,
     );
 
     val defaultSpan: Long get() = DEFAULT_SPAN
+
+    // A counter that only ever climbs until midnight says nothing as a line
+    // across a week; what the day came to does.
+    val accumulates: Boolean get() = summary == SummaryKind.DailyTotal
+
+    // What a resting or baseline figure is read against changes with sleep, so
+    // these are the series that have to know when the wearer was asleep.
+    val comparesModes: Boolean
+        get() = summary == SummaryKind.Resting || summary == SummaryKind.Baseline
+
+    fun axisFor(form: ChartForm): ClosedFloatingPointRange<Double> = when (form) {
+        is ChartForm.Line -> axis
+        is ChartForm.Bars -> dailyAxis ?: axis
+    }
 
     companion object {
         val HOME = listOf(HeartRate, Steps, Calories, Temperature)

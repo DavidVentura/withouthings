@@ -256,7 +256,7 @@ private fun EventCard(entry: ActivityEntry, nowMs: Long, onOpen: () -> Unit) {
         val kcal = entry.calories?.let { "${grouped(it, 0)} kcal" }
         val detail = when (entry) {
             is DetectedEntry -> listOfNotNull(
-                "${grouped(entry.detected.steps)} steps",
+                "${grouped(entry.detected.steps)} steps".takeIf { entry.onFoot },
                 distance(entry.detected.distanceMetres),
                 kcal,
             ).joinToString(" · ")

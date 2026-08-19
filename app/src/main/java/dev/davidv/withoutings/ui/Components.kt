@@ -45,11 +45,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import dev.davidv.withoutings.R
+import dev.davidv.withoutings.ble.ACTIVITY_GLYPHS
 import dev.davidv.withoutings.ui.theme.AppTheme
 import kotlin.math.roundToInt
 
@@ -385,6 +388,14 @@ fun ValueWithUnit(
         }
     }
 }
+
+// The watch draws these for the activities on its own menu, so a session reads
+// the same in the app as it does on the wrist. An activity the table has never
+// heard of gets the same mark the watch gives an unnamed one.
+@Composable
+fun activityGlyph(subcategory: Int): ImageVector = ImageVector.vectorResource(
+    ACTIVITY_GLYPHS[subcategory.toUInt()] ?: R.drawable.activity_custom,
+)
 
 @Composable
 fun EntityRow(

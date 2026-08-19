@@ -45,7 +45,7 @@ class SpellsTest {
             30L to 115.0,
             40L to 70.0,
         )
-        val spells = spellsAbove(points, 100.0)
+        val spells = spellsAbove(points) { 100.0 }
         assertEquals(1, spells.size)
         assertEquals(10 * MINUTE, spells.single().span.fromMs)
         assertEquals(30 * MINUTE, spells.single().span.toMs)
@@ -60,27 +60,27 @@ class SpellsTest {
             90L to 130.0,
             95L to 125.0,
         )
-        assertEquals(2, spellsAbove(points, 100.0).size)
+        assertEquals(2, spellsAbove(points) { 100.0 }.size)
     }
 
     @Test
     fun `a lone sample over the line still has a duration`() {
         val points = series(0L to 60.0, 10L to 130.0, 20L to 60.0)
-        val spell = spellsAbove(points, 100.0).single()
+        val spell = spellsAbove(points) { 100.0 }.single()
         assertTrue("a one-sample spell must not be instantaneous", spell.span.durationMs > 0)
     }
 
     @Test
     fun `a spell inside a session is attributed to it`() {
         val points = series(25L to 130.0, 30L to 135.0)
-        val spell = spellsAbove(points, 100.0, listOf(walk)).single()
+        val spell = spellsAbove(points, listOf(walk)) { 100.0 }.single()
         assertEquals("Walking", spell.session?.name)
     }
 
     @Test
     fun `a spell outside every session stays unattributed`() {
         val points = series(200L to 130.0, 205L to 135.0)
-        val spell = spellsAbove(points, 100.0, listOf(walk)).single()
+        val spell = spellsAbove(points, listOf(walk)) { 100.0 }.single()
         assertNull(spell.session)
         assertEquals(spell.span.durationMs, unattributedTime(listOf(spell)))
     }
@@ -90,14 +90,99 @@ class SpellsTest {
         val brief = Session(Span(0, 12 * MINUTE), "Weights", started = true)
         val long = Session(Span(10 * MINUTE, 60 * MINUTE), "Walking", started = false)
         val points = series(11L to 130.0, 20L to 140.0, 25L to 135.0)
-        val spell = spellsAbove(points, 100.0, listOf(brief, long)).single()
+        val spell = spellsAbove(points, listOf(brief, long)) { 100.0 }.single()
         assertEquals("Walking", spell.session?.name)
     }
 
     @Test
     fun `total time above is the sum of the spells`() {
         val points = series(0L to 110.0, 10L to 110.0, 90L to 110.0, 100L to 110.0)
-        assertEquals(20 * MINUTE, timeAbove(spellsAbove(points, 100.0)))
+        assertEquals(20 * MINUTE, timeAbove(spellsAbove(points) { 100.0 }))
+    }
+}
+
+class SleepModeTest {
+    private val night = SleepSpans.of(listOf(Span(60 * MINUTE, 120 * MINUTE)))
+
+    @Test
+    fun `a window is cut at the edges of the sleep it holds`() {
+        val segments = night.segments(Span(0, 180 * MINUTE))
+        assertEquals(
+            listOf(Mode.Awake, Mode.Asleep, Mode.Awake),
+            segments.map { it.mode },
+        )
+        assertEquals(60 * MINUTE, segments[1].span.fromMs)
+        assertEquals(120 * MINUTE, segments[1].span.toMs)
+    }
+
+    @Test
+    fun `a window inside one stretch of sleep is one segment`() {
+        val segments = night.segments(Span(70 * MINUTE, 90 * MINUTE))
+        assertEquals(listOf(Mode.Asleep), segments.map { it.mode })
+        assertEquals(70 * MINUTE, segments.single().span.fromMs)
+        assertEquals(90 * MINUTE, segments.single().span.toMs)
+    }
+
+    @Test
+    fun `a window with no sleep in it stays whole`() {
+        val segments = SleepSpans.none.segments(Span(0, 180 * MINUTE))
+        assertEquals(listOf(Mode.Awake), segments.map { it.mode })
+    }
+
+    @Test
+    fun `the two modes are held apart`() {
+        val points = series(
+            0L to 70.0,
+            30L to 72.0,
+            70L to 50.0,
+            80L to 48.0,
+            150L to 74.0,
+        )
+        val figures = baselines(points, night, 0.5)
+        assertEquals(72.0, figures.awake!!, 0.001)
+        assertEquals(49.0, figures.asleep!!, 0.001)
+    }
+
+    @Test
+    fun `a mode the window never held has no figure`() {
+        val figures = baselines(series(0L to 70.0), night, 0.5)
+        assertEquals(70.0, figures.awake!!, 0.001)
+        assertNull(figures.asleep)
+    }
+
+    @Test
+    fun `a threshold read off the mode catches a rise the flat one misses`() {
+        val points = series(
+            0L to 36.5,
+            70L to 36.6,
+            80L to 36.6,
+            150L to 36.5,
+        )
+        val asleepRise = spellsAbove(points) { point ->
+            if (night.modeAt(point.atMs) == Mode.Asleep) 36.5 else 36.9
+        }
+        assertEquals(1, asleepRise.size)
+        assertEquals(70 * MINUTE, asleepRise.single().span.fromMs)
+    }
+}
+
+class TraceRunsTest {
+    @Test
+    fun `readings a night apart are drawn as separate runs`() {
+        val points = series(
+            0L to 96.0,
+            10L to 97.0,
+            1440L to 95.0,
+            1450L to 96.0,
+        )
+        val runs = points.runsWithin(60 * MINUTE)
+        assertEquals(listOf(2, 2), runs.map { it.size })
+    }
+
+    @Test
+    fun `a run holds every reading taken within the gap`() {
+        val points = series(0L to 96.0, 10L to 97.0, 20L to 98.0)
+        assertEquals(1, points.runsWithin(60 * MINUTE).size)
     }
 }
 

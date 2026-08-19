@@ -16,8 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bedtime
-import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
-import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -107,11 +105,7 @@ fun NowScreen(
             recent.forEachIndexed { index, entry ->
                 if (index > 0) RowDivider()
                 EntityRow(
-                    icon = if (entry is RecordedEntry) {
-                        Icons.Rounded.FitnessCenter
-                    } else {
-                        Icons.AutoMirrored.Rounded.DirectionsWalk
-                    },
+                    icon = activityGlyph(entry.subcategory),
                     title = entry.name,
                     meta = entryMeta(entry, nowMs),
                     accent = entry is RecordedEntry,
@@ -286,7 +280,7 @@ private fun homeTile(style: MetricStyle, state: UiState, nowMs: Long): Tile {
 
     return when (style) {
         MetricStyle.HeartRate -> {
-            val resting = restingRate(home.hr)
+            val resting = restingRates(home.hr, home.sleep).awake
             Tile(
                 value = reading?.value?.toInt()?.toString() ?: "—",
                 unit = if (reading == null) "" else "bpm",
@@ -325,7 +319,7 @@ private fun homeTile(style: MetricStyle, state: UiState, nowMs: Long): Tile {
         }
 
         else -> {
-            val baseline = percentile(home.fortnightTemperature.map { it.value }, 0.5)
+            val baseline = baselines(home.fortnightTemperature, home.sleep, 0.5).awake
             val value = reading?.value
             Tile(
                 value = value?.let { grouped(it, style.decimals) } ?: "—",

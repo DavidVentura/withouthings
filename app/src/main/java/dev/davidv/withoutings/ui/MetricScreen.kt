@@ -59,12 +59,17 @@ fun MetricScreen(
         .filter { it.span.overlaps(Span(window.first, window.last)) }
     val summary = metricSummary(
         style = style,
-        window = visible,
-        baseline = state.metricBaseline,
+        window = window,
+        visible = visible,
+        series = series,
         sessions = sessions,
-        dailyTotals = state.dailyTotals,
         nowMs = nowMs,
     )
+    // A counter that resets at midnight only reads as a line while the window is
+    // inside one day; past that it is a day's worth of movement per bar.
+    val perDay = style.accumulates && window.last - window.first > DAY_MS
+    val form = if (perDay) ChartForm.Bars(DAY_MS) else ChartForm.Line
+    val axis = style.axisFor(form)
 
     DetailScaffold(
         title = style.label,
@@ -85,29 +90,31 @@ fun MetricScreen(
 
             ChartCard {
                 Text(
-                    "${style.unit} · ${formatValue(style.axis.start, 0)} – " +
-                        formatValue(style.axis.endInclusive, 0),
+                    "${style.unit} · ${formatValue(axis.start, 0)} – " +
+                        formatValue(axis.endInclusive, 0),
                     Modifier.fillMaxWidth().padding(bottom = 6.dp),
                     style = AppTheme.type.axisSmall,
                     color = AppTheme.colors.onSurfaceDim,
                 )
                 ValueChart(
-                    points = series.points,
+                    points = if (perDay) series.dailyPoints else series.points,
                     window = window,
-                    axis = style.axis,
+                    axis = axis,
                     decimals = style.decimals,
                     height = CHART_HEIGHT,
                     onWindowChange = onWindowChange,
                     scrubAtMs = scrubAtMs,
                     onScrub = { scrubAtMs = it },
-                    sessions = sessions.chartSessions(),
-                    labelSessions = true,
-                    guides = summary.guide?.let { listOf(Guide(it)) } ?: emptyList(),
+                    sessions = if (perDay) emptyList() else sessions.chartSessions(),
+                    labelSessions = !perDay,
+                    guides = summary.guides,
+                    form = form,
+                    connectWithin = series.connectWithin,
                     unit = " ${style.unit}",
                 )
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (sessions.isNotEmpty()) {
+                    if (sessions.isNotEmpty() && !perDay) {
                         LegendSwatch(
                             MaterialTheme.colorScheme.primary
                                 .copy(alpha = AppTheme.chart.legendSessionAlpha),
@@ -117,7 +124,7 @@ fun MetricScreen(
                 }
             }
 
-            val perRow = if (summary.stats.size == 4) 2 else 3
+            val perRow = if (summary.stats.size % 2 == 0) 2 else 3
             summary.stats.chunked(perRow).forEach { row ->
                 Row(
                     Modifier.fillMaxWidth(),

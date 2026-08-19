@@ -17,6 +17,8 @@ val LOAD_POINTS: UInt = (LOAD_BUCKETS * 2).toUInt()
 value class LoadWindow(val range: LongRange) {
     val spanMs: Long get() = range.last - range.first
 
+    val bucketMs: Long get() = (spanMs / LOAD_BUCKETS).coerceAtLeast(1L)
+
     fun covers(window: LongRange): Boolean =
         window.first >= range.first && window.last <= range.last
 }
@@ -25,8 +27,20 @@ data class MetricSeries(
     val style: MetricStyle,
     val load: LoadWindow,
     val points: List<ChartPoint> = emptyList(),
+    val baseline: List<ChartPoint> = emptyList(),
+    val sleep: SleepSpans = SleepSpans.none,
+    val dailyTotals: Map<Long, Double> = emptyMap(),
     val charging: List<Marker> = emptyList(),
-)
+) {
+    // A gap cannot be told from a quiet stretch any finer than the buckets the
+    // points were downsampled into, so a whole night of readings arriving as one
+    // point must not read as a night without any.
+    val connectWithin: Long get() = maxOf(style.connectWithin, 2 * load.bucketMs)
+
+    val dailyPoints: List<ChartPoint> by lazy {
+        dailyTotals.map { (day, total) -> ChartPoint(day, total) }.sortedBy { it.atMs }
+    }
+}
 
 fun loadWindow(visible: LongRange): LoadWindow {
     val span = (visible.last - visible.first).coerceAtLeast(MIN_SPAN_MS)

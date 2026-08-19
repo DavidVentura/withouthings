@@ -1,7 +1,7 @@
 package dev.davidv.withoutings.ui
 
 data class MetricSummary(
-    val guide: Double?,
+    val guides: List<Guide>,
     val spells: List<Spell>,
     val stats: List<StatFigure>,
     val listTitle: String?,
@@ -16,40 +16,56 @@ data class StatFigure(
 
 fun metricSummary(
     style: MetricStyle,
-    window: List<ChartPoint>,
-    baseline: List<ChartPoint>,
+    window: LongRange,
+    visible: List<ChartPoint>,
+    series: MetricSeries,
     sessions: List<Session>,
-    dailyTotals: Map<Long, Double>,
     nowMs: Long,
 ): MetricSummary = when (style.summary) {
-    SummaryKind.Resting -> restingSummary(style, window, sessions)
-    SummaryKind.Baseline -> baselineSummary(style, window, baseline, sessions)
-    SummaryKind.DailyTotal -> dailyTotalSummary(style, dailyTotals, nowMs)
-    SummaryKind.Average, SummaryKind.Latest -> plainSummary(style, window, baseline)
+    SummaryKind.Resting -> restingSummary(style, window, visible, series.sleep, sessions)
+    SummaryKind.Baseline ->
+        baselineSummary(style, window, visible, series.baseline, series.sleep, sessions)
+
+    SummaryKind.DailyTotal -> dailyTotalSummary(style, series.dailyTotals, nowMs)
+    SummaryKind.Average, SummaryKind.Latest -> plainSummary(style, visible, series.baseline)
 }
+
+// The line the figures are read against follows the wearer in and out of sleep,
+// which is where a body changes what it is resting at.
+private fun modeGuides(values: Baselines, sleep: SleepSpans, window: LongRange): List<Guide> =
+    sleep.segments(Span(window.first, window.last))
+        .mapNotNull { segment -> values[segment.mode]?.let { Guide(it, within = segment.span) } }
 
 private fun restingSummary(
     style: MetricStyle,
-    window: List<ChartPoint>,
+    window: LongRange,
+    visible: List<ChartPoint>,
+    sleep: SleepSpans,
     sessions: List<Session>,
 ): MetricSummary {
-    val resting = restingRate(window)
+    val resting = restingRates(visible, sleep)
     val threshold = style.elevatedAbove ?: 100.0
-    val spells = spellsAbove(window, threshold, sessions)
+    val spells = spellsAbove(visible, sessions) { threshold }
 
     return MetricSummary(
-        guide = resting,
+        guides = modeGuides(resting, sleep, window),
         spells = spells,
         stats = listOf(
             StatFigure(
                 "resting",
-                resting?.let { formatValue(it, style.decimals) } ?: "—",
+                resting.awake?.let { formatValue(it, style.decimals) } ?: "—",
                 style.unit,
-                "in this window",
+                "awake, in this window",
+            ),
+            StatFigure(
+                "asleep",
+                resting.asleep?.let { formatValue(it, style.decimals) } ?: "—",
+                style.unit,
+                "asleep, in this window",
             ),
             StatFigure(
                 "avg",
-                mean(window)?.let { formatValue(it, style.decimals) } ?: "—",
+                mean(visible)?.let { formatValue(it, style.decimals) } ?: "—",
                 style.unit,
                 "in this window",
             ),
@@ -66,27 +82,37 @@ private fun restingSummary(
 
 private fun baselineSummary(
     style: MetricStyle,
-    window: List<ChartPoint>,
+    window: LongRange,
+    visible: List<ChartPoint>,
     baseline: List<ChartPoint>,
+    sleep: SleepSpans,
     sessions: List<Session>,
 ): MetricSummary {
-    val centre = percentile(baseline.map { it.value }, 0.5)
-    val spells = centre?.let { spellsAbove(window, it + BASELINE_MARGIN, sessions) } ?: emptyList()
-    val peak = window.maxOfOrNull { it.value }
+    val centre = baselines(baseline, sleep, 0.5)
+    val spells = spellsAbove(visible, sessions) { point ->
+        centre[sleep.modeAt(point.atMs)]?.plus(BASELINE_MARGIN)
+    }
+    val peak = visible.maxOfOrNull { it.value }
 
     return MetricSummary(
-        guide = centre,
+        guides = modeGuides(centre, sleep, window),
         spells = spells,
         stats = listOf(
             StatFigure(
                 "baseline",
-                centre?.let { formatValue(it, style.decimals) } ?: "—",
+                centre.awake?.let { formatValue(it, style.decimals) } ?: "—",
                 style.unit,
-                "over the fortnight",
+                "awake, over the fortnight",
+            ),
+            StatFigure(
+                "asleep",
+                centre.asleep?.let { formatValue(it, style.decimals) } ?: "—",
+                style.unit,
+                "asleep, over the fortnight",
             ),
             StatFigure(
                 "avg",
-                mean(window)?.let { formatValue(it, style.decimals) } ?: "—",
+                mean(visible)?.let { formatValue(it, style.decimals) } ?: "—",
                 style.unit,
                 "in this window",
             ),
@@ -115,11 +141,9 @@ private fun dailyTotalSummary(
     nowMs: Long,
 ): MetricSummary {
     val today = dayStart(nowMs)
-    val earlier = dailyTotals.filterKeys { it != today }.values.filter { it > 0 }
-    val average = earlier.average().takeIf { it.isFinite() }
 
     return MetricSummary(
-        guide = average,
+        guides = emptyList(),
         spells = emptyList(),
         stats = listOf(
             StatFigure(
@@ -145,7 +169,7 @@ private fun plainSummary(
     }
 
     return MetricSummary(
-        guide = mean(baseline),
+        guides = listOfNotNull(mean(baseline)?.let { Guide(it) }),
         spells = emptyList(),
         stats = listOf(
             StatFigure(

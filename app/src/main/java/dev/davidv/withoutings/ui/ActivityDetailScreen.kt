@@ -79,7 +79,7 @@ fun ActivityDetailScreen(
 
         FigureRail(summaryFigures(hr, temperature))
 
-        val effort = effortFigures(totals, entry.calories)
+        val effort = effortFigures(entry, totals)
         if (effort.isNotEmpty()) {
             RowDivider(inset = 0.dp)
             FigureRail(effort)
@@ -233,12 +233,12 @@ private fun summaryFigures(hr: List<ChartPoint>, temperature: List<ChartPoint>):
     )
 }
 
-private fun effortFigures(totals: ActivityTotals?, calories: Double?): List<Figure> = buildList {
-    if (totals != null && totals.steps > 0) {
+private fun effortFigures(entry: ActivityEntry, totals: ActivityTotals?): List<Figure> = buildList {
+    if (totals != null && entry.onFoot && totals.steps > 0) {
         add(Figure("steps", grouped(totals.steps), ""))
         add(Figure("climbed", grouped(totals.ascentMetres, 0), "m"))
     }
-    if (calories != null) add(Figure("energy", grouped(calories, 0), "kcal"))
+    entry.calories?.let { add(Figure("energy", grouped(it, 0), "kcal")) }
 }
 
 @Composable
