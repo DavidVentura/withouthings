@@ -503,6 +503,17 @@ class WatchViewModel : ViewModel() {
         }
     }
 
+    fun trimActivity(entry: RecordedEntry, endedAtMs: Long) {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch {
+            val trimmed = withContext(Dispatchers.IO) {
+                runCatching { service.trimWorkout(entry.workout.id, endedAtMs) }
+            }.onFailure { Log.w(TAG, "trim: refused", it) }.getOrNull() ?: return@launch
+            _state.value = _state.value.copy(activityLogAtMs = 0)
+            showActivity(RecordedEntry(trimmed))
+        }
+    }
+
     fun deleteActivity(entry: RecordedEntry) {
         val service = WatchRepository.get() ?: return
         viewModelScope.launch {

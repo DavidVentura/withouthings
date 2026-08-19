@@ -430,6 +430,7 @@ private fun Navigation(
                     totals = selectedTotals,
                     onWindowChange = { model.zoom(it) },
                     onDelete = { model.deleteActivity(it); nav.popBackStack() },
+                    onTrim = { entry, endedAtMs -> model.trimActivity(entry, endedAtMs) },
                     onBack = { nav.popBackStack() },
                 )
             }

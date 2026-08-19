@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
 
 private const val MINUTE = 60_000L
 
@@ -228,5 +229,35 @@ class HeartRateZoneTest {
         assertEquals(HeartRateZone.Intense, zoneOf(130.0, 185))
         assertEquals(HeartRateZone.Peak, zoneOf(167.0, 185))
         assertNull(zoneOf(140.0, null))
+    }
+}
+
+class TrimEndTest {
+    private fun at(day: Int, hour: Int, minute: Int): Long =
+        Calendar.getInstance().apply {
+            set(2026, Calendar.MARCH, day, hour, minute, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+    @Test
+    fun `the end moves back to the time picked`() {
+        val session = Span(at(4, 18, 0), at(4, 22, 30))
+        assertEquals(at(4, 19, 15), trimEndAtMs(session, 19, 15))
+    }
+
+    @Test
+    fun `a session running past midnight trims to the day the time falls on`() {
+        val session = Span(at(4, 23, 0), at(5, 6, 0))
+        assertEquals(at(5, 0, 30), trimEndAtMs(session, 0, 30))
+        assertEquals(at(4, 23, 40), trimEndAtMs(session, 23, 40))
+    }
+
+    @Test
+    fun `a time outside the session has no end to move to`() {
+        val session = Span(at(4, 18, 0), at(4, 19, 0))
+        assertNull("before the start", trimEndAtMs(session, 17, 30))
+        assertNull("at the start", trimEndAtMs(session, 18, 0))
+        assertNull("at the end already", trimEndAtMs(session, 19, 0))
+        assertNull("after the end, so on the day before", trimEndAtMs(session, 20, 0))
     }
 }

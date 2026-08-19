@@ -423,6 +423,61 @@ fn reducing_a_series_for_drawing_keeps_peaks_and_troughs() {
 }
 
 #[test]
+fn trimming_a_session_moves_its_end_and_forgets_the_sets_after_it() {
+    use wpp::client::Record;
+    use wpp::units::UnixTime;
+
+    let recorder = Arc::new(Recorder::default());
+    let path = db_path();
+
+    let mut store = wpp_store::Store::open(&path).unwrap();
+    let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+    store
+        .store(
+            device,
+            &[
+                Record::WorkoutStarted {
+                    started_at: UnixTime(1_784_000_000),
+                    subcategory: 16,
+                },
+                Record::WorkoutEnded {
+                    started_at: UnixTime(1_784_000_000),
+                    ended_at: UnixTime(1_784_010_000),
+                    paused_secs: 0,
+                },
+            ],
+        )
+        .unwrap();
+    drop(store);
+
+    let service = service_at(&recorder, path.clone());
+    service.mark_set(1_784_001_000_000, SetEdge::Start).unwrap();
+    service.mark_set(1_784_002_000_000, SetEdge::End).unwrap();
+    service.mark_set(1_784_008_000_000, SetEdge::Start).unwrap();
+
+    let id = service.workouts(10).unwrap()[0].id;
+    let trimmed = service.trim_workout(id, 1_784_003_000_000).unwrap();
+
+    assert_eq!(trimmed.ended_at_ms, Some(1_784_003_000_000));
+    assert_eq!(
+        service.workouts(10).unwrap()[0].ended_at_ms,
+        Some(1_784_003_000_000)
+    );
+    assert_eq!(
+        service.markers(0, 1_785_000_000_000).unwrap().len(),
+        2,
+        "the set timed after the new end goes with the stretch cut off"
+    );
+
+    assert!(
+        service.trim_workout(id, 1_784_005_000_000).is_err(),
+        "an end later than the one recorded is refused"
+    );
+
+    cleanup(&path);
+}
+
+#[test]
 fn a_toggle_and_save_leaves_an_armed_scan_alone() {
     let recorder = Arc::new(Recorder::default());
     let (service, path) = service(&recorder);

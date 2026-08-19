@@ -12,11 +12,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.ui.theme.AppTheme
+import java.util.Calendar
 import kotlin.math.abs
 import uniffi.wpp_ffi.ActivityTotals
 
@@ -38,10 +43,12 @@ fun ActivityDetailScreen(
     totals: ActivityTotals?,
     onWindowChange: (LongRange) -> Unit,
     onDelete: (RecordedEntry) -> Unit,
+    onTrim: (RecordedEntry, Long) -> Unit,
     onBack: () -> Unit,
 ) {
     var scrubAtMs by remember { mutableStateOf<Long?>(null) }
     var asking by remember { mutableStateOf(false) }
+    var trimming by remember { mutableStateOf(false) }
 
     val hr = state.hr.map { ChartPoint(it.atMs, it.bpm.toDouble()) }
     val temperature = state.workoutTemp
@@ -58,6 +65,9 @@ fun ActivityDetailScreen(
         gap = AppTheme.space.blockMetric,
         trailing = {
             if (entry is RecordedEntry) {
+                if (entry.endedAtMs != null) {
+                    GlyphButton(Icons.Rounded.ContentCut, "Trim the end") { trimming = true }
+                }
                 GlyphButton(Icons.Rounded.DeleteOutline, "Delete this session") { asking = true }
             }
         },
@@ -132,7 +142,20 @@ fun ActivityDetailScreen(
         }
     }
 
-    if (!asking || entry !is RecordedEntry) return
+    if (entry !is RecordedEntry) return
+
+    val session = entry.endedAtMs?.let { Span(entry.startedAtMs, it) }
+    if (trimming && session != null) {
+        TrimEndDialog(
+            span = session,
+            seedAtMs = scrubAtMs?.takeIf { it > session.fromMs && it < session.toMs }
+                ?: session.toMs,
+            onDismiss = { trimming = false },
+            onTrim = { trimming = false; onTrim(entry, it) },
+        )
+    }
+
+    if (!asking) return
     AlertDialog(
         onDismissRequest = { asking = false },
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -143,6 +166,54 @@ fun ActivityDetailScreen(
         },
         dismissButton = {
             TextButton(onClick = { asking = false }) { Text("Cancel") }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrimEndDialog(
+    span: Span,
+    seedAtMs: Long,
+    onDismiss: () -> Unit,
+    onTrim: (Long) -> Unit,
+) {
+    val seed = remember(seedAtMs) { Calendar.getInstance().apply { timeInMillis = seedAtMs } }
+    val picker = rememberTimePickerState(
+        initialHour = seed.get(Calendar.HOUR_OF_DAY),
+        initialMinute = seed.get(Calendar.MINUTE),
+        is24Hour = true,
+    )
+    val chosen = trimEndAtMs(span, picker.hour, picker.minute)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        title = { Text("Trim the end") },
+        text = {
+            Column {
+                TimeInput(picker)
+                Text(
+                    chosen?.let {
+                        "Ends ${clock(it)}, ${compactDuration(it - span.fromMs)} of session, " +
+                            "${compactDuration(span.toMs - it)} dropped."
+                    } ?: "Pick a time between ${clock(span.fromMs)} and ${clock(span.toMs)}.",
+                    style = AppTheme.type.rowMeta,
+                    color = AppTheme.colors.onSurfaceTertiary,
+                )
+                Text(
+                    "Sets timed after the new end go with it.",
+                    Modifier.padding(top = 4.dp),
+                    style = AppTheme.type.rowMeta,
+                    color = AppTheme.colors.onSurfaceTertiary,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = chosen != null, onClick = { chosen?.let(onTrim) }) { Text("Trim") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
 }

@@ -34,6 +34,19 @@ pub struct ActiveWorkout {
     pub subcategory: i64,
 }
 
+pub struct WorkoutRow {
+    pub id: i64,
+    pub started_at: UnixTime,
+    pub ended_at: Option<UnixTime>,
+    pub subcategory: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trim {
+    Applied,
+    OutsideSession,
+}
+
 impl Store {
     pub fn open(path: &str) -> Result<Store, Error> {
         let conn = Connection::open(path)?;
@@ -572,19 +585,24 @@ impl Store {
             })
     }
 
-    pub fn workouts(
-        &self,
-        device_id: i64,
-        limit: u32,
-    ) -> Result<Vec<(i64, i64, Option<i64>, i64)>, Error> {
+    pub fn workouts(&self, device_id: i64, limit: u32) -> Result<Vec<WorkoutRow>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT id, started_at, ended_at, subcategory FROM workout
               WHERE device_id = ?1 ORDER BY started_at DESC LIMIT ?2",
         )?;
-        let rows = stmt.query_map(params![device_id, limit], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-        })?;
+        let rows = stmt.query_map(params![device_id, limit], workout_row)?;
         rows.collect()
+    }
+
+    pub fn workout(&self, device_id: i64, id: i64) -> Result<Option<WorkoutRow>, Error> {
+        self.conn
+            .query_row(
+                "SELECT id, started_at, ended_at, subcategory FROM workout
+                  WHERE device_id = ?1 AND id = ?2",
+                params![device_id, id],
+                workout_row,
+            )
+            .optional()
     }
 
     /// Must match [`Store::activity_minutes`]'s windowing exactly: disagreeing
@@ -676,6 +694,42 @@ impl Store {
         )?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// An end only ever moves earlier: extending one would claim time the watch
+    /// never recorded as a session. Sets timed in the stretch cut off go with
+    /// it, having nothing left to belong to.
+    pub fn trim_workout(&self, device_id: i64, id: i64, ended_at: UnixTime) -> Result<Trim, Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        let Some(WorkoutRow {
+            started_at,
+            ended_at: Some(was),
+            ..
+        }) = tx
+            .query_row(
+                "SELECT id, started_at, ended_at, subcategory FROM workout
+                  WHERE device_id = ?1 AND id = ?2",
+                params![device_id, id],
+                workout_row,
+            )
+            .optional()?
+        else {
+            return Ok(Trim::OutsideSession);
+        };
+        if ended_at <= started_at || ended_at >= was {
+            return Ok(Trim::OutsideSession);
+        }
+        tx.execute(
+            "UPDATE workout SET ended_at = ?3 WHERE device_id = ?1 AND id = ?2",
+            params![device_id, id, ended_at.0],
+        )?;
+        tx.execute(
+            "DELETE FROM marker
+              WHERE device_id = ?1 AND at_ms > ?2 AND at_ms <= ?3",
+            params![device_id, ended_at.0 * 1000, was.0 * 1000],
+        )?;
+        tx.commit()?;
+        Ok(Trim::Applied)
     }
 
     pub fn mark_set(&self, device_id: i64, at_ms: i64, edge: i64) -> Result<(), Error> {
@@ -781,6 +835,15 @@ impl Store {
     pub fn connection(&self) -> &Connection {
         &self.conn
     }
+}
+
+fn workout_row(r: &rusqlite::Row<'_>) -> Result<WorkoutRow, Error> {
+    Ok(WorkoutRow {
+        id: r.get(0)?,
+        started_at: UnixTime(r.get(1)?),
+        ended_at: r.get::<_, Option<i64>>(2)?.map(UnixTime),
+        subcategory: r.get(3)?,
+    })
 }
 
 fn thin_levels(mut newest: HashMap<i64, (i64, i64)>, records: &[Record]) -> Vec<&Record> {
@@ -1095,12 +1158,109 @@ mod tests {
         store.mark_set(device, 1_040_000, 1).unwrap();
         store.mark_set(device, 1_200_000, 0).unwrap();
 
-        let id = store.workouts(device, 10).unwrap()[0].0;
+        let id = store.workouts(device, 10).unwrap()[0].id;
         store.delete_workout(device, id).unwrap();
 
         assert_eq!(store.count("workout").unwrap(), 0);
         assert_eq!(store.count("sample").unwrap(), 1);
         assert_eq!(store.count("marker").unwrap(), 1);
+    }
+
+    #[test]
+    fn trimming_a_workout_pulls_its_end_back_and_drops_the_sets_after_it() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[
+                    Record::WorkoutStarted {
+                        started_at: UnixTime(1000),
+                        subcategory: 16,
+                    },
+                    Record::WorkoutEnded {
+                        started_at: UnixTime(1000),
+                        ended_at: UnixTime(1300),
+                        paused_secs: 0,
+                    },
+                ],
+            )
+            .unwrap();
+        store.mark_set(device, 1_050_000, 0).unwrap();
+        store.mark_set(device, 1_060_000, 1).unwrap();
+        store.mark_set(device, 1_250_000, 0).unwrap();
+
+        let id = store.workouts(device, 10).unwrap()[0].id;
+        let outcome = store.trim_workout(device, id, UnixTime(1100)).unwrap();
+
+        assert_eq!(outcome, Trim::Applied);
+        assert_eq!(
+            store.workout(device, id).unwrap().unwrap().ended_at,
+            Some(UnixTime(1100))
+        );
+        assert_eq!(store.count("marker").unwrap(), 2);
+    }
+
+    #[test]
+    fn a_trim_outside_the_recorded_session_leaves_it_alone() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[
+                    Record::WorkoutStarted {
+                        started_at: UnixTime(1000),
+                        subcategory: 16,
+                    },
+                    Record::WorkoutEnded {
+                        started_at: UnixTime(1000),
+                        ended_at: UnixTime(1300),
+                        paused_secs: 0,
+                    },
+                ],
+            )
+            .unwrap();
+        let id = store.workouts(device, 10).unwrap()[0].id;
+
+        for asked in [
+            UnixTime(1400),
+            UnixTime(1300),
+            UnixTime(900),
+            UnixTime(1000),
+        ] {
+            assert_eq!(
+                store.trim_workout(device, id, asked).unwrap(),
+                Trim::OutsideSession,
+                "{asked:?} is not inside the session"
+            );
+        }
+        assert_eq!(
+            store.workout(device, id).unwrap().unwrap().ended_at,
+            Some(UnixTime(1300))
+        );
+    }
+
+    #[test]
+    fn a_running_workout_has_no_end_to_trim() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[Record::WorkoutStarted {
+                    started_at: UnixTime(1000),
+                    subcategory: 16,
+                }],
+            )
+            .unwrap();
+        let id = store.workouts(device, 10).unwrap()[0].id;
+
+        assert_eq!(
+            store.trim_workout(device, id, UnixTime(1100)).unwrap(),
+            Trim::OutsideSession
+        );
+        assert!(store.active_workout(device).unwrap().is_some());
     }
 
     #[test]

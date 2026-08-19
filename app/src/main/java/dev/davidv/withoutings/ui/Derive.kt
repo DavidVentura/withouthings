@@ -175,6 +175,22 @@ fun dayStart(atMs: Long): Long = Calendar.getInstance().apply {
     set(Calendar.MILLISECOND, 0)
 }.timeInMillis
 
+// A wall clock time names two instants in a session that ran past midnight, so
+// the one meant is the later of them still inside the session.
+fun trimEndAtMs(span: Span, hour: Int, minute: Int): Long? {
+    val picked = Calendar.getInstance().apply {
+        timeInMillis = span.toMs
+        set(Calendar.HOUR_OF_DAY, hour)
+        set(Calendar.MINUTE, minute)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    if (picked.timeInMillis > span.toMs) picked.add(Calendar.DAY_OF_MONTH, -1)
+    val at = picked.timeInMillis
+    if (at <= span.fromMs || at >= span.toMs) return null
+    return at
+}
+
 fun dayName(atMs: Long, nowMs: Long): String {
     val today = dayStart(nowMs)
     val day = dayStart(atMs)

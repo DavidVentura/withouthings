@@ -11,7 +11,7 @@ use wpp::image::{GlyphRequest, IconRequest, Mono};
 use wpp::pairing::{Pairing, PairingState};
 use wpp::units::{Bpm, Celsius, Millivolts, UnixMillis, UnixTime};
 use wpp::Frame;
-use wpp_store::Store;
+use wpp_store::{Store, Trim, WorkoutRow};
 
 uniffi::setup_scaffolding!();
 
@@ -41,6 +41,8 @@ pub enum WatchError {
     Storage { reason: String },
     #[error("protocol: {reason}")]
     Protocol { reason: String },
+    #[error("refused: {reason}")]
+    Refused { reason: String },
 }
 
 impl From<wpp_store::Error> for WatchError {
@@ -830,24 +832,7 @@ impl WatchService {
         store
             .workouts(self.device_id, limit)?
             .into_iter()
-            .map(|(id, start, end, sub)| {
-                let started_at_ms = start * 1000;
-                let ended_at_ms = end.map(|e| e * 1000);
-                Ok(WorkoutSummary {
-                    id,
-                    started_at_ms,
-                    ended_at_ms,
-                    subcategory: sub as i32,
-                    activity: activity_name(sub as u32),
-                    calories: workout_calories(
-                        &store,
-                        self.device_id,
-                        user.as_ref(),
-                        started_at_ms,
-                        ended_at_ms.unwrap_or_else(now_ms),
-                    )?,
-                })
-            })
+            .map(|row| summarise(&store, self.device_id, user.as_ref(), row))
             .collect()
     }
 
@@ -857,6 +842,28 @@ impl WatchService {
         drop(store);
         self.transport.changed();
         Ok(())
+    }
+
+    /// Answers with the session as it now stands: the figures over it are read
+    /// back out of the samples the shorter span covers, not carried over.
+    pub fn trim_workout(&self, id: i64, ended_at_ms: i64) -> Result<WorkoutSummary, WatchError> {
+        let store = self.store.lock().unwrap();
+        let ended_at = UnixMillis(ended_at_ms).to_seconds();
+        if store.trim_workout(self.device_id, id, ended_at)? == Trim::OutsideSession {
+            return Err(WatchError::Refused {
+                reason: format!("{ended_at_ms} is not inside session {id}"),
+            });
+        }
+        let user = store.watch_user(self.device_id)?;
+        let Some(row) = store.workout(self.device_id, id)? else {
+            return Err(WatchError::Refused {
+                reason: format!("no session {id}"),
+            });
+        };
+        let trimmed = summarise(&store, self.device_id, user.as_ref(), row)?;
+        drop(store);
+        self.transport.changed();
+        Ok(trimmed)
     }
 
     pub fn activity_totals(&self, from_ms: i64, to_ms: i64) -> Result<ActivityTotals, WatchError> {
@@ -1641,6 +1648,30 @@ fn activity_name(id: u32) -> String {
         .find(|(known, _)| *known == id)
         .map(|(_, name)| name.to_string())
         .unwrap_or_else(|| format!("Activity {id}"))
+}
+
+fn summarise(
+    store: &Store,
+    device_id: i64,
+    user: Option<&wpp::client::UserProfile>,
+    row: WorkoutRow,
+) -> Result<WorkoutSummary, WatchError> {
+    let started_at_ms = row.started_at.0 * 1000;
+    let ended_at_ms = row.ended_at.map(|end| end.0 * 1000);
+    Ok(WorkoutSummary {
+        id: row.id,
+        started_at_ms,
+        ended_at_ms,
+        subcategory: row.subcategory as i32,
+        activity: activity_name(row.subcategory as u32),
+        calories: workout_calories(
+            store,
+            device_id,
+            user,
+            started_at_ms,
+            ended_at_ms.unwrap_or_else(now_ms),
+        )?,
+    })
 }
 
 fn workout_calories(
