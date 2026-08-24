@@ -34,19 +34,14 @@ class LocationRecorder(context: Context, private val service: () -> WatchService
             Log.w(TAG, "no location permission, no route")
             return
         }
-        if (!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+        val provider = provider()
+        if (provider == null) {
             Log.w(TAG, "location is switched off on this phone, no route")
             return
         }
         val own = HandlerThread(TAG).apply { start() }
         val started = runCatching {
-            manager.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER,
-                INTERVAL_MS,
-                0f,
-                listener,
-                own.looper,
-            )
+            manager.requestLocationUpdates(provider, INTERVAL_MS, 0f, listener, own.looper)
         }
         // Android refuses a while-in-use permission to a service that did not
         // take the location type while it was allowed to. Nothing here can put
@@ -58,7 +53,7 @@ class LocationRecorder(context: Context, private val service: () -> WatchService
         }
         thread = own
         recording = true
-        Log.i(TAG, "recording a route at ${INTERVAL_MS}ms")
+        Log.i(TAG, "recording a route from $provider at ${INTERVAL_MS}ms")
     }
 
     fun disarm() {
@@ -69,6 +64,23 @@ class LocationRecorder(context: Context, private val service: () -> WatchService
         thread?.quitSafely()
         thread = null
         Log.i(TAG, "stopped recording")
+    }
+
+    /**
+     * The platform's own fusion where there is one, which folds the receiver
+     * together with the phone's other sensors and generally holds a line
+     * better between buildings than raw satellite fixes do. It is part of
+     * AOSP rather than Play Services, so nothing is dragged in behind it, but
+     * not every phone carries one.
+     */
+    private fun provider(): String? {
+        if (manager.isProviderEnabled(LocationManager.FUSED_PROVIDER)) {
+            return LocationManager.FUSED_PROVIDER
+        }
+        if (manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            return LocationManager.GPS_PROVIDER
+        }
+        return null
     }
 
     private val listener = LocationListener { location ->

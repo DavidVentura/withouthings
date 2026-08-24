@@ -46,6 +46,8 @@ import uniffi.wpp_ffi.Travel
 // across whatever was not recorded, matching what the route itself is cut on.
 private const val ROUTE_GAP_MS = 30_000L
 
+private const val MINUTE_MS = 60_000L
+
 @Composable
 fun ActivityDetailScreen(
     state: UiState,
@@ -194,7 +196,7 @@ fun ActivityDetailScreen(
         if (route != null && route.climb.any { it.value > 0 }) {
             ChartTitle(
                 "Elevation gain",
-                "${grouped(route.climb.maxOf { it.value }, 0)} m climbed",
+                "${grouped(route.climb.sumOf { it.value }, 0)} m climbed",
             )
             ChartCard {
                 ValueChart(
@@ -207,7 +209,9 @@ fun ActivityDetailScreen(
                     scrubAtMs = scrubAtMs,
                     onScrub = { scrubAtMs = it },
                     limit = extent,
-                    connectWithin = ROUTE_GAP_MS,
+                    // A bar for each window the watch reported a climb over,
+                    // which is how steeply the ground rose while it did.
+                    form = ChartForm.Bars(MINUTE_MS),
                     cursorAlpha = 0.45f,
                     unit = " m",
                 )

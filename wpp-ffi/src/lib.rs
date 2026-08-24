@@ -1011,9 +1011,9 @@ impl WatchService {
         })
     }
 
-    /// Metres climbed as the session went on, off the watch's barometer. It
-    /// reports a climb per minute and never a descent, so this is the gain
-    /// accumulating rather than a height above anything.
+    /// Metres climbed in each window the watch reports one for. It gives a
+    /// climb per minute and never a descent, so there is no height above
+    /// anything to be had from it — only how steeply the ground rose.
     pub fn ascent_series(&self, from_ms: i64, to_ms: i64) -> Result<Vec<Point>, WatchError> {
         let store = self.store.lock().unwrap();
         let minutes = store.activity_minutes(
@@ -1023,17 +1023,13 @@ impl WatchService {
         )?;
         drop(store);
 
-        let mut climbed = 0.0;
         Ok(minutes
             .iter()
             .filter(|minute| minute.at.0 * 1000 >= from_ms && minute.at.0 * 1000 <= to_ms)
-            .map(|minute| {
-                climbed += minute.ascent.unwrap_or(0) as f64 / ACTIVITY_HUNDREDTHS;
-                Point {
-                    at_ms: minute.at.0 * 1000,
-                    value: climbed,
-                    origin: Origin::Stored,
-                }
+            .map(|minute| Point {
+                at_ms: minute.at.0 * 1000,
+                value: minute.ascent.unwrap_or(0) as f64 / ACTIVITY_HUNDREDTHS,
+                origin: Origin::Stored,
             })
             .collect())
     }

@@ -20,11 +20,19 @@ const MOVING_M_S: f64 = 0.5;
 /// the difference cannot be drawn, so the points are worth dropping.
 const SIMPLIFY_PX: f64 = 1.0;
 
-/// Fixes either side of one that are averaged into it. Between tall buildings
-/// a reflected signal wanders tens of metres, and a line drawn through every
-/// fix reports that wandering as distance travelled. Two seconds either way is
-/// short enough that a corner survives it.
-const SMOOTH_SPAN: usize = 2;
+/// How hard a body changes its own speed, in metres per second per second, and
+/// so how far the filter lets a fix pull it off the course it was holding. A
+/// bike leaving a junction manages about this; set it lower and corners get
+/// rounded off, higher and the line follows every reflection.
+const ACCELERATION_M_S2: f64 = 1.0;
+
+/// What a fix that reports no uncertainty is treated as having. A receiver
+/// that will not say is not to be trusted much.
+const UNKNOWN_ACCURACY_M: f64 = 30.0;
+
+/// How wrong the first fix's velocity of zero may be, as a variance. Wide
+/// enough that a session already under way is not dragged back by it.
+const INITIAL_SPEED_VARIANCE: f64 = 100.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Fix {
@@ -160,48 +168,186 @@ pub fn clean(fixes: &[Fix], limits: Limits) -> Track {
     }
 }
 
-/// An average over the fixes around each one, weighted by how sure the
-/// receiver was of them. Timestamps and every other field are the fix's own:
-/// only the position moves.
+/// Where a body must have been, given where it was going and how sure the
+/// receiver was of each fix. A constant-velocity Kalman filter run forwards and
+/// then smoothed backwards over the whole run, which is what a recording allows
+/// and a live position does not: every fix is judged against the ones after it
+/// as well as before.
+///
+/// The two axes are filtered separately. Nothing in the model couples north to
+/// east, so the four-state filter factors exactly into two of two states, and
+/// every matrix in it is small enough to write out.
 fn smooth(fixes: &[Fix]) -> Vec<Fix> {
-    if fixes.len() <= 2 * SMOOTH_SPAN {
+    if fixes.len() < 3 {
         return fixes.to_vec();
     }
+    let origin = fixes[0].position();
+    let metres_per_degree = EARTH_RADIUS_M * std::f64::consts::PI / 180.0;
+    let east_per_degree = metres_per_degree * origin.lat.to_radians().cos();
+
+    let seconds: Vec<f64> = fixes
+        .iter()
+        .map(|fix| (fix.at.0 - fixes[0].at.0) as f64 / 1000.0)
+        .collect();
+    let variances: Vec<f64> = fixes
+        .iter()
+        .map(|fix| {
+            let metres = fix.accuracy().map_or(UNKNOWN_ACCURACY_M, |a| a.0);
+            metres * metres
+        })
+        .collect();
+
+    let north: Vec<f64> = fixes
+        .iter()
+        .map(|fix| (fix.position().lat - origin.lat) * metres_per_degree)
+        .collect();
+    let east: Vec<f64> = fixes
+        .iter()
+        .map(|fix| (fix.position().lon - origin.lon) * east_per_degree)
+        .collect();
+
+    let north = smooth_axis(&seconds, &north, &variances);
+    let east = smooth_axis(&seconds, &east, &variances);
+
     fixes
         .iter()
         .enumerate()
-        .map(|(index, fix)| {
-            let first = index.saturating_sub(SMOOTH_SPAN);
-            let last = (index + SMOOTH_SPAN).min(fixes.len() - 1);
-            let mut weight_total = 0.0;
-            let mut lat = 0.0;
-            let mut lon = 0.0;
-            for (offset, near) in (first..=last).zip(&fixes[first..=last]) {
-                // Triangular, so the fix itself counts most and the run falls
-                // off to nothing at the edges. A flat window leaves a ninth of
-                // an alternating wobble behind; this cancels it.
-                let away = offset.abs_diff(index);
-                let weight = confidence(near) * (SMOOTH_SPAN + 1 - away) as f64;
-                weight_total += weight;
-                lat += near.lat_e7 as f64 * weight;
-                lon += near.lon_e7 as f64 * weight;
-            }
-            Fix {
-                lat_e7: (lat / weight_total).round() as i32,
-                lon_e7: (lon / weight_total).round() as i32,
-                ..*fix
-            }
+        .map(|(index, fix)| Fix {
+            lat_e7: ((origin.lat + north[index] / metres_per_degree) * DEGREE_E7).round() as i32,
+            lon_e7: ((origin.lon + east[index] / east_per_degree) * DEGREE_E7).round() as i32,
+            ..*fix
         })
         .collect()
 }
 
-/// Inverse square of the reported uncertainty, which is how a fix the receiver
-/// was sure of comes to outweigh one it was guessing at.
-fn confidence(fix: &Fix) -> f64 {
-    match fix.accuracy() {
-        Some(accuracy) if accuracy.0 > 0.0 => 1.0 / (accuracy.0 * accuracy.0),
-        _ => 1.0,
+/// A symmetric two by two, which is all a position-and-velocity covariance is.
+#[derive(Debug, Clone, Copy)]
+struct Spread {
+    pp: f64,
+    pv: f64,
+    vv: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct State {
+    position: f64,
+    velocity: f64,
+}
+
+fn smooth_axis(seconds: &[f64], measured: &[f64], variances: &[f64]) -> Vec<f64> {
+    let count = measured.len();
+    let mut filtered = Vec::with_capacity(count);
+    let mut predicted = Vec::with_capacity(count);
+
+    let mut state = State {
+        position: measured[0],
+        velocity: 0.0,
+    };
+    let mut spread = Spread {
+        pp: variances[0],
+        pv: 0.0,
+        vv: INITIAL_SPEED_VARIANCE,
+    };
+    filtered.push((state, spread));
+    predicted.push((state, spread));
+
+    for index in 1..count {
+        let dt = seconds[index] - seconds[index - 1];
+        let (ahead, reach) = predict(state, spread, dt);
+        predicted.push((ahead, reach));
+
+        let (settled, tightened) = correct(ahead, reach, measured[index], variances[index]);
+        state = settled;
+        spread = tightened;
+        filtered.push((state, spread));
     }
+
+    // Rauch-Tung-Striebel: walk back through what the filter believed at the
+    // time, correcting each by what the rest of the run went on to show.
+    let mut smoothed = vec![0.0; count];
+    let mut behind = filtered[count - 1].0;
+    smoothed[count - 1] = behind.position;
+    for index in (0..count - 1).rev() {
+        let (state, spread) = filtered[index];
+        let (ahead, reach) = predicted[index + 1];
+        let dt = seconds[index + 1] - seconds[index];
+
+        // gain = P F' inv(P_ahead), with F' the transpose of the step forward.
+        let Some(inverse) = invert(reach) else {
+            smoothed[index] = state.position;
+            behind = state;
+            continue;
+        };
+        let fp = Spread {
+            pp: spread.pp + dt * spread.pv,
+            pv: spread.pv,
+            vv: spread.vv,
+        };
+        let vp = spread.pv + dt * spread.vv;
+        let gain = [
+            fp.pp * inverse.pp + fp.pv * inverse.pv,
+            fp.pp * inverse.pv + fp.pv * inverse.vv,
+            vp * inverse.pp + spread.vv * inverse.pv,
+            vp * inverse.pv + spread.vv * inverse.vv,
+        ];
+
+        let off_position = behind.position - ahead.position;
+        let off_velocity = behind.velocity - ahead.velocity;
+        behind = State {
+            position: state.position + gain[0] * off_position + gain[1] * off_velocity,
+            velocity: state.velocity + gain[2] * off_position + gain[3] * off_velocity,
+        };
+        smoothed[index] = behind.position;
+    }
+    smoothed
+}
+
+fn predict(state: State, spread: Spread, dt: f64) -> (State, Spread) {
+    let noise = ACCELERATION_M_S2 * ACCELERATION_M_S2;
+    (
+        State {
+            position: state.position + state.velocity * dt,
+            velocity: state.velocity,
+        },
+        Spread {
+            pp: spread.pp + 2.0 * dt * spread.pv + dt * dt * spread.vv + noise * dt.powi(4) / 4.0,
+            pv: spread.pv + dt * spread.vv + noise * dt.powi(3) / 2.0,
+            vv: spread.vv + noise * dt * dt,
+        },
+    )
+}
+
+fn correct(state: State, spread: Spread, measured: f64, variance: f64) -> (State, Spread) {
+    let total = spread.pp + variance;
+    if total <= 0.0 {
+        return (state, spread);
+    }
+    let gain_position = spread.pp / total;
+    let gain_velocity = spread.pv / total;
+    let off = measured - state.position;
+    (
+        State {
+            position: state.position + gain_position * off,
+            velocity: state.velocity + gain_velocity * off,
+        },
+        Spread {
+            pp: spread.pp - gain_position * spread.pp,
+            pv: spread.pv - gain_position * spread.pv,
+            vv: spread.vv - gain_velocity * spread.pv,
+        },
+    )
+}
+
+fn invert(spread: Spread) -> Option<Spread> {
+    let determinant = spread.pp * spread.vv - spread.pv * spread.pv;
+    if determinant.abs() < f64::EPSILON {
+        return None;
+    }
+    Some(Spread {
+        pp: spread.vv / determinant,
+        pv: -spread.pv / determinant,
+        vv: spread.pp / determinant,
+    })
 }
 
 impl Segment {
@@ -988,8 +1134,134 @@ mod tests {
         let road = clean(&straight, limits()).distance().0;
 
         assert!(
-            wobbled < road * 1.15,
+            wobbled < road * 1.02,
             "{wobbled} m against {road} m of road: the wobble is being counted"
+        );
+    }
+
+    #[test]
+    fn a_corner_is_still_a_corner_after_filtering() {
+        // North for half a minute, then east for half a minute, at cycling
+        // speed. A filter tuned too smooth turns this into a curve.
+        let mut fixes = Vec::new();
+        for second in 0..30i64 {
+            fixes.push(fix(second, 52.3700 + second as f64 * 0.00004, 4.8900));
+        }
+        let corner = Position {
+            lat: 52.3700 + 30.0 * 0.00004,
+            lon: 4.8900,
+        };
+        for second in 30..60i64 {
+            fixes.push(fix(
+                second,
+                corner.lat,
+                4.8900 + (second - 30) as f64 * 0.000065,
+            ));
+        }
+
+        let track = clean(&fixes, limits());
+        let nearest = track
+            .fixes()
+            .map(|fix| fix.position().distance_to(corner).0)
+            .fold(f64::MAX, f64::min);
+
+        assert!(
+            nearest < 8.0,
+            "the line passes {nearest} m from a corner it went round"
+        );
+    }
+
+    /// The forward half of the filter on its own: what a live position would
+    /// have, knowing only the fixes up to each moment.
+    fn forward_only(seconds: &[f64], measured: &[f64], variances: &[f64]) -> Vec<f64> {
+        let mut state = State {
+            position: measured[0],
+            velocity: 0.0,
+        };
+        let mut spread = Spread {
+            pp: variances[0],
+            pv: 0.0,
+            vv: INITIAL_SPEED_VARIANCE,
+        };
+        let mut out = vec![state.position];
+        for index in 1..measured.len() {
+            let (ahead, reach) = predict(state, spread, seconds[index] - seconds[index - 1]);
+            let (settled, tightened) = correct(ahead, reach, measured[index], variances[index]);
+            state = settled;
+            spread = tightened;
+            out.push(state.position);
+        }
+        out
+    }
+
+    #[test]
+    fn knowing_where_the_run_went_next_is_what_keeps_a_corner() {
+        // Thirty seconds north, then thirty east, at five metres a second.
+        // A filter that has only seen the past cannot know a turn is coming,
+        // so it carries on north into it and cuts the corner off.
+        let leg = 5.0;
+        let mut seconds = Vec::new();
+        let mut north = Vec::new();
+        for second in 0..60 {
+            seconds.push(second as f64);
+            north.push(if second <= 30 {
+                second as f64 * leg
+            } else {
+                30.0 * leg
+            });
+        }
+        let variances = vec![25.0; north.len()];
+
+        let live = forward_only(&seconds, &north, &variances);
+        let recorded = smooth_axis(&seconds, &north, &variances);
+
+        // How far past the corner each one carries on north in the seconds
+        // right after it, which is where a lagging filter shows.
+        let apex = 30.0 * leg;
+        let worst = |line: &[f64]| {
+            (31..=36)
+                .map(|index| (line[index] - apex).abs())
+                .fold(f64::MIN, f64::max)
+        };
+        let live_overshoot = worst(&live);
+        let recorded_overshoot = worst(&recorded);
+
+        assert!(
+            recorded_overshoot < live_overshoot / 2.0,
+            "smoothed is {recorded_overshoot} m past the corner against {live_overshoot} m live"
+        );
+    }
+
+    #[test]
+    fn a_fix_the_receiver_doubted_moves_the_line_less_than_one_it_did_not() {
+        let straight: Vec<Fix> = (0..30)
+            .map(|second| fix(second, 52.3700 + second as f64 * 0.00004, 4.8900))
+            .collect();
+
+        // The same ten metre excursion — small enough to be a body and not a
+        // jump — once reported as a good fix and once as a poor one.
+        let off = 0.000145;
+        let mut trusted = straight.clone();
+        trusted[15] = Fix {
+            lon_e7: ((4.8900 + off) * DEGREE_E7).round() as i32,
+            accuracy_cm: Some(300),
+            ..trusted[15]
+        };
+        let mut doubted = straight.clone();
+        doubted[15] = Fix {
+            lon_e7: ((4.8900 + off) * DEGREE_E7).round() as i32,
+            accuracy_cm: Some(4_000),
+            ..doubted[15]
+        };
+
+        let pull =
+            |fixes: &[Fix]| clean(fixes, limits()).segments[0].fixes[15].position().lon - 4.8900;
+
+        assert!(
+            pull(&trusted) > pull(&doubted) * 2.0,
+            "a fix reported to 3 m moved the line {} and one reported to 40 m moved it {}",
+            pull(&trusted),
+            pull(&doubted)
         );
     }
 
