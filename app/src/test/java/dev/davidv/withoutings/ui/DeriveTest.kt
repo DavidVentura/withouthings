@@ -346,3 +346,17 @@ class TrimEndTest {
         assertNull("after the end, so on the day before", trimEndAtMs(session, 20, 0))
     }
 }
+
+class PaceTest {
+    @Test
+    fun `a pace is minutes and seconds to the kilometre`() {
+        // 3 m/s covers a kilometre in 333 s, five and a half minutes.
+        assertEquals("5:33", pacePerKm(3.0))
+        assertEquals("4:00", pacePerKm(1000.0 / 240.0))
+    }
+
+    @Test
+    fun `seconds under ten keep their leading zero`() {
+        assertEquals("5:03", pacePerKm(1000.0 / 303.0))
+    }
+}

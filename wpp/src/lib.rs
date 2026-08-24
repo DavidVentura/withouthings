@@ -13,6 +13,7 @@ pub mod objects;
 pub mod pairing;
 pub mod signal;
 pub mod sleep;
+pub mod track;
 pub mod units;
 
 pub use activity::{Minute, Session};
@@ -27,6 +28,7 @@ pub use image::{GlyphRequest, IconRequest, ImageFormat, Mono};
 pub use objects::WppObject;
 pub use pairing::{Pairing, PairingError, PairingState};
 pub use signal::{Lead, SampleFormat, Signal, SignalCollector, SignalKind};
+pub use track::{Fix, Limits, Track};
 pub use units::{Bpm, Celsius, Millis, Millivolts, UnixTime, COUNTS_PER_MILLIVOLT};
 
 #[cfg(test)]

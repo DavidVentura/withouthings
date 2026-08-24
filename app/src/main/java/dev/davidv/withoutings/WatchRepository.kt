@@ -114,11 +114,30 @@ class Settings(context: Context) {
         get() = prefs.getBoolean(KEY_NOTIFICATIONS, true)
         set(value) = prefs.edit().putBoolean(KEY_NOTIFICATIONS, value).apply()
 
-    private companion object {
-        const val KEY_MAC = "mac"
-        const val KEY_SECRET = "secret"
-        const val KEY_ACCOUNT_ID = "account-id"
-        const val KEY_KNOWN = "known-watches"
-        const val KEY_NOTIFICATIONS = "notifications"
+    var routes: Boolean
+        get() = prefs.getBoolean(KEY_ROUTES, false)
+        set(value) = prefs.edit().putBoolean(KEY_ROUTES, value).apply()
+
+    // Off by default: a tile request tells whoever serves it where the route
+    // went, which is the one thing this app otherwise never sends anywhere.
+    var tiles: Boolean
+        get() = prefs.getBoolean(KEY_TILES, false)
+        set(value) = prefs.edit().putBoolean(KEY_TILES, value).apply()
+
+    var tileUrl: String
+        get() = prefs.getString(KEY_TILE_URL, DEFAULT_TILE_URL) ?: DEFAULT_TILE_URL
+        set(value) = prefs.edit().putString(KEY_TILE_URL, value.trim()).apply()
+
+    companion object {
+        const val DEFAULT_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+
+        private const val KEY_MAC = "mac"
+        private const val KEY_SECRET = "secret"
+        private const val KEY_ACCOUNT_ID = "account-id"
+        private const val KEY_KNOWN = "known-watches"
+        private const val KEY_NOTIFICATIONS = "notifications"
+        private const val KEY_ROUTES = "routes"
+        private const val KEY_TILES = "tiles"
+        private const val KEY_TILE_URL = "tile-url"
     }
 }

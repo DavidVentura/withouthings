@@ -1,5 +1,7 @@
 use crate::client::UserProfile;
-use crate::units::{Bpm, Centimetres, Kilocalories, Kilograms, Met, UnixMillis, UnixTime, Years};
+use crate::units::{
+    Bpm, Centimetres, Kilocalories, Kilograms, Met, MetresPerSecond, UnixMillis, UnixTime, Years,
+};
 
 const KJ_PER_KCAL: f64 = 4.184;
 
@@ -98,6 +100,44 @@ impl Wearer {
             .min(self.met_per_minute(ceiling));
         (gross - self.resting_per_minute()).max(0.0)
     }
+}
+
+/// Above this a body runs rather than walks, and the oxygen it costs roughly
+/// doubles for the same speed.
+const RUNS_ABOVE_M_S: f64 = 2.2;
+
+const SECONDS_PER_MINUTE: f64 = 60.0;
+
+/// The Compendium of Physical Activities' bands for bicycling, which is the
+/// same table every calculator on the web is quoting. A ride is read at the
+/// speed it averaged, so the stop-start of a commute is already in the figure.
+pub fn cycling_met(speed: MetresPerSecond) -> Met {
+    let kmh = speed.0 * 3.6;
+    Met(if kmh < 16.0 {
+        6.8
+    } else if kmh < 19.3 {
+        8.0
+    } else if kmh < 22.5 {
+        10.0
+    } else if kmh < 25.7 {
+        12.0
+    } else if kmh < 30.6 {
+        14.0
+    } else {
+        16.0
+    })
+}
+
+/// ACSM's metabolic equations: the oxygen a body costs rises with the speed it
+/// carries itself at, and running costs about twice what walking does.
+pub fn on_foot_met(speed: MetresPerSecond) -> Met {
+    let metres_per_minute = speed.0 * SECONDS_PER_MINUTE;
+    let millilitres = if speed.0 >= RUNS_ABOVE_M_S {
+        0.2 * metres_per_minute + ML_OXYGEN_PER_MET_MINUTE
+    } else {
+        0.1 * metres_per_minute + ML_OXYGEN_PER_MET_MINUTE
+    };
+    Met(millilitres / ML_OXYGEN_PER_MET_MINUTE)
 }
 
 /// What the session had earned by each of its readings. The energy lands over
@@ -342,5 +382,48 @@ mod tests {
             first_name: String::new(),
         };
         assert!(Wearer::of(&user, UnixTime(1_785_057_972)).is_none());
+    }
+}
+
+#[cfg(test)]
+mod speed_tests {
+    use super::*;
+
+    #[test]
+    fn a_commute_is_read_at_the_band_its_speed_falls_in() {
+        assert_eq!(cycling_met(MetresPerSecond(15.96 / 3.6)), Met(6.8));
+        assert_eq!(cycling_met(MetresPerSecond(20.0 / 3.6)), Met(10.0));
+        assert_eq!(cycling_met(MetresPerSecond(35.0 / 3.6)), Met(16.0));
+    }
+
+    #[test]
+    fn walking_and_running_are_not_the_same_cost_at_the_same_speed() {
+        // A brisk walk is about three and a half METs, and a sixteen minute
+        // mile run is about ten.
+        let walk = on_foot_met(MetresPerSecond(5.0 / 3.6));
+        assert!((walk.0 - 3.4).abs() < 0.2, "{walk:?}");
+
+        let run = on_foot_met(MetresPerSecond(16.0 / 3.6));
+        assert!((run.0 - 16.2).abs() < 0.5, "{run:?}");
+
+        assert!(on_foot_met(MetresPerSecond(3.0)).0 > on_foot_met(MetresPerSecond(2.1)).0 * 1.5);
+    }
+
+    #[test]
+    fn a_ride_at_a_measured_speed_costs_what_the_tables_say() {
+        let wearer = Wearer {
+            sex: Sex::Male,
+            weight: Kilograms(73.0),
+            height: Centimetres(175),
+            age: Years(33.2),
+        };
+        let ceiling = cycling_met(MetresPerSecond(15.96 / 3.6));
+        let per_minute = wearer.met_per_minute(ceiling) - wearer.resting_per_minute();
+
+        assert!(
+            (per_minute * 10.0 - 75.0).abs() < 3.0,
+            "{} kcal over ten minutes, against the 75 every calculator gives",
+            per_minute * 10.0
+        );
     }
 }

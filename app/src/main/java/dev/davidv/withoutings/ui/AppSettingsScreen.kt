@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -20,7 +23,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import dev.davidv.withoutings.Settings
 import dev.davidv.withoutings.ui.theme.AppTheme
 
 @Composable
@@ -28,6 +34,7 @@ fun AppSettingsScreen(
     connected: Boolean,
     listening: Boolean,
     testNotification: UInt?,
+    routes: RouteSettings,
     onPostTestNotification: () -> Unit,
     onDismissTestNotification: () -> Unit,
     onUnpair: () -> Unit,
@@ -41,6 +48,8 @@ fun AppSettingsScreen(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(AppTheme.space.blockMetric),
         ) {
+            RouteSection(routes)
+
             Eyebrow("diagnostics")
             Text(
                 if (listening) {
@@ -127,4 +136,77 @@ fun AppSettingsScreen(
             TextButton(onClick = { asking = false }) { Text("Cancel") }
         },
     )
+}
+
+/**
+ * The watch has no receiver of its own, so recording a route means the phone's
+ * own position. Both switches are off until asked for: one costs a permission
+ * and a good deal of battery, the other is the only thing this app ever sends
+ * off the phone.
+ */
+data class RouteSettings(
+    val recording: Boolean,
+    val permitted: Boolean,
+    val tiles: Boolean,
+    val tileUrl: String,
+    val onRecording: (Boolean) -> Unit,
+    val onTiles: (Boolean) -> Unit,
+    val onTileUrl: (String) -> Unit,
+)
+
+@Composable
+private fun RouteSection(routes: RouteSettings) {
+    Eyebrow("routes")
+    Text(
+        "Cycling, running and the other activities that cover ground can be " +
+            "recorded with the phone's position, which is the only way to get " +
+            "a route: the watch has no receiver. Nothing is recorded outside " +
+            "a session, and nothing at all for activities on the spot.",
+        style = AppTheme.type.body,
+        color = AppTheme.colors.onSurfaceTertiary,
+    )
+    SettingRow(
+        "Record routes",
+        if (routes.recording && !routes.permitted) {
+            "Waiting on the location permission"
+        } else {
+            "Uses the receiver for as long as the session lasts"
+        },
+    ) {
+        Switch(checked = routes.recording, onCheckedChange = routes.onRecording)
+    }
+
+    SettingRow(
+        "Show map tiles",
+        "Off, a route is drawn on its own. On, each tile is fetched from the " +
+            "server below, which learns where the route went.",
+    ) {
+        Switch(checked = routes.tiles, onCheckedChange = routes.onTiles)
+    }
+    if (routes.tiles) {
+        var typed by remember(routes.tileUrl) { mutableStateOf(routes.tileUrl) }
+        OutlinedTextField(
+            value = typed,
+            onValueChange = { typed = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Tile URL") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Uri,
+                imeAction = ImeAction.Done,
+            ),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlineAction(
+                "Use it",
+                Modifier.weight(1f),
+                enabled = typed != routes.tileUrl && typed.isNotBlank(),
+            ) { routes.onTileUrl(typed) }
+            OutlineAction(
+                "Back to OpenStreetMap",
+                Modifier.weight(1f),
+                enabled = routes.tileUrl != Settings.DEFAULT_TILE_URL,
+            ) { routes.onTileUrl(Settings.DEFAULT_TILE_URL) }
+        }
+    }
 }

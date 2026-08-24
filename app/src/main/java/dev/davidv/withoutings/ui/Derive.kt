@@ -351,3 +351,11 @@ fun zoneOf(bpm: Double, maxRate: Int?): HeartRateZone? {
     val floors = zoneFloors(maxRate)
     return HeartRateZone.entries.last { bpm >= floors[it.ordinal] }
 }
+
+/** Minutes and seconds to cover a kilometre, which is how a run is read. */
+fun pacePerKm(metresPerSecond: Double): String {
+    // Rounded, not truncated: a kilometre in 239.99 seconds is a four minute
+    // kilometre, and truncation reports it as 3:59.
+    val secondsPerKm = (1000.0 / metresPerSecond).roundToInt()
+    return "${secondsPerKm / 60}:${(secondsPerKm % 60).toString().padStart(2, '0')}"
+}

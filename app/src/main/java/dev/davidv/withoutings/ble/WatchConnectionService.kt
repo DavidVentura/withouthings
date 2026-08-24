@@ -12,6 +12,7 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.util.Log
 import dev.davidv.withoutings.DbLocation
@@ -29,16 +30,66 @@ class WatchConnectionService : Service() {
     private var link: GattLink? = null
     private var service: WatchService? = null
     private var ancs: AncsServer? = null
+    private var recorder: LocationRecorder? = null
     private var retries = 0
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var scanning = false
     private var lastProgress: Progress? = null
+    private var lastNotified = "Connecting"
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        startForeground(NOTIFICATION_ID, notification("Connecting"))
+        recorder = LocationRecorder(this) { service }
+        declareTypes("Connecting")
+    }
+
+    /**
+     * The location type can only be taken while the app is allowed to use
+     * location, which is while it is on screen. Taking it at every start is
+     * what lets a session begun from the watch, hours later with the phone
+     * locked, still record where it went.
+     */
+    private fun declareTypes(text: String) {
+        val wanted = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+            if (Settings(this).routes && LocationRecorder.permitted(this)) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            } else {
+                0
+            }
+        val taken = runCatching { startForeground(NOTIFICATION_ID, notification(text), wanted) }
+        if (taken.isSuccess) return
+
+        Log.w(TAG, "refused the location service type, routes go unrecorded", taken.exceptionOrNull())
+        startForeground(
+            NOTIFICATION_ID,
+            notification(text),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+        )
+    }
+
+    /**
+     * Asked on every change rather than on a timer: a session started from the
+     * watch has to be met with a receiver already running, not one that turns
+     * up half a minute into the ride.
+     *
+     * Runs on the service's own thread. The link calls it from the thread its
+     * notifications arrive on, and a stored fix calls it back from the
+     * recorder's, so arming and disarming would otherwise race each other.
+     */
+    private fun followWorkout() {
+        handler.post {
+            val recorder = recorder ?: return@post
+            if (!Settings(this).routes) {
+                recorder.disarm()
+                return@post
+            }
+            val since = runCatching { service?.routeRecordingSince() }
+                .onFailure { Log.e(TAG, "could not read the running session", it) }
+                .getOrNull()
+            if (since == null) recorder.disarm() else recorder.arm()
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -80,6 +131,12 @@ class WatchConnectionService : Service() {
             ).also { WatchRepository.attach(it) }
             service?.preferNotifications(settings.notifications)
             if (settings.notifications) ancs.start()
+        }
+
+        if (intent?.action == ACTION_ROUTES) {
+            Log.i(TAG, "route recording ${if (settings.routes) "on" else "off"}")
+            declareTypes(lastNotified)
+            followWorkout()
         }
 
         if (intent?.action == ACTION_NOTIFICATIONS) {
@@ -271,6 +328,7 @@ class WatchConnectionService : Service() {
                 .onFailure { Log.e(TAG, "onConnected", it) }
             runCatching { service?.let { svc -> declareZone(svc) } }
                 .onFailure { Log.w(TAG, "clock sync", it) }
+            followWorkout()
         }
 
         override fun onBytes(bytes: ByteArray) {
@@ -308,6 +366,7 @@ class WatchConnectionService : Service() {
 
         override fun changed() {
             WatchRepository.invalidate()
+            followWorkout()
         }
 
         override fun reconnect() {
@@ -320,6 +379,8 @@ class WatchConnectionService : Service() {
     @SuppressLint("MissingPermission")
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        recorder?.disarm()
+        recorder = null
         stopScan()
         link?.close()
         link = null
@@ -344,12 +405,14 @@ class WatchConnectionService : Service() {
     }
 
     private fun notify(text: String) {
+        lastNotified = text
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text))
     }
 
     companion object {
         private const val ACTION_RECONNECT = "dev.davidv.withoutings.RECONNECT"
         private const val ACTION_NOTIFICATIONS = "dev.davidv.withoutings.NOTIFICATIONS"
+        private const val ACTION_ROUTES = "dev.davidv.withoutings.ROUTES"
         private const val EXTRA_ENABLED = "enabled"
         private const val TAG = "WatchLink"
         private const val CHANNEL_ID = "watch-link"
@@ -374,6 +437,17 @@ class WatchConnectionService : Service() {
         fun reconnect(context: Context) {
             context.startForegroundService(
                 Intent(context, WatchConnectionService::class.java).setAction(ACTION_RECONNECT)
+            )
+        }
+
+        /**
+         * Only a call made while the app is on screen can take the location
+         * service type, so the setting has to reach the service there rather
+         * than the next time it happens to start.
+         */
+        fun setRoutes(context: Context) {
+            context.startForegroundService(
+                Intent(context, WatchConnectionService::class.java).setAction(ACTION_ROUTES)
             )
         }
 

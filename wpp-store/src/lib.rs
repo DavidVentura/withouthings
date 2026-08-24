@@ -8,7 +8,8 @@ use wpp::client::{
     Category, DeviceIdentity, Feature, FeatureId, FeatureSchedule, Record, Source, UserProfile,
 };
 use wpp::signal::Signal;
-use wpp::units::UnixTime;
+use wpp::track::Fix;
+use wpp::units::{UnixMillis, UnixTime};
 
 pub use rusqlite::Error;
 
@@ -732,6 +733,15 @@ impl Store {
             params![device_id, id],
         )?;
         tx.execute(
+            "DELETE FROM track_point
+              WHERE device_id = ?1
+                AND at_ms >= (SELECT started_at * 1000 FROM workout
+                               WHERE id = ?2 AND device_id = ?1)
+                AND at_ms <= (SELECT COALESCE(ended_at, started_at) * 1000 FROM workout
+                               WHERE id = ?2 AND device_id = ?1)",
+            params![device_id, id],
+        )?;
+        tx.execute(
             "DELETE FROM workout WHERE device_id = ?1 AND id = ?2",
             params![device_id, id],
         )?;
@@ -771,6 +781,11 @@ impl Store {
               WHERE device_id = ?1 AND at_ms > ?2 AND at_ms <= ?3",
             params![device_id, ended_at.0 * 1000, was.0 * 1000],
         )?;
+        tx.execute(
+            "DELETE FROM track_point
+              WHERE device_id = ?1 AND at_ms > ?2 AND at_ms <= ?3",
+            params![device_id, ended_at.0 * 1000, was.0 * 1000],
+        )?;
         tx.commit()?;
         Ok(Trim::Applied)
     }
@@ -796,6 +811,57 @@ impl Store {
         )?;
         let rows = stmt.query_map(params![device_id, from_ms, to_ms], |r| {
             Ok((r.get(0)?, r.get(1)?))
+        })?;
+        rows.collect()
+    }
+
+    pub fn record_fixes(&mut self, device_id: i64, fixes: &[Fix]) -> Result<(), Error> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO track_point (device_id, at_ms, lat_e7, lon_e7,
+                     altitude_cm, accuracy_cm, speed_mm_s, bearing_cdeg)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT DO NOTHING",
+            )?;
+            for fix in fixes {
+                stmt.execute(params![
+                    device_id,
+                    fix.at.0,
+                    fix.lat_e7,
+                    fix.lon_e7,
+                    fix.altitude_cm,
+                    fix.accuracy_cm,
+                    fix.speed_mm_s,
+                    fix.bearing_cdeg,
+                ])?;
+            }
+        }
+        tx.commit()
+    }
+
+    pub fn track_points(
+        &self,
+        device_id: i64,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<Vec<Fix>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT at_ms, lat_e7, lon_e7, altitude_cm, accuracy_cm, speed_mm_s, bearing_cdeg
+               FROM track_point
+              WHERE device_id = ?1 AND at_ms BETWEEN ?2 AND ?3
+              ORDER BY at_ms",
+        )?;
+        let rows = stmt.query_map(params![device_id, from_ms, to_ms], |r| {
+            Ok(Fix {
+                at: UnixMillis(r.get(0)?),
+                lat_e7: r.get(1)?,
+                lon_e7: r.get(2)?,
+                altitude_cm: r.get(3)?,
+                accuracy_cm: r.get(4)?,
+                speed_mm_s: r.get(5)?,
+                bearing_cdeg: r.get(6)?,
+            })
         })?;
         rows.collect()
     }
@@ -982,6 +1048,18 @@ mod tests {
             source,
             window_secs: Some(60),
             context: None,
+        }
+    }
+
+    fn at(at_ms: i64) -> Fix {
+        Fix {
+            at: UnixMillis(at_ms),
+            lat_e7: 523_791_000,
+            lon_e7: 49_003_000,
+            altitude_cm: Some(150),
+            accuracy_cm: Some(480),
+            speed_mm_s: Some(3_200),
+            bearing_cdeg: None,
         }
     }
 
@@ -1210,6 +1288,69 @@ mod tests {
     }
 
     #[test]
+    fn deleting_a_workout_takes_the_route_recorded_under_it() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[
+                    Record::WorkoutStarted {
+                        started_at: UnixTime(1000),
+                        subcategory: 6,
+                    },
+                    Record::WorkoutEnded {
+                        started_at: UnixTime(1000),
+                        ended_at: UnixTime(1100),
+                        paused_secs: 0,
+                    },
+                ],
+            )
+            .unwrap();
+        store
+            .record_fixes(device, &[at(1_020_000), at(1_090_000), at(1_200_000)])
+            .unwrap();
+
+        let id = store.workouts(device, 10).unwrap()[0].id;
+        store.delete_workout(device, id).unwrap();
+
+        assert_eq!(
+            store.track_points(device, 0, i64::MAX).unwrap(),
+            vec![at(1_200_000)],
+            "only the fixes inside the session go with it"
+        );
+    }
+
+    #[test]
+    fn a_fix_survives_the_round_trip_with_every_field_it_arrived_with() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let bare = Fix {
+            altitude_cm: None,
+            accuracy_cm: None,
+            speed_mm_s: None,
+            bearing_cdeg: Some(18_000),
+            ..at(2_000_000)
+        };
+        store.record_fixes(device, &[at(1_000_000), bare]).unwrap();
+
+        assert_eq!(
+            store.track_points(device, 0, i64::MAX).unwrap(),
+            vec![at(1_000_000), bare]
+        );
+    }
+
+    #[test]
+    fn a_fix_already_recorded_is_not_recorded_twice() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store.record_fixes(device, &[at(1_000_000)]).unwrap();
+        store.record_fixes(device, &[at(1_000_000)]).unwrap();
+
+        assert_eq!(store.count("track_point").unwrap(), 1);
+    }
+
+    #[test]
     fn trimming_a_workout_pulls_its_end_back_and_drops_the_sets_after_it() {
         let mut store = Store::open_in_memory().unwrap();
         let device = store.device("a4:7e:fa:44:d6:10").unwrap();
@@ -1232,6 +1373,9 @@ mod tests {
         store.mark_set(device, 1_050_000, 0).unwrap();
         store.mark_set(device, 1_060_000, 1).unwrap();
         store.mark_set(device, 1_250_000, 0).unwrap();
+        store
+            .record_fixes(device, &[at(1_050_000), at(1_150_000), at(1_250_000)])
+            .unwrap();
 
         let id = store.workouts(device, 10).unwrap()[0].id;
         let outcome = store.trim_workout(device, id, UnixTime(1100)).unwrap();
@@ -1242,6 +1386,11 @@ mod tests {
             Some(UnixTime(1100))
         );
         assert_eq!(store.count("marker").unwrap(), 2);
+        assert_eq!(
+            store.track_points(device, 0, i64::MAX).unwrap(),
+            vec![at(1_050_000)],
+            "the route past the new end goes with the sets"
+        );
     }
 
     #[test]

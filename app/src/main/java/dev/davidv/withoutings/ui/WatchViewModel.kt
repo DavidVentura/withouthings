@@ -38,6 +38,9 @@ import uniffi.wpp_ffi.ActivityTotals
 import uniffi.wpp_ffi.ArmedScan
 import uniffi.wpp_ffi.HealthFeature
 import uniffi.wpp_ffi.Point
+import uniffi.wpp_ffi.RouteTrack
+import uniffi.wpp_ffi.TrackSummary
+import uniffi.wpp_ffi.Travel
 import uniffi.wpp_ffi.WearPosition
 import uniffi.wpp_ffi.WatchScreen
 import uniffi.wpp_ffi.WatchService
@@ -51,6 +54,9 @@ sealed interface ActivityEntry {
     // Steps and metres climbed come off the pedometer, which describes what the
     // wearer did only when their own feet carried them through it.
     val onFoot: Boolean
+    // Whether there could have been a route, which is what tells an activity
+    // with no map that nothing was recorded from one that never travels.
+    val travel: Travel
     val calories: Double?
 }
 
@@ -60,6 +66,7 @@ data class RecordedEntry(val workout: WorkoutSummary) : ActivityEntry {
     override val name = workout.activity
     override val subcategory = workout.subcategory
     override val onFoot = workout.onFoot
+    override val travel = workout.travel
     override val calories = workout.calories
 }
 
@@ -69,8 +76,21 @@ data class DetectedEntry(val detected: DetectedActivity) : ActivityEntry {
     override val name = detected.activity
     override val subcategory = detected.subcategory
     override val onFoot = detected.onFoot
+    override val travel = detected.travel
     override val calories = detected.calories
 }
+
+/**
+ * A session's route, read once and kept: the handle answers questions about
+ * where the line goes without reading the fixes again for every frame drawn.
+ */
+data class Route(
+    val track: RouteTrack,
+    val summary: TrackSummary,
+    val speed: List<ChartPoint>,
+    // Metres climbed as the session went on, off the barometer.
+    val climb: List<ChartPoint>,
+)
 
 data class UiState(
     val link: LinkState = LinkState.Disconnected,
@@ -89,6 +109,8 @@ data class UiState(
     val notifications: NotificationConfig? = null,
     val hrWindow: LongRange = 0L..0L,
     val workoutTemp: List<ChartPoint> = emptyList(),
+    val liveRoute: Route? = null,
+    val liveRouteAtMs: Long = 0,
     val ecgs: List<EcgSummary> = emptyList(),
     val liveEcg: List<Double> = emptyList(),
     val home: HomeState = HomeState(),
@@ -108,11 +130,18 @@ data class HomeState(
     val builtAtMs: Long = 0,
 )
 
+const val MS_TO_KMH = 3.6
+
 private const val DEFAULT_WINDOW_MS = 10 * 60 * 1000L
 
 private const val DETECTED_HISTORY_MS = 7L * DAY_MS
 
 private const val ACTIVITY_LOG_MAX_AGE_MS = 10_000L
+
+// The screen refreshes four times a second while a session runs. Re-reading
+// and re-cleaning a whole ride at that rate would be the most expensive thing
+// on the path, and a distance does not visibly change in ten seconds.
+private const val LIVE_ROUTE_MAX_AGE_MS = 10_000L
 
 private const val HOME_MAX_AGE_MS = 10_000L
 
@@ -177,6 +206,9 @@ class WatchViewModel : ViewModel() {
 
     private val _selectedTotals = MutableStateFlow<ActivityTotals?>(null)
     val selectedTotals: StateFlow<ActivityTotals?> = _selectedTotals.asStateFlow()
+
+    private val _selectedRoute = MutableStateFlow<Route?>(null)
+    val selectedRoute: StateFlow<Route?> = _selectedRoute.asStateFlow()
 
     private val _night = MutableStateFlow<Night?>(null)
     val night: StateFlow<Night?> = _night.asStateFlow()
@@ -322,6 +354,14 @@ class WatchViewModel : ViewModel() {
         }
         val previous = _state.value
         val rebuildLog = now - previous.activityLogAtMs > ACTIVITY_LOG_MAX_AGE_MS
+        val rebuildRoute = now - previous.liveRouteAtMs > LIVE_ROUTE_MAX_AGE_MS
+        val liveRoute = when {
+            active == null -> null
+            !rebuildRoute -> previous.liveRoute
+            else -> runCatching { route(service, RecordedEntry(active), active.startedAtMs..now) }
+                .onFailure { Log.w(TAG, "live route: unreadable", it) }
+                .getOrNull()
+        }
         val log = if (rebuildLog) {
             (
                 service.workouts(50u).map(::RecordedEntry) +
@@ -349,6 +389,8 @@ class WatchViewModel : ViewModel() {
                 .series(Metric.TEMPERATURE, range.first, range.last, MAX_CHART_POINTS)
                 .map { p: Point -> ChartPoint(p.atMs, p.value) },
             markers = service.markers(range.first, range.last),
+            liveRoute = liveRoute,
+            liveRouteAtMs = if (active != null && rebuildRoute) now else previous.liveRouteAtMs,
             activityLog = log,
             activityLogAtMs = if (rebuildLog) now else previous.activityLogAtMs,
             dailySteps = steps,
@@ -517,12 +559,33 @@ class WatchViewModel : ViewModel() {
         val span = entry.startedAtMs..(entry.endedAtMs ?: System.currentTimeMillis())
         zoom(span)
         _selectedTotals.value = null
+        _selectedRoute.value = null
         val service = WatchRepository.get() ?: return
         viewModelScope.launch {
             _selectedTotals.value = withContext(Dispatchers.IO) {
                 runCatching { service.activityTotals(span.first, span.last) }.getOrNull()
             }
         }
+        viewModelScope.launch {
+            _selectedRoute.value = withContext(Dispatchers.IO) {
+                runCatching { route(service, entry, span) }
+                    .onFailure { Log.w(TAG, "route: unreadable", it) }
+                    .getOrNull()
+            }
+        }
+    }
+
+    private fun route(service: WatchService, entry: ActivityEntry, span: LongRange): Route? {
+        val track = service.track(span.first, span.last, entry.subcategory) ?: return null
+        return Route(
+            track = track,
+            summary = track.summary(),
+            // Metres a second is what a receiver reports; nobody reads a ride
+            // in them.
+            speed = track.speedSeries().map { ChartPoint(it.atMs, it.value * MS_TO_KMH) },
+            climb = service.ascentSeries(span.first, span.last)
+                .map { ChartPoint(it.atMs, it.value) },
+        )
     }
 
     fun trimActivity(entry: RecordedEntry, endedAtMs: Long) {
@@ -543,6 +606,7 @@ class WatchViewModel : ViewModel() {
                 .onFailure { Log.w(TAG, "delete: refused", it) }
             _selectedActivity.value = null
             _selectedTotals.value = null
+            _selectedRoute.value = null
             _state.value = _state.value.copy(activityLogAtMs = 0)
             refresh()
         }

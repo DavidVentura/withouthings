@@ -38,6 +38,7 @@ import dev.davidv.withoutings.ui.ActivitiesScreen
 import dev.davidv.withoutings.ui.ActivityDetailScreen
 import dev.davidv.withoutings.ui.AppSettingsScreen
 import dev.davidv.withoutings.ui.BottomNav
+import dev.davidv.withoutings.ble.LocationRecorder
 import dev.davidv.withoutings.ui.EcgDetailScreen
 import dev.davidv.withoutings.ui.LIVE_ECG_HZ
 import dev.davidv.withoutings.ui.LiveEcgScreen
@@ -47,9 +48,11 @@ import dev.davidv.withoutings.ui.MetricStyle
 import dev.davidv.withoutings.ui.NowScreen
 import dev.davidv.withoutings.ui.PairingScreen
 import dev.davidv.withoutings.ui.RecordedEntry
+import dev.davidv.withoutings.ui.RouteSettings
 import dev.davidv.withoutings.ui.SleepScreen
 import dev.davidv.withoutings.ui.StorageScreen
 import dev.davidv.withoutings.ui.Tab
+import dev.davidv.withoutings.ui.TileSource
 import dev.davidv.withoutings.ui.TodayScreen
 import dev.davidv.withoutings.ui.WatchActivitiesScreen
 import dev.davidv.withoutings.ui.WatchScreensScreen
@@ -197,6 +200,60 @@ private fun Pairing(settings: Settings, radio: Boolean, onPaired: () -> Unit) {
     )
 }
 
+/**
+ * The permission is asked for from here rather than when a session starts: by
+ * then the phone may be in a pocket with the app closed, and a dialog nobody
+ * is there to answer is a route lost.
+ */
+@Composable
+private fun rememberRouteSettings(): RouteSettings {
+    val context = LocalContext.current
+    val settings = remember { Settings(context) }
+    var recording by remember { mutableStateOf(settings.routes) }
+    var permitted by remember { mutableStateOf(LocationRecorder.permitted(context)) }
+    var tiles by remember { mutableStateOf(settings.tiles) }
+    var tileUrl by remember { mutableStateOf(settings.tileUrl) }
+
+    val ask = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { granted ->
+        permitted = granted[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        settings.routes = permitted
+        recording = permitted
+        WatchConnectionService.setRoutes(context)
+    }
+
+    return RouteSettings(
+        recording = recording,
+        permitted = permitted,
+        tiles = tiles,
+        tileUrl = tileUrl,
+        onRecording = { wanted ->
+            if (wanted && !LocationRecorder.permitted(context)) {
+                recording = true
+                ask.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                    )
+                )
+                return@RouteSettings
+            }
+            recording = wanted
+            settings.routes = wanted
+            WatchConnectionService.setRoutes(context)
+        },
+        onTiles = { wanted ->
+            tiles = wanted
+            settings.tiles = wanted
+        },
+        onTileUrl = { url ->
+            tileUrl = url
+            settings.tileUrl = url
+        },
+    )
+}
+
 @Composable
 private fun Navigation(
     model: WatchViewModel,
@@ -215,6 +272,12 @@ private fun Navigation(
     val metricSeries by model.metricSeries.collectAsState()
     val selected by model.selectedActivity.collectAsState()
     val selectedTotals by model.selectedTotals.collectAsState()
+    val selectedRoute by model.selectedRoute.collectAsState()
+    // Null while the setting is off, which is what keeps a route drawn on its
+    // own rather than over anything fetched.
+    val tileSource = remember(settings.tiles, settings.tileUrl) {
+        if (settings.tiles) TileSource(context, settings.tileUrl) else null
+    }
     val ecg by model.ecg.collectAsState()
     val ecgWindow by model.ecgWindow.collectAsState()
     val liveWindow by model.liveWindow.collectAsState()
@@ -428,6 +491,8 @@ private fun Navigation(
                     window = state.hrWindow,
                     nowMs = nowMs,
                     totals = selectedTotals,
+                    route = selectedRoute,
+                    tiles = tileSource,
                     onWindowChange = { model.zoom(it) },
                     onDelete = { model.deleteActivity(it); nav.popBackStack() },
                     onTrim = { entry, endedAtMs -> model.trimActivity(entry, endedAtMs) },
@@ -494,6 +559,7 @@ private fun Navigation(
                     listening = listening,
                     connected = state.link == LinkState.Ready,
                     testNotification = testNotification,
+                    routes = rememberRouteSettings(),
                     onPostTestNotification = { model.postTestNotification() },
                     onDismissTestNotification = { model.dismissTestNotification() },
                     onUnpair = onUnpair,

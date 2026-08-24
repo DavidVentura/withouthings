@@ -1,5 +1,5 @@
 use std::sync::{Arc, Mutex};
-use wpp_ffi::{AncsLink, Bitmap, Rasterizer, SetEdge, Transport, WatchService};
+use wpp_ffi::{AncsLink, Bitmap, LocationFix, Rasterizer, SetEdge, Transport, WatchService};
 
 #[derive(Default)]
 struct Recorder {
@@ -542,5 +542,214 @@ fn a_toggle_and_save_leaves_an_armed_scan_alone() {
     );
 
     drop(service);
+    cleanup(&path);
+}
+
+const CYCLING: i32 = 6;
+const WEIGHTS: i32 = 16;
+
+fn fix(at_ms: i64, lat: f64, lon: f64) -> LocationFix {
+    LocationFix {
+        at_ms,
+        lat_e7: (lat * 1e7).round() as i32,
+        lon_e7: (lon * 1e7).round() as i32,
+        altitude_cm: Some(200),
+        accuracy_cm: Some(600),
+        speed_mm_s: None,
+        bearing_cdeg: None,
+    }
+}
+
+/// A ride out along one street, roughly 6 m/s, one fix a second.
+fn ride() -> Vec<LocationFix> {
+    (0..60)
+        .map(|second| {
+            fix(
+                1_700_000_000_000 + second * 1_000,
+                52.3700 + second as f64 * 0.000_054,
+                4.8900,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_recorded_route_comes_back_measured() {
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+
+    service.record_fixes(ride()).unwrap();
+    let track = service
+        .track(1_700_000_000_000, 1_700_000_060_000, CYCLING)
+        .unwrap()
+        .expect("a route was recorded");
+
+    let summary = track.summary();
+    assert_eq!(summary.fixes, 60);
+    assert!(
+        (summary.distance_metres - 354.0).abs() < 10.0,
+        "{} m is not the ride that was recorded",
+        summary.distance_metres
+    );
+    assert_eq!(summary.moving_secs, 59);
+    let speed = summary.average_speed_m_s.expect("under way throughout");
+    assert!((speed - 6.0).abs() < 0.3, "{speed} m/s");
+
+    cleanup(&path);
+}
+
+#[test]
+fn an_activity_that_covers_no_ground_has_no_route_to_read() {
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+
+    service.record_fixes(ride()).unwrap();
+
+    assert!(
+        service
+            .track(1_700_000_000_000, 1_700_000_060_000, WEIGHTS)
+            .unwrap()
+            .is_none(),
+        "fixes recorded under a session on the spot are not a route"
+    );
+
+    cleanup(&path);
+}
+
+#[test]
+fn the_table_says_which_activities_are_worth_a_receiver() {
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+    service.record_fixes(ride()).unwrap();
+
+    let reads_a_route = |subcategory: i32| {
+        service
+            .track(1_700_000_000_000, 1_700_000_060_000, subcategory)
+            .unwrap()
+            .is_some()
+    };
+
+    for (subcategory, name) in [(6, "cycling"), (2, "running"), (34, "skiing")] {
+        assert!(reads_a_route(subcategory), "{name} covers ground");
+    }
+    for (subcategory, name) in [
+        (16, "weights"),
+        (307, "indoor running"),
+        (7, "swimming"),
+        (9_999, "an activity the table has never heard of"),
+    ] {
+        assert!(!reads_a_route(subcategory), "{name} stays put");
+    }
+
+    cleanup(&path);
+}
+
+#[test]
+fn a_map_frame_covers_the_box_it_was_fitted_to() {
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+
+    service.record_fixes(ride()).unwrap();
+    let track = service
+        .track(1_700_000_000_000, 1_700_000_060_000, CYCLING)
+        .unwrap()
+        .expect("a route was recorded");
+
+    let view = track.fit(400.0, 300.0, 16.0);
+    let frame = track.frame(view);
+
+    assert!(!frame.tiles.is_empty());
+    assert_eq!(frame.path.len(), 1, "one unbroken run");
+    let drawn = &frame.path[0].points;
+    assert!(drawn.len() >= 2);
+    assert_eq!(drawn[0].at_ms, 1_700_000_000_000);
+    assert_eq!(
+        drawn[drawn.len() - 1].at_ms,
+        1_700_000_059_000,
+        "the ends are kept so a scrub can reach them"
+    );
+
+    cleanup(&path);
+}
+
+#[test]
+fn a_ride_with_a_route_is_not_charged_at_the_rate_the_heart_read() {
+    use wpp::client::{Record, SampleKind, Source};
+    use wpp::units::{UnixMillis, UnixTime};
+    use wpp_store::Store;
+
+    const START: i64 = 1_700_000_000;
+    let path = db_path();
+    {
+        // Seeded before the service opens the file, which takes it exclusively.
+        let mut store = Store::open(&path).unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let mut records = vec![
+            Record::User(wpp::client::UserProfile {
+                id: 1,
+                weight: 73_000,
+                height: 175,
+                gender: 0,
+                birth: 738_892_800,
+                first_name: String::new(),
+            }),
+            Record::WorkoutStarted {
+                started_at: UnixTime(START),
+                subcategory: CYCLING as i16,
+            },
+            Record::WorkoutEnded {
+                started_at: UnixTime(START),
+                ended_at: UnixTime(START + 600),
+                paused_secs: 0,
+            },
+        ];
+        // Ten minutes at 155 bpm, which Keytel reads as far harder work than
+        // sixteen kilometres an hour actually is.
+        for second in (0..600).step_by(10) {
+            records.push(Record::Sample {
+                measured_at: UnixMillis((START + second) * 1000),
+                kind: SampleKind::HeartRate,
+                value: 155,
+                quality: Some(4),
+                source: Source::Live,
+                window_secs: None,
+                context: None,
+            });
+        }
+        store.store(device, &records).unwrap();
+    }
+
+    let recorder = Arc::new(Recorder::default());
+    let service = service_at(&recorder, path.clone());
+
+    let by_heart_rate = service.workouts(5).unwrap()[0]
+        .calories
+        .expect("a wearer is on file");
+
+    // 2.66 km in ten minutes: 15.96 km/h, the Compendium's slowest band.
+    let ride: Vec<LocationFix> = (0..600)
+        .map(|second| {
+            fix(
+                (START + second) * 1000,
+                52.3700 + second as f64 * 0.0000399,
+                4.8900,
+            )
+        })
+        .collect();
+    service.record_fixes(ride).unwrap();
+
+    let by_ground = service.workouts(5).unwrap()[0]
+        .calories
+        .expect("still on file");
+
+    assert!(
+        by_heart_rate > 130.0,
+        "{by_heart_rate} kcal is not the overestimate this is about"
+    );
+    assert!(
+        (by_ground - 75.0).abs() < 12.0,
+        "{by_ground} kcal against the 75 the tables give for this ride"
+    );
+
     cleanup(&path);
 }

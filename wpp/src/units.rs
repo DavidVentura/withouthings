@@ -25,6 +25,7 @@ quantity!(Kilograms, f64);
 quantity!(Centimetres, u16);
 quantity!(BreathsPerMinute, u16);
 quantity!(Metres, f64);
+quantity!(MetresPerSecond, f64);
 quantity!(Kilocalories, f64);
 quantity!(Met, f64);
 quantity!(Years, f64);

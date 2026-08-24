@@ -17,6 +17,18 @@
          the -wal sibling, so nothing narrower than this grant works. -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- The watch has no receiver, so a route is the phone's own position
+         recorded alongside the session. Asked for only when route recording is
+         switched on, and never used outside a workout that covers ground. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!-- Map tiles, and nothing else. Unused until the setting is switched on,
+         which is off by default: a tile request tells whoever serves it where
+         the route went. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
@@ -50,7 +62,7 @@
         <service
             android:name=".ble.WatchConnectionService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|location" />
 
         <!-- Deliberately open: any app that knows a session has started may start
              one here. The worst a stranger can do with it is record a workout

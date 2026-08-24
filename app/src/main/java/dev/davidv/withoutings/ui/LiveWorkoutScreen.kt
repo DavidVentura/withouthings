@@ -124,6 +124,7 @@ fun LiveWorkoutScreen(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                state.liveRoute?.let { RouteTile(it, workout?.onFoot == true, Modifier.weight(1f)) }
                 SkinTempTile(state.workoutTemp, Modifier.weight(1f))
                 RestTile(sets.size, resting, restElapsedMs, Modifier.weight(1f))
             }
@@ -221,6 +222,37 @@ private fun ZoneBar(bpm: Double?, maxRate: Int?) {
             },
             Modifier.padding(top = 5.dp),
             style = AppTheme.type.axisSmall,
+            color = AppTheme.colors.onSurfaceTertiary,
+        )
+    }
+}
+
+/**
+ * Only appears once there is a route to report, which is a few seconds into a
+ * session outdoors and never during one on the spot.
+ */
+@Composable
+private fun RouteTile(route: Route, onFoot: Boolean, modifier: Modifier) {
+    val speed = route.summary.averageSpeedMS
+    Tile(modifier) {
+        Eyebrow("distance")
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(grouped(route.summary.distanceMetres / 1000, 2), style = AppTheme.type.summaryValue)
+            Text(
+                " km",
+                Modifier.padding(bottom = 3.dp),
+                style = AppTheme.type.rowMeta,
+                color = AppTheme.colors.onSurfaceTertiary,
+            )
+        }
+        Text(
+            when {
+                speed == null -> "not moving yet"
+                onFoot -> "${pacePerKm(speed)} /km"
+                else -> "${grouped(speed * MS_TO_KMH, 1)} km/h"
+            },
+            style = AppTheme.type.rowMeta,
             color = AppTheme.colors.onSurfaceTertiary,
         )
     }

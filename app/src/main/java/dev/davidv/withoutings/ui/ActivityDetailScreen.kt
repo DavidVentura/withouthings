@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -26,13 +29,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.ui.theme.AppTheme
 import java.util.Calendar
 import kotlin.math.abs
 import uniffi.wpp_ffi.ActivityTotals
+import uniffi.wpp_ffi.TrackSummary
+import uniffi.wpp_ffi.Travel
+
+// A minute without a fix is a break in the line rather than a straight leg
+// across whatever was not recorded, matching what the route itself is cut on.
+private const val ROUTE_GAP_MS = 30_000L
 
 @Composable
 fun ActivityDetailScreen(
@@ -41,12 +53,15 @@ fun ActivityDetailScreen(
     window: LongRange,
     nowMs: Long,
     totals: ActivityTotals?,
+    route: Route?,
+    tiles: TileSource?,
     onWindowChange: (LongRange) -> Unit,
     onDelete: (RecordedEntry) -> Unit,
     onTrim: (RecordedEntry, Long) -> Unit,
     onBack: () -> Unit,
 ) {
     var scrubAtMs by remember { mutableStateOf<Long?>(null) }
+    var mapFilling by remember(entry) { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
     var trimming by remember { mutableStateOf(false) }
 
@@ -77,13 +92,29 @@ fun ActivityDetailScreen(
             return@DetailScaffold
         }
 
-        FigureRail(summaryFigures(hr, temperature))
-
-        val effort = effortFigures(entry, totals)
-        if (effort.isNotEmpty()) {
-            RowDivider(inset = 0.dp)
-            FigureRail(effort)
+        if (route != null && mapFilling) {
+            ExpandedTrackMap(route, tiles, scrubAtMs) { mapFilling = false }
+            return@DetailScaffold
         }
+
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.space.blockMetric),
+        ) {
+
+        val elapsedMs = (entry.endedAtMs ?: nowMs) - entry.startedAtMs
+        if (route != null) {
+            FigureRail(paceFigures(entry, route, elapsedMs))
+            RowDivider(inset = 0.dp)
+        }
+
+        val effort = effortFigures(entry, totals, route)
+        if (effort.isNotEmpty()) {
+            FigureRail(effort)
+            RowDivider(inset = 0.dp)
+        }
+
+        FigureRail(summaryFigures(hr, temperature))
 
         ChartTitle("Heart rate")
         ChartCard {
@@ -105,6 +136,25 @@ fun ActivityDetailScreen(
                 LegendSwatch(
                     MaterialTheme.colorScheme.primary.copy(alpha = AppTheme.chart.legendSessionAlpha),
                     "Set timed here",
+                )
+            }
+        }
+
+        if (route != null && route.speed.isNotEmpty()) {
+            ChartTitle("Speed", "${grouped(route.speed.maxOf { it.value }, 1)} km/h at its fastest")
+            ChartCard {
+                ValueChart(
+                    points = route.speed,
+                    window = window,
+                    axis = 0.0..10.0,
+                    decimals = 1,
+                    height = 110.dp,
+                    onWindowChange = onWindowChange,
+                    scrubAtMs = scrubAtMs,
+                    onScrub = { scrubAtMs = it },
+                    limit = extent,
+                    connectWithin = ROUTE_GAP_MS,
+                    unit = " km/h",
                 )
             }
         }
@@ -139,6 +189,44 @@ fun ActivityDetailScreen(
                     unit = " °C",
                 )
             }
+        }
+
+        if (route != null && route.climb.any { it.value > 0 }) {
+            ChartTitle(
+                "Elevation gain",
+                "${grouped(route.climb.maxOf { it.value }, 0)} m climbed",
+            )
+            ChartCard {
+                ValueChart(
+                    points = route.climb,
+                    window = window,
+                    axis = 0.0..10.0,
+                    decimals = 0,
+                    height = 96.dp,
+                    onWindowChange = onWindowChange,
+                    scrubAtMs = scrubAtMs,
+                    onScrub = { scrubAtMs = it },
+                    limit = extent,
+                    connectWithin = ROUTE_GAP_MS,
+                    cursorAlpha = 0.45f,
+                    unit = " m",
+                )
+            }
+        }
+
+        if (route != null) {
+            ChartTitle("Route")
+            ChartCard {
+                TrackMap(route, tiles, scrubAtMs) { mapFilling = true }
+                SpeedLegend(route.summary)
+            }
+        } else if (entry is RecordedEntry && entry.travel == Travel.GROUND) {
+            // Only for a session that was deliberately started: a walk the
+            // watch worked out afterwards was never going to have a route, and
+            // saying so under every one of them is noise.
+            ChartTitle("Route", "no GPS data")
+        }
+        Spacer(Modifier.height(8.dp))
         }
     }
 
@@ -223,8 +311,8 @@ private data class Figure(val eyebrow: String, val value: String, val unit: Stri
 private fun summaryFigures(hr: List<ChartPoint>, temperature: List<ChartPoint>): List<Figure> {
     val rise = temperatureRise(temperature)
     return listOf(
-        Figure("peak", hr.maxOfOrNull { it.value }?.toInt()?.toString() ?: "—", "bpm"),
-        Figure("average", mean(hr)?.toInt()?.toString() ?: "—", "bpm"),
+        Figure("avg hr", mean(hr)?.toInt()?.toString() ?: "—", "bpm"),
+        Figure("peak hr", hr.maxOfOrNull { it.value }?.toInt()?.toString() ?: "—", "bpm"),
         Figure(
             "temp rise",
             rise?.let { (if (it >= 0) "+" else "−") + grouped(abs(it), 1) } ?: "—",
@@ -233,9 +321,86 @@ private fun summaryFigures(hr: List<ChartPoint>, temperature: List<ChartPoint>):
     )
 }
 
-private fun effortFigures(entry: ActivityEntry, totals: ActivityTotals?): List<Figure> = buildList {
-    if (totals != null && entry.onFoot && totals.steps > 0) {
+/**
+ * What the route says, which for anything on wheels is everything the
+ * pedometer could not: it counts a swinging wrist, not a turning crank.
+ */
+@Composable
+private fun SpeedLegend(summary: TrackSummary) {
+    val slow = summary.slowMS
+    val fast = summary.fastMS
+    if (slow == null || fast == null || fast <= slow) return
+
+    Spacer(Modifier.height(6.dp))
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "${grouped(slow * MS_TO_KMH, 1)} km/h",
+            style = AppTheme.type.axisSmall,
+            color = AppTheme.colors.onSurfaceDim,
+        )
+        Box(
+            Modifier
+                .weight(1f)
+                .padding(horizontal = 6.dp)
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(SLOW_COLOUR, MIDDLING_COLOUR, FAST_COLOUR)
+                    )
+                )
+        )
+        Text(
+            "${grouped(fast * MS_TO_KMH, 1)} km/h",
+            style = AppTheme.type.axisSmall,
+            color = AppTheme.colors.onSurfaceDim,
+        )
+    }
+}
+
+/**
+ * Two averages, because they answer different questions: over the whole
+ * session, which counts every red light, and over the time actually under way,
+ * which is how fast it was ridden or run.
+ */
+private fun paceFigures(
+    entry: ActivityEntry,
+    route: Route,
+    elapsedMs: Long,
+): List<Figure> = buildList {
+    val summary = route.summary
+    val overall = if (elapsedMs > 0) {
+        summary.distanceMetres / (elapsedMs / 1000.0)
+    } else {
+        null
+    }
+    val moving = summary.averageSpeedMS
+
+    if (entry.onFoot) {
+        add(Figure("avg pace", overall?.let(::pacePerKm) ?: "—", "/km"))
+        add(Figure("moving pace", moving?.let(::pacePerKm) ?: "—", "/km"))
+    } else {
+        add(Figure("avg speed", overall?.let { grouped(it * MS_TO_KMH, 1) } ?: "—", "km/h"))
+        add(Figure("moving speed", moving?.let { grouped(it * MS_TO_KMH, 1) } ?: "—", "km/h"))
+    }
+    add(Figure("moving", compactDuration(summary.movingSecs * 1000), ""))
+}
+
+private fun effortFigures(
+    entry: ActivityEntry,
+    totals: ActivityTotals?,
+    route: Route?,
+): List<Figure> = buildList {
+    // Measured ground beats the pedometer's guess at it, and on a bike the
+    // pedometer is counting a swinging wrist.
+    if (route != null) {
+        add(Figure("distance", grouped(route.summary.distanceMetres / 1000, 2), "km"))
+    } else if (totals != null && entry.onFoot && totals.steps > 0) {
         add(Figure("steps", grouped(totals.steps), ""))
+    }
+    // Climbed comes off the barometer, which does not care whether feet did
+    // the carrying: a ride gains height the same way a walk does.
+    if (totals != null && (entry.onFoot || entry.travel == Travel.GROUND)) {
         add(Figure("climbed", grouped(totals.ascentMetres, 0), "m"))
     }
     entry.calories?.let { add(Figure("energy", grouped(it, 0), "kcal")) }

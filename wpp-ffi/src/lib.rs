@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use wpp::activity;
 use wpp::ancs::{self, NotificationCenter, NotificationId};
@@ -9,7 +9,11 @@ use wpp::client::{
 use wpp::energy::{self, Beat, Reading, Wearer};
 use wpp::image::{GlyphRequest, IconRequest, Mono};
 use wpp::pairing::{Pairing, PairingState};
-use wpp::units::{Bpm, Celsius, Kilocalories, Met, Millivolts, UnixMillis, UnixTime};
+use wpp::track::{self, Limits, Track};
+use wpp::units::{
+    Bpm, Celsius, Kilocalories, Met, Metres, MetresPerSecond, Millivolts, UnixMillis, UnixTime,
+    ACTIVITY_HUNDREDTHS,
+};
 use wpp::Frame;
 use wpp_store::{Store, Trim, WorkoutRow};
 
@@ -151,6 +155,80 @@ pub struct Extent {
     pub to_ms: i64,
 }
 
+/// Whether an activity is worth a receiver at all. Nothing is recorded for one
+/// that stays put, so an indoor session leaves no route to explain.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Travel {
+    Ground,
+    InPlace,
+}
+
+#[derive(uniffi::Record, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocationFix {
+    pub at_ms: i64,
+    pub lat_e7: i32,
+    pub lon_e7: i32,
+    pub altitude_cm: Option<i32>,
+    pub accuracy_cm: Option<i32>,
+    pub speed_mm_s: Option<i32>,
+    pub bearing_cdeg: Option<i32>,
+}
+
+#[derive(uniffi::Record, Debug, Clone, Copy, PartialEq)]
+pub struct TrackSummary {
+    pub distance_metres: f64,
+    /// Seconds under way, which is what an average speed means anything over.
+    pub moving_secs: i64,
+    pub average_speed_m_s: Option<f64>,
+    /// The middle of the spread of speeds, for colouring the line by it.
+    pub slow_m_s: Option<f64>,
+    pub fast_m_s: Option<f64>,
+    pub fixes: u32,
+}
+
+/// Where the map is looking, carried by the caller between gestures so the
+/// projection stays on this side of the boundary.
+#[derive(uniffi::Record, Debug, Clone, Copy, PartialEq)]
+pub struct MapView {
+    pub centre_lat: f64,
+    pub centre_lon: f64,
+    pub zoom: f64,
+    pub width_px: f64,
+    pub height_px: f64,
+}
+
+#[derive(uniffi::Record, Debug, Clone, Copy, PartialEq)]
+pub struct MapTile {
+    pub z: u32,
+    pub x: u32,
+    pub y: u32,
+    pub left_px: f64,
+    pub top_px: f64,
+    pub size_px: f64,
+}
+
+#[derive(uniffi::Record, Debug, Clone, Copy, PartialEq)]
+pub struct MapPoint {
+    pub at_ms: i64,
+    pub x_px: f64,
+    pub y_px: f64,
+    pub speed_m_s: Option<f64>,
+}
+
+/// One unbroken run of the route. A stretch with no fixes is a break in the
+/// line rather than a straight leg across whatever was not recorded.
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct MapPath {
+    pub points: Vec<MapPoint>,
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct MapFrame {
+    pub tiles: Vec<MapTile>,
+    pub path: Vec<MapPath>,
+    pub metres_per_pixel: f64,
+}
+
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct WorkoutSummary {
     pub id: i64,
@@ -159,6 +237,7 @@ pub struct WorkoutSummary {
     pub subcategory: i32,
     pub activity: String,
     pub on_foot: bool,
+    pub travel: Travel,
     /// Estimated from heart rate: the watch reports calories only for the
     /// motion it counts as steps, which a workout on the spot never is.
     pub calories: Option<f64>,
@@ -179,6 +258,7 @@ pub struct DetectedActivity {
     pub subcategory: i32,
     pub activity: String,
     pub on_foot: bool,
+    pub travel: Travel,
     pub steps: i64,
     pub distance_metres: f64,
     pub calories: f64,
@@ -749,6 +829,7 @@ impl WatchService {
                     subcategory: active.subcategory as i32,
                     activity: activity_name(active.subcategory as u32),
                     on_foot: on_foot(active.subcategory as u32),
+                    travel: travel(active.subcategory as u32),
                     calories: workout_calories(
                         &store,
                         self.device_id,
@@ -930,6 +1011,33 @@ impl WatchService {
         })
     }
 
+    /// Metres climbed as the session went on, off the watch's barometer. It
+    /// reports a climb per minute and never a descent, so this is the gain
+    /// accumulating rather than a height above anything.
+    pub fn ascent_series(&self, from_ms: i64, to_ms: i64) -> Result<Vec<Point>, WatchError> {
+        let store = self.store.lock().unwrap();
+        let minutes = store.activity_minutes(
+            self.device_id,
+            from_ms.div_euclid(1000),
+            to_ms.div_euclid(1000),
+        )?;
+        drop(store);
+
+        let mut climbed = 0.0;
+        Ok(minutes
+            .iter()
+            .filter(|minute| minute.at.0 * 1000 >= from_ms && minute.at.0 * 1000 <= to_ms)
+            .map(|minute| {
+                climbed += minute.ascent.unwrap_or(0) as f64 / ACTIVITY_HUNDREDTHS;
+                Point {
+                    at_ms: minute.at.0 * 1000,
+                    value: climbed,
+                    origin: Origin::Stored,
+                }
+            })
+            .collect())
+    }
+
     pub fn detected_activities(
         &self,
         from_ms: i64,
@@ -949,6 +1057,7 @@ impl WatchService {
                 subcategory: session.subcategory as i32,
                 activity: activity_name(session.subcategory as u32),
                 on_foot: on_foot(session.subcategory as u32),
+                travel: travel(session.subcategory as u32),
                 steps: session.steps,
                 distance_metres: session.distance.0,
                 calories: session.calories.0,
@@ -1293,6 +1402,54 @@ impl WatchService {
         drop(store);
         self.transport.changed();
         Ok(())
+    }
+
+    pub fn record_fixes(&self, fixes: Vec<LocationFix>) -> Result<(), WatchError> {
+        if fixes.is_empty() {
+            return Ok(());
+        }
+        let held: Vec<wpp::track::Fix> = fixes.iter().map(|fix| fix.held()).collect();
+        let mut store = self.store.lock().unwrap();
+        store.record_fixes(self.device_id, &held)?;
+        drop(store);
+        self.transport.changed();
+        Ok(())
+    }
+
+    /// When the running session is one that covers ground, the moment it
+    /// started. What the phone's receiver is switched on and off by, and cheap
+    /// enough to ask on every change: one indexed row.
+    pub fn route_recording_since(&self) -> Result<Option<i64>, WatchError> {
+        let store = self.store.lock().unwrap();
+        let Some(active) = store.active_workout(self.device_id)? else {
+            return Ok(None);
+        };
+        match travel(active.subcategory as u32) {
+            Travel::Ground => Ok(Some(active.started_at.0 * 1000)),
+            Travel::InPlace => Ok(None),
+        }
+    }
+
+    /// None where the activity covers no ground, and where it does but nothing
+    /// was recorded: an empty route and no route are the same to every caller.
+    pub fn track(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+        subcategory: i32,
+    ) -> Result<Option<Arc<RouteTrack>>, WatchError> {
+        let Some(limits) = limits(subcategory as u32) else {
+            return Ok(None);
+        };
+        let store = self.store.lock().unwrap();
+        let fixes = store.track_points(self.device_id, from_ms, to_ms)?;
+        drop(store);
+
+        let cleaned = track::clean(&fixes, limits);
+        if cleaned.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(Arc::new(RouteTrack { track: cleaned })))
     }
 
     pub fn night(&self, from_ms: i64, to_ms: i64) -> Result<Night, WatchError> {
@@ -1684,19 +1841,37 @@ enum Gait {
 use Gait::OnFoot;
 use Gait::Otherwise;
 
+/// Whether an activity covers ground, which is a different question from
+/// whether feet carry it: a bike covers ground without a step, a treadmill
+/// takes thousands without moving. Only the first is worth a receiver.
+///
+/// The ceiling is the speed above which a jump between two fixes is a lost
+/// signal rather than a body: 12 m/s is nonsense on a walk and an ordinary
+/// descent on a bike.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Terrain {
+    Ground(MetresPerSecond),
+    InPlace,
+}
+
+use Terrain::Ground;
+use Terrain::InPlace;
+
 struct Sport {
     id: u32,
     name: &'static str,
     gait: Gait,
+    travel: Terrain,
     ceiling: Met,
 }
 
 impl Sport {
-    const fn new(id: u32, name: &'static str, gait: Gait, ceiling: Met) -> Sport {
+    const fn new(id: u32, name: &'static str, gait: Gait, travel: Terrain, ceiling: Met) -> Sport {
         Sport {
             id,
             name,
             gait,
+            travel,
             ceiling,
         }
     }
@@ -1713,52 +1888,130 @@ const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 /// ships: the intensity each activity tops out at, which an estimate drawn from
 /// heart rate alone will otherwise sail past.
 const ACTIVITIES: &[Sport] = &[
-    Sport::new(1, "Walking", OnFoot, Met(8.3)),
-    Sport::new(2, "Running", OnFoot, Met(19.0)),
-    Sport::new(3, "Hiking", OnFoot, Met(6.0)),
-    Sport::new(4, "Skating", Otherwise, Met(14.0)),
-    Sport::new(5, "BMX", Otherwise, Met(10.0)),
-    Sport::new(6, "Cycling", Otherwise, Met(15.8)),
-    Sport::new(7, "Swimming", Otherwise, Met(13.8)),
-    Sport::new(8, "Surfing", Otherwise, Met(5.0)),
-    Sport::new(9, "Kitesurfing", Otherwise, Met(11.0)),
-    Sport::new(10, "Windsurfing", Otherwise, Met(13.5)),
-    Sport::new(11, "Bodyboard", Otherwise, Met(5.0)),
-    Sport::new(12, "Tennis", OnFoot, Met(8.0)),
-    Sport::new(13, "Table tennis", OnFoot, Met(9.0)),
-    Sport::new(14, "Squash", OnFoot, Met(12.0)),
-    Sport::new(15, "Badminton", OnFoot, Met(7.0)),
-    Sport::new(16, "Weights", OnFoot, Met(6.0)),
-    Sport::new(17, "Calisthenics", OnFoot, Met(8.0)),
-    Sport::new(18, "Elliptical", OnFoot, Met(10.0)),
-    Sport::new(19, "Pilates", OnFoot, Met(5.0)),
-    Sport::new(20, "Basketball", OnFoot, Met(9.3)),
-    Sport::new(21, "Soccer", OnFoot, Met(10.0)),
-    Sport::new(22, "Football", OnFoot, Met(8.0)),
-    Sport::new(23, "Rugby", OnFoot, Met(8.3)),
-    Sport::new(24, "Volleyball", OnFoot, Met(8.0)),
-    Sport::new(25, "Water polo", Otherwise, Met(12.0)),
-    Sport::new(26, "Horse riding", Otherwise, Met(7.3)),
-    Sport::new(27, "Golf", OnFoot, Met(5.3)),
-    Sport::new(28, "Yoga", OnFoot, Met(9.0)),
-    Sport::new(29, "Dancing", OnFoot, Met(11.3)),
-    Sport::new(30, "Boxing", OnFoot, Met(12.8)),
-    Sport::new(31, "Fencing", OnFoot, Met(10.0)),
-    Sport::new(32, "Wrestling", OnFoot, Met(12.0)),
-    Sport::new(33, "Martial arts", OnFoot, Met(10.3)),
-    Sport::new(34, "Skiing", Otherwise, Met(11.3)),
-    Sport::new(35, "Snowboarding", Otherwise, Met(5.3)),
-    Sport::new(36, "Other", OnFoot, Met(18.0)),
-    Sport::new(187, "Rowing", Otherwise, Met(11.0)),
-    Sport::new(188, "Zumba", OnFoot, Met(11.3)),
-    Sport::new(191, "Baseball", OnFoot, Met(9.3)),
-    Sport::new(192, "Handball", OnFoot, Met(9.3)),
-    Sport::new(193, "Hockey", OnFoot, Met(14.0)),
-    Sport::new(194, "Ice hockey", Otherwise, Met(14.0)),
-    Sport::new(195, "Climbing", OnFoot, Met(6.0)),
-    Sport::new(196, "Ice skating", Otherwise, Met(14.0)),
-    Sport::new(306, "Indoor walk", OnFoot, Met(8.3)),
-    Sport::new(307, "Indoor running", OnFoot, Met(19.0)),
+    Sport::new(1, "Walking", OnFoot, Ground(MetresPerSecond(5.0)), Met(8.3)),
+    Sport::new(
+        2,
+        "Running",
+        OnFoot,
+        Ground(MetresPerSecond(8.0)),
+        Met(19.0),
+    ),
+    Sport::new(3, "Hiking", OnFoot, Ground(MetresPerSecond(5.0)), Met(6.0)),
+    Sport::new(
+        4,
+        "Skating",
+        Otherwise,
+        Ground(MetresPerSecond(20.0)),
+        Met(14.0),
+    ),
+    Sport::new(
+        5,
+        "BMX",
+        Otherwise,
+        Ground(MetresPerSecond(20.0)),
+        Met(10.0),
+    ),
+    Sport::new(
+        6,
+        "Cycling",
+        Otherwise,
+        Ground(MetresPerSecond(25.0)),
+        Met(15.8),
+    ),
+    Sport::new(7, "Swimming", Otherwise, InPlace, Met(13.8)),
+    Sport::new(
+        8,
+        "Surfing",
+        Otherwise,
+        Ground(MetresPerSecond(15.0)),
+        Met(5.0),
+    ),
+    Sport::new(
+        9,
+        "Kitesurfing",
+        Otherwise,
+        Ground(MetresPerSecond(30.0)),
+        Met(11.0),
+    ),
+    Sport::new(
+        10,
+        "Windsurfing",
+        Otherwise,
+        Ground(MetresPerSecond(30.0)),
+        Met(13.5),
+    ),
+    Sport::new(
+        11,
+        "Bodyboard",
+        Otherwise,
+        Ground(MetresPerSecond(15.0)),
+        Met(5.0),
+    ),
+    Sport::new(12, "Tennis", OnFoot, InPlace, Met(8.0)),
+    Sport::new(13, "Table tennis", OnFoot, InPlace, Met(9.0)),
+    Sport::new(14, "Squash", OnFoot, InPlace, Met(12.0)),
+    Sport::new(15, "Badminton", OnFoot, InPlace, Met(7.0)),
+    Sport::new(16, "Weights", OnFoot, InPlace, Met(6.0)),
+    Sport::new(17, "Calisthenics", OnFoot, InPlace, Met(8.0)),
+    Sport::new(18, "Elliptical", OnFoot, InPlace, Met(10.0)),
+    Sport::new(19, "Pilates", OnFoot, InPlace, Met(5.0)),
+    Sport::new(20, "Basketball", OnFoot, InPlace, Met(9.3)),
+    Sport::new(21, "Soccer", OnFoot, InPlace, Met(10.0)),
+    Sport::new(22, "Football", OnFoot, InPlace, Met(8.0)),
+    Sport::new(23, "Rugby", OnFoot, InPlace, Met(8.3)),
+    Sport::new(24, "Volleyball", OnFoot, InPlace, Met(8.0)),
+    Sport::new(25, "Water polo", Otherwise, InPlace, Met(12.0)),
+    Sport::new(
+        26,
+        "Horse riding",
+        Otherwise,
+        Ground(MetresPerSecond(20.0)),
+        Met(7.3),
+    ),
+    Sport::new(27, "Golf", OnFoot, Ground(MetresPerSecond(20.0)), Met(5.3)),
+    Sport::new(28, "Yoga", OnFoot, InPlace, Met(9.0)),
+    Sport::new(29, "Dancing", OnFoot, InPlace, Met(11.3)),
+    Sport::new(30, "Boxing", OnFoot, InPlace, Met(12.8)),
+    Sport::new(31, "Fencing", OnFoot, InPlace, Met(10.0)),
+    Sport::new(32, "Wrestling", OnFoot, InPlace, Met(12.0)),
+    Sport::new(33, "Martial arts", OnFoot, InPlace, Met(10.3)),
+    Sport::new(
+        34,
+        "Skiing",
+        Otherwise,
+        Ground(MetresPerSecond(40.0)),
+        Met(11.3),
+    ),
+    Sport::new(
+        35,
+        "Snowboarding",
+        Otherwise,
+        Ground(MetresPerSecond(30.0)),
+        Met(5.3),
+    ),
+    Sport::new(36, "Other", OnFoot, InPlace, Met(18.0)),
+    Sport::new(
+        187,
+        "Rowing",
+        Otherwise,
+        Ground(MetresPerSecond(8.0)),
+        Met(11.0),
+    ),
+    Sport::new(188, "Zumba", OnFoot, InPlace, Met(11.3)),
+    Sport::new(191, "Baseball", OnFoot, InPlace, Met(9.3)),
+    Sport::new(192, "Handball", OnFoot, InPlace, Met(9.3)),
+    Sport::new(193, "Hockey", OnFoot, InPlace, Met(14.0)),
+    Sport::new(194, "Ice hockey", Otherwise, InPlace, Met(14.0)),
+    Sport::new(195, "Climbing", OnFoot, InPlace, Met(6.0)),
+    Sport::new(
+        196,
+        "Ice skating",
+        Otherwise,
+        Ground(MetresPerSecond(20.0)),
+        Met(14.0),
+    ),
+    Sport::new(306, "Indoor walk", OnFoot, InPlace, Met(8.3)),
+    Sport::new(307, "Indoor running", OnFoot, InPlace, Met(19.0)),
 ];
 
 fn sport(id: u32) -> Option<&'static Sport> {
@@ -1777,6 +2030,27 @@ fn on_foot(id: u32) -> bool {
     sport(id).is_some_and(|sport| sport.gait == OnFoot)
 }
 
+fn travel(id: u32) -> Travel {
+    match limits(id) {
+        Some(_) => Travel::Ground,
+        None => Travel::InPlace,
+    }
+}
+
+/// None for an activity that covers no ground, and for one the table has never
+/// heard of: without a speed to hold it to there is no way to tell a lost fix
+/// from a fast one.
+fn limits(id: u32) -> Option<Limits> {
+    match sport(id)?.travel {
+        Ground(ceiling) => Some(Limits {
+            accuracy_ceiling: Metres(Limits::DEFAULT_ACCURACY_M),
+            speed_ceiling: ceiling,
+            gap_secs: Limits::DEFAULT_GAP_SECS,
+        }),
+        InPlace => None,
+    }
+}
+
 fn summarise(
     store: &Store,
     device_id: i64,
@@ -1792,6 +2066,7 @@ fn summarise(
         subcategory: row.subcategory as i32,
         activity: activity_name(row.subcategory as u32),
         on_foot: on_foot(row.subcategory as u32),
+        travel: travel(row.subcategory as u32),
         calories: workout_calories(
             store,
             device_id,
@@ -1823,6 +2098,34 @@ fn ceiling_of(subcategory: u32) -> Met {
     sport(subcategory).map_or(UNKNOWN_CEILING, |sport| sport.ceiling)
 }
 
+const CYCLING: u32 = 6;
+const BMX: u32 = 5;
+
+/// What the ground says the effort was worth. Heart rate alone reads a city
+/// commute as hard riding — traffic, heat and the rate hanging on through the
+/// lights all lift it — and the activity's own ceiling is far too loose to
+/// catch that. A measured speed is the work actually done.
+///
+/// None for an activity with no route recorded, and for one whose speed says
+/// nothing about its cost: rowing hard on the spot covers no ground.
+fn measured_ceiling(
+    store: &Store,
+    device_id: i64,
+    subcategory: u32,
+    from_ms: i64,
+    to_ms: i64,
+) -> Option<Met> {
+    let limits = limits(subcategory)?;
+    let fixes = store.track_points(device_id, from_ms, to_ms).ok()?;
+    let speed = track::clean(&fixes, limits).average_speed()?;
+
+    match subcategory {
+        CYCLING | BMX => Some(energy::cycling_met(speed)),
+        _ if on_foot(subcategory) => Some(energy::on_foot_met(speed)),
+        _ => None,
+    }
+}
+
 fn workout_calories(
     store: &Store,
     device_id: i64,
@@ -1836,9 +2139,15 @@ fn workout_calories(
         return Ok(None);
     };
     let beats = beats_between(store, device_id, from_ms, to_ms)?;
-    Ok(Some(
-        energy::burned(wearer, ceiling_of(subcategory), &beats).0,
-    ))
+
+    // Never above what the activity itself can reach: a reflected fix reading
+    // sixty on a bike is not a harder ride than the sport has in it.
+    let declared = ceiling_of(subcategory);
+    let ceiling = match measured_ceiling(store, device_id, subcategory, from_ms, to_ms) {
+        Some(measured) if measured.0 < declared.0 => measured,
+        _ => declared,
+    };
+    Ok(Some(energy::burned(wearer, ceiling, &beats).0))
 }
 
 /// What each session of the span had earned, session by session.
@@ -2037,6 +2346,126 @@ impl PairingProgress {
             },
             PairingState::AlreadyAssociated => PairingProgress::AlreadyAssociated,
         }
+    }
+}
+
+impl LocationFix {
+    fn held(&self) -> wpp::track::Fix {
+        wpp::track::Fix {
+            at: UnixMillis(self.at_ms),
+            lat_e7: self.lat_e7,
+            lon_e7: self.lon_e7,
+            altitude_cm: self.altitude_cm,
+            accuracy_cm: self.accuracy_cm,
+            speed_mm_s: self.speed_mm_s,
+            bearing_cdeg: self.bearing_cdeg,
+        }
+    }
+}
+
+/// A route read once and asked many questions. Cleaning and projecting on
+/// every call would re-read the whole session for each frame of a pinch.
+#[derive(uniffi::Object)]
+pub struct RouteTrack {
+    track: Track,
+}
+
+#[uniffi::export]
+impl RouteTrack {
+    pub fn summary(&self) -> TrackSummary {
+        let band = self.track.speed_band();
+        TrackSummary {
+            distance_metres: self.track.distance().0,
+            moving_secs: self.track.moving_secs(),
+            average_speed_m_s: self.track.average_speed().map(|speed| speed.0),
+            slow_m_s: band.map(|(slow, _)| slow.0),
+            fast_m_s: band.map(|(_, fast)| fast.0),
+            fixes: self.track.fixes().count() as u32,
+        }
+    }
+
+    pub fn speed_series(&self) -> Vec<Point> {
+        self.track
+            .speed_series()
+            .into_iter()
+            .map(|(at, speed)| Point {
+                at_ms: at.0,
+                value: speed.0,
+                origin: Origin::Stored,
+            })
+            .collect()
+    }
+
+    pub fn fit(&self, width_px: f64, height_px: f64, padding_px: f64) -> MapView {
+        of_view(track::fit(&self.track, width_px, height_px, padding_px))
+    }
+
+    pub fn frame(&self, view: MapView) -> MapFrame {
+        let drawn = track::frame(&self.track, view.held());
+        MapFrame {
+            tiles: drawn
+                .tiles
+                .into_iter()
+                .map(|placed| MapTile {
+                    z: placed.tile.z,
+                    x: placed.tile.x,
+                    y: placed.tile.y,
+                    left_px: placed.left_px,
+                    top_px: placed.top_px,
+                    size_px: placed.size_px,
+                })
+                .collect(),
+            path: drawn
+                .path
+                .into_iter()
+                .map(|points| MapPath {
+                    points: points
+                        .into_iter()
+                        .map(|point| MapPoint {
+                            at_ms: point.at.0,
+                            x_px: point.x_px,
+                            y_px: point.y_px,
+                            speed_m_s: point.speed.map(|speed| speed.0),
+                        })
+                        .collect(),
+                })
+                .collect(),
+            metres_per_pixel: drawn.metres_per_pixel,
+        }
+    }
+}
+
+#[uniffi::export]
+pub fn pan_map(view: MapView, dx_px: f64, dy_px: f64) -> MapView {
+    of_view(track::pan(view.held(), dx_px, dy_px))
+}
+
+#[uniffi::export]
+pub fn zoom_map(view: MapView, factor: f64, at_x_px: f64, at_y_px: f64) -> MapView {
+    of_view(track::zoom_about(view.held(), factor, at_x_px, at_y_px))
+}
+
+impl MapView {
+    fn held(&self) -> track::View {
+        track::View {
+            centre: track::Position {
+                lat: self.centre_lat,
+                lon: self.centre_lon,
+            },
+            zoom: self.zoom,
+            width_px: self.width_px,
+            height_px: self.height_px,
+        }
+    }
+}
+
+fn of_view(view: track::View) -> MapView {
+    MapView {
+        centre_lat: view.centre.lat,
+        centre_lon: view.centre.lon,
+        zoom: view.zoom,
+        width_px: view.width_px,
+        height_px: view.height_px,
     }
 }
 
