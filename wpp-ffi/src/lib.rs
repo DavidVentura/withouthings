@@ -6,10 +6,10 @@ use wpp::capture::{FrameReassembler, StreamItem};
 use wpp::client::{
     Action, Category, Client, Credentials, Event, Feature, FeatureId, FeatureSchedule, Phase,
 };
-use wpp::energy::{self, Beat, Wearer};
+use wpp::energy::{self, Beat, Reading, Wearer};
 use wpp::image::{GlyphRequest, IconRequest, Mono};
 use wpp::pairing::{Pairing, PairingState};
-use wpp::units::{Bpm, Celsius, Millivolts, UnixMillis, UnixTime};
+use wpp::units::{Bpm, Celsius, Kilocalories, Met, Millivolts, UnixMillis, UnixTime};
 use wpp::Frame;
 use wpp_store::{Store, Trim, WorkoutRow};
 
@@ -753,6 +753,7 @@ impl WatchService {
                         &store,
                         self.device_id,
                         wearer.as_ref(),
+                        active.subcategory as u32,
                         active.started_at.0 * 1000,
                         now_ms(),
                     )?,
@@ -791,13 +792,21 @@ impl WatchService {
     ) -> Result<Vec<Point>, WatchError> {
         let store = self.store.lock().unwrap();
         let scale = metric.scale();
-        Ok(store
-            .series(self.device_id, metric.kind(), from_ms, to_ms, max_points)?
+        let found = store.series(self.device_id, metric.kind(), from_ms, to_ms, max_points)?;
+        let counter: Vec<Reading> = found
+            .iter()
+            .map(|(at, value, _)| Reading {
+                at: UnixMillis(*at),
+                total: Kilocalories(*value as f64 / scale),
+            })
+            .collect();
+        Ok(expenditure(&store, self.device_id, metric, &counter)?
             .into_iter()
-            .map(|(at, value, source)| Point {
-                at_ms: at,
-                value: value as f64 / scale,
-                origin: origin_of(source),
+            .zip(&found)
+            .map(|(reading, (_, _, source))| Point {
+                at_ms: reading.at.0,
+                value: reading.total.0,
+                origin: origin_of(*source),
             })
             .collect())
     }
@@ -809,23 +818,53 @@ impl WatchService {
     ) -> Result<Vec<Option<f64>>, WatchError> {
         let store = self.store.lock().unwrap();
         let scale = metric.scale();
-        Ok(store
-            .windowed_max(self.device_id, metric.kind(), &edges_ms)?
+        if metric != Metric::Calories {
+            return Ok(store
+                .windowed_max(self.device_id, metric.kind(), &edges_ms)?
+                .into_iter()
+                .map(|found| found.map(|value| value as f64 / scale))
+                .collect());
+        }
+        let (Some(&first), Some(&last)) = (edges_ms.first(), edges_ms.last()) else {
+            return Ok(Vec::new());
+        };
+        let counter: Vec<Reading> = store
+            .samples_between(self.device_id, metric.kind(), first, last - 1)?
             .into_iter()
-            .map(|found| found.map(|value| value as f64 / scale))
-            .collect())
+            .map(|(at, value)| Reading {
+                at: UnixMillis(at),
+                total: Kilocalories(value as f64 / scale),
+            })
+            .collect();
+        let lifted = expenditure(&store, self.device_id, metric, &counter)?;
+        let mut found = vec![None; edges_ms.len() - 1];
+        let mut window = 0;
+        for reading in lifted {
+            while reading.at.0 >= edges_ms[window + 1] {
+                window += 1;
+            }
+            found[window] =
+                Some(found[window].map_or(reading.total.0, |seen: f64| seen.max(reading.total.0)));
+        }
+        Ok(found)
     }
 
     pub fn latest_value(&self, metric: Metric) -> Result<Option<Point>, WatchError> {
         let store = self.store.lock().unwrap();
         let scale = metric.scale();
-        Ok(store
-            .latest(self.device_id, metric.kind())?
-            .map(|(at, value)| Point {
-                at_ms: at,
-                value: value as f64 / scale,
-                origin: Origin::Stored,
-            }))
+        let Some((at, value)) = store.latest(self.device_id, metric.kind())? else {
+            return Ok(None);
+        };
+        let counter = [Reading {
+            at: UnixMillis(at),
+            total: Kilocalories(value as f64 / scale),
+        }];
+        let lifted = expenditure(&store, self.device_id, metric, &counter)?;
+        Ok(lifted.first().map(|reading| Point {
+            at_ms: reading.at.0,
+            value: reading.total.0,
+            origin: Origin::Stored,
+        }))
     }
 
     pub fn extent(&self, metric: Metric) -> Result<Option<Extent>, WatchError> {
@@ -1055,11 +1094,11 @@ impl WatchService {
                 enabled: true,
             })
             .collect();
-        for (id, name, _) in ACTIVITIES {
-            if !current.contains(id) {
+        for sport in ACTIVITIES {
+            if !current.contains(&sport.id) {
                 activities.push(Activity {
-                    id: *id,
-                    name: name.to_string(),
+                    id: sport.id,
+                    name: sport.name.to_string(),
                     enabled: false,
                 });
             }
@@ -1645,69 +1684,97 @@ enum Gait {
 use Gait::OnFoot;
 use Gait::Otherwise;
 
-const ACTIVITIES: &[(u32, &str, Gait)] = &[
-    (1, "Walking", OnFoot),
-    (2, "Running", OnFoot),
-    (3, "Hiking", OnFoot),
-    (4, "Skating", Otherwise),
-    (5, "BMX", Otherwise),
-    (6, "Cycling", Otherwise),
-    (7, "Swimming", Otherwise),
-    (8, "Surfing", Otherwise),
-    (9, "Kitesurfing", Otherwise),
-    (10, "Windsurfing", Otherwise),
-    (11, "Bodyboard", Otherwise),
-    (12, "Tennis", OnFoot),
-    (13, "Table tennis", OnFoot),
-    (14, "Squash", OnFoot),
-    (15, "Badminton", OnFoot),
-    (16, "Weights", OnFoot),
-    (17, "Calisthenics", OnFoot),
-    (18, "Elliptical", OnFoot),
-    (19, "Pilates", OnFoot),
-    (20, "Basketball", OnFoot),
-    (21, "Soccer", OnFoot),
-    (22, "Football", OnFoot),
-    (23, "Rugby", OnFoot),
-    (24, "Volleyball", OnFoot),
-    (25, "Water polo", Otherwise),
-    (26, "Horse riding", Otherwise),
-    (27, "Golf", OnFoot),
-    (28, "Yoga", OnFoot),
-    (29, "Dancing", OnFoot),
-    (30, "Boxing", OnFoot),
-    (31, "Fencing", OnFoot),
-    (32, "Wrestling", OnFoot),
-    (33, "Martial arts", OnFoot),
-    (34, "Skiing", Otherwise),
-    (35, "Snowboarding", Otherwise),
-    (36, "Other", OnFoot),
-    (187, "Rowing", Otherwise),
-    (188, "Zumba", OnFoot),
-    (191, "Baseball", OnFoot),
-    (192, "Handball", OnFoot),
-    (193, "Hockey", OnFoot),
-    (194, "Ice hockey", Otherwise),
-    (195, "Climbing", OnFoot),
-    (196, "Ice skating", Otherwise),
-    (306, "Indoor walk", OnFoot),
-    (307, "Indoor running", OnFoot),
+struct Sport {
+    id: u32,
+    name: &'static str,
+    gait: Gait,
+    ceiling: Met,
+}
+
+impl Sport {
+    const fn new(id: u32, name: &'static str, gait: Gait, ceiling: Met) -> Sport {
+        Sport {
+            id,
+            name,
+            gait,
+            ceiling,
+        }
+    }
+}
+
+/// A rate the watch reports under an activity this table has never heard of is
+/// still a rate a body reached, so it is held to the highest ceiling any
+/// activity has rather than to none.
+const UNKNOWN_CEILING: Met = Met(19.0);
+
+const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// The ceilings are Withings' own, from the `activityCategory` table its app
+/// ships: the intensity each activity tops out at, which an estimate drawn from
+/// heart rate alone will otherwise sail past.
+const ACTIVITIES: &[Sport] = &[
+    Sport::new(1, "Walking", OnFoot, Met(8.3)),
+    Sport::new(2, "Running", OnFoot, Met(19.0)),
+    Sport::new(3, "Hiking", OnFoot, Met(6.0)),
+    Sport::new(4, "Skating", Otherwise, Met(14.0)),
+    Sport::new(5, "BMX", Otherwise, Met(10.0)),
+    Sport::new(6, "Cycling", Otherwise, Met(15.8)),
+    Sport::new(7, "Swimming", Otherwise, Met(13.8)),
+    Sport::new(8, "Surfing", Otherwise, Met(5.0)),
+    Sport::new(9, "Kitesurfing", Otherwise, Met(11.0)),
+    Sport::new(10, "Windsurfing", Otherwise, Met(13.5)),
+    Sport::new(11, "Bodyboard", Otherwise, Met(5.0)),
+    Sport::new(12, "Tennis", OnFoot, Met(8.0)),
+    Sport::new(13, "Table tennis", OnFoot, Met(9.0)),
+    Sport::new(14, "Squash", OnFoot, Met(12.0)),
+    Sport::new(15, "Badminton", OnFoot, Met(7.0)),
+    Sport::new(16, "Weights", OnFoot, Met(6.0)),
+    Sport::new(17, "Calisthenics", OnFoot, Met(8.0)),
+    Sport::new(18, "Elliptical", OnFoot, Met(10.0)),
+    Sport::new(19, "Pilates", OnFoot, Met(5.0)),
+    Sport::new(20, "Basketball", OnFoot, Met(9.3)),
+    Sport::new(21, "Soccer", OnFoot, Met(10.0)),
+    Sport::new(22, "Football", OnFoot, Met(8.0)),
+    Sport::new(23, "Rugby", OnFoot, Met(8.3)),
+    Sport::new(24, "Volleyball", OnFoot, Met(8.0)),
+    Sport::new(25, "Water polo", Otherwise, Met(12.0)),
+    Sport::new(26, "Horse riding", Otherwise, Met(7.3)),
+    Sport::new(27, "Golf", OnFoot, Met(5.3)),
+    Sport::new(28, "Yoga", OnFoot, Met(9.0)),
+    Sport::new(29, "Dancing", OnFoot, Met(11.3)),
+    Sport::new(30, "Boxing", OnFoot, Met(12.8)),
+    Sport::new(31, "Fencing", OnFoot, Met(10.0)),
+    Sport::new(32, "Wrestling", OnFoot, Met(12.0)),
+    Sport::new(33, "Martial arts", OnFoot, Met(10.3)),
+    Sport::new(34, "Skiing", Otherwise, Met(11.3)),
+    Sport::new(35, "Snowboarding", Otherwise, Met(5.3)),
+    Sport::new(36, "Other", OnFoot, Met(18.0)),
+    Sport::new(187, "Rowing", Otherwise, Met(11.0)),
+    Sport::new(188, "Zumba", OnFoot, Met(11.3)),
+    Sport::new(191, "Baseball", OnFoot, Met(9.3)),
+    Sport::new(192, "Handball", OnFoot, Met(9.3)),
+    Sport::new(193, "Hockey", OnFoot, Met(14.0)),
+    Sport::new(194, "Ice hockey", Otherwise, Met(14.0)),
+    Sport::new(195, "Climbing", OnFoot, Met(6.0)),
+    Sport::new(196, "Ice skating", Otherwise, Met(14.0)),
+    Sport::new(306, "Indoor walk", OnFoot, Met(8.3)),
+    Sport::new(307, "Indoor running", OnFoot, Met(19.0)),
 ];
 
+fn sport(id: u32) -> Option<&'static Sport> {
+    ACTIVITIES.iter().find(|sport| sport.id == id)
+}
+
 fn activity_name(id: u32) -> String {
-    ACTIVITIES
-        .iter()
-        .find(|(known, _, _)| *known == id)
-        .map(|(_, name, _)| name.to_string())
+    sport(id)
+        .map(|sport| sport.name.to_string())
         .unwrap_or_else(|| format!("Activity {id}"))
 }
 
 /// An activity the table has never heard of is not credited with a gait, so
 /// what the pedometer holds over it goes unshown rather than unexplained.
 fn on_foot(id: u32) -> bool {
-    ACTIVITIES
-        .iter()
-        .any(|(known, _, gait)| *known == id && *gait == OnFoot)
+    sport(id).is_some_and(|sport| sport.gait == OnFoot)
 }
 
 fn summarise(
@@ -1729,16 +1796,38 @@ fn summarise(
             store,
             device_id,
             user,
+            row.subcategory as u32,
             started_at_ms,
             ended_at_ms.unwrap_or_else(now_ms),
         )?,
     })
 }
 
+fn beats_between(
+    store: &Store,
+    device_id: i64,
+    from_ms: i64,
+    to_ms: i64,
+) -> Result<Vec<Beat>, WatchError> {
+    Ok(store
+        .samples_between(device_id, Metric::HeartRate.kind(), from_ms, to_ms)?
+        .into_iter()
+        .map(|(at, bpm)| Beat {
+            at: UnixMillis(at),
+            rate: Bpm(bpm as u16),
+        })
+        .collect())
+}
+
+fn ceiling_of(subcategory: u32) -> Met {
+    sport(subcategory).map_or(UNKNOWN_CEILING, |sport| sport.ceiling)
+}
+
 fn workout_calories(
     store: &Store,
     device_id: i64,
     user: Option<&wpp::client::UserProfile>,
+    subcategory: u32,
     from_ms: i64,
     to_ms: i64,
 ) -> Result<Option<f64>, WatchError> {
@@ -1746,15 +1835,78 @@ fn workout_calories(
     else {
         return Ok(None);
     };
-    let beats: Vec<Beat> = store
-        .samples_between(device_id, Metric::HeartRate.kind(), from_ms, to_ms)?
+    let beats = beats_between(store, device_id, from_ms, to_ms)?;
+    Ok(Some(
+        energy::burned(wearer, ceiling_of(subcategory), &beats).0,
+    ))
+}
+
+/// What each session of the span had earned, session by session.
+fn earned_curves(
+    store: &Store,
+    device_id: i64,
+    from_ms: i64,
+    to_ms: i64,
+) -> Result<Vec<Vec<Reading>>, WatchError> {
+    let Some(user) = store.watch_user(device_id)? else {
+        return Ok(Vec::new());
+    };
+    store
+        .workouts_between(device_id, from_ms.div_euclid(1000), to_ms.div_euclid(1000))?
         .into_iter()
-        .map(|(at, bpm)| Beat {
+        .map(|row| {
+            let Some(wearer) = Wearer::of(&user, row.started_at) else {
+                return Ok(Vec::new());
+            };
+            let ended_ms = row.ended_at.map_or_else(now_ms, |end| end.0 * 1000);
+            let beats = beats_between(store, device_id, row.started_at.0 * 1000, ended_ms)?;
+            Ok(energy::accrued(
+                wearer,
+                ceiling_of(row.subcategory as u32),
+                &beats,
+            ))
+        })
+        .collect()
+}
+
+/// Energy is the one series the watch does not measure: its counter is a
+/// resting estimate plus what the pedometer saw, so the sessions it never
+/// stepped through are added back here. Every other metric is as stored.
+///
+/// The counter's restart is only visible against the reading before it, and a
+/// window rarely opens on one. The day behind the window is read in to make the
+/// restart show, then dropped again, so which day a session belongs to never
+/// rests on the window the caller happened to ask for.
+fn expenditure(
+    store: &Store,
+    device_id: i64,
+    metric: Metric,
+    counter: &[Reading],
+) -> Result<Vec<Reading>, WatchError> {
+    let (Some(first), Some(last)) = (counter.first(), counter.last()) else {
+        return Ok(Vec::new());
+    };
+    if metric != Metric::Calories {
+        return Ok(counter.to_vec());
+    }
+    let behind: Vec<Reading> = store
+        .samples_between(
+            device_id,
+            metric.kind(),
+            first.at.0 - DAY_MS,
+            first.at.0 - 1,
+        )?
+        .into_iter()
+        .map(|(at, value)| Reading {
             at: UnixMillis(at),
-            rate: Bpm(bpm as u16),
+            total: Kilocalories(value as f64 / metric.scale()),
         })
         .collect();
-    Ok(Some(energy::burned(wearer, &beats).0))
+    let opened_at = behind.first().map_or(first.at, |earliest| earliest.at);
+    let curves = earned_curves(store, device_id, opened_at.0, last.at.0)?;
+    let joined: Vec<Reading> = behind.iter().chain(counter).copied().collect();
+    let mut lifted = energy::with_workouts(&joined, &curves, opened_at);
+    Ok(lifted.split_off(behind.len()))
 }
 
 fn now_ms() -> i64 {
@@ -1978,5 +2130,100 @@ impl PairingService {
         if moved {
             self.transport.changed();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wpp::client::{Record, SampleKind, Source, UserProfile};
+
+    const DAY_ONE: i64 = 1_786_662_000_000;
+    const ROLLOVER_MS: i64 = 5 * 60 * 1000;
+
+    fn counter(at_ms: i64, kcal: i64) -> Record {
+        Record::Sample {
+            measured_at: UnixMillis(at_ms),
+            kind: SampleKind::Calories,
+            value: kcal * 100,
+            quality: None,
+            source: Source::Stored,
+            window_secs: None,
+            context: None,
+        }
+    }
+
+    fn beat(at_ms: i64) -> Record {
+        Record::Sample {
+            measured_at: UnixMillis(at_ms),
+            kind: SampleKind::HeartRate,
+            value: 130,
+            quality: Some(4),
+            source: Source::Live,
+            window_secs: None,
+            context: None,
+        }
+    }
+
+    /// A counter reading a quarter of an hour into the day, which is the shape
+    /// that broke this: the restart lands past the edge the caller asks from,
+    /// so the window opens on a reading with no drop in front of it.
+    fn two_days_and_a_session() -> (Store, i64) {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let mut records = vec![Record::User(UserProfile {
+            id: 1,
+            weight: 73_000,
+            height: 175,
+            gender: 0,
+            birth: 738_892_800,
+            first_name: "d".to_string(),
+        })];
+        for (day, peak) in [(DAY_ONE, 1800), (DAY_ONE + DAY_MS, 1700)] {
+            for hour in 0..24 {
+                let at = day + 15 * 60 * 1000 + hour * 3_600_000;
+                records.push(counter(at, 5 + peak * hour / 24));
+            }
+        }
+        let opened = DAY_ONE + 12 * 3_600_000;
+        records.push(Record::WorkoutStarted {
+            started_at: UnixMillis(opened).to_seconds(),
+            subcategory: 16,
+        });
+        records.push(Record::WorkoutEnded {
+            started_at: UnixMillis(opened).to_seconds(),
+            ended_at: UnixMillis(opened + 45 * 60 * 1000).to_seconds(),
+            paused_secs: 0,
+        });
+        records.extend((0..46).map(|minute| beat(opened + minute * 60 * 1000)));
+        store.store(device, &records).unwrap();
+        (store, device)
+    }
+
+    fn day_total(store: &Store, device: i64, day: i64) -> f64 {
+        let from = day + ROLLOVER_MS;
+        let readings: Vec<Reading> = store
+            .samples_between(device, Metric::Calories.kind(), from, from + DAY_MS - 1)
+            .unwrap()
+            .into_iter()
+            .map(|(at, value)| Reading {
+                at: UnixMillis(at),
+                total: Kilocalories(value as f64 / 100.0),
+            })
+            .collect();
+        expenditure(store, device, Metric::Calories, &readings)
+            .unwrap()
+            .iter()
+            .map(|reading| reading.total.0)
+            .fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn the_day_a_session_was_on_is_the_only_day_it_is_added_to() {
+        let (store, device) = two_days_and_a_session();
+        let lifted = day_total(&store, device, DAY_ONE);
+        let after = day_total(&store, device, DAY_ONE + DAY_MS);
+        assert!(lifted > 1805.0, "the session is the day's own: {lifted}");
+        assert!(after < 1706.0, "and is not the next day's: {after}");
     }
 }

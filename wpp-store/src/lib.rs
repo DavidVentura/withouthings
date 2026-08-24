@@ -594,6 +594,24 @@ impl Store {
         rows.collect()
     }
 
+    /// Every workout the span touches, including one still running, so what a
+    /// stretch of the counter is missing can be worked out from its sessions.
+    pub fn workouts_between(
+        &self,
+        device_id: i64,
+        from_secs: i64,
+        to_secs: i64,
+    ) -> Result<Vec<WorkoutRow>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, started_at, ended_at, subcategory FROM workout
+              WHERE device_id = ?1 AND started_at <= ?3
+                AND coalesce(ended_at, ?3) >= ?2
+              ORDER BY started_at",
+        )?;
+        let rows = stmt.query_map(params![device_id, from_secs, to_secs], workout_row)?;
+        rows.collect()
+    }
+
     pub fn workout(&self, device_id: i64, id: i64) -> Result<Option<WorkoutRow>, Error> {
         self.conn
             .query_row(
