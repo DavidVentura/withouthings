@@ -67,10 +67,28 @@ fun ActivityDetailScreen(
     var asking by remember { mutableStateOf(false) }
     var trimming by remember { mutableStateOf(false) }
 
+    // Stacked charts share one scrubber, so their readings belong in one column
+    // down the titles rather than at whatever height each line happens to sit.
+    fun readout(points: List<ChartPoint>, unit: String, decimals: Int, idle: String?): String? {
+        val at = scrubAtMs?.let { valueAt(points, it) } ?: return idle
+        return "${grouped(at.value, decimals)}$unit"
+    }
+
     val hr = state.hr.map { ChartPoint(it.atMs, it.bpm.toDouble()) }
     val temperature = state.workoutTemp
     val sets = state.markers.workSpans(entry?.endedAtMs ?: nowMs)
     val extent = entry?.let { it.startedAtMs..(it.endedAtMs ?: nowMs) }
+
+    // A series arrives padded with the sample either side of the window, so the
+    // drawn line reaches the edges of the chart rather than starting inside it.
+    // A figure about the session is a different question and must not count a
+    // reading taken before it began: one minute of sitting still ahead of a
+    // workout is enough to move a baseline and lose a tenth of the rise.
+    fun inSession(points: List<ChartPoint>) =
+        extent?.let { span -> points.filter { it.atMs in span } } ?: points
+
+    val sessionHr = inSession(hr)
+    val sessionTemp = inSession(temperature)
 
     DetailScaffold(
         title = entry?.name ?: "Activity",
@@ -116,9 +134,9 @@ fun ActivityDetailScreen(
             RowDivider(inset = 0.dp)
         }
 
-        FigureRail(summaryFigures(hr, temperature))
+        FigureRail(summaryFigures(sessionHr, sessionTemp))
 
-        ChartTitle("Heart rate")
+        ChartTitle("Heart rate", readout(sessionHr, " bpm", 0, null))
         ChartCard {
             ValueChart(
                 points = hr,
@@ -132,6 +150,7 @@ fun ActivityDetailScreen(
                 sessions = sets.chartSessions("set"),
                 limit = extent,
                 unit = " bpm",
+                readout = ChartReadout.Titled,
             )
             Spacer(Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -143,7 +162,15 @@ fun ActivityDetailScreen(
         }
 
         if (route != null && route.speed.isNotEmpty()) {
-            ChartTitle("Speed", "${grouped(route.speed.maxOf { it.value }, 1)} km/h at its fastest")
+            ChartTitle(
+                "Speed",
+                readout(
+                    route.speed,
+                    " km/h",
+                    1,
+                    "${grouped(route.speed.maxOf { it.value }, 1)} km/h at its fastest",
+                ),
+            )
             ChartCard {
                 ValueChart(
                     points = route.speed,
@@ -157,21 +184,17 @@ fun ActivityDetailScreen(
                     limit = extent,
                     connectWithin = ROUTE_GAP_MS,
                     unit = " km/h",
+                    readout = ChartReadout.Titled,
                 )
             }
         }
 
         ChartTitle(
             "Skin temperature",
-            if (temperature.isEmpty()) {
-                "not measured"
-            } else {
-                "${grouped(temperature.minOf { it.value }, 1)} – " +
-                    "${grouped(temperature.maxOf { it.value }, 1)} °C"
-            },
+            if (sessionTemp.isEmpty()) "not measured" else readout(sessionTemp, " °C", 1, null),
         )
         ChartCard {
-            if (temperature.isEmpty()) {
+            if (sessionTemp.isEmpty()) {
                 EmptyNote(
                     "The watch took no skin temperature during this session.",
                     Modifier.padding(vertical = 24.dp),
@@ -189,6 +212,7 @@ fun ActivityDetailScreen(
                     limit = extent,
                     cursorAlpha = 0.45f,
                     unit = " °C",
+                    readout = ChartReadout.Titled,
                 )
             }
         }
@@ -196,7 +220,12 @@ fun ActivityDetailScreen(
         if (route != null && route.climb.any { it.value > 0 }) {
             ChartTitle(
                 "Elevation gain",
-                "${grouped(route.climb.sumOf { it.value }, 0)} m climbed",
+                readout(
+                    route.climb,
+                    " m",
+                    0,
+                    "${grouped(route.climb.sumOf { it.value }, 0)} m climbed",
+                ),
             )
             ChartCard {
                 ValueChart(
@@ -214,6 +243,7 @@ fun ActivityDetailScreen(
                     form = ChartForm.Bars(MINUTE_MS),
                     cursorAlpha = 0.45f,
                     unit = " m",
+                    readout = ChartReadout.Titled,
                 )
             }
         }

@@ -104,6 +104,14 @@ private fun timeLabel(at: Long, spanMs: Long, todayStart: Long): String = when {
     else -> hms.format(Date(at))
 }
 
+/// Where a scrubbed reading is shown. Beside the chart's own title the values
+/// of stacked charts line up and read as a column; inside it they sit at
+/// whatever height the line happens to be.
+enum class ChartReadout {
+    InChart,
+    Titled,
+}
+
 @Composable
 fun ValueChart(
     points: List<ChartPoint>,
@@ -124,6 +132,7 @@ fun ValueChart(
     limit: LongRange? = null,
     showTimeAxis: Boolean = true,
     cursorAlpha: Float = 1f,
+    readout: ChartReadout = ChartReadout.InChart,
     unit: String = "",
     lineColor: Color = AppTheme.colors.dataStroke,
     fillColor: Color = MaterialTheme.colorScheme.primary,
@@ -345,7 +354,7 @@ fun ValueChart(
                         radius = tokens.cursorDot.toPx(),
                         center = Offset(at, y(nearest.value)),
                     )
-                    if (cursorAlpha > 0.9f) {
+                    if (readout == ChartReadout.InChart) {
                         drawTooltip(
                             measurer,
                             tooltipStyle,

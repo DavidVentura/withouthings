@@ -198,6 +198,12 @@ private const val RISE_MIN_SAMPLES = 5
 
 // The last samples of a session catch the cool-down, so an endpoint difference
 // reads a stretch at the end as a session that never warmed up.
+/// The sample a scrubbed instant lands on. The nearest one rather than an
+/// interpolation: a reading a minute apart from its neighbour was measured at a
+/// moment, and a number between two of them was never measured at all.
+fun valueAt(points: List<ChartPoint>, atMs: Long): ChartPoint? =
+    points.minByOrNull { abs(it.atMs - atMs) }
+
 fun temperatureRise(points: List<ChartPoint>): Double? {
     if (points.size < RISE_MIN_SAMPLES) return null
     val ordered = points.sortedBy { it.atMs }
