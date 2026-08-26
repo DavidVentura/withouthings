@@ -6,8 +6,11 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.location.LocationRequest
+import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
+import java.util.concurrent.Executor
 import kotlin.math.roundToInt
 import uniffi.wpp_ffi.LocationFix
 import uniffi.wpp_ffi.WatchService
@@ -40,8 +43,16 @@ class LocationRecorder(context: Context, private val service: () -> WatchService
             return
         }
         val own = HandlerThread(TAG).apply { start() }
+        val handler = Handler(own.looper)
+        // The provider-and-interval overload forces high accuracy for the gps
+        // provider and leaves every other one at balanced power, which lets the
+        // platform serve a route from cell and wifi.
+        val request = LocationRequest.Builder(INTERVAL_MS)
+            .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
+            .setMinUpdateIntervalMillis(INTERVAL_MS)
+            .build()
         val started = runCatching {
-            manager.requestLocationUpdates(provider, INTERVAL_MS, 0f, listener, own.looper)
+            manager.requestLocationUpdates(provider, request, Executor(handler::post), listener)
         }
         // Android refuses a while-in-use permission to a service that did not
         // take the location type while it was allowed to. Nothing here can put
@@ -54,11 +65,28 @@ class LocationRecorder(context: Context, private val service: () -> WatchService
         thread = own
         recording = true
         Log.i(TAG, "recording a route from $provider at ${INTERVAL_MS}ms")
+        tell(true)
+    }
+
+    // Answering a status query is what moves the watch's screens into the mode
+    // that will show the phone's figures, and a session begun on the watch has
+    // never asked for one.
+    private fun tell(present: Boolean) {
+        val watch = service()
+        if (watch == null) {
+            Log.w(TAG, "no service to tell about the receiver")
+            return
+        }
+        runCatching {
+            if (present) watch.refreshWorkoutStatus()
+            watch.setGpsStatus(present)
+        }.onFailure { Log.e(TAG, "could not set the watch's gps status", it) }
     }
 
     fun disarm() {
         if (!recording) return
         recording = false
+        tell(false)
         runCatching { manager.removeUpdates(listener) }
             .onFailure { Log.e(TAG, "could not stop location updates", it) }
         thread?.quitSafely()
@@ -91,6 +119,8 @@ class LocationRecorder(context: Context, private val service: () -> WatchService
         }
         runCatching { watch.recordFixes(listOf(location.fix())) }
             .onFailure { Log.e(TAG, "could not store a fix", it) }
+        runCatching { watch.pushRouteToWatch() }
+            .onFailure { Log.e(TAG, "could not push the route to the watch", it) }
     }
 
     companion object {

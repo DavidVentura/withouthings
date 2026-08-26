@@ -375,7 +375,46 @@ impl Segment {
     }
 }
 
+/// A distance carved at a moment, so a running total can keep what is behind it
+/// and recompute only what is in front. The step that straddles the boundary
+/// belongs to the tail, which is what lets `settled_through` be resumed from
+/// without counting it twice.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SplitDistance {
+    pub settled: Metres,
+    pub tail: Metres,
+    pub settled_through: Option<UnixMillis>,
+}
+
 impl Track {
+    /// Smoothing reaches backwards over a whole run, so a live total that
+    /// recomputes everything on every fix grows with the square of the session.
+    /// Splitting lets a caller hold the far past still and pay only for a
+    /// window, which no display resolves finely enough to notice.
+    pub fn distance_split(&self, at: UnixMillis) -> SplitDistance {
+        let mut settled = 0.0;
+        let mut tail = 0.0;
+        let mut through: Option<UnixMillis> = None;
+        for pair in self
+            .segments
+            .iter()
+            .flat_map(|segment| segment.fixes.windows(2))
+        {
+            let metres = pair[0].position().distance_to(pair[1].position()).0;
+            if pair[1].at.0 <= at.0 {
+                settled += metres;
+                through = Some(pair[1].at);
+            } else {
+                tail += metres;
+            }
+        }
+        SplitDistance {
+            settled: Metres(settled),
+            tail: Metres(tail),
+            settled_through: through,
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.segments.iter().all(|segment| segment.fixes.is_empty())
     }
@@ -683,6 +722,75 @@ pub fn frame(track: &Track, view: View) -> Frame {
     }
 }
 
+/// Where the body was at a moment, in the pixels a frame of the same view is
+/// drawn in.
+///
+/// The drawn path cannot answer this. Simplification drops every point that
+/// sits within a pixel of the line through its neighbours, which is most of a
+/// wait at a light, so interpolating along it slides the position across a
+/// whole stop at the pace of the approach to it. The unsimplified fixes are
+/// what know that nothing moved.
+pub fn cursor(track: &Track, view: View, at: UnixMillis) -> Option<PathPoint> {
+    let segment = track
+        .segments
+        .iter()
+        .find(
+            |segment| match (segment.fixes.first(), segment.fixes.last()) {
+                (Some(first), Some(last)) => at.0 >= first.at.0 && at.0 <= last.at.0,
+                _ => false,
+            },
+        )
+        .or_else(|| {
+            // Between segments, or outside the route: the nearest end of the
+            // nearest run beats drawing nothing.
+            track.segments.iter().min_by_key(|segment| {
+                segment
+                    .fixes
+                    .iter()
+                    .map(|fix| (fix.at.0 - at.0).abs())
+                    .min()
+                    .unwrap_or(i64::MAX)
+            })
+        })?;
+
+    let after = segment.fixes.iter().position(|fix| fix.at.0 >= at.0);
+    let (before, next, part) = match after {
+        None => {
+            let last = segment.fixes.last()?;
+            (last, last, 0.0)
+        }
+        Some(0) => {
+            let first = segment.fixes.first()?;
+            (first, first, 0.0)
+        }
+        Some(index) => {
+            let before = &segment.fixes[index - 1];
+            let next = &segment.fixes[index];
+            let span = (next.at.0 - before.at.0) as f64;
+            let part = if span <= 0.0 {
+                0.0
+            } else {
+                (at.0 - before.at.0) as f64 / span
+            };
+            (before, next, part)
+        }
+    };
+
+    let zoom = view.zoom.clamp(MIN_ZOOM, MAX_ZOOM);
+    let (centre_x, centre_y) = project(view.centre, zoom);
+    let left = centre_x - view.width_px / 2.0;
+    let top = centre_y - view.height_px / 2.0;
+    let (bx, by) = project(before.position(), zoom);
+    let (nx, ny) = project(next.position(), zoom);
+
+    Some(PathPoint {
+        at,
+        x_px: bx + (nx - bx) * part - left,
+        y_px: by + (ny - by) * part - top,
+        speed: before.speed(),
+    })
+}
+
 fn tiles_for(view: View, zoom: f64, left: f64, top: f64) -> Vec<TilePlacement> {
     let z = zoom.floor();
     // Tiles are cut for whole zooms; the fractional part is drawn as scale.
@@ -784,6 +892,89 @@ mod tests {
             speed_mm_s: None,
             bearing_cdeg: None,
         }
+    }
+
+    #[test]
+    fn a_split_totals_the_whole_and_can_be_resumed_from() {
+        let fixes: Vec<Fix> = (0..20)
+            .map(|i| fix(1_780_000_000 + i, 51.5 + i as f64 * 0.0001, -0.08))
+            .collect();
+        let track = clean(&fixes, limits());
+        let boundary = UnixMillis((1_780_000_000 + 12) * 1000);
+        let split = track.distance_split(boundary);
+
+        let whole = track.distance().0;
+        assert!((split.settled.0 + split.tail.0 - whole).abs() < 1e-6);
+        assert_eq!(split.settled_through, Some(boundary));
+
+        // Resuming at the boundary must not count the straddling step twice.
+        let rest = clean(
+            &fixes
+                .iter()
+                .filter(|f| f.at.0 >= boundary.0)
+                .copied()
+                .collect::<Vec<_>>(),
+            limits(),
+        );
+        let resumed = split.settled.0 + rest.distance_split(UnixMillis(i64::MAX)).settled.0;
+        assert!(
+            (resumed - whole).abs() < whole * 0.02,
+            "{resumed} vs {whole}"
+        );
+    }
+
+    #[test]
+    fn a_split_past_every_fix_is_all_settled() {
+        let fixes: Vec<Fix> = (0..5)
+            .map(|i| fix(1_780_000_000 + i, 51.5 + i as f64 * 0.0001, -0.08))
+            .collect();
+        let track = clean(&fixes, limits());
+        let split = track.distance_split(UnixMillis(i64::MAX));
+        assert_eq!(split.tail, Metres(0.0));
+        assert!((split.settled.0 - track.distance().0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_cursor_holds_still_where_the_drawn_line_would_slide() {
+        // A minute of riding, then forty seconds stopped, then riding again.
+        let mut fixes: Vec<Fix> = (0..60)
+            .map(|i| fix(1_780_000_000 + i, 51.5 + i as f64 * 0.0002, -0.08))
+            .collect();
+        let held = 51.5 + 59.0 * 0.0002;
+        fixes.extend((0..40).map(|i| fix(1_780_000_060 + i, held, -0.08)));
+        fixes
+            .extend((0..60).map(|i| fix(1_780_000_100 + i, held + (i + 1) as f64 * 0.0002, -0.08)));
+
+        let track = clean(&fixes, limits());
+        let view = fit(&track, 1080.0, 720.0, 24.0);
+
+        let entered = cursor(&track, view, UnixMillis(1_780_000_065 * 1000)).expect("in the stop");
+        let left = cursor(&track, view, UnixMillis(1_780_000_095 * 1000)).expect("in the stop");
+        let moved =
+            ((left.x_px - entered.x_px).powi(2) + (left.y_px - entered.y_px).powi(2)).sqrt();
+        assert!(moved < 1.0, "cursor drifted {moved} px across a stop");
+
+        // The drawn path is what it must not be read from.
+        let drawn = frame(&track, view);
+        let points: Vec<&PathPoint> = drawn.path.iter().flat_map(|p| p.iter()).collect();
+        let straddles = points
+            .windows(2)
+            .any(|pair| pair[0].at.0 <= 1_780_000_065_000 && pair[1].at.0 >= 1_780_000_095_000);
+        assert!(
+            straddles,
+            "the stop was expected to simplify into one segment"
+        );
+    }
+
+    #[test]
+    fn a_cursor_outside_the_route_lands_on_an_end() {
+        let fixes: Vec<Fix> = (0..10)
+            .map(|i| fix(1_780_000_000 + i, 51.5 + i as f64 * 0.0002, -0.08))
+            .collect();
+        let track = clean(&fixes, limits());
+        let view = fit(&track, 1080.0, 720.0, 24.0);
+        assert!(cursor(&track, view, UnixMillis(1_779_999_000 * 1000)).is_some());
+        assert!(cursor(&track, view, UnixMillis(1_780_009_000 * 1000)).is_some());
     }
 
     fn limits() -> Limits {

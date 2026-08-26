@@ -54,6 +54,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import uniffi.wpp_ffi.MapFrame
+import uniffi.wpp_ffi.MapPoint
 import uniffi.wpp_ffi.MapTile
 import uniffi.wpp_ffi.MapView
 import uniffi.wpp_ffi.RouteTrack
@@ -215,7 +216,9 @@ private fun MapCanvas(
             }
         }
         drawRoute(drawn, route.summary, line, strokePx, dotPx)
-        cursorAtMs?.let { drawCursor(drawn, it, line, dotPx) }
+        cursorAtMs?.let { at ->
+            held?.let { track.cursor(it, at) }?.let { drawCursor(it, line, dotPx) }
+        }
         drawScaleBar(drawn.metresPerPixel, meta, measurer)
         if (tiles != null) {
             drawCredit(measurer, meta)
@@ -287,28 +290,11 @@ private fun DrawScope.drawRoute(
 }
 
 /**
- * Where the body was at the instant the charts are scrubbed to. The path
- * carries the time of every point it kept, so this is a walk along it rather
- * than a second reading of the route.
+ * Where the body was at the instant the charts are scrubbed to, placed against
+ * the route's own fixes rather than the line drawn from them.
  */
-private fun DrawScope.drawCursor(frame: MapFrame, atMs: Long, colour: Color, dotPx: Float) {
-    val points = frame.path.flatMap { it.points }
-    if (points.isEmpty()) return
-    val after = points.indexOfFirst { it.atMs >= atMs }
-    if (after < 0) return
-
-    val at = if (after == 0) {
-        Offset(points[0].xPx.toFloat(), points[0].yPx.toFloat())
-    } else {
-        val before = points[after - 1]
-        val next = points[after]
-        val span = (next.atMs - before.atMs).toDouble()
-        val part = if (span <= 0.0) 0.0 else (atMs - before.atMs) / span
-        Offset(
-            (before.xPx + (next.xPx - before.xPx) * part).toFloat(),
-            (before.yPx + (next.yPx - before.yPx) * part).toFloat(),
-        )
-    }
+private fun DrawScope.drawCursor(point: MapPoint, colour: Color, dotPx: Float) {
+    val at = Offset(point.xPx.toFloat(), point.yPx.toFloat())
     drawCircle(Color.White, dotPx + 3f, at)
     drawCircle(colour, dotPx + 1f, at)
 }

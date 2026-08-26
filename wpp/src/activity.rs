@@ -121,14 +121,47 @@ fn earned(minute: &Minute) -> i64 {
     minute.steps.unwrap_or(0) * 60 - WALKING_FLOOR_SPM * minute.duration_secs
 }
 
-pub fn detect(minutes: &[Minute]) -> Vec<Session> {
+/// A session the wearer recorded is not one to be found again. The pedometer
+/// counts through a ride, and those steps close into a walk laid over the top
+/// of the workout unless the minutes it covers are withheld. Dropping them
+/// rather than the sessions they fall in is what lets a genuine walk either
+/// side of a recorded one still be found, each judged on its own length.
+pub fn detect(minutes: &[Minute], recorded: &[Range<UnixTime>]) -> Vec<Session> {
     let mut sessions = Vec::new();
-    let mut from = 0;
-    while let Some(span) = next_span(minutes, from) {
-        sessions.extend(close(&minutes[span.start..span.end]));
-        from = span.end;
+    for run in outside(minutes, recorded) {
+        let mut from = 0;
+        while let Some(span) = next_span(&run, from) {
+            sessions.extend(close(&run[span.start..span.end]));
+            from = span.end;
+        }
     }
     sessions
+}
+
+/// Runs of minutes that no recorded session covers. A hole is a break and not
+/// merely absent time: the stillness budget will otherwise stitch a walk back
+/// across a ride shorter than ten minutes, and a detected session that spans a
+/// recorded one is the thing being avoided.
+fn outside(minutes: &[Minute], recorded: &[Range<UnixTime>]) -> Vec<Vec<Minute>> {
+    let mut runs = Vec::new();
+    let mut current: Vec<Minute> = Vec::new();
+    for minute in minutes {
+        if recorded.iter().any(|span| covers(span, minute)) {
+            if !current.is_empty() {
+                runs.push(std::mem::take(&mut current));
+            }
+            continue;
+        }
+        current.push(*minute);
+    }
+    if !current.is_empty() {
+        runs.push(current);
+    }
+    runs
+}
+
+fn covers(span: &Range<UnixTime>, minute: &Minute) -> bool {
+    minute.at.0 < span.end.0 && minute.ended_at().0 > span.start.0
 }
 
 fn next_span(minutes: &[Minute], from: usize) -> Option<Range<usize>> {
@@ -202,6 +235,30 @@ fn close(minutes: &[Minute]) -> Option<Session> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_recorded_session_is_not_found_again() {
+        let minutes = walk(1_000, 15, 90);
+        assert_eq!(detect_free(&minutes).len(), 1);
+
+        let over_it = UnixTime(1_000)..UnixTime(1_000 + 15 * 60);
+        assert!(detect(&minutes, &[over_it]).is_empty());
+    }
+
+    #[test]
+    fn walking_either_side_of_a_recorded_session_still_counts() {
+        let mut minutes = walk(1_000, 12, 90);
+        minutes.extend(walk(1_000 + 12 * 60, 8, 90));
+        minutes.extend(walk(1_000 + 20 * 60, 12, 90));
+
+        let middle = UnixTime(1_000 + 12 * 60)..UnixTime(1_000 + 20 * 60);
+        let found = detect(&minutes, &[middle]);
+        assert_eq!(found.len(), 2, "{found:?}");
+    }
+
+    fn detect_free(minutes: &[Minute]) -> Vec<Session> {
+        detect(minutes, &[])
+    }
+
     fn minute(at: i64, steps: i64) -> Minute {
         Minute {
             duration_secs: 60,
@@ -226,7 +283,7 @@ mod tests {
 
     #[test]
     fn a_quarter_of_an_hour_of_walking_is_one_session() {
-        let found = detect(&walk(1_000, 15, 90));
+        let found = detect_free(&walk(1_000, 15, 90));
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].subcategory, WALK);
         assert_eq!(found[0].started_at, UnixTime(1_000));
@@ -249,26 +306,26 @@ mod tests {
 
     #[test]
     fn crossing_a_car_park_is_not_a_session() {
-        assert!(detect(&walk(1_000, 3, 90)).is_empty());
+        assert!(detect_free(&walk(1_000, 3, 90)).is_empty());
     }
 
     #[test]
     fn a_walk_round_the_block_is_a_session() {
-        let found = detect(&walk(1_000, 6, 95));
+        let found = detect_free(&walk(1_000, 6, 95));
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].steps, 6 * 95);
     }
 
     #[test]
     fn pottering_about_the_house_is_not_a_session() {
-        assert!(detect(&walk(1_000, 30, 30)).is_empty());
+        assert!(detect_free(&walk(1_000, 30, 30)).is_empty());
     }
 
     #[test]
     fn a_short_pause_does_not_split_a_session() {
         let mut minutes = walk(1_000, 8, 95);
         minutes.extend(walk(1_000 + 10 * 60, 8, 95));
-        let found = detect(&minutes);
+        let found = detect_free(&minutes);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].ended_at, UnixTime(1_000 + 18 * 60));
     }
@@ -277,7 +334,7 @@ mod tests {
     fn a_long_break_ends_the_session() {
         let mut minutes = walk(1_000, 12, 95);
         minutes.extend(walk(1_000 + 3600, 12, 95));
-        let found = detect(&minutes);
+        let found = detect_free(&minutes);
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].started_at, UnixTime(1_000));
         assert_eq!(found[1].started_at, UnixTime(1_000 + 3600));
@@ -285,7 +342,7 @@ mod tests {
 
     #[test]
     fn cadence_tells_a_run_from_a_walk() {
-        let found = detect(&walk(1_000, 15, 165));
+        let found = detect_free(&walk(1_000, 15, 165));
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].subcategory, RUN);
     }
@@ -298,7 +355,7 @@ mod tests {
             ..Minute::opened(UnixTime(1_000 + 12 * 60))
         });
         minutes.extend(walk(1_000 + 27 * 60, 12, 95));
-        assert_eq!(detect(&minutes).len(), 2);
+        assert_eq!(detect_free(&minutes).len(), 2);
     }
 
     #[test]
@@ -306,7 +363,7 @@ mod tests {
         let mut minutes = walk(1_000, 15, 90);
         minutes.push(idle(1_900, 480));
         minutes.extend(walk(2_380, 15, 90));
-        let found = detect(&minutes);
+        let found = detect_free(&minutes);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].started_at, UnixTime(1_000));
         assert_eq!(found[0].ended_at, UnixTime(3_280));
@@ -317,7 +374,7 @@ mod tests {
         let mut minutes = walk(1_000, 15, 90);
         minutes.push(idle(1_900, 720));
         minutes.extend(walk(2_620, 15, 90));
-        let found = detect(&minutes);
+        let found = detect_free(&minutes);
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].ended_at, UnixTime(1_900));
         assert_eq!(found[1].started_at, UnixTime(2_620));
@@ -328,7 +385,7 @@ mod tests {
         let mut minutes = walk(1_000, 10, 90);
         minutes.push(minute(1_600, 20));
         minutes.extend(walk(1_660, 10, 90));
-        let found = detect(&minutes);
+        let found = detect_free(&minutes);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].steps, 10 * 90 + 20 + 10 * 90);
     }
@@ -338,7 +395,7 @@ mod tests {
         let mut minutes = walk(1_000, 10, 90);
         minutes.push(idle(1_600, 420));
         minutes.push(minute(2_020, 20));
-        let found = detect(&minutes);
+        let found = detect_free(&minutes);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].ended_at, UnixTime(1_600));
     }
@@ -348,14 +405,14 @@ mod tests {
         let minutes: Vec<Minute> = (0..12)
             .flat_map(|i| [minute(1_000 + i * 360, 90), idle(1_060 + i * 360, 300)])
             .collect();
-        assert!(detect(&minutes).is_empty());
+        assert!(detect_free(&minutes).is_empty());
     }
 
     #[test]
     fn a_stretch_with_no_windows_at_all_is_time_spent_standing_still() {
         let mut minutes = walk(1_000, 10, 90);
         minutes.extend(walk(2_800, 10, 90));
-        assert_eq!(detect(&minutes).len(), 2);
+        assert_eq!(detect_free(&minutes).len(), 2);
     }
 
     #[test]
@@ -363,7 +420,7 @@ mod tests {
         let mut minutes = walk(1_000, 10, 165);
         minutes.push(idle(1_600, 480));
         minutes.extend(walk(2_080, 10, 165));
-        let found = detect(&minutes);
+        let found = detect_free(&minutes);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].subcategory, RUN);
     }
@@ -374,6 +431,6 @@ mod tests {
             steps: Some(90),
             ..Minute::opened(UnixTime(1_000))
         }];
-        assert!(detect(&minutes).is_empty());
+        assert!(detect_free(&minutes).is_empty());
     }
 }

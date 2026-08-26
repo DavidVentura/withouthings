@@ -30,7 +30,7 @@ fun stageName(stage: SleepStage): String = when (stage) {
     SleepStage.DEEP -> "Deep"
 }
 
-val STAGE_ORDER = listOf(SleepStage.DEEP, SleepStage.REM, SleepStage.LIGHT, SleepStage.AWAKE)
+val STAGE_ORDER = listOf(SleepStage.AWAKE, SleepStage.LIGHT, SleepStage.DEEP, SleepStage.REM)
 
 @Composable
 fun stageColor(stage: SleepStage): Color {

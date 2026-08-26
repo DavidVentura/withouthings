@@ -592,6 +592,11 @@ struct Inner {
     reassembler: FrameReassembler,
 }
 
+/// How far back a live distance is held still. Long enough that the smoother
+/// has stopped moving those fixes, short enough that a fix costs a fixed
+/// window rather than the session so far.
+const SETTLE_MS: i64 = 60_000;
+
 #[derive(uniffi::Object)]
 pub struct WatchService {
     inner: Mutex<Inner>,
@@ -601,6 +606,15 @@ pub struct WatchService {
     rasterizer: Box<dyn Rasterizer>,
     device_id: i64,
     notifications: Mutex<NotificationCenter>,
+    live_distance: Mutex<Option<LiveDistance>>,
+}
+
+/// What the watch has already been told, so a fix costs a window rather than
+/// the whole session.
+struct LiveDistance {
+    workout_started_at: UnixTime,
+    settled_metres: f64,
+    settled_through_ms: i64,
 }
 
 #[uniffi::export]
@@ -630,6 +644,7 @@ impl WatchService {
             rasterizer,
             device_id,
             notifications: Mutex::new(NotificationCenter::new()),
+            live_distance: Mutex::new(None),
         })
     }
 
@@ -1040,12 +1055,17 @@ impl WatchService {
         to_ms: i64,
     ) -> Result<Vec<DetectedActivity>, WatchError> {
         let store = self.store.lock().unwrap();
-        let minutes = store.activity_minutes(
-            self.device_id,
-            from_ms.div_euclid(1000),
-            to_ms.div_euclid(1000),
-        )?;
-        Ok(activity::detect(&minutes)
+        let from_secs = from_ms.div_euclid(1000);
+        let to_secs = to_ms.div_euclid(1000);
+        let minutes = store.activity_minutes(self.device_id, from_secs, to_secs)?;
+        // A workout still running has no end, and its minutes are as much its
+        // own as a finished one's.
+        let recorded: Vec<std::ops::Range<UnixTime>> = store
+            .workouts_between(self.device_id, from_secs, to_secs)?
+            .iter()
+            .map(|row| row.started_at..row.ended_at.unwrap_or(UnixTime(to_secs)))
+            .collect();
+        Ok(activity::detect(&minutes, &recorded)
             .into_iter()
             .map(|session| DetectedActivity {
                 started_at_ms: session.started_at.to_millis().0,
@@ -1131,6 +1151,94 @@ impl WatchService {
             .unwrap()
             .client
             .start_workout(activity as i16, UnixTime(now_ms() / 1000));
+        self.dispatch(actions)
+    }
+
+    /// The route so far as the watch's own screens want it: distance in the
+    /// centimetres they scale to kilometres, speed already converted to the
+    /// kilometres an hour they print unaltered. Nothing is sent until there is
+    /// a distance, which is what the screens gate on.
+    pub fn push_route_to_watch(&self) -> Result<(), WatchError> {
+        let Some(active) = self.store.lock().unwrap().active_workout(self.device_id)? else {
+            return Ok(());
+        };
+        let started_ms = active.started_at.0 * 1000;
+        let mut held = self.live_distance.lock().unwrap();
+        let carried = held
+            .take()
+            .filter(|live| live.workout_started_at == active.started_at);
+        let from_ms = carried
+            .as_ref()
+            .map_or(started_ms, |live| live.settled_through_ms);
+        let settled_metres = carried.as_ref().map_or(0.0, |live| live.settled_metres);
+
+        let Some(track) = self.track(from_ms, now_ms(), active.subcategory as i32)? else {
+            return Ok(());
+        };
+        let split = track.track.distance_split(UnixMillis(now_ms() - SETTLE_MS));
+        *held = Some(LiveDistance {
+            workout_started_at: active.started_at,
+            settled_metres: settled_metres + split.settled.0,
+            settled_through_ms: split.settled_through.map_or(from_ms, |through| through.0),
+        });
+        drop(held);
+
+        let distance_cm =
+            ((settled_metres + split.settled.0 + split.tail.0) * 100.0).round() as i32;
+        if distance_cm == 0 {
+            return Ok(());
+        }
+        let speed_kph = track
+            .track
+            .speed_series()
+            .last()
+            .map(|(_, speed)| (speed.0 * 3.6).round() as i32);
+        let actions = self
+            .inner
+            .lock()
+            .unwrap()
+            .client
+            .workout_live_data(wpp::client::LiveRoute {
+                pace: None,
+                distance: Some(distance_cm),
+                speed: speed_kph,
+            });
+        self.dispatch(actions)
+    }
+
+    pub fn refresh_workout_status(&self) -> Result<(), WatchError> {
+        let actions = self.inner.lock().unwrap().client.workout_status();
+        self.dispatch(actions)
+    }
+
+    pub fn set_gps_status(&self, present: bool) -> Result<(), WatchError> {
+        let status = if present {
+            wpp::client::GpsStatus::Present
+        } else {
+            wpp::client::GpsStatus::Absent
+        };
+        let actions = self.inner.lock().unwrap().client.gps_status(status);
+        self.dispatch(actions)
+    }
+
+    /// A field left as None is left out of the frame. The watch acknowledges
+    /// nothing here, so a success is only that the frame went out.
+    pub fn push_live_route(
+        &self,
+        speed: Option<i32>,
+        distance: Option<i32>,
+        pace: Option<i32>,
+    ) -> Result<(), WatchError> {
+        let actions = self
+            .inner
+            .lock()
+            .unwrap()
+            .client
+            .workout_live_data(wpp::client::LiveRoute {
+                pace,
+                distance,
+                speed,
+            });
         self.dispatch(actions)
     }
 
@@ -2394,6 +2502,18 @@ impl RouteTrack {
 
     pub fn fit(&self, width_px: f64, height_px: f64, padding_px: f64) -> MapView {
         of_view(track::fit(&self.track, width_px, height_px, padding_px))
+    }
+
+    /// Where the body was at a moment, for a cursor. Deliberately not read off
+    /// `frame`: the drawn path is simplified, and a stop is exactly what
+    /// simplification removes.
+    pub fn cursor(&self, view: MapView, at_ms: i64) -> Option<MapPoint> {
+        track::cursor(&self.track, view.held(), UnixMillis(at_ms)).map(|point| MapPoint {
+            at_ms: point.at.0,
+            x_px: point.x_px,
+            y_px: point.y_px,
+            speed_m_s: point.speed.map(|speed| speed.0),
+        })
     }
 
     pub fn frame(&self, view: MapView) -> MapFrame {

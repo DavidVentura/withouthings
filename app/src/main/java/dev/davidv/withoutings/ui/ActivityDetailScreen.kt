@@ -240,8 +240,7 @@ fun ActivityDetailScreen(
     if (trimming && session != null) {
         TrimEndDialog(
             span = session,
-            seedAtMs = scrubAtMs?.takeIf { it > session.fromMs && it < session.toMs }
-                ?: session.toMs,
+            scrubbedAtMs = scrubAtMs?.takeIf { it > session.fromMs && it < session.toMs },
             onDismiss = { trimming = false },
             onTrim = { trimming = false; onTrim(entry, it) },
         )
@@ -266,17 +265,25 @@ fun ActivityDetailScreen(
 @Composable
 private fun TrimEndDialog(
     span: Span,
-    seedAtMs: Long,
+    scrubbedAtMs: Long?,
     onDismiss: () -> Unit,
     onTrim: (Long) -> Unit,
 ) {
+    val seedAtMs = scrubbedAtMs ?: span.toMs
     val seed = remember(seedAtMs) { Calendar.getInstance().apply { timeInMillis = seedAtMs } }
     val picker = rememberTimePickerState(
         initialHour = seed.get(Calendar.HOUR_OF_DAY),
         initialMinute = seed.get(Calendar.MINUTE),
         is24Hour = true,
     )
-    val chosen = trimEndAtMs(span, picker.hour, picker.minute)
+    // The picker cannot express a second, which is most of a short session. A
+    // point picked on the chart can, so it stands until the picker is moved off
+    // the minute it sits in.
+    val scrubbedMinute = scrubbedAtMs?.takeIf {
+        picker.hour == seed.get(Calendar.HOUR_OF_DAY) &&
+            picker.minute == seed.get(Calendar.MINUTE)
+    }
+    val chosen = scrubbedMinute ?: trimEndAtMs(span, picker.hour, picker.minute)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -287,7 +294,8 @@ private fun TrimEndDialog(
                 TimeInput(picker)
                 Text(
                     chosen?.let {
-                        "Ends ${clock(it)}, ${compactDuration(it - span.fromMs)} of session, " +
+                        val at = if (it == scrubbedMinute) clockWithSeconds(it) else clock(it)
+                        "Ends $at, ${compactDuration(it - span.fromMs)} of session, " +
                             "${compactDuration(span.toMs - it)} dropped."
                     } ?: "Pick a time between ${clock(span.fromMs)} and ${clock(span.toMs)}.",
                     style = AppTheme.type.rowMeta,

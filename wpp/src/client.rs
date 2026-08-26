@@ -2,11 +2,11 @@ use crate::activity::Minute;
 use crate::debug_dump::DebugDump;
 use crate::frame::Channel;
 use crate::objects::{
-    ActivitySubcategory, AncsStatus, AppProbe, AppProbeOsVersion, EndTime, FeatureTagsDeprecated,
-    Id, InfoType, MeasureCategory, MeasureLiveAppStatus, NotificationsDisplayState, Null,
-    ProbeChallenge, ProbeChallengeResponse, StartTime, StoredSignalMeta, TimeSet, TrackerUser,
-    TrackerWearPos, VasistasCbt, VasistasType, Version, WamScreensList, WamVasistasGet,
-    WorkoutScreenMetadata,
+    ActivitySubcategory, AncsStatus, AppProbe, AppProbeOsVersion, Distance, EndTime,
+    FeatureTagsDeprecated, Id, InfoType, MeasureCategory, MeasureLiveAppStatus,
+    NotificationsDisplayState, Null, Pace, ProbeChallenge, ProbeChallengeResponse, Speed,
+    StartTime, StoredSignalMeta, TimeSet, TrackerUser, TrackerWearPos, VasistasCbt, VasistasType,
+    Version, WamScreensList, WamVasistasGet, WorkoutGpsStatus, WorkoutScreenMetadata,
 };
 use crate::signal::{Signal, SignalCollector};
 use crate::units::{UnixMillis, UnixTime};
@@ -135,6 +135,32 @@ pub struct Category(pub u8);
 impl Category {
     pub const BODY: Category = Category(0);
     pub const ACTIVITY: Category = Category(255);
+}
+
+/// Whether the phone is feeding the watch a position at all.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GpsStatus {
+    Absent,
+    Present,
+}
+
+impl GpsStatus {
+    pub fn value(self) -> u16 {
+        match self {
+            GpsStatus::Absent => 0,
+            GpsStatus::Present => 1,
+        }
+    }
+}
+
+/// Wire units are unestablished, so these are the integers the watch is sent
+/// rather than any quantity. Nothing in the firmware scales them and nothing
+/// on the wire reports them back.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct LiveRoute {
+    pub pace: Option<i32>,
+    pub distance: Option<i32>,
+    pub speed: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -671,9 +697,8 @@ impl Client {
                 // set has to be re-asserted on every connection or a nightly
                 // one never runs again. The reference app does the same.
                 actions.extend(self.write_features());
-                // A workout that began while nothing was connected is
-                // undiscoverable otherwise: `CMD_WORKOUT_START` is pushed once
-                // and never replayed.
+                // The watch repeats the start push every couple of seconds,
+                // so this only saves waiting for the next one.
                 actions.push(Action::Send(Frame::new(
                     Command::CMD_WORKOUT_STATUS,
                     Vec::new(),
@@ -1219,6 +1244,53 @@ impl Client {
             )),
             Action::Send(Frame::new(Command::CMD_TRACKER_USER_GET, Vec::new())),
         ]
+    }
+
+    /// Answering this is what puts the watch's own workout screens into the
+    /// mode that will show a phone's figures at all, so it is asked for again
+    /// whenever a session the phone did not start begins.
+    pub fn workout_status(&self) -> Vec<Action> {
+        vec![Action::Send(Frame::new(
+            Command::CMD_WORKOUT_STATUS,
+            Vec::new(),
+        ))]
+    }
+
+    /// What the watch believes about the phone's receiver. Zero is what it
+    /// assumes when nothing has said otherwise, and what puts *Open Withings
+    /// App for GPS tracking* on its screen instead of a speed. Only the
+    /// zero/non-zero split is established; whether the firmware separates
+    /// searching from fixed above zero is not.
+    pub fn gps_status(&self, status: GpsStatus) -> Vec<Action> {
+        vec![Action::Send(Frame::new(
+            Command::CMD_WORKOUT_GPS_STATUS,
+            vec![WppObject::WorkoutGpsStatus(WorkoutGpsStatus {
+                status: status.value(),
+            })],
+        ))]
+    }
+
+    /// The watch answers nothing to this, so a caller learns whether it landed
+    /// only by looking at the watch. Fields the phone has no figure for are
+    /// left out rather than sent as zero, which the screens would show.
+    pub fn workout_live_data(&self, live: LiveRoute) -> Vec<Action> {
+        let mut objects = Vec::new();
+        if let Some(pace) = live.pace {
+            objects.push(WppObject::Pace(Pace { value: pace }));
+        }
+        if let Some(distance) = live.distance {
+            objects.push(WppObject::Distance(Distance { value: distance }));
+        }
+        if let Some(speed) = live.speed {
+            objects.push(WppObject::Speed(Speed { value: speed }));
+        }
+        if objects.is_empty() {
+            return Vec::new();
+        }
+        vec![Action::Send(Frame::new(
+            Command::CMD_WORKOUT_LIVE_DATA,
+            objects,
+        ))]
     }
 
     pub fn start_workout(&self, subcategory: i16, at: UnixTime) -> Vec<Action> {
