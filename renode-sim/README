@@ -3,7 +3,10 @@ Renode sim of the ScanWatch 2 (HWA10) firmware. See NOTES.md for status.
 Prereqs (not in the repo — supply your own):
   - Renode (tested v1.17.0). Put `renode` on your PATH, or use its full path below.
   - The firmware package `hwa10_3411_Tf4fD4.bin` in the repo root (one level up).
-  - NRF52840.svd in this directory (Nordic MDK / cmsis-svd nordic pack).
+  - NRF52840.svd in this directory (Nordic's official SVD, the copy Renode's own
+    nrf52840 platform uses). Fetch it:
+      cd renode-sim
+      wget -qO- https://dl.antmicro.com/projects/renode/svd/NRF52840.svd.gz | gunzip > NRF52840.svd
 
 Run everything from this directory (scripts use paths relative to it):
   cd renode-sim
