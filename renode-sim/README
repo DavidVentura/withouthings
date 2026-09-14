@@ -1,0 +1,33 @@
+Renode sim of the ScanWatch 2 (HWA10) firmware. See NOTES.md for status.
+
+Prereqs (not in the repo — supply your own):
+  - Renode (tested v1.17.0). Put `renode` on your PATH, or use its full path below.
+  - The firmware package `hwa10_3411_Tf4fD4.bin` in the repo root (one level up).
+  - NRF52840.svd in this directory (Nordic MDK / cmsis-svd nordic pack).
+
+Run everything from this directory (scripts use paths relative to it):
+  cd renode-sim
+
+Rebuild the flash image from the firmware package:
+  python3 extract.py
+
+Boot (headless):
+  renode --disable-xwt --console -e "include @boot.resc; start"
+
+Boot with readable wlog (Phase 0 gate — applies the documented shortcuts):
+  renode --disable-xwt --console -e "include @run-logs.resc"
+  Prints:  [M] boot / [M] rtc_value : 0 / [M] HWA10 boot reason = 0
+
+Files:
+  extract.py    rebuilds appl.bin/bl.bin/sd.bin/flash.bin from the package
+  hwa10.repl    nrf52840 platform (stock Renode + local SVD applied in boot.resc)
+  boot.resc     load flash + boot from MBR@0x0, UART capture to out/
+  run-logs.resc Phase 0 gate: boot with shortcuts, prints readable wlog
+  logs.resc     boot + hooks on the 5 wlog formatters (for post-wedge logs)
+  NRF52840.svd  peripheral SVD (local, avoids per-run download)
+
+Current status: Phase 0 gate ACHIEVED (readable wlog). The first blocker was a
+HardFault in sd_mbr_command (svc #24), patched to return success; the wlog ring
+is force-drained. Boot then stops at driver-completion semaphore waits that need
+the RTOS scheduler/tick (interrupts). NOTES.md has the full diagnosis, the
+"Fidelity gaps" ledger, and the next step for Phases 1/2.

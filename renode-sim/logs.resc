@@ -1,0 +1,54 @@
+include @boot.resc
+
+cpu AddHook 0x8f494 """
+a=cpu.GetRegisterUnsafe(0).RawValue
+s=''
+i=0
+while i<160:
+    b=sysbus.ReadByte(a+i)
+    if b==0: break
+    s+=chr(b); i+=1
+print 'L494 '+s
+"""
+cpu AddHook 0x8f460 """
+a=cpu.GetRegisterUnsafe(0).RawValue
+s=''
+i=0
+while i<160:
+    b=sysbus.ReadByte(a+i)
+    if b==0: break
+    s+=chr(b); i+=1
+print 'L460 '+s
+"""
+cpu AddHook 0x50ca8 """
+a=cpu.GetRegisterUnsafe(2).RawValue
+s=''
+i=0
+while i<160:
+    b=sysbus.ReadByte(a+i)
+    if b==0: break
+    s+=chr(b); i+=1
+print 'L50c '+s
+"""
+cpu AddHook 0x9b1c8 """
+a=cpu.GetRegisterUnsafe(0).RawValue
+s=''
+i=0
+while i<160:
+    b=sysbus.ReadByte(a+i)
+    if b==0: break
+    s+=chr(b); i+=1
+print 'L9b1 '+s
+"""
+cpu AddHook 0x5e7a8 """
+a=cpu.GetRegisterUnsafe(0).RawValue
+s=''
+i=0
+while i<160:
+    b=sysbus.ReadByte(a+i)
+    if b==0: break
+    s+=chr(b); i+=1
+print 'L5e7 '+s
+"""
+emulation RunFor "0.2"
+quit
