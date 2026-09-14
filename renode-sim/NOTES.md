@@ -25,8 +25,13 @@ Renode v1.17.0 portable (put `renode` on PATH; see README for prereqs).
   Screen (Phase 1) not reached. See "Scheduler bring-up" and "Coverage progress
   bar".
 - **Coverage progress bar: DONE** (`trace.resc` + `coverage.py` + `symbols.txt`) —
-  native trace, maps the boot path and the exact stall. This is the reusable
-  progress signal. See "Coverage progress bar" and the platform-gap analysis.
+  native trace, maps the boot path and the exact stall.
+- **Tick self-sustains + SPLASH-SCREEN MILESTONE reached.** With `wfe`→nop
+  (Renode doesn't honour the firmware's SEVONPEND) the FreeRTOS tick recurs on
+  its own and boot advances to the **OLED display init driving SPIM2 traffic**
+  (pin-select, frequency, EasyDMA transfers). Stalls at the SPIM END event, which
+  Renode's SPI model doesn't raise. See "Tick self-sustain + reaching the OLED
+  SPIM". This is the display-init-running milestone.
 - **Phase 1 (framebuffer) / Phase 2 (crown): not started** — both depend on a
   booting sim. Pre-traced RE for them is in the scratchpad `peripheral_findings.md`
   (crown I2C IDs 0x31/0x92 at addr 0x79, OLED on SPIM, pins) — apply once booting.
@@ -169,6 +174,42 @@ firmware would (find/trigger its init) and fix the RTC2/WFE model behaviour so
 the tick self-sustains — then the OLED delay elapses and SPIM traffic should
 appear.
 
+## Tick self-sustain + reaching the OLED SPIM (this round)
+
+Traced the tick mechanism with `LogPeripheralAccess` (native, not hooks):
+
+- The FreeRTOS tick is **RTC2 COMPARE0** (not TICK). The tickless idle computes
+  `CC0 = counter + delay` and writes it (0x73f40) — the compare IS reprogrammed
+  and Renode's RTC2 fires it correctly. Earlier "CC0 stuck at 0x3A" was because
+  the idle wake-path never ran (below), not because the model ignores CC0.
+- **The idle is a polled pattern**: `sev; wfe; poll NVIC ISPR`. It expects the
+  RTC2 compare to *pend* (IRQ36) and WFE to wake on it via **SEVONPEND**, then it
+  reads ISPR, processes the tick inline and reprograms CC0. **Renode's `wfe` does
+  not honour SEVONPEND** (doesn't wake on a pending-but-disabled interrupt) — the
+  genuine emulator gap. Workaround: patch `wfe`(0x7400a)→nop so the idle
+  busy-polls ISPR; it then processes each tick and **self-sustains** (no injected
+  ticks — that hack is retired). The patch must be applied at boot (before the
+  block is translated) or Renode's block cache keeps the old `wfe`.
+- **`VectorTableOffset 0x27000` is principled, not a hack**: the only SD SVCs the
+  boot makes are `sd_softdevice_vector_table_base_set(0x27000)` (svc #19) and
+  FreeRTOS's start-first-task (svc #0). The former tells the SoftDevice to forward
+  interrupts to the app table at 0x27000 — which VTOR=app does directly.
+
+With `wfe`→nop the tick self-sustains and boot advances well past the log ring:
+scheduler → OLED init task → **it drives SPIM2 (0x40023000): PinSelect SCK/MOSI/
+MISO, Frequency, Config, Enable, then EasyDMA TxDataPointer/Count + TasksStart.**
+That is the **splash-screen milestone — display init runs and SPIM traffic
+appears.** It then stalls at `spim_wait_end` (0x3aee2) spinning on the SPIM
+`EventsEnd` (0x118): **Renode's `NRF52840_SPI` model does not raise the END event
+for the EasyDMA transfer**, so the transfer never "completes". Making that model
+fire END (a real platform/model fix, like the WFE one) would let the OLED init
+proceed through its command sequence — which would then reveal the controller,
+resolution and pixel format from the SPIM byte stream.
+
+RTC1 (the busy-delay timebase for `get_time_rtc1`) is also never started by the
+reached boot; force-writing its TASKS_START makes it count. Whether the firmware
+starts it later (post-SPIM-init) is untraced.
+
 ## Fidelity gaps / hacks (what the sim does NOT faithfully exercise)
 
 Every shortcut currently applied, and what it means we are not testing:
@@ -206,8 +247,22 @@ Every shortcut currently applied, and what it means we are not testing:
    firmware programs**. Anything depending on real tick cadence or on the SD's
    clock/timeslot behaviour is not validated.
 
+6. **`wfe`(0x7400a)→nop, applied at boot** — stands in for Renode not honouring
+   the firmware's SEVONPEND; the idle busy-polls instead of low-power sleeping.
+   Real WFE/low-power idle path not exercised. This RETIRES the injected-tick
+   hack (the tick now self-sustains from the real RTC2 compare).
+7. **RTC1 TASKS_START force-written** — RTC1 is the busy-delay timebase; the
+   reached boot never starts it. Stands in for the firmware's own RTC1 init
+   (location/trigger untraced). Renode's RTC1 counts fine once started.
+8. **SPIM END not raised** — Renode's `NRF52840_SPI` doesn't complete the OLED's
+   EasyDMA transfer, so `spim_wait_end` (0x3aee2) spins. No clean workaround yet
+   (writing EventsEnd=1 doesn't stick — events aren't set by register writes);
+   the fix is model-level (make the SPI model raise END on TasksStart). Until
+   then the OLED command stream past the first transfer isn't captured.
+
 Rejected (broke boot, do not use): forcing *all* semaphore takes non-blocking;
-clearing `BASEPRI`/`PRIMASK` with all IRQs enabled (interrupt storm).
+clearing `BASEPRI`/`PRIMASK` with all IRQs enabled (interrupt storm); injecting
+ticks by pending IRQ36 (replaced by the self-sustaining `wfe`→nop tick).
 
 ## Interrupt bring-up (what was tried; where it stands)
 

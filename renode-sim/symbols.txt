@@ -84,3 +84,12 @@
 0x000371c8  oled_delay_poll              in oled_gpio_power_cfg; spins on get_time_rtc1 (RTC1 must run)
 0x00074034  rtc2_tick_init               StartLFCLK; RTC2 PRESCALER=32, INTENSET, CLEAR, START (FreeRTOS tick setup)
 0x00073f60  tickless_idle_fn             idle+clock mgmt; reads LFCLKStarted (write-ordering read-back, not a wait)
+
+# tick self-sustain (found this round)
+0x00073f20  tickless_idle_wake_cc0       computes CC0 = counter+delay, writes RTC2 Compare0, enables COMPARE0
+0x00073f82  tickless_idle_wake_path      after wfe: process tick, clear RTC2 events, reprogram next wake
+0x00093024  sd_vector_table_base_set     svc #19 = sd_softdevice_vector_table_base_set(0x27000); VTOR=app honors it
+# OLED display SPI (SPLASH-SCREEN MILESTONE: SPIM traffic reached)
+0x0003aaf0  oled_spi_init                spi2(0x40023000) PinSelect SCK/MOSI/MISO, Frequency, Config, Enable
+0x0003ae38  oled_spi_xfer_setup          writes SPIM TxDataPointer/Count, RxDataPointer/Count, TasksStart
+0x0003aee2  spim_wait_end                spins reading spi2 EventsEnd(0x118); Renode SPI never fires END -> stall
