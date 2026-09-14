@@ -1,0 +1,77 @@
+# HWA10 (appl v3411) symbol map — consolidated address → meaning.
+# appl VAs are 0x27000-based (file off + 0x27000); bootloader VAs are 0xfc000-based.
+# Keep this current as new addresses are found. To import into Ghidra:
+#   awk '!/^#/ && NF {print $2, $1}' symbols.txt   ->  ImportSymbolsScript format (name addr)
+
+# --- addr ------- name ----------------------------- notes -------------------------------------
+# boot / scheduler (sim-critical)
+0x00000aa4  mbr_svc_trampoline           SoftDevice SVC handler entry (MBR)
+0x0009301e  sd_mbr_command_thunk         svc #24; HardFaults under emulated MBR (sim patches -> movs r0,#0)
+0x00093020  sd_mbr_command_svc           SVC site / fault PC
+0x0002e2a0  appl_main_init               rambkp validation + subsystem init
+0x0002e494  boot_confirm                 clears boot-attempt counter [rambkp+21], recomputes rambkp CRC
+0x0002e50c  softdevice_enable            "softdevice error init" log site
+0x0007400c  freertos_tickless_idle       wfe; poll NVIC ISPR; sleep
+0x0007400a  tickless_idle_wfe            wfe (sim patches -> nop 0xBF00)
+0x00074014  tickless_idle_poll
+0x00073e70  rtc2_tick_isr                RTC2 / IRQ36 handler (FreeRTOS tick)
+0x00027e50  pendsv_handler               FreeRTOS context switch
+0x00027e20  svc_handler                  FreeRTOS SVC
+0x00073e3c  crit_enter                   msr BASEPRI,#0xc0
+0x00073e5c  crit_exit                    restore BASEPRI
+0x0003b4c0  sem_take_a                   counting-sem/queue take; polls [obj+0x11c]
+0x0003b444  sem_take_b                   second take primitive (log ring uses both)
+0x0003b4cc  sem_take_spin                the wedge address inside the take
+0x00056e8e  wlog_putchar                 byte -> log ring; waits on 0xb2588 when full
+0x00009c238  sem_take_wrap               -> sem_take_a
+0x20002800  rambkp_block                 RAM; app<->bootloader boot-control (mode+20, counter+21, crc+32)
+0xb2588     log_ring_sem                 RAM; wlog ring semaphore object
+
+# wlog formatters (fmt-string pointer register noted)
+0x0008f494  wlog_fmt_r0
+0x0008f460  wlog_fmt_r0b
+0x00050ca8  wlog_fmt_r2                  fmt ptr in r2
+0x0009b1c8  wlog_fmt_r0c
+0x0005e7a8  wlog_fmt_r0d
+
+# firmware update / WPP handlers
+0x0006ca44  cmd_restart_to_update        294; writes mode 4 to rambkp, reboots
+0x000624e4  cmd_hr_measure               2434
+0x000650e8  cmd_fw_available             2407; stores phone SHA-1 into update ctx
+0x0006530c  cmd_request_fw_chunk         2408; writes FwChunk to ext flash
+0x00064ab0  update_sha_verify            streams image, memcmp 20B vs stored digest
+0x0000a866e memcmp
+0x00064ddc  update_flash_write
+0x0005bda4  cmd_spi_flash                2386; cmd==0 = read ext flash
+0x0005bd60  spi_flash_read_setup
+0x0005bcc8  spi_flash_read_stream        emits SpiFlashChunk(16B) frames
+0x00058b34  cmd_raw_data                 343; RawDataCmd start/stop raw capture
+0x00057b78  raw_data_mode_start
+0x00057b90  raw_data_mode_stop
+0x0004ca80  fwblk_table_parse            ext-flash bank table (ver,len,body,crc32)
+0x0004cb90  fwblk_get_ie                 TLV: u16 id,u16 size,data
+0x0004cca8  fwblk_bank_info              fills 52B descriptor; banks @0x6000 / 0x11f000
+0x00009bc1c flash_read_prim              SPI NOR read(handle,dest,addr,len)
+0x0005b830  flash_open
+0xb244c     spi_flash_handle             ext-flash device descriptor
+
+# crown (I2C rotation sensor)
+0x00049440  crown_probe                  product-ID gate: reg0x00==0x31, reg0x01==0x92
+0x00049084  crown_write_verify_reg       write reg then read-back echo
+0x00049074  crown_read_reg               -> i2c read
+0x00098d24  i2c_write_prim
+0x00098c7c  i2c_read_prim
+0x00049a1c  crown_int_handler            "Interrupt detected"
+0xb2334     crown_i2c_cfg                addr = byte at +4 = 0x79; TWIM0(0x40003000)/TWIM1(0x40004000)
+
+# OLED display
+0x000370a0  oled_gpio_power_cfg
+0x000be494  oled_pin_table               P0.12/0.31/0.17/0.27, P1.12/1.14
+0x00030588  contrast_task_create
+
+# bootloader (VA 0xfc000)
+0x000fc500  bl_main_decision             boot-attempt count + gold fallback
+0x000fc56a  bl_boot_attempt_check        rambkp mode==1 -> count; >5 -> gold
+0x000fc6c0  bl_get_gold                  reads bank descriptors @0x6000 / 0x11f000
+0x000fc21c  bl_persist_attempt_counter
+0x000fc150  bl_flash_gold                mode 4 gold reflash
