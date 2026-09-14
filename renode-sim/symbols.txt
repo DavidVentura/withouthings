@@ -93,3 +93,20 @@
 0x0003aaf0  oled_spi_init                spi2(0x40023000) PinSelect SCK/MOSI/MISO, Frequency, Config, Enable
 0x0003ae38  oled_spi_xfer_setup          writes SPIM TxDataPointer/Count, RxDataPointer/Count, TasksStart
 0x0003aee2  spim_wait_end                spins reading spi2 EventsEnd(0x118); Renode SPI never fires END -> stall
+
+# OLED SPIM transfer driver + controller poll (this round)
+0x0003adc8  spim_xfer_driver             chunked EasyDMA transfer (splits >0xffff); "[SPIM] Failed to malloc"
+0x0003ae3e  spim_xfer_start              TxDataPointer=r5, TxMaxDataCount=r2, RxDataPointer=r6; then TasksStart+END wait
+0x2002527e  oled_rx_buf                  RAM; 1-byte SPI response buffer for the OLED poll
+# NOTE: OLED driver polls: send 1 byte 0x66, read 1 byte -> 0x2002527e, loops forever.
+# Renode's unmodeled SPI never returns a controller response, so init never proceeds.
+# A rendered frame needs an OLED-controller SPI-slave model answering this poll.
+
+# custom SPIM controller (this round) + OLED detect loop
+0x0009e46c  task_yield                   pends PendSV (ICSR 0xe000ed04 <- 0x10000000); cooperative yield, NOT a panic
+0x0005b98c  oled_detect_loop_head        loops sending 0x66/0x99 + yield, waiting on OLED detect/response
+0x0005b9f8  oled_detect_send             sends cmd 0x66 (0x5ba04) then 0x99 (0x5ba1c); tail-loops to 0x5b98c
+0x0005ba40  oled_detect_fn               outer; calls 0x9bdba check, loops the detect
+# spi2 is now SPI.NrfSpimCapture (NrfSpim.cs): runs EasyDMA on TASKS_START, raises EVENTS_END,
+# answers poll with PollReply, records the stream. END gap FIXED. But the OLED detect loop
+# above needs a response PollReply(const) doesn't satisfy (tried 0x00/0xff/0x01/0x66) -> no pixel data yet.

@@ -26,6 +26,11 @@ Renode v1.17.0 portable (put `renode` on PATH; see README for prereqs).
   bar".
 - **Coverage progress bar: DONE** (`trace.resc` + `coverage.py` + `symbols.txt`) —
   native trace, maps the boot path and the exact stall.
+- **SPIM END gap FIXED** via a custom controller (`NrfSpim.cs`); END fires, the
+  EasyDMA transfer runs, the full SPIM byte stream is captured. **Still no frame:**
+  the firmware then loops in OLED detect (sends 0x66/0x99, yields) awaiting a
+  detect response/GPIO not yet pinned; the stream is all commands, no pixel data.
+  See "Custom SPIM controller — END gap FIXED; OLED detect loop remains".
 - **Tick self-sustains + SPLASH-SCREEN MILESTONE reached.** With `wfe`→nop
   (Renode doesn't honour the firmware's SEVONPEND) the FreeRTOS tick recurs on
   its own and boot advances to the **OLED display init driving SPIM2 traffic**
@@ -210,6 +215,76 @@ RTC1 (the busy-delay timebase for `get_time_rtc1`) is also never started by the
 reached boot; force-writing its TASKS_START makes it count. Whether the firmware
 starts it later (post-SPIM-init) is untraced.
 
+## Rendering a frame — where it stands (no frame yet)
+
+Goal: complete OLED SPIM transfers, capture the command/pixel stream, render a PNG.
+
+What was found by capturing every SPIM transfer (hook at `spim_xfer_start`
+0x3ae3e reading TxDataPointer=r5, count=r2, RxDataPointer=r6):
+
+- The OLED driver's **first** action is a **1-byte poll**: send `0x66`, read one
+  byte into `oled_rx_buf` (0x2002527e) — and it repeats this **forever** (41,530
+  identical transfers, same GPIO state). It is polling the controller and never
+  gets the answer it wants, because **Renode's `NRF52840_SPI` has no OLED slave
+  to respond** — reads return 0/garbage. So init never advances to sending the
+  display-setup commands or pixel data. There is nothing to render yet.
+- The controller is **not identifiable from the stream so far**: no controller
+  string in the image (driver is abstracted), and 0x66 alone doesn't pin a part.
+  Its identity/resolution/format live in the init commands that only get sent
+  *after* this poll succeeds.
+- Unblocking it needs the poll's expected response. I could not determine it
+  cheaply (the check wasn't located; 0x66 is too common to grep). An attempt to
+  inject an **echo** of the sent byte into the Rx buffer was **inconclusive** —
+  the run didn't finish (the `wfe`→nop busy-poll makes 0.3 s of virtual time take
+  >170 s wall, so traced experiments here time out).
+
+Conclusion (honest): the milestone (display init running, real SPIM traffic) is
+reached, but a **rendered frame is blocked on modeling the OLED controller as an
+SPI slave** that answers the driver's poll — the coordinator's preferred
+"custom peripheral". Two concrete follow-ups: (1) trace the check on
+`oled_rx_buf` (0x2002527e) to learn the expected poll response, then feed it via
+a small SPI-slave model on spi2; (2) that model should also raise `EVENTS_END`
+per transfer (the other SPI gap) so both the busy-poll and END-interrupt transfer
+paths complete. Then the init commands + RAM-write reveal controller/resolution/
+format and the pixel stream can be accumulated into `out/*.png`. Wall-clock: the
+busy-poll idle makes long runs expensive; a real WFE-honoring-SEVONPEND fix or a
+tighter run window is worth it before the render pass.
+
+## Custom SPIM controller — END gap FIXED; OLED detect loop remains (this round)
+
+Built a custom SPIM controller `NrfSpim.cs` (`SPI.NrfSpimCapture`) and swapped it
+in for `SPI.NRF52840_SPI` at spi2 in `hwa10.repl` (loaded via relative
+`include @NrfSpim.cs`). On `TASKS_START` it performs the EasyDMA transfer
+(reads the Tx buffer from memory, writes `PollReply` to the Rx buffer), raises
+`EVENTS_END`, and records the byte stream + D/C. **This fixes the SPIM END gap**
+cleanly (the coordinator's preferred custom-peripheral route) — the stock model
+never ran the DMA. Verified: END fires, the transfer loop completes, and the
+full SPIM byte stream is captured (`spi2 DumpStream @<file>`), 1.9M bytes/run.
+
+Test result (honest): the stock model's slave-attach hypothesis was **false**
+(attaching an `ISPIPeripheral` slave to `NRF52840_SPI` did not run the DMA or
+fire END; the slave's `Transmit` was never called). The custom controller was
+needed.
+
+**But no frame yet.** Past the END gap the firmware enters an **OLED
+detect/init loop** (`oled_detect_loop_head` 0x5b98c / `oled_detect_send` 0x5b9f8):
+it sends command `0x66` (and `0x99`), yields (`task_yield` 0x9e46c pends PendSV),
+and loops — waiting for a detect condition. The captured stream is **entirely
+`0x66` commands (D/C=command), no data bytes ever**, so it never reaches the
+display-config commands or pixel writes. The response value is not the gate:
+`PollReply` = 0x00 / 0xFF / 0x01 / 0x66 (echo) all keep it looping. So the detect
+wants either a **multi-byte ID/response** (my model returns a single constant for
+every Rx byte) or a **GPIO input** (one of the OLED pins as BUSY/TE — P0IN reads
+back P0OUT in the sim, so a real input isn't driven). Pinning that is the next
+step: trace `oled_detect_fn` (0x5ba40) / `0x9bdba` to see what it compares, then
+have the model return the matching ID sequence (and/or drive the BUSY GPIO). Then
+the init commands + RAM-write reveal controller/resolution/format and the pixel
+stream can be rendered to `out/*.png`. The custom controller + capture pipeline
+is in place for that final pass.
+
+Correction to an earlier note: **0x9e46c is a cooperative yield** (pends PendSV),
+not a panic handler — I had misattributed the panic address.
+
 ## Fidelity gaps / hacks (what the sim does NOT faithfully exercise)
 
 Every shortcut currently applied, and what it means we are not testing:
@@ -259,6 +334,15 @@ Every shortcut currently applied, and what it means we are not testing:
    (writing EventsEnd=1 doesn't stick — events aren't set by register writes);
    the fix is model-level (make the SPI model raise END on TasksStart). Until
    then the OLED command stream past the first transfer isn't captured.
+
+9. **SPIM END busy-spin patched (0x3aee8 `beq`→nop)** — used only in capture
+   experiments to walk past `spim_wait_end`; it lets the small-transfer path
+   proceed without a real END. NOT a fix (the driver then busy-polls the OLED
+   controller instead). The real fix is an SPI-slave OLED model. Not in any
+   committed run script.
+10. **Echo SPI response injection** — an experiment writing the sent byte back
+    into the Rx buffer to try to satisfy the 0x66 poll; inconclusive (run timed
+    out). Documented so it isn't mistaken for a working model.
 
 Rejected (broke boot, do not use): forcing *all* semaphore takes non-blocking;
 clearing `BASEPRI`/`PRIMASK` with all IRQs enabled (interrupt storm); injecting
@@ -320,3 +404,10 @@ the log hooks, for continuing this.
   0x8f460, 0x50ca8 [fmt in r2], 0x9b1c8, 0x5e7a8 [fmt in r0]) format into a ring
   that a UARTE0-DMA consumer drains. Hooking those loggers and reading the fmt
   pointer gives readable logs once the CPU gets past the wedge.
+
+11. **Custom SPIM controller `NrfSpim.cs` (`SPI.NrfSpimCapture`)** replaces the
+    stock `NRF52840_SPI` at spi2. It performs the EasyDMA and raises EVENTS_END
+    (which the stock model didn't) — a real model, not a poke — but it answers
+    the OLED poll with a single constant `PollReply` (a stand-in until the real
+    detect response is pinned) and does not model true SPI slave timing/CS. The
+    OLED command stream it records is faithful; the poll reply is synthetic.
