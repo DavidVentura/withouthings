@@ -19,10 +19,14 @@ Renode v1.17.0 portable (put `renode` on PATH; see README for prereqs).
   Patching that thunk to return success gets real boot logs. (The earlier
   interrupt-forwarding analysis still holds for what's needed *later* — the RTOS
   scheduler — but it was not the first blocker.)
-- **Next blocker:** after the 3 boot lines the app clears the OLED-power delay
-  loops and stops at another driver-completion wait (0x3b444/0x3b4c0 semaphore
-  take on a different object) — whack-a-mole, because those ISRs never run
-  without the scheduler/tick. Phase 1/2 need that resolved.
+- **Scheduler bring-up: PARTIAL.** The FreeRTOS scheduler runs (PendSV switches
+  tasks). A task reaches the **OLED display init** and stalls in a power-on delay
+  that reads RTC1 time — RTC1 is never started, and the tick doesn't self-sustain.
+  Screen (Phase 1) not reached. See "Scheduler bring-up" and "Coverage progress
+  bar".
+- **Coverage progress bar: DONE** (`trace.resc` + `coverage.py` + `symbols.txt`) —
+  native trace, maps the boot path and the exact stall. This is the reusable
+  progress signal. See "Coverage progress bar" and the platform-gap analysis.
 - **Phase 1 (framebuffer) / Phase 2 (crown): not started** — both depend on a
   booting sim. Pre-traced RE for them is in the scratchpad `peripheral_findings.md`
   (crown I2C IDs 0x31/0x92 at addr 0x79, OLED on SPIM, pins) — apply once booting.
@@ -89,6 +93,82 @@ Alternative if SVC stubbing proves fiddly: binary-patch the app's
 `sd_nvic_*`/`sd_app_evt_wait` thunks to direct CortexM operations (write NVIC,
 `wfe`) so the SoftDevice is bypassed for interrupt control entirely.
 
+## Scheduler bring-up (partial — where it stands)
+
+Once `sd_mbr_command` is patched and the log semaphore (0xb2588) is unblocked in
+BOTH take primitives (0x3b4c0 AND 0x3b444 — the log ring uses both), the delay
+loops clear and boot runs into the **FreeRTOS tickless idle** at **0x7400c**:
+`wfe`, then poll NVIC ISPR for any pending interrupt, sleep again if none. So the
+scheduler is already up; it is idle waiting for the tick.
+
+- **Tick source is RTC2 (0x40024000), IRQ36 — not RTC1.** (The RTC1→0x3a6f1
+  vector is something else.) RTC2 counts (LFCLK is running, PRESCALER=0x20 →
+  ~1 kHz), and its COMPARE[0] interrupt is enabled at the peripheral
+  (RTC2.INTENSET bit16). The compare fired (EVENTS_COMPARE0=1, IRQ36 pending in
+  NVIC ISPR1). App RTC2 handler = 0x73e71.
+- **Why it never woke:** IRQ36 was never enabled in the NVIC (ISER1=0 — the
+  `sd_nvic_EnableIRQ` path didn't take effect), and Renode's `wfe` does not
+  re-evaluate the wake when the enable/pending changes after the fact.
+- **Getting one tick:** VTOR→0x27000 (app handles IRQs), NVIC-enable IRQ36, and
+  either set SEVONPEND or patch the `wfe` (0x7400a `0x463a`→ nop 0xBF00) so the
+  idle busy-polls. Then the RTC2 ISR (0x73e71) runs and a **PendSV context switch
+  (0x27e51) fires** — so tick + switch both work.
+- **Not self-sustaining:** after the tick the idle does not reprogram RTC2 CC0
+  (it stays 0x3A while COUNTER runs past it), so no second compare. Injecting a
+  steady tick (periodically pending IRQ36) keeps the scheduler ticking but
+  produces **no new logs** — the init/GUI tasks are blocked on *peripheral driver
+  completions* (TWI/SPI/GPIO ISRs), not on tick delays.
+- **Next layer (to reach the GUI):** bring up the specific peripheral ISRs the
+  blocked tasks wait on, with correct Renode event/clear semantics so they fire
+  once and don't storm. Find each blocked task's wait object and the ISR that
+  gives it (trace the give paths; the give increments `[obj+0x11c]`), and enable
+  only those sources. This is the storm-prone per-peripheral work and is the
+  remaining effort for Phase 1.
+
+## Coverage progress bar (TASK 1 — done)
+
+`trace.resc` captures a native Renode PC trace (fast; not per-instruction Python
+hooks) to `/tmp/hwa10_trace.bin.gz`; `coverage.py` maps it against `symbols.txt`
+and prints the known functions in first-execution order plus the loop the boot
+ends stuck in. Trace format: `b"ReTrace"` + 3 bytes, then 5-byte entries
+(LE u32 PC + 1 flag). Coverage, not logs, is the progress signal.
+
+Current canonical clean-boot result: boot runs sd_mbr_command → wlog → the
+FreeRTOS scheduler starts (svc_handler → **PendSV context switch**) → a task runs
+the **OLED init** (`contrast_task_create`, `oled_gpio_power_cfg`) and ends stuck
+in **`oled_delay_poll` → `get_time_rtc1`**, i.e. a power-on delay reading RTC1
+time — while the steady state is the tickless idle WFE-halt. So the display init
+task is already running; it is blocked on time not advancing.
+
+## Are the hacks masking missing platform init? (answering the review question)
+
+Checked with Renode's native `LogPeripheralAccess` on clock/rtc. Findings:
+
+- **LFCLK / RTC2 tick init is present and works** (not a platform gap). At
+  `rtc2_tick_init` (0x74034) the firmware does StartLFCLK + RTC2
+  PRESCALER=32/INTENSET/CLEAR/START; RTC2 counts and its COMPARE fires. The
+  `LFCLKStarted` read there is a write-ordering read-back, not a blocking wait.
+- **RTC1 is never started in the reached boot** — the firmware only *reads* RTC1
+  COUNTER (via `get_time_rtc1`), never writes its TASKS_START, so `get_time`
+  returns 0 forever and the OLED delay never elapses. This is a firmware-sequence
+  effect (RTC1's init is downstream of / gated by the parts that don't run),
+  **not** a missing pull-up/clock in the platform: force-writing RTC1 TASKS_START
+  makes Renode's RTC1 model count fine.
+- **The genuine emulator-model gaps** are: (a) Renode's `wfe` does not re-wake
+  when an interrupt becomes pending/enabled after the fact (so the tickless idle
+  never wakes on the RTC2 compare — worked around with SEVONPEND or `wfe`→nop);
+  (b) the RTC2 compare is not re-armed for the *next* tick under these conditions
+  (CC0 stays stale), so ticks don't self-sustain. These are the model-level fixes
+  worth doing instead of the injected-tick hack.
+
+So: the review instinct was right to check — one real requirement (RTC1 must be
+running) was being papered over, and two items are true Renode-model gaps (WFE
+wake, RTC compare re-arm). None so far is a missing GPIO/clock in the platform
+description. The principled path for Phase 1: get RTC1 running the way the
+firmware would (find/trigger its init) and fix the RTC2/WFE model behaviour so
+the tick self-sustains — then the OLED delay elapses and SPIM traffic should
+appear.
+
 ## Fidelity gaps / hacks (what the sim does NOT faithfully exercise)
 
 Every shortcut currently applied, and what it means we are not testing:
@@ -115,11 +195,19 @@ Every shortcut currently applied, and what it means we are not testing:
    handshake that relies on those delays matching real peripheral latency is not
    validated.
 
-Planned/experimental hacks NOT in `run-logs.resc` but used while probing (each a
-gap if adopted): `VectorTableOffset 0x27000` (bypasses SD interrupt forwarding —
-app handles its own IRQs); hand-writing NVIC `ISER`; clearing `BASEPRI`/`PRIMASK`;
-force-starting RTC1; forcing *all* semaphore takes non-blocking (broke boot —
-rejected). Record here before adopting any.
+5. **Scheduler-drive hacks** (in `sched-experiment.resc`, not in `run-logs.resc`):
+   `VectorTableOffset 0x27000` bypasses the SoftDevice's interrupt forwarding —
+   **real SD IRQ forwarding is not exercised**; `wfe`→`nop` means **the real
+   low-power idle/WFE wake path is not tested** (CPU busy-polls instead);
+   NVIC `ISER` for IRQ36 hand-enabled because `sd_nvic_EnableIRQ` is not emulated;
+   `SEVONPEND` forced; and a **synthetic tick is injected** by pending IRQ36
+   periodically because the tickless idle doesn't reprogram RTC2 CC0 under these
+   hacks — so **tick timing is fabricated, not derived from the RTC2 compare the
+   firmware programs**. Anything depending on real tick cadence or on the SD's
+   clock/timeslot behaviour is not validated.
+
+Rejected (broke boot, do not use): forcing *all* semaphore takes non-blocking;
+clearing `BASEPRI`/`PRIMASK` with all IRQs enabled (interrupt storm).
 
 ## Interrupt bring-up (what was tried; where it stands)
 

@@ -75,3 +75,12 @@
 0x000fc6c0  bl_get_gold                  reads bank descriptors @0x6000 / 0x11f000
 0x000fc21c  bl_persist_attempt_counter
 0x000fc150  bl_flash_gold                mode 4 gold reflash
+
+# timers / delays (found via coverage tool)
+0x0003a880  get_time_rtc1                reads RTC1 counter(0x40011504)+overflow(0x20018258) -> 64-bit time
+0x0003a85c  get_time_rtc1_b              variant scaling
+0x0003a6f1  rtc1_isr                     RTC1/IRQ17 overflow handler; increments overflow count
+0x20018258  rtc1_overflow_count          RAM; software high bits for RTC1 time
+0x000371c8  oled_delay_poll              in oled_gpio_power_cfg; spins on get_time_rtc1 (RTC1 must run)
+0x00074034  rtc2_tick_init               StartLFCLK; RTC2 PRESCALER=32, INTENSET, CLEAR, START (FreeRTOS tick setup)
+0x00073f60  tickless_idle_fn             idle+clock mgmt; reads LFCLKStarted (write-ordering read-back, not a wait)

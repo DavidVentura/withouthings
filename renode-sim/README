@@ -21,11 +21,20 @@ Boot with readable wlog (Phase 0 gate — applies the documented shortcuts):
   renode --disable-xwt --console -e "include @run-logs.resc"
   Prints:  [M] boot / [M] rtc_value : 0 / [M] HWA10 boot reason = 0
 
+Coverage progress bar (native trace, not slow Python hooks):
+  renode --disable-xwt --console -e "include @trace.resc"
+  python3 coverage.py /tmp/hwa10_trace.bin.gz
+  -> known functions in first-execution order + the loop the boot ends stuck in.
+  (Renode writes trace output relative to ITS cwd, so trace.resc uses /tmp.)
+
 Files:
   extract.py    rebuilds appl.bin/bl.bin/sd.bin/flash.bin from the package
   hwa10.repl    nrf52840 platform (stock Renode + local SVD applied in boot.resc)
   boot.resc     load flash + boot from MBR@0x0, UART capture to out/
   run-logs.resc Phase 0 gate: boot with shortcuts, prints readable wlog
+  trace.resc    capture a boot PC trace for coverage.py (native ExecutionTracer)
+  coverage.py   offline progress bar: maps a trace against symbols.txt
+  symbols.txt   address -> name map (naming source for the progress bar)
   logs.resc     boot + hooks on the 5 wlog formatters (for post-wedge logs)
   NRF52840.svd  peripheral SVD (local, avoids per-run download)
 

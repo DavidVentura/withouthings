@@ -1,0 +1,27 @@
+# Reusable Phase-0 shortcuts: sd_mbr_command patch + log-ring unblock + wlog capture.
+# See NOTES.md "Fidelity gaps". Include AFTER boot.resc.
+
+sysbus WriteWord 0x9301e 0x2000
+cpu PerformanceInMips 300
+
+cpu AddHook 0x3b4c0 """
+if cpu.GetRegisterUnsafe(0).RawValue==0xb2588:
+    b=cpu.GetMachine().SystemBus
+    b.WriteDoubleWord(b.ReadDoubleWord(0xb2588)+0x11c, 1)
+"""
+cpu AddHook 0x3b444 """
+if cpu.GetRegisterUnsafe(0).RawValue==0xb2588:
+    b=cpu.GetMachine().SystemBus
+    b.WriteDoubleWord(b.ReadDoubleWord(0xb2588)+0x11c, 1)
+"""
+cpu AddHook 0x56e8e """
+g=globals()
+c=cpu.GetRegisterUnsafe(0).RawValue & 0xff
+buf=g.get('lb','')
+if c==10:
+    print 'WLOG| '+buf; g['lb']=''
+else:
+    buf=buf+(chr(c) if 32<=c<127 else '.')
+    if len(buf)>=140: print 'WLOG> '+buf; buf=''
+    g['lb']=buf
+"""

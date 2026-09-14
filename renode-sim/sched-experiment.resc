@@ -1,0 +1,35 @@
+:name: HWA10-sched
+:description: Scheduler bring-up experiment (partial). See NOTES.md "Scheduler bring-up".
+# Boots to the FreeRTOS tickless idle, then drives the RTC2 tick so the scheduler
+# advances. Reaches one tick + one PendSV context switch, but does NOT yet reach
+# the GUI — init tasks block on peripheral driver ISRs (TWI/SPI/GPIO) not brought
+# up here. Every line below the first RunFor is a fidelity hack (see NOTES.md).
+
+include @boot.resc
+include @_shortcuts.resc
+
+# count RTC2 ticks and PendSV switches
+cpu AddHook 0x73e70 "g=globals(); g['t']=g.get('t',0)+1"
+cpu AddHook 0x27e50 """
+g=globals(); g['p']=g.get('p',0)+1
+if g['p']<=3: print 'PENDSV #%d' % g['p']
+"""
+
+# boot to the tickless idle
+emulation RunFor "0.35"
+
+# --- tick-drive hacks ---
+cpu VectorTableOffset 0x27000           ;# app handles its own IRQs (bypass SD fwd)
+sysbus WriteWord 0x7400a 0xBF00         ;# wfe -> nop (Renode WFE does not re-wake)
+sysbus WriteDoubleWord 0xE000ED10 0x10  ;# SEVONPEND
+sysbus WriteDoubleWord 0xE000E104 0x10  ;# NVIC enable IRQ36 (RTC2)
+# inject a steady tick: the tickless idle leaves CC0 stale, so pend IRQ36 periodically
+cpu AddHook 0x74014 """
+g=globals(); i=g.get('i',0)+1; g['i']=i
+if i%4000==0:
+    cpu.GetMachine().SystemBus.WriteDoubleWord(0xE000E204, 0x10)
+"""
+
+emulation RunFor "0.3"
+echo "PC:"; cpu PC
+quit
