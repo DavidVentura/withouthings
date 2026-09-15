@@ -8,12 +8,18 @@ logLevel 2
 # --- known-good boot patch set ---
 # sd_mbr: skip the MBR forwarding-address check that otherwise wedges early boot
 sysbus WriteWord 0x9301e 0x2000
-# tickless idle wakes via SEVONPEND (app IRQs are NVIC-disabled inside the
-# sd_nvic critical region). Renode 1.17's NVIC checks the wrong security bank
-# of SCR.SEVONPEND on non-TrustZone cores, so write the bank it reads.
-sysbus.nvic WriteDoubleWord 0xD10 0x10 true
-# RTC1 must be counting for the OLED power-on time polls (get_time_rtc1)
-sysbus WriteDoubleWord 0x40011000 1
+# Peripheral state below is lost on SYSRESETREQ (the app's fault handler
+# resets), so it lives in the machine's reset macro, which Renode re-runs then.
+macro reset
+"""
+    # tickless idle wakes via SEVONPEND (app IRQs are NVIC-disabled inside the
+    # sd_nvic critical region). Renode 1.17's NVIC checks the wrong security
+    # bank of SCR.SEVONPEND on non-TrustZone cores, so write the bank it reads.
+    sysbus.nvic WriteDoubleWord 0xD10 0x10 true
+    # RTC1 must be counting for the OLED power-on time polls (get_time_rtc1)
+    sysbus WriteDoubleWord 0x40011000 1
+"""
+runMacro $reset
 # OLED settle-delay busy loops -> nop (µs-ms HW settle, only burns sim wall time)
 sysbus WriteWord 0x3bb96 0xBF00
 sysbus WriteWord 0x3bbae 0xBF00
