@@ -970,9 +970,10 @@ class WatchViewModel : ViewModel() {
     }
 
     /**
-     * One block of the address space, resent until the watch delivers it. A
-     * dropped link or a stalled read is met by waiting for the link and asking
-     * again; the whole block is re-requested since a partial one is discarded.
+     * One full block of the address space, resent until the watch delivers it
+     * whole. A dropped link, a stalled read, or a short answer (an early NULL
+     * from a contended or hiccuping stream) all re-request the whole block; only
+     * a full-length block is accepted, so a short one never advances the dump.
      */
     private suspend fun readBlock(service: WatchService, addr: UInt, len: UInt): ByteArray {
         var attempt = 0
@@ -985,11 +986,12 @@ class WatchViewModel : ViewModel() {
             }
             service.spiFlashRead(addr, len)
             val bytes = awaitBlock(service)
-            if (bytes != null) return bytes
+            if (bytes != null && bytes.size.toUInt() == len) return bytes
             attempt++
             if (attempt >= BLOCK_ATTEMPTS) {
                 throw IllegalStateException(
-                    "no answer for $len bytes at 0x${addr.toString(16)} after $attempt tries"
+                    "no full block for $len bytes at 0x${addr.toString(16)} after $attempt tries " +
+                        "(last got ${bytes?.size ?: 0})"
                 )
             }
         }

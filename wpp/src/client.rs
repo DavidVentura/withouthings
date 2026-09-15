@@ -425,7 +425,11 @@ impl Client {
     }
 
     fn drain_dump(&mut self) -> Vec<Action> {
-        if self.phase != Phase::Finished || self.measuring.is_some() || self.dump.running() {
+        if self.phase != Phase::Finished
+            || self.measuring.is_some()
+            || self.dump.running()
+            || self.spi_flash.busy()
+        {
             return Vec::new();
         }
         if let (Some(now), Some(last)) = (self.now, self.last_dump) {
@@ -442,6 +446,9 @@ impl Client {
             return Vec::new();
         }
         if self.dump.running() {
+            return Vec::new();
+        }
+        if self.spi_flash.busy() {
             return Vec::new();
         }
         if self.phase != Phase::Finished && self.phase != Phase::Syncing {

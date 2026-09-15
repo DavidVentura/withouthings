@@ -42,6 +42,12 @@ impl SpiFlash {
         self.active = None;
     }
 
+    /// A read is in flight. The shell pauses periodic sync while this holds so a
+    /// dump's back-to-back block reads are not interleaved with sync traffic.
+    pub fn busy(&self) -> bool {
+        self.active.is_some()
+    }
+
     /// Opens a fresh read of `len` bytes at `addr` and yields the frame that
     /// starts it. Any read still in flight is dropped: resending is how the
     /// shell recovers a block the watch never finished. Only `cmd == 0` (read)
