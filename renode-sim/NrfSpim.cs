@@ -9,6 +9,7 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using Antmicro.Renode.Core;
+using Antmicro.Renode.Exceptions;
 using Antmicro.Renode.Core.Structure;
 using Antmicro.Renode.Logging;
 using Antmicro.Renode.Peripherals;
@@ -25,6 +26,7 @@ namespace Antmicro.Renode.Peripherals.SPI
             regs = new Dictionary<long, uint>();
             stream = new List<byte>();
             cmdHist = new Dictionary<byte, long>();
+            unknownCommands = new HashSet<byte>();
             IRQ = new GPIO();
             Connections = new Dictionary<int, IGPIO> { { 0, IRQ } };
         }
@@ -57,6 +59,7 @@ namespace Antmicro.Renode.Peripherals.SPI
             sessionIndex = 0;
             sessionCommand = NoCommand;
             sessionAddress = 0;
+            sessionWriteAllowed = false;
         }
 
         // Called from the script: `sysbus.spi2 LoadImage @external_flash.bin`.
@@ -114,7 +117,9 @@ namespace Antmicro.Renode.Peripherals.SPI
             sessionIndex = 0;
             sessionCommand = NoCommand;
             sessionAddress = 0;
+            writeEnableLatch = false;
             warnedNoChipSelect = false;
+            unknownCommands.Clear();
         }
 
         public void DumpCmds(string path)
@@ -191,25 +196,55 @@ namespace Antmicro.Renode.Peripherals.SPI
                 sessionCommand = outgoing;
                 long c;
                 cmdHist[outgoing] = cmdHist.TryGetValue(outgoing, out c) ? c + 1 : 1;
+                if(outgoing == (byte)FlashCommand.WriteEnable)
+                {
+                    writeEnableLatch = true;
+                }
+                else if(outgoing == (byte)FlashCommand.WriteDisable)
+                {
+                    writeEnableLatch = false;
+                }
+                else if(outgoing == (byte)FlashCommand.ChipErase60 || outgoing == (byte)FlashCommand.ChipEraseC7)
+                {
+                    if(ConsumeWriteEnable("chip erase", 0))
+                    {
+                        this.Log(LogLevel.Warning, "chip erase: the whole image the boot reads from is now 0xFF");
+                        Erase(0, flash == null ? 0 : flash.Length);
+                    }
+                }
                 return 0x00;
             }
-            switch(sessionCommand)
+            switch((FlashCommand)sessionCommand)
             {
-            case 0x9F:  // RDID -> MX25R6435F
+            case FlashCommand.ReadId:
                 return index <= 3 ? JedecId[index - 1] : (byte)0x00;
-            case 0x03:  // READ (24-bit addr), data from byte 4
+            case FlashCommand.Read:
                 return ReadByteAt(index, 1, 4, outgoing);
-            case 0x0B:  // FAST READ (24-bit addr + 1 dummy), data from byte 5
+            case FlashCommand.FastRead:
                 return ReadByteAt(index, 1, 5, outgoing);
-            case 0x05:  // RDSR -> status 0x00 (not busy, not WEL)
+            case FlashCommand.ReadStatus:
+                return writeEnableLatch ? WriteEnableLatchBit : (byte)0x00;
+            case FlashCommand.PageProgram:
+                ProgramByte(index, outgoing);
                 return 0x00;
-            case 0x66:  // Reset-Enable
-            case 0x99:  // Reset
-            case 0x06:  // WREN
-            case 0x04:  // WRDI
-            case 0x01:  // WRSR + data
+            case FlashCommand.SectorErase:
+            case FlashCommand.BlockErase32K:
+            case FlashCommand.BlockErase64K:
+                EraseAt(index, outgoing);
                 return 0x00;
-            default:    // RDCR(0x15/0x35), security, etc. -> benign default
+            case FlashCommand.ResetEnable:
+            case FlashCommand.Reset:
+            case FlashCommand.WriteEnable:
+            case FlashCommand.WriteDisable:
+            case FlashCommand.WriteStatus:
+            case FlashCommand.ChipErase60:
+            case FlashCommand.ChipEraseC7:
+                return 0x00;
+            default:
+                if(unknownCommands.Add((byte)sessionCommand))
+                {
+                    this.Log(LogLevel.Debug, "unhandled SPI-NOR command 0x{0:X2}, answering PollReply", sessionCommand);
+                }
                 return PollReply;
             }
         }
@@ -233,6 +268,86 @@ namespace Antmicro.Renode.Peripherals.SPI
             return a >= 0 && a < flash.Length ? flash[a] : (byte)0xFF;
         }
 
+        // Program data starts at byte 4 (command + three address bytes) and wraps
+        // inside the 256-byte page, as the MX25R datasheet specifies.
+        private void ProgramByte(int index, byte outgoing)
+        {
+            if(index < 4)
+            {
+                sessionAddress = (sessionAddress << 8) | outgoing;
+                if(index == 3)
+                {
+                    sessionWriteAllowed = ConsumeWriteEnable("page program", sessionAddress);
+                }
+                return;
+            }
+            if(!sessionWriteAllowed || flash == null)
+            {
+                return;
+            }
+            int offsetInPage = (sessionAddress + index - 4) % PageSize;
+            int a = (sessionAddress & ~(PageSize - 1)) + offsetInPage;
+            if(a < 0 || a >= flash.Length)
+            {
+                return;
+            }
+            flash[a] &= outgoing;
+        }
+
+        private void EraseAt(int index, byte outgoing)
+        {
+            if(index >= 4)
+            {
+                return;
+            }
+            sessionAddress = (sessionAddress << 8) | outgoing;
+            if(index != 3)
+            {
+                return;
+            }
+            int size = sessionCommand == (int)FlashCommand.SectorErase ? SectorSize
+                : sessionCommand == (int)FlashCommand.BlockErase32K ? Block32KSize : Block64KSize;
+            if(!ConsumeWriteEnable("erase", sessionAddress))
+            {
+                return;
+            }
+            Erase(sessionAddress & ~(size - 1), size);
+        }
+
+        // The model completes program/erase within the transfer, so WIP is never
+        // observable and WEL falls at the same moment the operation finishes.
+        private bool ConsumeWriteEnable(string operation, int address)
+        {
+            if(!writeEnableLatch)
+            {
+                this.Log(LogLevel.Error, "{0} at 0x{1:X} ignored: write enable latch is clear", operation, address);
+                return false;
+            }
+            writeEnableLatch = false;
+            return true;
+        }
+
+        private void Erase(int start, int size)
+        {
+            if(flash == null)
+            {
+                return;
+            }
+            for(int a = start; a < start + size && a < flash.Length; a++)
+            {
+                flash[a] = 0xFF;
+            }
+        }
+
+        public uint ReadImageWord(uint address)
+        {
+            if(flash == null || address + 4 > flash.Length)
+            {
+                throw new RecoverableException("no flash image loaded, or address out of range");
+            }
+            return (uint)(flash[address] | (flash[address + 1] << 8) | (flash[address + 2] << 16) | (flash[address + 3] << 24));
+        }
+
         private uint Get(long off)
         {
             uint v;
@@ -253,12 +368,39 @@ namespace Antmicro.Renode.Peripherals.SPI
         private const long TxCnt = 0x548;
         private const long TxAmount = 0x54C;
 
+        private const int PageSize = 256;
+        private const int SectorSize = 4096;
+        private const int Block32KSize = 32 * 1024;
+        private const int Block64KSize = 64 * 1024;
+        private const byte WriteEnableLatchBit = 1 << 1;
+
+        private enum FlashCommand : byte
+        {
+            WriteStatus = 0x01,
+            PageProgram = 0x02,
+            Read = 0x03,
+            WriteDisable = 0x04,
+            ReadStatus = 0x05,
+            WriteEnable = 0x06,
+            FastRead = 0x0B,
+            SectorErase = 0x20,
+            BlockErase32K = 0x52,
+            ChipErase60 = 0x60,
+            ResetEnable = 0x66,
+            BlockErase64K = 0xD8,
+            Reset = 0x99,
+            ReadId = 0x9F,
+            ChipEraseC7 = 0xC7,
+        }
+
         private const int ChipSelectPin = 15;
         private const int NoCommand = -1;
         private static readonly byte[] JedecId = { 0xC2, 0x28, 0x17 };
 
         private byte[] flash;
         private bool selected;
+        private bool writeEnableLatch;
+        private bool sessionWriteAllowed;
         private bool warnedNoChipSelect;
         private int sessionIndex;
         private int sessionCommand;
@@ -268,6 +410,7 @@ namespace Antmicro.Renode.Peripherals.SPI
         private readonly Dictionary<long, uint> regs;
         private readonly Dictionary<byte, long> cmdHist;
         private readonly List<byte> stream;
+        private readonly HashSet<byte> unknownCommands;
         private readonly IMachine machine;
         private readonly IBusController sysbus;
     }
