@@ -219,3 +219,17 @@
 0x00091f92  main_init_delay              init step that ends in vTaskDelay(30001) -> the 30 s dark boot
 0x0002e872  main_init_post_delay         contrast/battery task creation resumes here after the delay
 0x2001753c  battery_sem_handle           (RAM) NULL until battery_task's first run
+
+# --- charger, crown, GPIO PORT path (2026-09-15, from the charger/crown model work) ---
+0x000437a0  bq25180_setup                writes 0x03..0x0C blindly, never checks MASK_ID
+0x00043960  bq25180_status               reads STAT0: bit0 VIN_PGOOD, bits6:5 CHG_STAT; logs "VIN_PGOOD = %hu"
+0x00043a0c  bq25180_charge_enable        ICHG_CTRL bit7 CHG_DIS set/clear
+0x00043568  bq25180_write_reg
+0x0004360c  bq25180_read_reg
+0x0002fc8c  bat_charging_decision        I2C error -> 2, VIN_PGOOD=0 -> 0 (not docked), else table @0xc6cbc [4,4,3,1]; "[BAT] Charging (status = %d)"
+0x0004943c  crown_probe                  (0x49440 above) PAT9125 power-up: 0x7F=0, 0x06=0x97, 0x06=0x1F, ids 0x00/0x01 == 0x31/0x92
+0x00049218  crown_read_motion            PAT9125 Delta_XY_Hi decode, negated; regs 0x02 (MOTION bit7), 0x03, 0x04, 0x12
+0x000490c0  crown_pin_callback           registered for P1.13 (SENSE=Low, pull-up) in the PORT dispatch table
+0x0003a008  gpiote_port_handler          walks registered pins by reading GPIO LATCH (0x39f58), clears LATCH (0x39f74)
+0x000b2334  crown_i2c_cfg                {bus ptr 0xb2390, addr 0x79}
+0x000be478  crown_int_pin                {port 1, pin 13}; same 4-byte {port,pin} struct as the OLED pin table @0xbe490
