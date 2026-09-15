@@ -205,3 +205,17 @@
 0x20000000  mbr_forward_vtor             (RAM) 0x1000 once the SD owns forwarding
 0x20000004  sd_app_vtor                  (RAM) 0x27000
 0x20000058  sd_enabled_magic             (RAM) 0xCAFEBABE when sd_softdevice_enable succeeded
+
+# --- start-up race behind the post-advertising crash (2026-09-15) ---
+0x0009e3dc  xTaskCreateStatic            r0=entry r2=stack words [sp]=priority; returns the handle
+0x0009e752  xQueueGenericCreateStatic
+0x0009e890  xQueueSemaphoreTake          r1=ticks (0xffffffff = forever)
+0x00073a90  xQueueGenericSend            NULL handle reads MBR words as queue fields (see 0x9e590)
+0x000303a0  battery_task                 prio 1; creates its semaphore into 0x2001753c, then loops on take + ADC average
+0x00030588  contrast_task_create         (already above) also creates battery_task via 0x9e3dc @0x305ba
+0x0003060c  battery_sem_give             xQueueGenericSend(*0x2001753c, NULL); sim guards the NULL case (display-run.resc)
+0x0006ed35  ui_event_task                prio 2, created @0x30908163 us right before battery_task
+0x000a5648  ui_event_handler             r1=event id; event 7 -> 0x304d8 battery percent init + 0x3060c give
+0x00091f92  main_init_delay              init step that ends in vTaskDelay(30001) -> the 30 s dark boot
+0x0002e872  main_init_post_delay         contrast/battery task creation resumes here after the delay
+0x2001753c  battery_sem_handle           (RAM) NULL until battery_task's first run

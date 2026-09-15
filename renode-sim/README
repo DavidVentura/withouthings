@@ -12,6 +12,10 @@ Prereqs (not in the repo — supply your own):
 
 Run everything from this directory (scripts use paths relative to it):
   cd renode-sim
+Keep Renode's stdin open when scripting it (e.g. `renode ... < <(sleep 1000)`):
+with `< /dev/null` its console thread spins on EOF and leaks ~20 MB/s of host
+memory for as long as the process lives. Run one instance at a time from this
+directory (they share out/).
 
 Rebuild the flash image from the firmware package:
   python3 extract.py
@@ -30,6 +34,9 @@ Coverage progress bar (native trace, not slow Python hooks):
   (Renode writes trace output relative to ITS cwd, so trace.resc uses /tmp.)
 
 Files:
+  mkdis.sh      builds out/appl.dis and out/sd.dis (absolute flash addresses)
+  calltrace.py  emits hooks that print the first entry into every callee of a code
+                range; how the boot's stall points were found (needs out/appl.dis)
   extract.py    rebuilds appl.bin/bl.bin/sd.bin/flash.bin from the package
   hwa10.repl    nrf52840 platform (stock Renode + local SVD applied in boot.resc)
   boot.resc     load flash + boot from MBR@0x0, UART capture to out/
