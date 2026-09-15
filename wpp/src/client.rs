@@ -9,6 +9,7 @@ use crate::objects::{
     Version, WamScreensList, WamVasistasGet, WorkoutGpsStatus, WorkoutScreenMetadata,
 };
 use crate::signal::{Signal, SignalCollector};
+use crate::spiflash::{SpiFlash, SpiFlashProgress};
 use crate::units::{UnixMillis, UnixTime};
 use crate::{Command, Frame, WppObject};
 
@@ -351,6 +352,7 @@ pub struct Client {
     last_refresh: Option<UnixMillis>,
     last_walk: Option<UnixMillis>,
     dump: DebugDump,
+    spi_flash: SpiFlash,
     last_dump: Option<UnixMillis>,
     wanted_notifications: Option<bool>,
     zone: Option<(i32, Option<DstChange>)>,
@@ -393,6 +395,7 @@ impl Client {
             last_refresh: None,
             last_walk: None,
             dump: DebugDump::new(),
+            spi_flash: SpiFlash::new(),
             last_dump: None,
             wanted_notifications: None,
             zone: None,
@@ -547,6 +550,7 @@ impl Client {
         self.walk_started_from = None;
         self.signals.reset();
         self.dump.reset();
+        self.spi_flash.reset();
         Vec::new()
     }
 
@@ -590,6 +594,7 @@ impl Client {
         self.collect_history(&frame, &mut records);
         self.live_samples.extend(self.signals.take_live());
         actions.extend(self.dump.on_frame(&frame).into_iter().map(Action::Send));
+        self.spi_flash.on_frame(&frame);
 
         // A refused menu write erases the whole store on the watch, so the
         // menu must be re-read after any error.
@@ -1185,6 +1190,26 @@ impl Client {
 
     pub fn screens(&self) -> Option<Vec<u8>> {
         self.screens.clone()
+    }
+
+    /// Debug: reads `len` bytes of external SPI flash at `addr` over
+    /// `CMD_SPI_FLASH`. The bytes stream back as chunks the shell collects with
+    /// [`Client::spi_flash_progress`] and [`Client::spi_flash_take`]; a resend
+    /// discards whatever the previous read had gathered.
+    pub fn spi_flash_read(&mut self, addr: u32, len: u32) -> Vec<Action> {
+        vec![Action::Send(self.spi_flash.start(addr, len))]
+    }
+
+    pub fn spi_flash_progress(&self) -> Option<SpiFlashProgress> {
+        self.spi_flash.progress()
+    }
+
+    pub fn spi_flash_take(&mut self) -> Option<Vec<u8>> {
+        self.spi_flash.take()
+    }
+
+    pub fn spi_flash_reset(&mut self) {
+        self.spi_flash.reset();
     }
 
     pub fn request_screens(&self) -> Vec<Action> {

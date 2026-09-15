@@ -45,6 +45,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     sourceSets["main"].java.srcDir(layout.buildDirectory.dir("generated/uniffi"))

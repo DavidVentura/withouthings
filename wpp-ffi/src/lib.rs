@@ -434,6 +434,25 @@ pub struct DeviceIdentity {
 }
 
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct SpiFlashProgress {
+    pub received: u32,
+    pub total: u32,
+    pub done: bool,
+    pub error: Option<i32>,
+}
+
+impl From<wpp::spiflash::SpiFlashProgress> for SpiFlashProgress {
+    fn from(progress: wpp::spiflash::SpiFlashProgress) -> Self {
+        SpiFlashProgress {
+            received: progress.received as u32,
+            total: progress.total as u32,
+            done: progress.done,
+            error: progress.error,
+        }
+    }
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct UserProfile {
     pub birth_secs: i64,
     pub weight_grams: u32,
@@ -1289,6 +1308,33 @@ impl WatchService {
     pub fn request_device_config(&self) -> Result<(), WatchError> {
         let actions = self.inner.lock().unwrap().client.request_device_config();
         self.dispatch(actions)
+    }
+
+    /// Debug: starts a read of `len` bytes of external SPI flash at `addr`. The
+    /// bytes arrive over the link asynchronously, so the caller polls
+    /// [`WatchService::spi_flash_progress`] and takes them with
+    /// [`WatchService::spi_flash_take`]. The watch reads in 16-byte units, so
+    /// `len` should be a multiple of 16.
+    pub fn spi_flash_read(&self, addr: u32, len: u32) -> Result<(), WatchError> {
+        let actions = self.inner.lock().unwrap().client.spi_flash_read(addr, len);
+        self.dispatch(actions)
+    }
+
+    pub fn spi_flash_progress(&self) -> Option<SpiFlashProgress> {
+        self.inner
+            .lock()
+            .unwrap()
+            .client
+            .spi_flash_progress()
+            .map(SpiFlashProgress::from)
+    }
+
+    pub fn spi_flash_take(&self) -> Option<Vec<u8>> {
+        self.inner.lock().unwrap().client.spi_flash_take()
+    }
+
+    pub fn spi_flash_reset(&self) {
+        self.inner.lock().unwrap().client.spi_flash_reset();
     }
 
     pub fn activities(&self) -> Vec<Activity> {

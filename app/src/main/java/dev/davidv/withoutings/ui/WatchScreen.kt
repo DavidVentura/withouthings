@@ -58,6 +58,7 @@ fun WatchTab(
     onOpenSensors: () -> Unit,
     onOpenActivities: () -> Unit,
     onOpenScreens: () -> Unit,
+    debugContent: @Composable () -> Unit = {},
 ) {
     Column(
         Modifier
@@ -120,6 +121,8 @@ fun WatchTab(
             NavRow("Quick-launch activities", onClick = onOpenActivities)
             RowDivider(inset = 0.dp)
             NavRow("Watch screens", onClick = onOpenScreens)
+
+            debugContent()
         }
     }
 }

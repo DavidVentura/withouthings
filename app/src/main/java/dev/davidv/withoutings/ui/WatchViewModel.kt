@@ -5,10 +5,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.davidv.withoutings.LinkState
 import dev.davidv.withoutings.WatchRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -44,6 +46,11 @@ import uniffi.wpp_ffi.Travel
 import uniffi.wpp_ffi.WearPosition
 import uniffi.wpp_ffi.WatchScreen
 import uniffi.wpp_ffi.WatchService
+import java.io.File
+import java.io.RandomAccessFile
+import java.security.MessageDigest
+import java.util.zip.CRC32
+import kotlin.coroutines.coroutineContext
 import uniffi.wpp_ffi.WorkoutSummary
 
 sealed interface ActivityEntry {
@@ -174,6 +181,20 @@ sealed interface SaveState {
     data class Failed(val reason: String) : SaveState
 }
 
+sealed interface FlashDumpState {
+    data object Idle : FlashDumpState
+    data class Testing(val message: String) : FlashDumpState
+    data class Dumping(
+        val done: Long,
+        val total: Long,
+        val path: String,
+        val startedAtMs: Long,
+        val startOffset: Long,
+    ) : FlashDumpState
+    data class Done(val message: String) : FlashDumpState
+    data class Failed(val reason: String) : FlashDumpState
+}
+
 private const val TAG = "WatchViewModel"
 
 private fun spanEndingNow(spanMs: Long): LongRange {
@@ -299,6 +320,10 @@ class WatchViewModel : ViewModel() {
 
     private val _save = MutableStateFlow<SaveState>(SaveState.Idle)
     val save: StateFlow<SaveState> = _save.asStateFlow()
+
+    private val _flashDump = MutableStateFlow<FlashDumpState>(FlashDumpState.Idle)
+    val flashDump: StateFlow<FlashDumpState> = _flashDump.asStateFlow()
+    private var flashJob: Job? = null
 
     private val _stopwatchStartedAt = MutableStateFlow<Long?>(null)
     val stopwatchStartedAt: StateFlow<Long?> = _stopwatchStartedAt.asStateFlow()
@@ -863,8 +888,182 @@ class WatchViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Debug: reads the fwblk table at the active bank and reports enough of its
+     * decode to prove the bytes are the real structured table and not noise —
+     * the SHA-256, the table version (1), the appl fw_version, and whether the
+     * trailing CRC32 validates.
+     */
+    fun testFlashRead() {
+        val service = WatchRepository.get() ?: return
+        if (flashJob?.isActive == true) return
+        flashJob = viewModelScope.launch(Dispatchers.IO) {
+            _flashDump.value = FlashDumpState.Testing("Reading fwblk table at 0x6000…")
+            val bytes = try {
+                readBlock(service, FWBLK_ACTIVE.toUInt(), FWBLK_PROBE_LEN.toUInt())
+            } catch (c: CancellationException) {
+                _flashDump.value = FlashDumpState.Idle
+                throw c
+            } catch (e: Exception) {
+                _flashDump.value = FlashDumpState.Failed("Test read failed: ${e.message}")
+                return@launch
+            }
+            _flashDump.value = FlashDumpState.Done(describeFwblk(bytes))
+        }
+    }
+
+    /**
+     * Debug: reads the whole 8 MB external flash into [file], one block at a
+     * time so a long dump survives an interruption. A file already there is
+     * resumed from its last whole block rather than restarted.
+     */
+    fun dumpFlash(file: File) {
+        val service = WatchRepository.get() ?: return
+        if (flashJob?.isActive == true) return
+        flashJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                runFlashDump(service, file)
+            } catch (c: CancellationException) {
+                _flashDump.value = FlashDumpState.Failed(
+                    "Cancelled at ${file.length()} bytes — press Dump to resume"
+                )
+                throw c
+            } catch (e: Exception) {
+                _flashDump.value = FlashDumpState.Failed(
+                    "Failed at ${file.length()} bytes (${e.message}) — press Dump to resume"
+                )
+            }
+        }
+    }
+
+    fun cancelFlashDump() {
+        flashJob?.cancel()
+    }
+
+    private suspend fun runFlashDump(service: WatchService, file: File) {
+        val path = file.absolutePath
+        // Resume from a whole-block boundary; a half-written trailing block is
+        // dropped so the file only ever holds bytes that were fully read.
+        var offset = (file.length() / FLASH_BLOCK) * FLASH_BLOCK
+        if (offset >= FLASH_SIZE) offset = 0L
+        val startedAtMs = System.currentTimeMillis()
+        val startOffset = offset
+        RandomAccessFile(file, "rw").use { out ->
+            out.setLength(offset)
+            out.seek(offset)
+            _flashDump.value = FlashDumpState.Dumping(offset, FLASH_SIZE, path, startedAtMs, startOffset)
+            while (offset < FLASH_SIZE) {
+                coroutineContext.ensureActive()
+                val len = minOf(FLASH_BLOCK, FLASH_SIZE - offset)
+                val block = readBlock(service, offset.toUInt(), len.toUInt())
+                if (block.size.toLong() != len) {
+                    throw IllegalStateException(
+                        "short block at 0x${offset.toString(16)}: got ${block.size}, want $len"
+                    )
+                }
+                out.write(block)
+                offset += len
+                _flashDump.value = FlashDumpState.Dumping(offset, FLASH_SIZE, path, startedAtMs, startOffset)
+            }
+        }
+        _flashDump.value = FlashDumpState.Done("Dumped $FLASH_SIZE bytes to $path")
+    }
+
+    /**
+     * One block of the address space, resent until the watch delivers it. A
+     * dropped link or a stalled read is met by waiting for the link and asking
+     * again; the whole block is re-requested since a partial one is discarded.
+     */
+    private suspend fun readBlock(service: WatchService, addr: UInt, len: UInt): ByteArray {
+        var attempt = 0
+        while (true) {
+            coroutineContext.ensureActive()
+            if (WatchRepository.link.value != LinkState.Ready) {
+                withTimeoutOrNull(RECONNECT_WAIT_MS) {
+                    WatchRepository.link.first { it == LinkState.Ready }
+                }
+            }
+            service.spiFlashRead(addr, len)
+            val bytes = awaitBlock(service)
+            if (bytes != null) return bytes
+            attempt++
+            if (attempt >= BLOCK_ATTEMPTS) {
+                throw IllegalStateException(
+                    "no answer for $len bytes at 0x${addr.toString(16)} after $attempt tries"
+                )
+            }
+        }
+    }
+
+    private suspend fun awaitBlock(service: WatchService): ByteArray? {
+        val startedAt = System.currentTimeMillis()
+        while (true) {
+            coroutineContext.ensureActive()
+            // A null progress means the read was reset out from under us (the
+            // link dropped); the caller resends the block.
+            val progress = service.spiFlashProgress() ?: return null
+            progress.error?.let {
+                throw IllegalStateException("watch refused the read (err $it)")
+            }
+            if (progress.done) return service.spiFlashTake() ?: ByteArray(0)
+            if (System.currentTimeMillis() - startedAt > BLOCK_TIMEOUT_MS) return null
+            delay(FLASH_POLL_MS)
+        }
+    }
+
+    private fun describeFwblk(bytes: ByteArray): String {
+        val sha = MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+        fun u16(at: Int) = (bytes[at].toInt() and 0xff) or ((bytes[at + 1].toInt() and 0xff) shl 8)
+        fun u32(at: Int) =
+            (0..3).fold(0L) { acc, i -> acc or ((bytes[at + i].toLong() and 0xff) shl (8 * i)) }
+
+        val version = u16(0)
+        val bodyLen = u16(2)
+        val crcAt = 4 + bodyLen
+        val decodable = crcAt + 4 <= bytes.size
+        val storedCrc = if (decodable) u32(crcAt) else -1L
+        val computedCrc = if (decodable) {
+            CRC32().apply { update(bytes, 0, crcAt) }.value
+        } else {
+            -1L
+        }
+        var pos = 4
+        var applVersion: Long? = null
+        while (decodable && pos + 4 <= crcAt) {
+            val ieId = u16(pos)
+            val size = u16(pos + 2)
+            if (ieId == FWBLK_IE_APPL && size >= 16) applVersion = u32(pos + 4 + 12)
+            pos += 4 + size
+        }
+        return buildString {
+            appendLine("Read OK: ${bytes.size} bytes at 0x${FWBLK_ACTIVE.toString(16)}")
+            appendLine("SHA-256: $sha")
+            appendLine("fwblk version: $version (expect 1)")
+            appendLine("appl fw_version: ${applVersion ?: "not found"}")
+            append(
+                when {
+                    !decodable -> "table CRC32: body length $bodyLen overruns the probe"
+                    computedCrc == storedCrc -> "table CRC32: ok"
+                    else -> "table CRC32: MISMATCH " +
+                        "(calc 0x${computedCrc.toString(16)}, stored 0x${storedCrc.toString(16)})"
+                }
+            )
+        }
+    }
+
     private companion object {
         const val MAX_CHART_POINTS = 1200u
         const val TEST_APP_ID = "dev.davidv.withoutings"
+
+        const val FLASH_SIZE = 0x800000L
+        const val FLASH_BLOCK = 0x4000L
+        const val FWBLK_ACTIVE = 0x6000L
+        const val FWBLK_PROBE_LEN = 512L
+        const val FWBLK_IE_APPL = 1
+        const val FLASH_POLL_MS = 40L
+        const val BLOCK_TIMEOUT_MS = 20_000L
+        const val BLOCK_ATTEMPTS = 8
+        const val RECONNECT_WAIT_MS = 60_000L
     }
 }

@@ -40,6 +40,7 @@ import dev.davidv.withoutings.ui.AppSettingsScreen
 import dev.davidv.withoutings.ui.BottomNav
 import dev.davidv.withoutings.ble.LocationRecorder
 import dev.davidv.withoutings.ui.EcgDetailScreen
+import dev.davidv.withoutings.ui.FlashDumpCard
 import dev.davidv.withoutings.ui.LIVE_ECG_HZ
 import dev.davidv.withoutings.ui.LiveEcgScreen
 import dev.davidv.withoutings.ui.LiveWorkoutScreen
@@ -419,6 +420,7 @@ private fun Navigation(
                         model.requestScreens()
                         nav.navigate(Routes.WATCH_SCREENS)
                     },
+                    debugContent = { if (BuildConfig.DEBUG) FlashDumpCard(model) },
                 )
             }
 
