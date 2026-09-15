@@ -8,8 +8,10 @@
 // framebuffer reconstructed.
 //
 // It is a capture, not a panel emulation: it does not answer reads with any
-// controller state. Reconstruction (controller opcodes, resolution, bit depth)
-// is done offline from the dumped stream.
+// controller state. Reconstruction of the controller opcodes was done offline
+// from the dumped stream; the geometry that came out of it (144x98, 4 bpp grey,
+// low nibble first) is now applied here so the model is also an IVideo source
+// and the panel can be watched live in the analyzer window.
 //
 using System;
 using System.IO;
@@ -17,8 +19,10 @@ using System.Collections.Generic;
 using Antmicro.Renode.Core;
 using Antmicro.Renode.Core.Structure;
 using Antmicro.Renode.Logging;
+using Antmicro.Renode.Backends.Display;
 using Antmicro.Renode.Peripherals;
 using Antmicro.Renode.Peripherals.Bus;
+using Antmicro.Renode.Peripherals.Video;
 
 namespace Antmicro.Renode.Peripherals.SPI
 {
@@ -29,9 +33,9 @@ namespace Antmicro.Renode.Peripherals.SPI
         Data
     }
 
-    public class OledSpimCapture : IDoubleWordPeripheral, IKnownSize, INumberedGPIOOutput, IGPIOReceiver
+    public class OledSpimCapture : AutoRepaintingVideo, IDoubleWordPeripheral, IKnownSize, INumberedGPIOOutput, IGPIOReceiver
     {
-        public OledSpimCapture(IMachine machine)
+        public OledSpimCapture(IMachine machine, int panelWidth = DefaultWidth, int panelHeight = DefaultHeight) : base(machine)
         {
             this.machine = machine;
             this.sysbus = machine.GetSystemBus(this);
@@ -40,6 +44,10 @@ namespace Antmicro.Renode.Peripherals.SPI
             IRQ = new GPIO();
             Connections = new Dictionary<int, IGPIO> { { 0, IRQ } };
             dc = DataCommand.Undriven;
+            frameLength = panelWidth * panelHeight / PixelsPerByte;
+            // The panel is repainted when the firmware finishes pushing a frame,
+            // not on a timer, so the window follows the display 1:1.
+            Reconfigure(panelWidth, panelHeight, PixelFormat.RGB888, autoRepaint: false);
         }
 
         public GPIO IRQ { get; private set; }
@@ -94,7 +102,7 @@ namespace Antmicro.Renode.Peripherals.SPI
             IRQ.Set(endFlag && (inten & EndIntBit) != 0);
         }
 
-        public void Reset()
+        public override void Reset()
         {
             regs.Clear();
             records.Clear();
@@ -102,6 +110,7 @@ namespace Antmicro.Renode.Peripherals.SPI
             inten = 0;
             dc = DataCommand.Undriven;
             warnedNoDataCommand = false;
+            latestFrame = null;
         }
 
         private void DoTransfer()
@@ -118,6 +127,11 @@ namespace Antmicro.Renode.Peripherals.SPI
                 tx[i] = sysbus.ReadByte((ulong)(txp + i));
             }
             records.Add(new Segment { Dc = dc, Data = tx });
+            if(dc == DataCommand.Data && tx.Length == frameLength)
+            {
+                latestFrame = tx;
+                DoRepaint();
+            }
             // display transfers are write-only; zero-fill the rx region if any
             for(uint i = 0; i < rxn; i++)
             {
@@ -181,6 +195,30 @@ namespace Antmicro.Renode.Peripherals.SPI
             this.Log(LogLevel.Info, "oled frames: {0} segments of >= {1} bytes -> {2}", index, minimumLength, directory);
         }
 
+        // 4 bpp grey, two pixels per byte, low nibble is the left pixel; the
+        // nibble is replicated into the byte so 0xF maps to full white.
+        protected override void Repaint()
+        {
+            var frame = latestFrame;
+            if(frame == null)
+            {
+                return;
+            }
+            for(var i = 0; i < frame.Length; i++)
+            {
+                var b = frame[i];
+                var left = (byte)((b & 0xF) * 17);
+                var right = (byte)((b >> 4) * 17);
+                var o = i * 2 * BytesPerPixel;
+                buffer[o] = left;
+                buffer[o + 1] = left;
+                buffer[o + 2] = left;
+                buffer[o + 3] = right;
+                buffer[o + 4] = right;
+                buffer[o + 5] = right;
+            }
+        }
+
         private static string Tag(DataCommand value)
         {
             switch(value)
@@ -221,11 +259,17 @@ namespace Antmicro.Renode.Peripherals.SPI
         private const long TxAmount = 0x54C;
 
         private const int DataCommandPin = 9;
+        private const int DefaultWidth = 144;
+        private const int DefaultHeight = 98;
+        private const int PixelsPerByte = 2;
+        private const int BytesPerPixel = 3;
 
         private uint inten;
         private bool endFlag;
         private bool warnedNoDataCommand;
         private DataCommand dc;
+        private byte[] latestFrame;
+        private readonly int frameLength;
         private readonly Dictionary<long, uint> regs;
         private readonly List<Segment> records;
         private readonly IMachine machine;
