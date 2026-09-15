@@ -9,9 +9,14 @@
 //
 //   keys: Input.KeyPadInput @ sysbus
 //       keys: ["Up", "Down", "Enter"]
+//       activeLevel: ActiveLevel.Low
 //       0 -> crown@0
 //       preinit:
 //           include @KeyInput.cs
+//
+// activeLevel also fixes the idle level the lines are driven to, so a key on a
+// pin the firmware configures as pull-up + SENSE=Low does not read as held down
+// from reset.
 //
 // The registration point is only what makes the monitor and the analyzer see
 // the peripheral; this model has no bus interface.
@@ -33,12 +38,13 @@ namespace Antmicro.Renode.Peripherals.Input
 {
     public class KeyPadInput : IKeyboard, INumberedGPIOOutput
     {
-        public KeyPadInput(string[] keys)
+        public KeyPadInput(string[] keys, ActiveLevel activeLevel = ActiveLevel.High)
         {
             if(keys.Length == 0)
             {
                 throw new ConstructionException("at least one key is needed, each one becomes a GPIO line");
             }
+            this.activeLevel = activeLevel;
             lines = new Dictionary<KeyScanCode, GPIO>();
             var connections = new Dictionary<int, IGPIO>();
             for(var i = 0; i < keys.Length; i++)
@@ -53,6 +59,7 @@ namespace Antmicro.Renode.Peripherals.Input
                     throw new ConstructionException(string.Format("key '{0}' is listed twice", keys[i]));
                 }
                 var line = new GPIO();
+                line.Set(IdleLevel);
                 lines.Add(code, line);
                 connections.Add(i, line);
             }
@@ -71,8 +78,10 @@ namespace Antmicro.Renode.Peripherals.Input
             Drive(scanCode, false);
         }
 
-        // A press and release in one monitor command: a key event from outside
-        // the emulation has no held duration to reproduce.
+        // A press and release in one monitor command: a key event from outside the
+        // emulation has no held duration to reproduce. The release is scheduled a
+        // virtual moment later because a press and a release on the same timestamp
+        // reach the driven line as a single no-op state change.
         public void Tap(string key)
         {
             KeyScanCode code;
@@ -80,15 +89,19 @@ namespace Antmicro.Renode.Peripherals.Input
             {
                 throw new RecoverableException(string.Format("'{0}' is not a KeyScanCode name", key));
             }
+            if(!this.TryGetMachine(out var machine))
+            {
+                throw new RecoverableException("the keypad has to be part of a machine to schedule the release");
+            }
             Drive(code, true);
-            Drive(code, false);
+            machine.ScheduleAction(TapDuration, _ => Drive(code, false));
         }
 
         public void Reset()
         {
             foreach(var line in lines.Values)
             {
-                line.Unset();
+                line.Set(IdleLevel);
             }
         }
 
@@ -104,14 +117,26 @@ namespace Antmicro.Renode.Peripherals.Input
             {
                 return;
             }
+            var level = state == (activeLevel == ActiveLevel.High);
             if(!this.TryGetMachine(out var machine))
             {
-                line.Set(state);
+                line.Set(level);
                 return;
             }
-            machine.HandleTimeDomainEvent(line.Set, state, TimeDomainsManager.Instance.GetEffectiveVirtualTimeStamp());
+            machine.HandleTimeDomainEvent(line.Set, level, TimeDomainsManager.Instance.GetEffectiveVirtualTimeStamp());
         }
 
+        private bool IdleLevel => activeLevel == ActiveLevel.Low;
+
+        public enum ActiveLevel
+        {
+            High,
+            Low,
+        }
+
+        private static readonly TimeInterval TapDuration = TimeInterval.FromMilliseconds(50);
+
+        private readonly ActiveLevel activeLevel;
         private readonly Dictionary<KeyScanCode, GPIO> lines;
     }
 }

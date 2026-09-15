@@ -85,11 +85,22 @@ pwm2: Miscellaneous.NrfPwm @ sysbus 0x40022000
 pwm3: Miscellaneous.NrfPwm @ sysbus 0x4002D000
     -> nvic@45
 
-gpio0: GPIOPort.NRF52840_GPIO @ sysbus 0x50000500
+gpio0: GPIOPort.NrfGpio @ sysbus 0x50000500
     15 -> spi2@15
+    preinit:
+        include @NrfGpio.cs
 
-gpio1: GPIOPort.NRF52840_GPIO @ sysbus 0x50000800
+gpio1: GPIOPort.NrfGpio @ sysbus 0x50000800
     9 -> spi3@9
+
+// The crown's click is a separate active-low input on P1.11 (pull-up, SENSE=Low);
+// it is the fourth pin the app registers with the GPIOTE PORT dispatcher.
+keys: Input.KeyPadInput @ sysbus
+    keys: ["Enter"]
+    activeLevel: ActiveLevel.Low
+    0 -> gpio1@11
+    preinit:
+        include @KeyInput.cs
 
 gpiote: GPIOPort.NRF52840_GPIOTasksEvents @ sysbus 0x40006000
     port0: gpio0
