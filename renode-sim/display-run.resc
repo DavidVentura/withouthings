@@ -8,6 +8,11 @@ logLevel 3
 # --- known-good boot patch set ---
 # sd_mbr: skip the MBR forwarding-address check that otherwise wedges early boot
 sysbus WriteWord 0x9301e 0x2000
+# SoftDevice: `mov.w r0, sp` (T3 encoding, legal on silicon) is rejected by
+# Renode's tlib decoder as undefined, so re-encode both sites as the 16-bit
+# `mov r0, sp` plus a nop. Reached only once the app enables the SoftDevice.
+sysbus WriteDoubleWord 0x13024 0xBF004668
+sysbus WriteDoubleWord 0xb224 0xBF004668
 # Peripheral state below is lost on SYSRESETREQ (the app's fault handler
 # resets), so it lives in the machine's reset macro, which Renode re-runs then.
 macro reset
@@ -24,9 +29,10 @@ runMacro $reset
 sysbus WriteWord 0x3bb96 0xBF00
 sysbus WriteWord 0x3bbae 0xBF00
 cpu PerformanceInMips 1000
-# AIN0 is the battery sense: a 3.9 V cell behind the ~1/10 divider that keeps the
-# input inside the 0.6 V full scale of the channel's GAIN=1 / internal reference.
-sysbus.saadc SetInputVoltage 0 0.39
+# AIN0 is the battery sense (GAIN=1, internal 0.6 V reference, 10-bit). The
+# firmware uses the raw sample unadapted: 0.39 V reads as a flat battery and the
+# boot stops at the low-battery screen; 0.50 V boots the full application.
+sysbus.saadc SetInputVoltage 0 0.50
 
 # log-ring producer unblock: give the 0xb2588 semaphore the drain task would
 cpu AddHook 0x3b4c0 """
