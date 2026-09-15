@@ -588,6 +588,14 @@ display init just needs a long run (or a controlled RTC2 speed-up).
 17. **RTC2 PRESCALER speed-up (0x74050 0x20→0) is a BAD accel** — it makes the
     idle wake compute a huge `elapsed` (32768 vs 993 cnt/s), and vTaskStepTick
     loops per elapsed tick → pathological slowdown. Do not use it.
+19. **NrfClockReady (`Miscellaneous.NrfClockReady`, clock @0x40000000, `NrfClock.cs`)**
+    — replaces the stock `Miscellaneous.NRF_CLOCK`. Hypothesis under test: the
+    display sits on the high-speed SPIM3, which on real HW needs HFCLK; if the sim's
+    clock never reports HFCLK/LFCLK started+running, the SD clock state machine (or
+    app `sd_clock_hfclk_is_running` polls) stalls before display bring-up. This
+    model completes a start immediately (TASKS_*CLKSTART → EVENTS_*CLKSTARTED +
+    *CLKRUN/*CLKSTAT=running + CLOCK IRQ). Faithful to HW (crystal settles fast).
+    STATUS: added to test whether it advances boot past the stall — result pending.
 18. **OledSpimCapture (`SPI.OledSpimCapture`, spi3 @0x4002F000, `OledSpim.cs`)** —
     added this round, wired into `hwa10.repl` at the nRF SPIM3 base (IRQ 47), the
     likely OLED bus (9 base refs vs spi1's 3; SPIM3 is the high-speed instance).
