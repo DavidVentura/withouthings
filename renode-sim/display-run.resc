@@ -50,6 +50,6 @@ emulation RunFor "10.0"
 echo "=== display-run done ==="
 echo "tick:"; sysbus ReadDoubleWord 0x20021920
 echo "pc:"; cpu PC
-sysbus.spi3 DumpStream @out/oled_stream.txt
-sysbus.spi3 DumpPixels @out/oled_pixels.bin
+sysbus.spi3 DumpStream $ORIGIN/out/oled_stream.txt
+sysbus.spi3 DumpPixels $ORIGIN/out/oled_pixels.bin
 quit

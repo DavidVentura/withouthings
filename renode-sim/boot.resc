@@ -13,8 +13,8 @@ sysbus LoadBinary @flash.bin 0x0
 sysbus.spi2 LoadImage @external_flash.bin
 
 # capture wlog UART to file
-sysbus.uart0 CreateFileBackend @out/uart0.log true
-sysbus.uart1 CreateFileBackend @out/uart1.log true
+sysbus.uart0 CreateFileBackend $ORIGIN/out/uart0.log true
+sysbus.uart1 CreateFileBackend $ORIGIN/out/uart1.log true
 
 # boot from the MBR vector table at 0x0 (real reset entry)
 cpu VectorTableOffset 0x0
