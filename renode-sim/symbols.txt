@@ -156,3 +156,52 @@
 0x000b23f4  spi1_cfg                     SPI1(0x40004000) driver ctx
 # Renode fidelity: WFE does NOT wake on already-latched pending IRQ, so wfe->nop
 # busy-poll is REQUIRED; do NOT change VTOR or enable app IRQs at idle (faults SD, resets).
+
+# --- tickless idle / RTOS tick (traced 2026-09-15; FIRMWARE.md "What the simulator got wrong") ---
+0x00073ec8  vPortSuppressTicksAndSleep   tickless idle; sd_nvic_critical_region_enter, CC0 program, wfe loop @0x74008
+0x0007400a  idle_wfe                     the wfe; wake relies on SCR.SEVONPEND (app IRQs NVIC-disabled here)
+0x00073f82  idle_wake_path               INTENCLR COMPARE0, clears ICPR1 bit4 @0x73fc2, vTaskStepTick catch-up
+0x00073e70  RTC2_IRQHandler              xPortSysTickHandler: clears TICK/COMPARE0 events, xTaskIncrementTick, PendSV
+0x00073dd0  prvPortStartFirstTask        msr msp, basepri 0xe0, svc 0
+0x00073dfc  vPortEnableVFP               CPACR |= 0xf<<20
+0x0007407c  vPortStartScheduler          SHPR3 PendSV prio, rtc2_tick_init, FPCCR ASPEN|LSPEN, SCR |= SEVONPEND @0x740ac
+0x0007333c  vTaskSwitchContext           stack-overflow check (0xa5a5a5a5 fill)
+0x000730ac  vTaskStepTick
+0x000730bc  xTaskIncrementTick
+0x00027e20  vPortSVCHandler              restores first task context, bx r14
+0x00027e50  xPortPendSVHandler           CM4F context switch (vstmdb/vldmia s16-s31)
+0x0009e590  queue_push                   ring push: [q+8]=wr,[q+4]=end,[q]=base,[q+0x40]=item size; called with q=NULL after first ADV event (writes hit 0x8)
+0x000a881e  memcpy_bytes                 byte copy loop; with the NULL queue copies into flash 0x715+ (harmless on silicon, corrupts MBR in Renode)
+0x20021920  xTickCount                   (RAM)
+0x20017c84  nrf_nvic_state               (RAM) __irq_masks[0]@+0, [1]@+4, __cr_flag@+8
+
+# --- external flash + battery ---
+0x0005ba64  flash_detect_assert          udf reached via 0x5bcb4 when the JEDEC id matches none of the 28 entries (table @0xb427c, 16 B each)
+0x0009bdba  spi_flash_open               creates two mutexes (0x73bc0), opens the SPIM
+0x0007dfb8  saadc_sample_blocking        nrfx SAADC: START/EVENTS_STARTED, SAMPLE/EVENTS_END, STOP/EVENTS_STOPPED
+0x0007dcc0  saadc_init
+0x0007de34  saadc_channel_init
+0x0007df40  saadc_buffer_convert
+0x000a4e52  adc_read_one                 channel init + 1-sample convert; keeps sample if >= 0
+0x000400b4  battery_adc_read             AIN0; the x6/x5/x4/x3/x2 gain adaptation is gated on product id 0x280010 @0x400be
+0x00036c8c  HardFault_Handler_app        wlog register dump, [STACKDUMP], then SYSRESETREQ
+0x00056e8e  wlog_putchar                 (already above) sim hooks this to print the watch log
+
+# --- MBR / SoftDevice (flash 0x0 / 0x1000) ---
+0x000008c2  mbr_irq36_forwarder          r0=vector offset, bx *(*0x20000000 + r0); every IRQ has one of these
+0x00000a60  HardFault_Handler_mbr
+0x0000c174  sd_irq_forwarder             shared app-IRQ forwarder; if *0x20000058==0xCAFEBABE (SD enabled) bookkeeping first, then bx *(*0x20000004 + r0)
+0x00025fcc  SVC_Handler_sd               svc number < 0x10 -> app handler via *(0x20000004)+0x2c
+0x00025ea6  HardFault_Handler_sd
+0x00002fd0  sd_app_evt_wait_impl         wfe @0x2ff6; the idle sleeps here once the SD is enabled
+0x0000b224  sd_movw_sp_site_1            `mov.w r0, sp` rejected by tlib; sim re-encodes (see display-run.resc)
+0x00013024  sd_movw_sp_site_2            same
+0x00017738  sd_radio_arm_step            r0=mode r1=TIMER0 deadline r2=flags; CC2=deadline, PPI ch19, asserts (svc 0xff @0x17826) if CC3 capture >= deadline
+0x00017832  sd_radio_arm_step_tifs       adds captured anchor [ctx+0x2c] to 150-rampup-margin (=97 for 1M PHY) then falls into 0x17738
+0x00017548  sd_radio_chain_step          deadline = prev + 36
+0x0002603a  RADIO_IRQHandler_sd          thunk (IRQ1)
+0x00026040  TIMER0_IRQHandler_sd         thunk (IRQ8)
+0x00026046  RTC0_IRQHandler_sd           thunk (IRQ11)
+0x20000000  mbr_forward_vtor             (RAM) 0x1000 once the SD owns forwarding
+0x20000004  sd_app_vtor                  (RAM) 0x27000
+0x20000058  sd_enabled_magic             (RAM) 0xCAFEBABE when sd_softdevice_enable succeeded
