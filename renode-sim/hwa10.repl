@@ -99,6 +99,11 @@ gpiote: GPIOPort.NRF52840_GPIOTasksEvents @ sysbus 0x40006000
 twi1: I2C.NRF52840_I2C @ sysbus 0x40004000
     -> nvic@4
 
+crown: Sensors.Crown @ twi0 0x79
+    -> gpio1@13
+    preinit:
+        include @NrfCrown.cs
+
 bq25180: Sensors.BQ25180 @ twi0 0x6A
     preinit:
         include @NrfBq25180.cs
