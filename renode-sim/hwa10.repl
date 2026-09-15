@@ -48,6 +48,11 @@ spi2: SPI.NrfSpimCapture @ sysbus 0x40023000
     preinit:
         include @NrfSpim.cs
 
+spi3: SPI.OledSpimCapture @ sysbus 0x4002F000
+    -> nvic@47
+    preinit:
+        include @OledSpim.cs
+
 gpio0: GPIOPort.NRF52840_GPIO @ sysbus 0x50000500
 
 gpio1: GPIOPort.NRF52840_GPIO @ sysbus 0x50000800

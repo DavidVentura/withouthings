@@ -573,3 +573,26 @@ display init just needs a long run (or a controlled RTC2 speed-up).
     `wfe`→nop tick busy-poll already makes long runs slow. Skipping them does not
     change display behaviour, but note the sim no longer honours those exact
     settle times (a panel that needed them on real HW wouldn't be exercised).
+16. **`wfe`→nop tick busy-poll is a Renode-WFE-gap workaround, and it is SLOW.**
+    Renode's WFE only wakes on a *freshly asserted enabled* interrupt; it ignores
+    an already-latched pending one and does not honour SEVONPEND. The firmware's
+    tickless idle sets CC0≈entry+2 (reached before the CPU sleeps) and relies on
+    the poll-ISPR-after-WFE pattern, so real WFE dead-sleeps. `wfe`→nop keeps the
+    CPU polling so it catches the pending compare — correct behaviour, but it
+    spins the whole inter-tick interval instead of Renode time-jumping, so wall
+    time is ~100× virtual. Enabling IRQ36 does NOT help (the ISR then clears the
+    pending before the poll runs, so the tick-increment path never executes; and
+    the app never enables IRQ36 itself — the SD's sd_nvic_EnableIRQ is a no-op in
+    the sim). A faithful+fast fix needs a Renode CortexM WFE that honours
+    pending/ SEVONPEND, or a peripheral that pends IRQ36 fresh each tick.
+17. **RTC2 PRESCALER speed-up (0x74050 0x20→0) is a BAD accel** — it makes the
+    idle wake compute a huge `elapsed` (32768 vs 993 cnt/s), and vTaskStepTick
+    loops per elapsed tick → pathological slowdown. Do not use it.
+18. **OledSpimCapture (`SPI.OledSpimCapture`, spi3 @0x4002F000, `OledSpim.cs`)** —
+    added this round, wired into `hwa10.repl` at the nRF SPIM3 base (IRQ 47), the
+    likely OLED bus (9 base refs vs spi1's 3; SPIM3 is the high-speed instance).
+    Captures each EasyDMA segment + the D/C GPIO state and can DumpStream (cmd/data)
+    / DumpPixels. UNVERIFIED at runtime: boot has not yet been driven to the display
+    transfers because of gap #16's perf wall, so it is not yet confirmed the OLED is
+    on SPIM3 (backup candidate spi1 @0x40004000), nor is the D/C pin wired
+    (OLED GPIOs from pin table 0xbe494: P0.12/0.31/0.17/0.27, P1.12/1.14).
