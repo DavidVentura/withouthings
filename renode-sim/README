@@ -1,54 +1,66 @@
-Renode sim of the ScanWatch 2 (HWA10) firmware. See NOTES.md for status.
+# Renode simulation of the ScanWatch 2 (HWA10)
 
-Prereqs (not in the repo — supply your own):
-  - external_flash.bin : an 8 MB dump of the watch's external SPI flash, placed
-    in renode-sim/ (git-ignored; contains the association secret — never commit).
-  - Renode (tested v1.17.0). Put `renode` on your PATH, or use its full path below.
-  - The firmware package `hwa10_3411_Tf4fD4.bin` in the repo root (one level up).
-  - NRF52840.svd in this directory (Nordic's official SVD, the copy Renode's own
-    nrf52840 platform uses). Fetch it:
-      cd renode-sim
-      wget -qO- https://dl.antmicro.com/projects/renode/svd/NRF52840.svd.gz | gunzip > NRF52840.svd
+At the moment there are patches needed, so it's only been verified on firmware version 3411
 
-Run everything from this directory (scripts use paths relative to it):
-  cd renode-sim
-Keep Renode's stdin open when scripting it (e.g. `renode ... < <(sleep 1000)`):
-with `< /dev/null` its console thread spins on EOF and leaks ~20 MB/s of host
-memory for as long as the process lives. Run one instance at a time from this
-directory (they share out/).
+It simulates the main SoC (nRF52840) running the three images in flash
 
-Rebuild the flash image from the firmware package:
-  python3 extract.py
+- Nordic's MBR (forwards interrupts and SVCs)
+- S140 SoftDevice (Nordic's BLE stack and SoC services)
+- The application
 
-Boot (headless):
-  renode --disable-xwt --console -e "include @boot.resc; start"
+It models some of the peripherals:
 
-Boot with readable wlog (Phase 0 gate — applies the documented shortcuts):
-  renode --disable-xwt --console -e "include @run-logs.resc"
-  Prints:  [M] boot / [M] rtc_value : 0 / [M] HWA10 boot reason = 0
+- external SPI flash
+- battery ADC
+- SSD1320 OLED
 
-Coverage progress bar (native trace, not slow Python hooks):
-  renode --disable-xwt --console -e "include @trace.resc"
-  python3 coverage.py /tmp/hwa10_trace.bin.gz
-  -> known functions in first-execution order + the loop the boot ends stuck in.
-  (Renode writes trace output relative to ITS cwd, so trace.resc uses /tmp.)
+It boots the whole application (RTOS, BLE advertising, algorithm manager, display).
 
-Files:
-  mkdis.sh      builds out/appl.dis and out/sd.dis (absolute flash addresses)
-  calltrace.py  emits hooks that print the first entry into every callee of a code
-                range; how the boot's stall points were found (needs out/appl.dis)
-  extract.py    rebuilds appl.bin/bl.bin/sd.bin/flash.bin from the package
-  hwa10.repl    nrf52840 platform (stock Renode + local SVD applied in boot.resc)
-  boot.resc     load flash + boot from MBR@0x0, UART capture to out/
-  run-logs.resc Phase 0 gate: boot with shortcuts, prints readable wlog
-  trace.resc    capture a boot PC trace for coverage.py (native ExecutionTracer)
-  coverage.py   offline progress bar: maps a trace against symbols.txt
-  symbols.txt   address -> name map (naming source for the progress bar)
-  logs.resc     boot + hooks on the 5 wlog formatters (for post-wedge logs)
-  NRF52840.svd  peripheral SVD (local, avoids per-run download)
+At the moment, it's not very fast due to some hacks; in the future, ideally, it will be
+fast enough to run live as a simulator. Maybe it's too ambitious and it's only good
+as integration testing. We'll see.
 
-Current status: Phase 0 gate ACHIEVED (readable wlog). The first blocker was a
-HardFault in sd_mbr_command (svc #24), patched to return success; the wlog ring
-is force-drained. Boot then stops at driver-completion semaphore waits that need
-the RTOS scheduler/tick (interrupts). NOTES.md has the full diagnosis, the
-"Fidelity gaps" ledger, and the next step for Phases 1/2.
+## Dependencies
+
+  - Renode 1.17
+  - llvm-objdump/llvm-objcopy and python3
+  - Firmware file for v3411
+  - A dump of the SPI flash
+  - [NRF52840.svd](https://dl.antmicro.com/projects/renode/svd/NRF52840.svd.gz)
+
+## How to run
+
+Once, extract the 'partitions' from the package with `extract.py`
+
+To run the simulator with display, run
+
+```bash
+renode --disable-xwt --console -e "include @display-run.resc" < <(sleep 1000)
+```
+
+It will create these files at `out/`:
+
+ - uart0.log
+ - frames/frameNNN.bin
+ - oled_stream.txt
+
+If you want to render the .bin files to png:
+
+```bash
+python3 render_png.py --w 144 --h 98 --fmt gray4 out/frames/frame400.bin out/frame400.png
+```
+
+## Debug stuff
+
+To read the disassembly, build it with `mkdis.sh`; it writes `out/appl.dis` and
+`out/sd.dis` with absolute flash addresses, so they line up with `symbols.txt`
+(the address to name map for the app, MBR and SoftDevice).
+
+To find where the boot stalls, generate hooks for a code range with
+`calltrace.py 0x2e700 0x2e900 > out/hooks.resc`, include that file in a copy of
+`display-run.resc`, and look at the last function entered.
+
+The peripheral models are the `Nrf*.cs` and `OledSpim.cs` files, one per
+peripheral; the run script sets their inputs (battery volts, temperature).
+The earlier bring-up scripts (`boot.resc`, `run-logs.resc`, `trace.resc`,
+`logs.resc`, `coverage.py`) still work but `display-run.resc` replaced them.
