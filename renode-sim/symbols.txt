@@ -104,9 +104,17 @@
 
 # custom SPIM controller (this round) + OLED detect loop
 0x0009e46c  task_yield                   pends PendSV (ICSR 0xe000ed04 <- 0x10000000); cooperative yield, NOT a panic
-0x0005b98c  oled_detect_loop_head        loops sending 0x66/0x99 + yield, waiting on OLED detect/response
-0x0005b9f8  oled_detect_send             sends cmd 0x66 (0x5ba04) then 0x99 (0x5ba1c); tail-loops to 0x5b98c
-0x0005ba40  oled_detect_fn               outer; calls 0x9bdba check, loops the detect
+0x0005b98c  flash_detect_loop_head       spi2=MX25R FLASH; loops flash reset(0x66/0x99)+yield awaiting async detect flag
+0x0005b9f8  flash_reset_send             sends flash Reset-Enable 0x66 (0x5ba04) then Reset 0x99 (0x5ba1c)
+0x0005ba40  flash_detect_fn              reads JEDEC ID (0x9ba84 -> cmd 0x9F), matches config table 0xb427c (28 chips)
 # spi2 is now SPI.NrfSpimCapture (NrfSpim.cs): runs EasyDMA on TASKS_START, raises EVENTS_END,
 # answers poll with PollReply, records the stream. END gap FIXED. But the OLED detect loop
 # above needs a response PollReply(const) doesn't satisfy (tried 0x00/0xff/0x01/0x66) -> no pixel data yet.
+
+# === MAJOR RE-IDENTIFICATION: spi2 (0x40023000) is the external MX25R SPI-NOR FLASH, NOT the OLED ===
+0x000b427c  flash_id_table               28 x 16B; SPI-flash JEDEC IDs (C2 Macronix, EF Winbond, BF SST, 20 Micron...)
+#   entry[20]=0x00c22817 = MX25R6435F (our 8MB flash). 0x66/0x99=flash Reset-Enable/Reset; 0x9F=RDID.
+0x0009ba84  flash_read_jedec_id          builds cmd 0x9F, reads 3 ID bytes over spi2
+0x0009bdba  async_flag_check             generic mutex-wrapped: nonzero when *[ctx+12]!=0 (used by many; do NOT patch globally)
+# Implication: the OLED is a SEPARATE interface reached AFTER flash init; the splash bitmap/assets are
+# very likely stored in the external flash (no dump available), so rendering the real splash needs flash content.

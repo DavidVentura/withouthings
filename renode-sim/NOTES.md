@@ -26,11 +26,13 @@ Renode v1.17.0 portable (put `renode` on PATH; see README for prereqs).
   bar".
 - **Coverage progress bar: DONE** (`trace.resc` + `coverage.py` + `symbols.txt`) —
   native trace, maps the boot path and the exact stall.
-- **SPIM END gap FIXED** via a custom controller (`NrfSpim.cs`); END fires, the
-  EasyDMA transfer runs, the full SPIM byte stream is captured. **Still no frame:**
-  the firmware then loops in OLED detect (sends 0x66/0x99, yields) awaiting a
-  detect response/GPIO not yet pinned; the stream is all commands, no pixel data.
-  See "Custom SPIM controller — END gap FIXED; OLED detect loop remains".
+- **RE-IDENTIFIED: spi2 is the external MX25R FLASH, not the OLED** — the whole
+  "OLED SPIM" thread was flash bring-up (0x66/0x99=flash reset, 0x9F=JEDEC id,
+  table 0xb427c = flash JEDEC ids, MX25R6435F=entry[20]). Custom controller
+  `NrfSpim.cs` (END + DMA + JEDEC id) works, but boot stalls in the flash
+  reset/detect handshake and the splash assets live in external flash we have no
+  dump of. **No frame; the real blocker is the flash subsystem + content.** See
+  "MAJOR RE-IDENTIFICATION".
 - **Tick self-sustains + SPLASH-SCREEN MILESTONE reached.** With `wfe`→nop
   (Renode doesn't honour the firmware's SEVONPEND) the FreeRTOS tick recurs on
   its own and boot advances to the **OLED display init driving SPIM2 traffic**
@@ -285,6 +287,46 @@ is in place for that final pass.
 Correction to an earlier note: **0x9e46c is a cooperative yield** (pends PendSV),
 not a panic handler — I had misattributed the panic address.
 
+## MAJOR RE-IDENTIFICATION: spi2 is the external FLASH, not the OLED
+
+Pushing on the "OLED detect" revealed it is not the OLED at all. **spi2
+(0x40023000) is the external MX25R SPI-NOR flash.** Evidence, decisive:
+
+- The 28-entry "config table" at `0xb427c` is a table of **SPI-flash JEDEC IDs**:
+  0xC2 Macronix, 0xEF Winbond, 0xBF SST, 0x20 Micron, 0x9D ISSI, 0xC8 GigaDevice,
+  0x1F Atmel — one 4-byte id per 16-byte entry. Entry [20] = `0xC2 28 17` =
+  **MX25R6435F**, exactly the 8 MB flash `FIRMWARE.md` names.
+- The looping command `0x66` then `0x99` is the flash **Reset-Enable / Reset**
+  sequence; `flash_read_jedec_id` (0x9ba84) issues `0x9F` (RDID) and matches the
+  table. So the "detect" is flash identification, and the async flag it waits on
+  is the flash-init handshake, not an OLED response.
+
+So the prior rounds' "OLED init / detect / splash SPIM traffic" was really the
+**external-flash bring-up**. The custom controller (`NrfSpim.cs`) now also answers
+`0x9F` with the MX25R id (C2 28 17), but the boot still stalls in the flash
+reset/detect handshake (an async flag never set in the sim), and forcing past it
+(`0x5ba6c`→`movs r0,#1`) crashes downstream (`PC=0xeffffffe`) — the config path
+needs state the real detect sets up.
+
+**Implications for a rendered frame (honest):**
+- The **real OLED is a separate interface**, reached only *after* flash init — not
+  yet located.
+- The boot reads configuration/calibration from the external flash, so it can't
+  proceed past flash init without it; skipping it crashes.
+- The **splash bitmap and display assets are very likely stored in the external
+  flash**, of which the sim has **no content** (flash.bin models only internal
+  flash: MBR/SD/appl/bl). Rendering the *actual* splash would need a **dump of the
+  watch's external SPI flash** loaded behind spi2.
+- Cleanest faithful path now: attach a real SPI-flash model (or extend
+  `NrfSpim.cs` into one) backed by an external-flash **image**, so the JEDEC id,
+  reset handshake, and content reads all behave — then boot proceeds to the real
+  OLED interface and the assets are available to render. Without a flash image,
+  the frame is blocked regardless of OLED modelling.
+
+This corrects the target: the blocker to a frame is the **external flash
+subsystem + its content**, not an OLED controller model. It's the most important
+finding of the render effort and redirects it.
+
 ## Fidelity gaps / hacks (what the sim does NOT faithfully exercise)
 
 Every shortcut currently applied, and what it means we are not testing:
@@ -411,3 +453,8 @@ the log hooks, for continuing this.
     the OLED poll with a single constant `PollReply` (a stand-in until the real
     detect response is pinned) and does not model true SPI slave timing/CS. The
     OLED command stream it records is faithful; the poll reply is synthetic.
+
+12. **JEDEC id stubbed in `NrfSpim.cs`** — returns C2 28 17 (MX25R6435F) for 0x9F,
+    0xFF (erased) for other reads. There is no external-flash **content** behind
+    spi2, so any real flash data the firmware reads (dblib/config/assets) is wrong.
+    A faithful sim needs a dump of the watch's external SPI flash loaded here.

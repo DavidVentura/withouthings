@@ -80,6 +80,9 @@ namespace Antmicro.Renode.Peripherals.SPI
             {
                 d = ((sysbus.ReadDoubleWord((ulong)DcPort) >> DcBit) & 1u) != 0;
             }
+            // spi2 is the MX25R SPI-NOR flash. First Tx byte is the flash command.
+            // Full-duplex: Rx[i] answers Tx[i]; a command's data starts one byte later.
+            byte cmd = (txn > 0) ? sysbus.ReadByte((ulong)txp) : (byte)0;
             uint n = Math.Max(txn, rxn);
             for(uint i = 0; i < n; i++)
             {
@@ -90,7 +93,12 @@ namespace Antmicro.Renode.Peripherals.SPI
                 }
                 if(i < rxn)
                 {
-                    sysbus.WriteByte((ulong)(rxp + i), PollReply);
+                    byte reply = PollReply;
+                    if(cmd == 0x9F && i >= 1 && i <= 3)   // RDID -> MX25R6435F: C2 28 17
+                    {
+                        reply = jedec[i - 1];
+                    }
+                    sysbus.WriteByte((ulong)(rxp + i), reply);
                 }
             }
             endFlag = true;
@@ -115,6 +123,7 @@ namespace Antmicro.Renode.Peripherals.SPI
         private const long TxPtr = 0x544;
         private const long TxCnt = 0x548;
 
+        private readonly byte[] jedec = new byte[] { 0xC2, 0x28, 0x17 };  // MX25R6435F
         private bool endFlag;
         private readonly Dictionary<long, uint> regs;
         private readonly List<byte> stream;
