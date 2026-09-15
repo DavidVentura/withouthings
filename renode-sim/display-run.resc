@@ -20,6 +20,10 @@ sysbus WriteDoubleWord 0xb224 0xBF004668
 # Return early from the give when the handle is NULL (cbz r0 + bx lr).
 sysbus WriteWord 0x30614 0xB108
 sysbus WriteWord 0x3061a 0x4770
+# MBR + SoftDevice must come out of the run byte-identical to this point: a
+# difference means a stray store that silicon would have dropped (flash is
+# read-only unless NVMC WEN).
+sysbus.nvmc SnapshotProtectedRegion 0x0 0x27000
 # Peripheral state below is lost on SYSRESETREQ (the app's fault handler
 # resets), so it lives in the machine's reset macro, which Renode re-runs then.
 macro reset
@@ -44,6 +48,7 @@ sysbus.saadc SetInputVoltage 0 0.50
 
 emulation RunFor "60.0"
 echo "=== display-run done ==="
+echo "protected region words changed:"; sysbus.nvmc VerifyProtectedRegion
 echo "tick:"; sysbus ReadDoubleWord 0x20021920
 echo "pc:"; cpu PC
 sysbus.spi3 DumpStream $ORIGIN/out/oled_stream.txt

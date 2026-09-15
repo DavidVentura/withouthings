@@ -12,6 +12,7 @@
 using System;
 using System.Collections.Generic;
 using Antmicro.Renode.Core;
+using Antmicro.Renode.Exceptions;
 using Antmicro.Renode.Logging;
 using Antmicro.Renode.Peripherals;
 using Antmicro.Renode.Peripherals.Bus;
@@ -91,6 +92,47 @@ namespace Antmicro.Renode.Peripherals.MTD
             this.Log(LogLevel.Debug, "Erased flash page at 0x{0:X}", page);
         }
 
+        // The MBR and SoftDevice never program their own region, so a stray CPU
+        // store that the silicon's read-only NVMC would drop shows up here as a
+        // difference from the loaded image. Called from the run script, not Reset:
+        // a SYSRESETREQ must not discard the reference.
+        public void SnapshotProtectedRegion(ulong start, ulong size)
+        {
+            protectedStart = start;
+            protectedImage = sysbus.ReadBytes(start, (int)size);
+            this.Log(LogLevel.Info, "protected region snapshot: 0x{0:X}..0x{1:X}", start, start + size);
+        }
+
+        public uint VerifyProtectedRegion()
+        {
+            if(protectedImage == null)
+            {
+                throw new RecoverableException("no snapshot: call SnapshotProtectedRegion first");
+            }
+            var now = sysbus.ReadBytes(protectedStart, protectedImage.Length);
+            uint differing = 0;
+            var first = new List<string>();
+            for(var i = 0; i < now.Length; i += 4)
+            {
+                if(now[i] == protectedImage[i] && now[i + 1] == protectedImage[i + 1] && now[i + 2] == protectedImage[i + 2] && now[i + 3] == protectedImage[i + 3])
+                {
+                    continue;
+                }
+                differing++;
+                if(first.Count < 8)
+                {
+                    first.Add(string.Format("0x{0:X}", protectedStart + (ulong)i));
+                }
+            }
+            if(differing == 0)
+            {
+                this.Log(LogLevel.Info, "protected region intact");
+                return 0;
+            }
+            this.Log(LogLevel.Error, "protected region changed: {0} words differ from the loaded image, first at {1}", differing, string.Join(" ", first));
+            return differing;
+        }
+
         public void Reset()
         {
             regs.Clear();
@@ -128,6 +170,8 @@ namespace Antmicro.Renode.Peripherals.MTD
             EraseEnable = 2,
         }
 
+        private byte[] protectedImage;
+        private ulong protectedStart;
         private readonly Dictionary<long, uint> regs;
         private readonly IBusController sysbus;
         private readonly IMachine machine;
