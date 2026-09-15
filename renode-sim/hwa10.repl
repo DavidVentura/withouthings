@@ -55,6 +55,11 @@ spi3: SPI.OledSpimCapture @ sysbus 0x4002F000
     preinit:
         include @OledSpim.cs
 
+saadc: Analog.NrfSaadc @ sysbus 0x40007000
+    -> nvic@7
+    preinit:
+        include @NrfSaadc.cs
+
 gpio0: GPIOPort.NRF52840_GPIO @ sysbus 0x50000500
     15 -> spi2@15
 

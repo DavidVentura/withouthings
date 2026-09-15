@@ -24,6 +24,9 @@ runMacro $reset
 sysbus WriteWord 0x3bb96 0xBF00
 sysbus WriteWord 0x3bbae 0xBF00
 cpu PerformanceInMips 1000
+# AIN0 is the battery sense: a 3.9 V cell behind the ~1/10 divider that keeps the
+# input inside the 0.6 V full scale of the channel's GAIN=1 / internal reference.
+sysbus.saadc SetInputVoltage 0 0.39
 
 # log-ring producer unblock: give the 0xb2588 semaphore the drain task would
 cpu AddHook 0x3b4c0 """
