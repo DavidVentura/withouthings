@@ -87,6 +87,7 @@ gpio0: GPIOPort.NRF52840_GPIO @ sysbus 0x50000500
     15 -> spi2@15
 
 gpio1: GPIOPort.NRF52840_GPIO @ sysbus 0x50000800
+    9 -> spi3@9
 
 gpiote: GPIOPort.NRF52840_GPIOTasksEvents @ sysbus 0x40006000
     port0: gpio0

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # Reconstruct a framebuffer PNG from the raw pixel bytes dumped by
 # OledSpimCapture.DumpPixels. Format is not known a priori, so this supports the
-# layouts a small OLED controller typically uses; pick with --fmt.
+# layouts a small OLED controller typically uses; pick with --fmt. The HWA10
+# panel is an SSD1320 driven at 144x98 in 4bpp (--w 144 --h 98 --fmt gray4).
 import argparse, struct, zlib, sys
 
 def png(path, w, h, rgb):
@@ -37,7 +38,15 @@ def fmt_page1bpp(data, w, h):
     return px
 
 def fmt_gray4(data, w, h):
-    # 4bpp grayscale, two pixels per byte (hi nibble first).
+    # SSD1320: 4bpp grayscale, two pixels per byte, low nibble is the left pixel.
+    px = [(0,0,0)] * (w*h)
+    for idx in range(min(w*h, len(data)*2)):
+        b = data[idx//2]
+        nib = (b & 0xf) if (idx % 2 == 0) else (b >> 4)
+        px[idx] = gray(nib * 17)
+    return px
+
+def fmt_gray4hi(data, w, h):
     px = [(0,0,0)] * (w*h)
     for idx in range(min(w*h, len(data)*2)):
         b = data[idx//2]
@@ -62,7 +71,15 @@ def fmt_rgb565(data, w, h):
         px[idx] = (r, g, b)
     return px
 
-FMTS = {"page1bpp": fmt_page1bpp, "gray4": fmt_gray4, "gray8": fmt_gray8, "rgb565": fmt_rgb565}
+FMTS = {"page1bpp": fmt_page1bpp, "gray4": fmt_gray4, "gray4hi": fmt_gray4hi, "gray8": fmt_gray8, "rgb565": fmt_rgb565}
+
+def upscale(px, w, h, s):
+    out = [(0,0,0)] * (w*s*h*s)
+    for y in range(h*s):
+        row = (y//s)*w
+        for x in range(w*s):
+            out[y*w*s + x] = px[row + x//s]
+    return out
 
 def main():
     ap = argparse.ArgumentParser()
@@ -72,11 +89,14 @@ def main():
     ap.add_argument("--h", type=int, required=True)
     ap.add_argument("--fmt", choices=list(FMTS), default="gray4")
     ap.add_argument("--skip", type=int, default=0, help="skip N leading bytes")
+    ap.add_argument("--scale", type=int, default=1, help="nearest-neighbour upscale")
     a = ap.parse_args()
     data = open(a.infile, "rb").read()[a.skip:]
     print("input %d bytes, %dx%d, fmt=%s" % (len(data), a.w, a.h, a.fmt))
     px = FMTS[a.fmt](data, a.w, a.h)
-    png(a.outfile, a.w, a.h, px)
+    if a.scale > 1:
+        px = upscale(px, a.w, a.h, a.scale)
+    png(a.outfile, a.w * a.scale, a.h * a.scale, px)
     print("wrote", a.outfile)
 
 if __name__ == "__main__":

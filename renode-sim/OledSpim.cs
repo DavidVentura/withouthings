@@ -22,7 +22,14 @@ using Antmicro.Renode.Peripherals.Bus;
 
 namespace Antmicro.Renode.Peripherals.SPI
 {
-    public class OledSpimCapture : IDoubleWordPeripheral, IKnownSize, INumberedGPIOOutput
+    public enum DataCommand
+    {
+        Undriven,
+        Command,
+        Data
+    }
+
+    public class OledSpimCapture : IDoubleWordPeripheral, IKnownSize, INumberedGPIOOutput, IGPIOReceiver
     {
         public OledSpimCapture(IMachine machine)
         {
@@ -32,14 +39,22 @@ namespace Antmicro.Renode.Peripherals.SPI
             records = new List<Segment>();
             IRQ = new GPIO();
             Connections = new Dictionary<int, IGPIO> { { 0, IRQ } };
+            dc = DataCommand.Undriven;
         }
 
         public GPIO IRQ { get; private set; }
         public IReadOnlyDictionary<int, IGPIO> Connections { get; private set; }
 
-        // The driver sets D/C on a GPIO before each transfer; the script mirrors
-        // that pin here so command vs data can be told apart. 0 = command, 1 = data.
-        public int Dc { get; set; }
+        // Data/command select (P1.09), driven by the display driver before each
+        // transfer: low selects a controller opcode, high selects payload.
+        public void OnGPIO(int number, bool value)
+        {
+            if(number != DataCommandPin)
+            {
+                return;
+            }
+            dc = value ? DataCommand.Data : DataCommand.Command;
+        }
 
         public uint ReadDoubleWord(long offset)
         {
@@ -84,17 +99,25 @@ namespace Antmicro.Renode.Peripherals.SPI
             regs.Clear();
             records.Clear();
             endFlag = false;
+            inten = 0;
+            dc = DataCommand.Undriven;
+            warnedNoDataCommand = false;
         }
 
         private void DoTransfer()
         {
             uint txp = Get(TxPtr), txn = Get(TxCnt), rxp = Get(RxPtr), rxn = Get(RxCnt);
+            if(dc == DataCommand.Undriven && !warnedNoDataCommand)
+            {
+                warnedNoDataCommand = true;
+                this.Log(LogLevel.Error, "transfer with data/command never driven: P1.09 is not wired to this peripheral, the command stream cannot be separated from the pixel payload");
+            }
             var tx = new byte[txn];
             for(uint i = 0; i < txn; i++)
             {
                 tx[i] = sysbus.ReadByte((ulong)(txp + i));
             }
-            records.Add(new Segment { Dc = Dc, Data = tx });
+            records.Add(new Segment { Dc = dc, Data = tx });
             // display transfers are write-only; zero-fill the rx region if any
             for(uint i = 0; i < rxn; i++)
             {
@@ -106,14 +129,15 @@ namespace Antmicro.Renode.Peripherals.SPI
             UpdateIrq();
         }
 
-        // Raw dump: one line per DMA segment, "<C|D> <hex bytes>".
+        // Raw dump: one line per DMA segment, "<C|D|?> <hex bytes>".
         public void DumpStream(string path)
         {
             using(var f = new StreamWriter(path))
             {
                 foreach(var s in records)
                 {
-                    f.Write(s.Dc == 0 ? "C " : "D ");
+                    f.Write(Tag(s.Dc));
+                    f.Write(' ');
                     foreach(var b in s.Data) f.Write(b.ToString("X2"));
                     f.WriteLine();
                 }
@@ -121,7 +145,7 @@ namespace Antmicro.Renode.Peripherals.SPI
             this.Log(LogLevel.Info, "oled stream: {0} segments -> {1}", records.Count, path);
         }
 
-        // Concatenate all data (D/C=1) bytes and write them raw for offline
+        // Concatenate all data (D/C high) bytes and write them raw for offline
         // framebuffer reconstruction.
         public void DumpPixels(string path)
         {
@@ -129,13 +153,45 @@ namespace Antmicro.Renode.Peripherals.SPI
             {
                 foreach(var s in records)
                 {
-                    if(s.Dc != 0)
+                    if(s.Dc == DataCommand.Data)
                     {
                         f.Write(s.Data, 0, s.Data.Length);
                     }
                 }
             }
             this.Log(LogLevel.Info, "oled pixels -> {0}", path);
+        }
+
+        // One file per bulk data segment: these are whole-frame pushes, and
+        // keeping them apart avoids guessing frame boundaries offline.
+        public void DumpFrames(string directory, int minimumLength)
+        {
+            Directory.CreateDirectory(directory);
+            int index = 0;
+            foreach(var s in records)
+            {
+                if(s.Dc != DataCommand.Data || s.Data.Length < minimumLength)
+                {
+                    continue;
+                }
+                var path = Path.Combine(directory, string.Format("frame{0:D3}.bin", index));
+                File.WriteAllBytes(path, s.Data);
+                index++;
+            }
+            this.Log(LogLevel.Info, "oled frames: {0} segments of >= {1} bytes -> {2}", index, minimumLength, directory);
+        }
+
+        private static string Tag(DataCommand value)
+        {
+            switch(value)
+            {
+            case DataCommand.Command:
+                return "C";
+            case DataCommand.Data:
+                return "D";
+            default:
+                return "?";
+            }
         }
 
         private uint Get(long off)
@@ -148,7 +204,7 @@ namespace Antmicro.Renode.Peripherals.SPI
 
         private class Segment
         {
-            public int Dc;
+            public DataCommand Dc;
             public byte[] Data;
         }
 
@@ -164,8 +220,12 @@ namespace Antmicro.Renode.Peripherals.SPI
         private const long TxCnt = 0x548;
         private const long TxAmount = 0x54C;
 
+        private const int DataCommandPin = 9;
+
         private uint inten;
         private bool endFlag;
+        private bool warnedNoDataCommand;
+        private DataCommand dc;
         private readonly Dictionary<long, uint> regs;
         private readonly List<Segment> records;
         private readonly IMachine machine;

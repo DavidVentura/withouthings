@@ -3,7 +3,7 @@
 :  long enough to reach the OLED SPI transfers, and captures the display stream.
 
 include @boot.resc
-logLevel 2
+logLevel 3
 
 # --- known-good boot patch set ---
 # sd_mbr: skip the MBR forwarding-address check that otherwise wedges early boot
@@ -40,16 +40,11 @@ if cpu.GetRegisterUnsafe(0).RawValue==0xb2588:
     b.WriteDoubleWord(b.ReadDoubleWord(0xb2588)+0x11c, 1)
 """
 
-# Log every display-bus EasyDMA start with the GPIO state (to pin down which pin
-# is D/C) and the Tx byte count. Watch both SPIM3 (spi3, likely) and SPI1.
-sysbus AddWatchpointHook 0x4002F010 4 Write "print 'SPIM3_XFER g0=%x g1=%x tx=%d' % (int(cpu.GetMachine().SystemBus.ReadDoubleWord(0x50000504)), int(cpu.GetMachine().SystemBus.ReadDoubleWord(0x50000804)), int(cpu.GetMachine().SystemBus.ReadDoubleWord(0x4002F548)))"
-sysbus AddWatchpointHook 0x40004010 4 Write "print 'SPI1_XFER g0=%x g1=%x' % (int(cpu.GetMachine().SystemBus.ReadDoubleWord(0x50000504)), int(cpu.GetMachine().SystemBus.ReadDoubleWord(0x50000804)))"
-sysbus AddWatchpointHook 0x4002F508 4 Write "print 'SPIM3_PSEL_SCK val=%x' % int(value)"
-
 emulation RunFor "10.0"
 echo "=== display-run done ==="
 echo "tick:"; sysbus ReadDoubleWord 0x20021920
 echo "pc:"; cpu PC
 sysbus.spi3 DumpStream $ORIGIN/out/oled_stream.txt
 sysbus.spi3 DumpPixels $ORIGIN/out/oled_pixels.bin
+sysbus.spi3 DumpFrames $ORIGIN/out/frames 64
 quit
