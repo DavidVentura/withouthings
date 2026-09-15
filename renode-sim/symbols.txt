@@ -118,3 +118,11 @@
 0x0009bdba  async_flag_check             generic mutex-wrapped: nonzero when *[ctx+12]!=0 (used by many; do NOT patch globally)
 # Implication: the OLED is a SEPARATE interface reached AFTER flash init; the splash bitmap/assets are
 # very likely stored in the external flash (no dump available), so rendering the real splash needs flash content.
+
+# real external-flash model (this round): NrfSpim.cs serves the 8MB dump on spi2.
+# spi2 = MX25R flash: 0x03 READ / 0x0B FAST READ from dump, 0x9F RDID=C2 28 17,
+# 0x05 RDSR=0, 0x66/0x99/0x06/0x04 ack. + IRQ (nvic@0x23) on END when INTEN END set.
+# STATUS: boot still stuck at the flash RESET(0x66) detect loop (2.4M x 0x66, never reaches
+# 0x99/JEDEC/READ). The async completion flag the driver polls (*[detect_ctx+12]) is not
+# satisfied by END/IRQ/flag-set/force attempts -> coverage does NOT advance past flash init.
+0x0009bda8  spi_xfer_wait                per-byte wait after send (-> 0x9bd86/0x9bd98); part of the async path

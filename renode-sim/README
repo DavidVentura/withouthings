@@ -1,6 +1,8 @@
 Renode sim of the ScanWatch 2 (HWA10) firmware. See NOTES.md for status.
 
 Prereqs (not in the repo — supply your own):
+  - external_flash.bin : an 8 MB dump of the watch's external SPI flash, placed
+    in renode-sim/ (git-ignored; contains the association secret — never commit).
   - Renode (tested v1.17.0). Put `renode` on your PATH, or use its full path below.
   - The firmware package `hwa10_3411_Tf4fD4.bin` in the repo root (one level up).
   - NRF52840.svd in this directory (Nordic's official SVD, the copy Renode's own

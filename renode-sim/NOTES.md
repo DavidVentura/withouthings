@@ -26,13 +26,14 @@ Renode v1.17.0 portable (put `renode` on PATH; see README for prereqs).
   bar".
 - **Coverage progress bar: DONE** (`trace.resc` + `coverage.py` + `symbols.txt`) —
   native trace, maps the boot path and the exact stall.
-- **RE-IDENTIFIED: spi2 is the external MX25R FLASH, not the OLED** — the whole
-  "OLED SPIM" thread was flash bring-up (0x66/0x99=flash reset, 0x9F=JEDEC id,
-  table 0xb427c = flash JEDEC ids, MX25R6435F=entry[20]). Custom controller
-  `NrfSpim.cs` (END + DMA + JEDEC id) works, but boot stalls in the flash
-  reset/detect handshake and the splash assets live in external flash we have no
-  dump of. **No frame; the real blocker is the flash subsystem + content.** See
-  "MAJOR RE-IDENTIFICATION".
+- **RE-IDENTIFIED: spi2 is the external MX25R FLASH, not the OLED** (0x66/0x99=
+  flash reset, 0x9F=JEDEC id, table 0xb427c=flash JEDEC ids, MX25R6435F=entry[20]).
+  `NrfSpim.cs` is now a **real SPI-NOR flash model backed by the real 8 MB dump**
+  (READ/FAST-READ/RDID/RDSR/reset + END IRQ). **But boot is still stuck at the
+  flash RESET(0x66) async detect handshake** — only 0x66 is ever sent (~2.4M x),
+  never 0x99/JEDEC/READ; the async completion the driver polls isn't satisfied by
+  END/IRQ/flag/force. Coverage does NOT pass flash init. See "Real external-flash
+  model + dump loaded". This is the current gate before the display.
 - **Tick self-sustains + SPLASH-SCREEN MILESTONE reached.** With `wfe`→nop
   (Renode doesn't honour the firmware's SEVONPEND) the FreeRTOS tick recurs on
   its own and boot advances to the **OLED display init driving SPIM2 traffic**
@@ -327,6 +328,41 @@ This corrects the target: the blocker to a frame is the **external flash
 subsystem + its content**, not an OLED controller model. It's the most important
 finding of the render effort and redirects it.
 
+## Real external-flash model + dump loaded (this round)
+
+The coordinator provided a verified 8 MB dump of the watch's real external SPI
+flash. It is copied to `renode-sim/external_flash.bin` (git-ignored via `*.bin`,
+verified — it contains KL_SECRET at 0x0 and must never be committed) and loaded
+relatively via `sysbus.spi2 LoadImage @external_flash.bin` (added to `boot.resc`).
+
+`NrfSpim.cs` is now a **real SPI-NOR flash model** (no fidelity gap on content —
+the running fw is 3411, exactly what the sim loads):
+- `0x03` READ (24-bit addr) and `0x0B` FAST READ (addr+dummy) → copy `dump[addr..]`
+  into the Rx buffer; `0x9F` RDID → C2 28 17 (MX25R6435F); `0x05` RDSR → 0
+  (not busy); `0x66`/`0x99`/`0x06`/`0x04` → ack; others → benign default.
+- Added a real IRQ line (`-> nvic@0x23`) that asserts on END when the SPIM END
+  interrupt is enabled (`INTENSET` bit 6), for the async transfer path.
+- Keeps the byte-stream + command-histogram capture (`DumpStream` / `DumpCmds`).
+
+**STATUS — still blocked at the flash reset/detect, honestly.** With real content
+loaded, boot is *still* stuck: the command histogram shows **only `0x66`
+(Reset-Enable), ~2.4M times — it never reaches `0x99`, `0x9F`, or any READ**. So
+it's blocked at the very first flash op, in the driver's async completion wait
+after the reset command (`spi_xfer_wait` 0x9bda8 path; the detect polls
+`*[detect_ctx+12]`). Tried, none broke it:
+- raising the SPIM END NVIC IRQ (35) with VTOR→app enabled;
+- setting the async flag `*[detect_ctx+12]=1` after the loop has run (crash-free
+  but didn't advance);
+- forcing the detect-check result (crashes downstream — the loop body sets up
+  state that forcing skips).
+
+So the async trigger that the flash driver waits on is still unpinned — it is
+**not** the plain SPIM END (my IRQ/END don't satisfy it). Likely candidates to
+chase next: a worker/DMA-completion task that must be scheduled (needs the tick +
+that task actually running), or a second event source. Coverage does **not** yet
+advance past flash init. The real flash model + content is in place for when the
+trigger is found; that's the remaining gate before the display.
+
 ## Fidelity gaps / hacks (what the sim does NOT faithfully exercise)
 
 Every shortcut currently applied, and what it means we are not testing:
@@ -458,3 +494,8 @@ the log hooks, for continuing this.
     0xFF (erased) for other reads. There is no external-flash **content** behind
     spi2, so any real flash data the firmware reads (dblib/config/assets) is wrong.
     A faithful sim needs a dump of the watch's external SPI flash loaded here.
+
+13. **Real flash CONTENT is now faithful** (8 MB dump of the running 3411 fw's
+    external flash) — not a gap. But the flash **detect/reset async handshake is
+    not modelled/satisfied**, so boot doesn't yet pass flash init; the sim can't
+    exercise anything downstream (display) until that async completion is driven.

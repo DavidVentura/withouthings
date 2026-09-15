@@ -9,6 +9,8 @@ sysbus ApplySVD @NRF52840.svd
 
 # whole internal flash image: MBR+SD @0, appl @0x27000, bl @0xfc000
 sysbus LoadBinary @flash.bin 0x0
+# external SPI-NOR content (untracked dump; see README) served by spi2's flash model
+sysbus.spi2 LoadImage @external_flash.bin
 
 # capture wlog UART to file
 sysbus.uart0 CreateFileBackend @out/uart0.log true

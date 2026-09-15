@@ -44,6 +44,7 @@ twi0: I2C.NRF52840_I2C @ sysbus 0x40003000
 
 spi2: SPI.NrfSpimCapture @ sysbus 0x40023000
     PollReply: 0x66
+    -> nvic@0x23
     preinit:
         include @NrfSpim.cs
 
