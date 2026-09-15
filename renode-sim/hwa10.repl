@@ -123,8 +123,10 @@ i2s: Sound.NRF52840_I2S @ sysbus 0x40025000
 pdm: Sound.NRF52840_PDM @ sysbus 0x4001D000
     -> nvic@29
 
-radio: Wireless.NRF52840_Radio @ sysbus 0x40001000
+radio: Wireless.NrfRadio @ sysbus 0x40001000
     -> nvic@1
+    preinit:
+        include @NrfRadio.cs
 
 rng: Miscellaneous.NRF52840_RNG @ sysbus 0x4000D000
     -> nvic@13
