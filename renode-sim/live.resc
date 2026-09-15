@@ -1,0 +1,14 @@
+:name: HWA10 live
+:description: Interactive run: real-time pacing, the panel in an analyzer window,
+:  and the monitor reachable over TCP for input. Start Renode without
+:  --disable-xwt and with --port 12345, then e.g.
+:    printf 'twi0.crown Rotate 1\n' | nc -q 1 localhost 12345
+
+include @machine.resc
+
+# main init sleeps vTaskDelay(30001) before bringing up the UI (0x91faa,
+# `movw r0, #0x7531`); make that 2001 ticks so the face appears in seconds.
+sysbus WriteDoubleWord 0x91faa 0x70D1F240
+
+showAnalyzer sysbus.spi3
+start

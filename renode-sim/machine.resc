@@ -1,0 +1,46 @@
+:name: HWA10 machine setup
+:description: Everything both run scripts share: boot images, the memory patches
+:  the sim needs, and the peripheral inputs. Include this, then RunFor or start.
+
+include @boot.resc
+logLevel 3
+
+# --- known-good boot patch set ---
+# sd_mbr: skip the MBR forwarding-address check that otherwise wedges early boot
+sysbus WriteWord 0x9301e 0x2000
+# SoftDevice: `mov.w r0, sp` (T3 encoding, legal on silicon) is rejected by
+# Renode's tlib decoder as undefined, so re-encode both sites as the 16-bit
+# `mov r0, sp` plus a nop. Reached only once the app enables the SoftDevice.
+sysbus WriteDoubleWord 0x13024 0xBF004668
+sysbus WriteDoubleWord 0xb224 0xBF004668
+# After its 30 s start-up delay the UI task (priority 2) handles event 7 and gives
+# the battery task's semaphore before that task (priority 1) has run and created
+# it. xQueueGenericSend on the NULL handle then memcpy's flash 0x0.. onto 0x715:
+# silicon drops writes to flash while NVMC is read-only, Renode's memory does not.
+# Return early from the give when the handle is NULL (cbz r0 + bx lr).
+sysbus WriteWord 0x30614 0xB108
+sysbus WriteWord 0x3061a 0x4770
+# MBR + SoftDevice must come out of the run byte-identical to this point: a
+# difference means a stray store that silicon would have dropped (flash is
+# read-only unless NVMC WEN).
+sysbus.nvmc SnapshotProtectedRegion 0x0 0x27000
+# Peripheral state below is lost on SYSRESETREQ (the app's fault handler
+# resets), so it lives in the machine's reset macro, which Renode re-runs then.
+macro reset
+"""
+    # tickless idle wakes via SEVONPEND (app IRQs are NVIC-disabled inside the
+    # sd_nvic critical region). Renode 1.17's NVIC checks the wrong security
+    # bank of SCR.SEVONPEND on non-TrustZone cores, so write the bank it reads.
+    sysbus.nvic WriteDoubleWord 0xD10 0x10 true
+    # RTC1 must be counting for the OLED power-on time polls (get_time_rtc1)
+    sysbus WriteDoubleWord 0x40011000 1
+"""
+runMacro $reset
+# OLED settle-delay busy loops -> nop (µs-ms HW settle, only burns sim wall time)
+sysbus WriteWord 0x3bb96 0xBF00
+sysbus WriteWord 0x3bbae 0xBF00
+cpu PerformanceInMips 1000
+# AIN0 is the battery sense (GAIN=1, internal 0.6 V reference, 10-bit). The
+# firmware uses the raw sample unadapted: 0.39 V reads as a flat battery and the
+# boot stops at the low-battery screen; 0.50 V boots the full application.
+sysbus.saadc SetInputVoltage 0 0.50
