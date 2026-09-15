@@ -16,7 +16,7 @@ using Antmicro.Renode.Peripherals.Bus;
 
 namespace Antmicro.Renode.Peripherals.SPI
 {
-    public class NrfSpimCapture : IDoubleWordPeripheral, IKnownSize, INumberedGPIOOutput
+    public class NrfSpimCapture : IDoubleWordPeripheral, IKnownSize, INumberedGPIOOutput, IGPIOReceiver
     {
         public NrfSpimCapture(IMachine machine)
         {
@@ -33,6 +33,31 @@ namespace Antmicro.Renode.Peripherals.SPI
         public IReadOnlyDictionary<int, IGPIO> Connections { get; private set; }
 
         public byte PollReply { get; set; }  // default reply for unhandled reads
+
+        // Chip select (P0.15), active low. The driver splits one SPI-NOR command
+        // across several EasyDMA transfers while CS stays asserted, so the command
+        // only makes sense per CS session, not per transfer.
+        public void OnGPIO(int number, bool value)
+        {
+            if(number != ChipSelectPin)
+            {
+                return;
+            }
+            if(value)
+            {
+                selected = false;
+                return;
+            }
+            StartSession();
+        }
+
+        private void StartSession()
+        {
+            selected = true;
+            sessionIndex = 0;
+            sessionCommand = NoCommand;
+            sessionAddress = 0;
+        }
 
         // Called from the script: `sysbus.spi2 LoadImage @external_flash.bin`.
         public void LoadImage(string path)
@@ -84,6 +109,12 @@ namespace Antmicro.Renode.Peripherals.SPI
             regs.Clear();
             stream.Clear();
             endFlag = false;
+            inten = 0;
+            selected = false;
+            sessionIndex = 0;
+            sessionCommand = NoCommand;
+            sessionAddress = 0;
+            warnedNoChipSelect = false;
         }
 
         public void DumpCmds(string path)
@@ -112,6 +143,16 @@ namespace Antmicro.Renode.Peripherals.SPI
         private void DoTransfer()
         {
             uint txp = Get(TxPtr), txn = Get(TxCnt), rxp = Get(RxPtr), rxn = Get(RxCnt);
+            if(!selected)
+            {
+                if(!warnedNoChipSelect)
+                {
+                    warnedNoChipSelect = true;
+                    this.Log(LogLevel.Error, "transfer with chip select deasserted: P0.15 is not wired to this peripheral, SPI-NOR commands cannot be tracked");
+                }
+                StartSession();
+            }
+            uint n = Math.Max(txn, rxn);
             var tx = new byte[txn];
             for(uint i = 0; i < txn; i++)
             {
@@ -119,7 +160,15 @@ namespace Antmicro.Renode.Peripherals.SPI
                 stream.Add(tx[i]);
             }
             var rx = new byte[rxn];
-            ServeFlash(tx, rx);
+            for(uint i = 0; i < n; i++)
+            {
+                byte outgoing = i < txn ? tx[i] : (byte)0x00;
+                byte incoming = ServeByte(outgoing);
+                if(i < rxn)
+                {
+                    rx[i] = incoming;
+                }
+            }
             for(uint i = 0; i < rxn; i++)
             {
                 sysbus.WriteByte((ulong)(rxp + i), rx[i]);
@@ -131,61 +180,57 @@ namespace Antmicro.Renode.Peripherals.SPI
             UpdateIrq();
         }
 
-        // SPI-NOR command protocol. Full-duplex: rx[i] answers tx[i] (data trails
-        // the command+address+dummy bytes).
-        private void ServeFlash(byte[] tx, byte[] rx)
+        // SPI-NOR command protocol, one byte at a time within the current CS session.
+        // Full duplex: the returned byte is clocked in while `outgoing` is clocked out.
+        private byte ServeByte(byte outgoing)
         {
-            byte cmd = tx.Length > 0 ? tx[0] : (byte)0;
-            long c;
-            cmdHist[cmd] = cmdHist.TryGetValue(cmd, out c) ? c + 1 : 1;
-            switch(cmd)
+            int index = sessionIndex;
+            sessionIndex++;
+            if(index == 0)
+            {
+                sessionCommand = outgoing;
+                long c;
+                cmdHist[outgoing] = cmdHist.TryGetValue(outgoing, out c) ? c + 1 : 1;
+                return 0x00;
+            }
+            switch(sessionCommand)
             {
             case 0x9F:  // RDID -> MX25R6435F
-                Put(rx, 1, 0xC2); Put(rx, 2, 0x28); Put(rx, 3, 0x17);
-                break;
-            case 0x03:  // READ (24-bit addr), data from rx[4]
-                ReadFlash(Addr24(tx, 1), rx, 4);
-                break;
-            case 0x0B:  // FAST READ (24-bit addr + 1 dummy), data from rx[5]
-                ReadFlash(Addr24(tx, 1), rx, 5);
-                break;
+                return index <= 3 ? JedecId[index - 1] : (byte)0x00;
+            case 0x03:  // READ (24-bit addr), data from byte 4
+                return ReadByteAt(index, 1, 4, outgoing);
+            case 0x0B:  // FAST READ (24-bit addr + 1 dummy), data from byte 5
+                return ReadByteAt(index, 1, 5, outgoing);
             case 0x05:  // RDSR -> status 0x00 (not busy, not WEL)
-                for(int i = 1; i < rx.Length; i++) rx[i] = 0x00;
-                break;
+                return 0x00;
             case 0x66:  // Reset-Enable
             case 0x99:  // Reset
             case 0x06:  // WREN
             case 0x04:  // WRDI
-                break;  // ack only
-            default:    // RDCR(0x35), security, etc. -> benign default
-                for(int i = 1; i < rx.Length; i++) rx[i] = PollReply;
-                break;
+            case 0x01:  // WRSR + data
+                return 0x00;
+            default:    // RDCR(0x15/0x35), security, etc. -> benign default
+                return PollReply;
             }
         }
 
-        private void ReadFlash(int addr, byte[] rx, int dataStart)
+        private byte ReadByteAt(int index, int addrStart, int dataStart, byte outgoing)
         {
-            if(flash == null) return;
-            for(int i = dataStart; i < rx.Length; i++)
+            if(index >= addrStart && index < addrStart + 3)
             {
-                int a = addr + (i - dataStart);
-                rx[i] = (a >= 0 && a < flash.Length) ? flash[a] : (byte)0xFF;
+                sessionAddress = (sessionAddress << 8) | outgoing;
+                return 0x00;
             }
-        }
-
-        private static int Addr24(byte[] tx, int at)
-        {
-            int a = 0;
-            for(int i = 0; i < 3; i++)
+            if(index < dataStart)
             {
-                a = (a << 8) | (at + i < tx.Length ? tx[at + i] : 0);
+                return 0x00;
             }
-            return a;
-        }
-
-        private static void Put(byte[] rx, int i, byte v)
-        {
-            if(i < rx.Length) rx[i] = v;
+            if(flash == null)
+            {
+                return 0xFF;
+            }
+            int a = sessionAddress + (index - dataStart);
+            return a >= 0 && a < flash.Length ? flash[a] : (byte)0xFF;
         }
 
         private uint Get(long off)
@@ -208,7 +253,16 @@ namespace Antmicro.Renode.Peripherals.SPI
         private const long TxCnt = 0x548;
         private const long TxAmount = 0x54C;
 
+        private const int ChipSelectPin = 15;
+        private const int NoCommand = -1;
+        private static readonly byte[] JedecId = { 0xC2, 0x28, 0x17 };
+
         private byte[] flash;
+        private bool selected;
+        private bool warnedNoChipSelect;
+        private int sessionIndex;
+        private int sessionCommand;
+        private int sessionAddress;
         private uint inten;
         private bool endFlag;
         private readonly Dictionary<long, uint> regs;

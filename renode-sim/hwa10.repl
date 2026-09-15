@@ -56,6 +56,7 @@ spi3: SPI.OledSpimCapture @ sysbus 0x4002F000
         include @OledSpim.cs
 
 gpio0: GPIOPort.NRF52840_GPIO @ sysbus 0x50000500
+    15 -> spi2@15
 
 gpio1: GPIOPort.NRF52840_GPIO @ sysbus 0x50000800
 
