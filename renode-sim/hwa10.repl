@@ -28,7 +28,9 @@ rtc2: Timers.NRF52840_RTC @ sysbus 0x40024000
 wdt: Timers.NRF52840_Watchdog @ sysbus 0x40010000
     -> nvic@16
 
-ppi: Miscellaneous.NRF52840_PPI @ sysbus 0x4001F000
+ppi: Miscellaneous.NrfPpi @ sysbus 0x4001F000
+    preinit:
+        include @NrfPpi.cs
 
 flash: Memory.MappedMemory @ sysbus 0x0
     size: 0x100000
