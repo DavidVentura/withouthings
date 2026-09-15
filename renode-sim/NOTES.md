@@ -492,6 +492,46 @@ Next actions:
 `bringup-experiment.resc` captures the VTOR-bypass + selective-enable harness with
 the log hooks, for continuing this.
 
+## FreeRTOS tick mechanism — CORRECTED (this session)
+
+Earlier notes guessed the RTOS tick was RTC1/IRQ17. **It is RTC2 / IRQ36.**
+Traced the tickless-idle path precisely:
+
+- Idle task WFE loop at `0x74008`: `ldr r2,[pc]` → r2 = NVIC `0xE000E100`; `wfe`
+  at `0x7400a`; then polls `[r2+0x100]`=ISPR0 and `[r2+0x104]`=ISPR1, ORs them,
+  loops back to WFE while zero, else falls to `0x74018` → `b 0x73f82` (wake path).
+- Idle-entry (`0x73f00`+): r4 = RTC2 base `0x40024000`, r5 = RTC2 COUNTER at entry.
+  Computes CC0 = interval(r7)+entry(r5) → `str [r4,#0x540]`; clears EVENTS_COMPARE0
+  (`0x140`); `INTENSET=0x10000` (COMPARE0). RTC2 PRESCALER is set to `0x20` at
+  `0x74050` → tick clock = 32768/33 ≈ **993 Hz**.
+- Wake/catch-up (`0x73f9e`+): re-reads RTC2 COUNTER, `elapsed = counter - entry`
+  (`0x73fd0`), and if elapsed>0 calls vTaskStepTick(`0x730ac`) + xTaskIncrementTick
+  (`0x730bc`). **xTickCount lives at RAM `0x20021920`** (ptr literal `0x731b4`).
+- App vector table base = `0x27000`; IRQ36 entry `*(0x270d0)` = `0x73e71` (RTC2
+  ISR). SCB VTOR stays 0 at runtime (SD forwarding), so a bare
+  `WriteDoubleWord 0xE000E104 0x10` (enable IRQ36) does **not** vector.
+
+Renode fidelity gaps found:
+- Renode RTC2 model is correct in isolation (prescaler-32 → 993 Hz, COMPARE0
+  fires at CC0, pends IRQ36) — verified with CPU halted.
+- **Renode WFE does not wake on an already-latched pending interrupt.** The
+  firmware sets CC0 close (≈entry+2); by the time WFE executes, the compare has
+  already fired and latched, so a *real* WFE sleeps forever (deadlock). On real
+  HW, WFE returns immediately when the event/pending is already set. This is why
+  the `wfe`→nop busy-poll patch (`0x7400a`=0xBF00) is REQUIRED, not a shortcut:
+  the CPU must keep executing so it can poll ISPR and catch the pending compare.
+- Enabling IRQ36 or setting SEVONPEND *at idle* does nothing (no fresh pend
+  transition while the halted CPU re-evaluates). Switching `VTOR=0x27000` at idle
+  faults the SD and **resets** the system (xTickCount 40 → 2). Do NOT change VTOR
+  or enable app IRQs at idle.
+
+Result: **pure `wfe`→nop (VTOR untouched) DOES advance the tick** via the polled
+path — xTickCount reached 0x28 (40) by 0.8 s virtual. The earlier "frozen at 2"
+was an artifact of an erroring instrumentation hook, not the real behaviour. The
+tick is slow (~50/s virtual, and ~100× slower than that in wall-clock at 400 MIPS)
+because each tick needs the RTC2 counter to advance ~1 ms of spinning; reaching
+display init just needs a long run (or a controlled RTC2 speed-up).
+
 ## Renode gotchas learned
 
 - CPU hooks run IronPython (py2 `print`). `cpu.GetRegisterUnsafe(n).RawValue`

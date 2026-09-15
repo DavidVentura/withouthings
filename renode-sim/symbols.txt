@@ -137,3 +137,22 @@
 # power-on (oled_gpio_power_cfg, oled_delay_poll) but 2s virtual (wfe-nop busy-poll,
 # ~600M instr) doesn't reach the display SPI transfers — no ENABLE on 0x40003/4/2F500.
 # Perf-limited; needs a faster tick (SEVONPEND-honoring WFE) to reach the display.
+
+# === FreeRTOS tick / tickless-idle mechanism (this session, CORRECTED) ===
+# The RTOS tick is RTC2 / IRQ36 (earlier notes' RTC1/IRQ17 guess was wrong).
+0x20021920  xTickCount                   FreeRTOS tick counter (RAM); ptr literal at 0x731b4
+0x000730bc  xTaskIncrementTick           increments xTickCount at 0x730c8; guard var ptr 0x731b0
+0x000730ac  vTaskStepTick                catch-up step by elapsed ticks
+0x00073e70  RTC2_isr                      COMPARE0 tick ISR (app vec 0x270d0 = 0x73e71); clears EVENTS_COMPARE0
+0x00073f00  tickless_idle_entry          r4=RTC2 base 0x40024000; r5=COUNTER@entry; CC0=interval+entry
+0x00073f34  cc0_compute                  adds r3, r7(interval), r5(entry) -> str [r4,#0x540] (CC0)
+0x00073f82  tickless_wake                post-sleep: clears RTC2 INTEN/EVENTS, then elapsed-tick catch-up
+0x00073fd0  elapsed_calc                 subs r0, counter, entry -> ticks to step (0 if not advanced)
+0x00074008  idle_wfe_loop                wfe(0x7400a); poll NVIC ISPR0[+0x100]/ISPR1[+0x104]; exit->0x73f82
+0x00074050  rtc2_init                    PRESCALER=0x20 (->993Hz) at [r3+0x508]; TASKS_CLEAR(+8); TASKS_START(+0)
+# nRF SPIM display driver init (generic nrfx_spim): PSEL.SCK written at 0x3aaf4 [r5+0x508]
+0x0003aac4  nrfx_spim_init               configures SPIM PSEL/ENABLE from a config struct
+0x000b2430  spim3_cfg                    SPIM3(0x4002F000) driver ctx; candidate DISPLAY bus (9 base refs)
+0x000b23f4  spi1_cfg                     SPI1(0x40004000) driver ctx
+# Renode fidelity: WFE does NOT wake on already-latched pending IRQ, so wfe->nop
+# busy-poll is REQUIRED; do NOT change VTOR or enable app IRQs at idle (faults SD, resets).
