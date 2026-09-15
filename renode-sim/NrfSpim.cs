@@ -124,6 +124,9 @@ namespace Antmicro.Renode.Peripherals.SPI
             {
                 sysbus.WriteByte((ulong)(rxp + i), rx[i]);
             }
+            // report bytes actually transferred; the driver polls TXD/RXD.AMOUNT for progress
+            regs[TxAmount] = txn;
+            regs[RxAmount] = rxn;
             endFlag = true;
             UpdateIrq();
         }
@@ -200,8 +203,10 @@ namespace Antmicro.Renode.Peripherals.SPI
         private const uint EndIntBit = 1u << 6;   // SPIM INTEN END bit
         private const long RxPtr = 0x534;
         private const long RxCnt = 0x538;
+        private const long RxAmount = 0x53C;
         private const long TxPtr = 0x544;
         private const long TxCnt = 0x548;
+        private const long TxAmount = 0x54C;
 
         private byte[] flash;
         private uint inten;

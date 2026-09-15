@@ -26,14 +26,16 @@ Renode v1.17.0 portable (put `renode` on PATH; see README for prereqs).
   bar".
 - **Coverage progress bar: DONE** (`trace.resc` + `coverage.py` + `symbols.txt`) —
   native trace, maps the boot path and the exact stall.
-- **RE-IDENTIFIED: spi2 is the external MX25R FLASH, not the OLED** (0x66/0x99=
-  flash reset, 0x9F=JEDEC id, table 0xb427c=flash JEDEC ids, MX25R6435F=entry[20]).
-  `NrfSpim.cs` is now a **real SPI-NOR flash model backed by the real 8 MB dump**
-  (READ/FAST-READ/RDID/RDSR/reset + END IRQ). **But boot is still stuck at the
-  flash RESET(0x66) async detect handshake** — only 0x66 is ever sent (~2.4M x),
-  never 0x99/JEDEC/READ; the async completion the driver polls isn't satisfied by
-  END/IRQ/flag/force. Coverage does NOT pass flash init. See "Real external-flash
-  model + dump loaded". This is the current gate before the display.
+- **FLASH INIT PASSES — boot reaches the OLED init.** spi2 = external MX25R flash;
+  `NrfSpim.cs` is a real SPI-NOR flash model backed by the 8 MB dump. The blocker
+  was a model bug (SPIM TXD/RXD.AMOUNT not updated -> driver saw 0 bytes moved and
+  re-sent 0x66 forever); setting AMOUNT fixed it. Boot now clears the full flash
+  sequence (reset/RDID/RDSR/WREN/config reads/READ) and advances to the OLED init
+  (`oled_delay_poll`), idling on the tick. See "*** FLASH INIT PASSES ***".
+  Remaining: reaching the display SPI is perf-limited — the `wfe`→nop tick
+  busy-poll makes long runs slow; 2 s virtual reaches only the OLED GPIO/power-on +
+  settle-delay phase (still idling), not the display transfers, so the OLED bus is
+  NOT yet identified. A SEVONPEND-honoring WFE (Renode core) is the real perf fix.
 - **Tick self-sustains + SPLASH-SCREEN MILESTONE reached.** With `wfe`→nop
   (Renode doesn't honour the firmware's SEVONPEND) the FreeRTOS tick recurs on
   its own and boot advances to the **OLED display init driving SPIM2 traffic**
@@ -328,6 +330,28 @@ This corrects the target: the blocker to a frame is the **external flash
 subsystem + its content**, not an OLED controller model. It's the most important
 finding of the render effort and redirects it.
 
+## *** FLASH INIT PASSES — boot reaches the OLED init *** (breakthrough)
+
+The watchpoint diagnostic (write-watch on the flash-detect flag at RAM
+**0x2002507e** = `*[flash_ctx(0xb244c)+12]`) showed the flag **is** written
+(PC 0x9be2a sets it) — so the detect wasn't the real blocker. The real bug was in
+`NrfSpim.cs`: the nRF SPIM updates **TXD.AMOUNT (0x54C)** and **RXD.AMOUNT
+(0x53C)** with the bytes actually transferred, and the flash driver polls those
+for progress (read at 0x3aeb0). My model left them 0, so the driver thought every
+transfer moved 0 bytes and re-issued the same command forever (the 2.4M × `0x66`).
+
+**Fix: set TXD.AMOUNT/RXD.AMOUNT after each transfer.** With that, boot **clears
+the entire flash init**: the command histogram now shows the real sequence —
+reset (`0x66`/`0x99`), RDID (`0x9F` → C2 28 17), RDSR (`0x05`), WREN (`0x06`),
+config reads (`0x15`/`0xB9`/`0x01`), and READs from the dump. Coverage then
+advances all the way to the **OLED init** (`oled_delay_poll` 0x371c8, the RTC1
+power-on delay) and settles at the tickless idle — no longer stuck on flash.
+
+So: real flash model + the 8 MB dump + the AMOUNT fix = flash subsystem works, and
+boot is past it into the display bring-up. Remaining: drive the idle/tick far
+enough for the display driver to start and identify the OLED bus (the `wfe`→nop
+busy-poll makes long runs slow; a real SEVONPEND-honoring WFE would help).
+
 ## Real external-flash model + dump loaded (this round)
 
 The coordinator provided a verified 8 MB dump of the watch's real external SPI
@@ -499,3 +523,13 @@ the log hooks, for continuing this.
     external flash) — not a gap. But the flash **detect/reset async handshake is
     not modelled/satisfied**, so boot doesn't yet pass flash init; the sim can't
     exercise anything downstream (display) until that async completion is driven.
+
+14. **SPIM AMOUNT registers** (TXD.AMOUNT 0x54C / RXD.AMOUNT 0x53C) in
+    `NrfSpim.cs` — a correctness FIX, not a gap: real nRF SPIM sets these to bytes
+    transferred and the driver requires them. Without it the flash driver spun
+    forever. Now faithful.
+15. **OLED-init busy-delay loops patched (0x3bb96/0x3bbae `bpl`→nop)** — these are
+    CPU-cycle hardware settle delays (µs–ms) that only waste sim wall-clock; the
+    `wfe`→nop tick busy-poll already makes long runs slow. Skipping them does not
+    change display behaviour, but note the sim no longer honours those exact
+    settle times (a panel that needed them on real HW wouldn't be exercised).

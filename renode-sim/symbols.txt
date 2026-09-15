@@ -126,3 +126,14 @@
 # 0x99/JEDEC/READ). The async completion flag the driver polls (*[detect_ctx+12]) is not
 # satisfied by END/IRQ/flag-set/force attempts -> coverage does NOT advance past flash init.
 0x0009bda8  spi_xfer_wait                per-byte wait after send (-> 0x9bd86/0x9bd98); part of the async path
+
+# *** FLASH INIT PASSES *** (AMOUNT-register fix in NrfSpim.cs)
+# The nRF SPIM updates TXD.AMOUNT(0x54C)/RXD.AMOUNT(0x53C) with bytes transferred;
+# the driver polls them for progress (read at 0x3aeb0). NrfSpim.cs now sets them,
+# so transfers "complete" and boot clears the whole flash init: reset(0x66/0x99),
+# RDID(0x9F=C2 28 17), RDSR(0x05), WREN(0x06), config reads(0x15/0xB9/0x01), READs.
+# Boot then reaches the OLED init (oled_delay_poll) and idles. spi2=flash confirmed.
+# Display bus: NOT yet identified. After flash init, boot reaches the OLED GPIO/
+# power-on (oled_gpio_power_cfg, oled_delay_poll) but 2s virtual (wfe-nop busy-poll,
+# ~600M instr) doesn't reach the display SPI transfers — no ENABLE on 0x40003/4/2F500.
+# Perf-limited; needs a faster tick (SEVONPEND-honoring WFE) to reach the display.
