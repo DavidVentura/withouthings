@@ -88,7 +88,7 @@
 # tick self-sustain (found this round)
 0x00073f20  tickless_idle_wake_cc0       computes CC0 = counter+delay, writes RTC2 Compare0, enables COMPARE0
 0x00073f82  tickless_idle_wake_path      after wfe: process tick, clear RTC2 events, reprogram next wake
-0x00093024  sd_vector_table_base_set     svc #19 = sd_softdevice_vector_table_base_set(0x27000); VTOR=app honors it
+0x00093022  sd_vector_table_base_set     svc #19 = sd_softdevice_vector_table_base_set(0x27000); VTOR=app honors it
 # OLED display SPI (SPLASH-SCREEN MILESTONE: SPIM traffic reached)
 0x0003aaf0  oled_spi_init                spi2(0x40023000) PinSelect SCK/MOSI/MISO, Frequency, Config, Enable
 0x0003ae38  oled_spi_xfer_setup          writes SPIM TxDataPointer/Count, RxDataPointer/Count, TasksStart
@@ -279,7 +279,7 @@
 # --- corrections from the ABI manifest work (2026-09-16); abi/hwa10.yaml supersedes this file ---
 0x0009e46c  vPortYield                   (task_yield above) pends PendSV and returns; NOT vTaskDelay
 0x0008f460  wlog                         variadic logger, the callable entry (0x56e8e is the ring sink, context in r12)
-0x00027994  wpp_master_cmd_table         54 x {u32 id, handler|1, const char *name}, ends 0x27c04; entry 23 = 1284 BATTERY_STATUS -> 0x6ca91
+0x000274b4  wpp_master_cmd_table         156 x {u32 id, handler|1, const char *name}, ends 0x27c04; entry 127 = 1284 BATTERY_STATUS -> 0x6ca91 (abi/autonames.yaml lists every row)
 0x0003a318  int_flash_erase_range        only reachable from the debug shell's `erase range`; nothing on the boot/WPP path writes internal flash
 0x0003a348  int_flash_write              same
 
