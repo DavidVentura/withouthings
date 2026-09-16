@@ -27,14 +27,15 @@ def main():
         for section in old:
             if section.startswith("_"):
                 continue
-            o, n = old[section], new.get(section)
+            # An empty section is [] in the JSON export and null in a YAML one.
+            o, n = old[section] or [], new.get(section) or []
             if isinstance(o, dict):
                 for k in o:
-                    if o[k] != (n or {}).get(k):
-                        print("  %s.%s: %s -> %s" % (section, k, o[k], None if n is None else n.get(k)))
+                    if o[k] != n.get(k):
+                        print("  %s.%s: %s -> %s" % (section, k, o[k], n.get(k)))
                 continue
-            if n is None or len(o) != len(n):
-                print("  %s: %d -> %s rows" % (section, len(o), None if n is None else len(n)))
+            if len(o) != len(n):
+                print("  %s: %d -> %d rows" % (section, len(o), len(n)))
     old_fn = {f["start"]: f["name"] for f in load(old_dir, "items.json")["functions"]}
     new_fn = {f["start"]: f["name"] for f in load(new_dir, "items.json")["functions"]}
     for label, only in (("only old", sorted(set(old_fn) - set(new_fn))),
