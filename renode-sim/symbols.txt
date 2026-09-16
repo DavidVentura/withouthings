@@ -282,3 +282,16 @@
 0x00027994  wpp_master_cmd_table         54 x {u32 id, handler|1, const char *name}, ends 0x27c04; entry 23 = 1284 BATTERY_STATUS -> 0x6ca91
 0x0003a318  int_flash_erase_range        only reachable from the debug shell's `erase range`; nothing on the boot/WPP path writes internal flash
 0x0003a348  int_flash_write              same
+
+# --- firmware update path, traced end to end (2026-09-16) ---
+0x00036e70  get_fw_version               returns the u32 image trailer at 0xf1178 (3411 = 0xd53); 16 callers incl. the probe reply
+0x000f1178  fw_version_trailer           (flash) u32 app version after the build-date string; package file offset 0xca1bc
+0x000650e8  wpp_fw_available_handler     CMD_FW_AVAILABLE 2407: stores FwInfo + SHA-1, arms tx-complete continuation 0x65078
+0x00064fa0  wpp_fw_chunk_request         emits FwChunkRequest on 2407 (windows <= 0x1000, header page last); reached only from 0x65078
+0x00065166  fw_resume_memcmp             same SHA-1 in flight -> resume the download context
+0x00064ddc  fw_download_state            state 8 = done -> ReturnCode 1 on CMD_FW_AVAILABLE
+0x0006ca44  wpp_restart_to_update        CMD_RESTART_TO_UPDATE 294 handler
+0x000373b6  ble_evt_get_udf              udf when sd_ble_evt_get returns anything but 0/5; hit on the firmware-initiated disconnect in the sim
+0x00034938  app_reset_entry              application Reset_Handler
+0x000fe28c  bl_reads_resetreas           bootloader: POWER.RESETREAS first; 0 = power-on discards the RAM control block
+0x000fe4d0  bl_spi_legacy_wait           bootloader drives SPI2 through the legacy SPI registers (TXD 0x51C, RXD 0x518, EVENTS_READY 0x108)
