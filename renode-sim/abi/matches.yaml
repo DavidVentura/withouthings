@@ -12,7 +12,7 @@ meta:
   toolchain: gcc-arm-none-eabi-9-2020-q2-update
   threshold: 0.65
   # accuracy against the addresses already established in symbols.txt
-  known_set: {correct: 6, wrong: 0, missing: 12, precision: 1.00, recall: 0.33}
+  known_set: {correct: 7, wrong: 0, missing: 11, precision: 1.00, recall: 0.39}
 
 functions:
   - name: prvIdleTask
@@ -284,11 +284,11 @@ functions:
     links: [vPortFree@0x51afc, vPortFree@0x51afc]
   - name: prvInitialiseNewTask.isra.0
     address: 0x9e34c
-    variant: Os_a0+graph
-    score: 0.627
-    insns: 51
-    how: propagated from xTaskCreateStatic
-    links: [vListInitialiseItem@0x9e510, vListInitialiseItem@0x9e510]
+    variant: Os_a0
+    score: 0.865
+    insns: 52
+    how: direct
+    links: []
   - name: xTaskCreateStatic
     address: 0x9e3dc
     variant: Os_a0
@@ -310,13 +310,6 @@ functions:
     score: 1.000
     insns: 8
     how: direct
-    links: []
-  - name: vListInitialiseItem
-    address: 0x9e510
-    variant: Os_a0+graph
-    score: 0.750
-    insns: 4
-    how: propagated from prvInitialiseNewTask.isra.0
     links: []
   - name: vListInsertEnd
     address: 0x9e516
@@ -346,6 +339,20 @@ functions:
     insns: 8
     how: direct
     links: [vPortEnterCritical@0x73e3c, vPortExitCritical@0x73e5c]
+  - name: prvCopyDataToQueue
+    address: 0x9e590
+    variant: Os_a0+graph
+    score: 0.600
+    insns: 50
+    how: propagated from prvNotifyQueueSetContainer
+    links: []
+  - name: prvNotifyQueueSetContainer
+    address: 0x9e5f6
+    variant: Os_a0
+    score: 0.969
+    insns: 32
+    how: direct
+    links: [prvCopyDataToQueue@0x9e590]
   - name: prvCopyDataFromQueue
     address: 0x9e640
     variant: Os_a0
@@ -356,8 +363,8 @@ functions:
   - name: prvUnlockQueue
     address: 0x9e66c
     variant: Os_a0
-    score: 0.780
-    insns: 41
+    score: 0.894
+    insns: 47
     how: direct
     links: [vPortEnterCritical@0x73e3c, vPortExitCritical@0x73e5c, vPortEnterCritical@0x73e3c]
   - name: xQueueGenericReset
@@ -376,6 +383,21 @@ functions:
     how: direct
     links: []
     ambiguous_with: [xQueueCreateMutex]
+  - name: xQueueGenericSendFromISR
+    address: 0x9e7ac
+    variant: Os_a0
+    score: 0.674
+    insns: 46
+    how: direct
+    links: []
+  - name: xQueueGiveFromISR
+    address: 0x9e828
+    variant: Os_a0
+    score: 0.825
+    insns: 40
+    how: direct
+    links: []
+    broken_links: 1
   - name: xQueueSemaphoreTake
     address: 0x9e890
     variant: Os_a0
@@ -416,7 +438,7 @@ library_ranges:  # spans of the image the matches bracket
   - {start: 0x7db08, end: 0x7e138, matched: 4}
   - {start: 0x81220, end: 0x812a8, matched: 2}
   - {start: 0x8f42c, end: 0x8f42c, matched: 1}
-  - {start: 0x9e32c, end: 0x9ea2e, matched: 17}
+  - {start: 0x9e32c, end: 0x9ea2e, matched: 20}
   - {start: 0xa4e3a, end: 0xa4e3a, matched: 1}
 
 unmatched_image:  # call targets inside those spans with no symbol
@@ -465,13 +487,10 @@ unmatched_image:  # call targets inside those spans with no symbol
   - 0x7e108
   - 0x9e46c
   - 0x9e49a
+  - 0x9e510
   - 0x9e54e
-  - 0x9e590
-  - 0x9e5f6
   - 0x9e6a2
   - 0x9e752
-  - 0x9e7ac
-  - 0x9e828
   - 0x9e88c
   - 0x9ea10
   - 0x9ea22
@@ -491,7 +510,6 @@ unmatched_reference:
   - prs_box_get  # best 0.37
   - prvAddCurrentTaskToDelayedList  # best 0.41
   - prvAddNewTaskToReadyList  # best 0.52
-  - prvCopyDataToQueue  # best 0.60
   - prvInsertBlockIntoFreeList  # best 0.59
   - sd_state_evt_handler  # best 0.30
   - ulTaskGenericNotifyTake  # best 0.74
@@ -506,9 +524,9 @@ unmatched_reference:
   - vTaskSuspend  # best 0.12
   - vTaskSwitchContext.part.0  # best 0.23
   - xQueueCreateMutex  # best 0.73
-  - xQueueGenericSend  # best 0.62
-  - xQueueGenericSendFromISR  # best 0.45
-  - xQueueGiveFromISR  # best 0.20
+  - xQueueGenericCreate  # best 0.60
+  - xQueueGenericCreateStatic  # best 0.41
+  - xQueueGenericSend  # best 0.57
   - xQueuePeek  # best 0.68
   - xQueueTakeMutexRecursive  # best 0.61
   - xTaskGenericNotify  # best 0.33
@@ -516,7 +534,6 @@ unmatched_reference:
   - xTaskGenericNotifyStateClear  # best 0.50
   - xTaskGenericNotifyWait  # best 0.62
   - xTaskIncrementTick  # best 0.37
-  - xTaskIncrementTick.part.0  # best 0.13
   - xTaskNotifyStateClear  # best 0.56
   - xTaskPriorityDisinherit  # best 0.45
   - xTaskPriorityInherit  # best 0.23

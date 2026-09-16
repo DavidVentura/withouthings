@@ -4,8 +4,10 @@
     python3 abi/blobify.py [-o out/appl-blob.o]
 
 Reads abi/boundary.yaml. Every app->library `bl` whose target is named and not
-marked `keep` becomes an R_ARM_THM_CALL against that symbol, with the branch
-displacement zeroed so the REL addend is 0. Every vector-table word marked
+marked `keep` becomes an R_ARM_THM_CALL against that symbol, and every app->library
+`b.w` (a tail call: the compiler emits one wherever the library call is the last
+thing the app function does) an R_ARM_THM_JUMP24, with the branch displacement
+rewritten to `.-4` so the REL addend is 0. Every vector-table word marked
 `relocate` becomes an R_ARM_ABS32 against the handler symbol, zeroed likewise.
 Library->app targets and the app's entry points become defined symbols so the
 source library can be linked against them.
@@ -30,15 +32,23 @@ APP_BASE = 0x27000
 
 R_ARM_ABS32 = 2
 R_ARM_THM_CALL = 10
+R_ARM_THM_JUMP24 = 30
+
+# `bl .-4` and `b.w .-4`: the displacement a REL addend of 0 has to encode.
+SELF_BL = (0xF7FF, 0xFFFE)
+SELF_B = (0xF7FF, 0xBFFE)
 
 STT_FUNC, STT_NOTYPE = 2, 0
 STB_GLOBAL = 1
 
 
-def decode_bl(data, off):
-    """-> branch target, or None if these four bytes are not a Thumb BL."""
+def decode_branch(data, off):
+    """-> ("bl"|"b.w", target), or None if these four bytes are neither."""
     hi, lo = struct.unpack_from("<HH", data, off)
-    if (hi & 0xF800) != 0xF000 or (lo & 0xD000) != 0xD000:
+    if (hi & 0xF800) != 0xF000:
+        return None
+    kind = {0xD000: "bl", 0x9000: "b.w"}.get(lo & 0xD000)
+    if kind is None:
         return None
     s = (hi >> 10) & 1
     j1, j2 = (lo >> 13) & 1, (lo >> 11) & 1
@@ -46,25 +56,26 @@ def decode_bl(data, off):
         | ((hi & 0x3FF) << 12) | ((lo & 0x7FF) << 1)
     if s:
         imm -= 1 << 25
-    return APP_BASE + off + 4 + imm
+    return kind, APP_BASE + off + 4 + imm
 
 
 def find_sites(data, wanted, spans):
-    """Every BL in the image whose target is one of `wanted`, by scan and check.
+    """Every BL and B.W in the image whose target is one of `wanted`.
 
     The scan is over raw halfword-aligned bytes rather than a disassembly,
     because a linear disassembly desynchronises on literal pools. It agrees
-    exactly with abi/match.py's disassembly on this image (647 sites), which is
-    what makes a data word accidentally decoding as a boundary BL implausible.
+    exactly with abi/match.py's disassembly on this image (647 BL, 96 B.W),
+    which is what makes a data word accidentally decoding as a boundary branch
+    implausible.
     """
     sites = []
     for off in range(0, len(data) - 3, 2):
         addr = APP_BASE + off
         if any(lo <= addr <= hi for lo, hi in spans):
             continue            # library calling itself, not the boundary
-        tgt = decode_bl(data, off)
-        if tgt is not None and tgt in wanted:
-            sites.append((addr, tgt))
+        found = decode_branch(data, off)
+        if found is not None and found[1] in wanted:
+            sites.append((addr, found[1], found[0]))
     return sites
 
 
@@ -155,17 +166,22 @@ def main():
 
     sites = find_sites(blob, set(by_addr),
                        [(int(lo), int(hi)) for lo, hi in b["library_ranges"]])
-    if len(sites) != b["meta"]["app_to_lib"]["sites"]:
-        sys.exit("found %d boundary sites, boundary.yaml declares %d"
-                 % (len(sites), b["meta"]["app_to_lib"]["sites"]))
+    declared = b["meta"]["app_to_lib"]
+    for kind, key in (("bl", "sites"), ("b.w", "tail_sites")):
+        n = sum(1 for _, _, k in sites if k == kind)
+        if n != declared[key]:
+            sys.exit("found %d %s boundary sites, boundary.yaml declares %d"
+                     % (n, kind, declared[key]))
 
     relocs = []
-    for addr, tgt in sites:
+    for addr, tgt, kind in sites:
         if tgt not in relocate:
             continue            # explicitly kept: the blob calls its own copy
         off = addr - APP_BASE
-        struct.pack_into("<HH", blob, off, 0xF7FF, 0xFFFE)   # bl .-4: the REL addend is 0
-        relocs.append((off, relocate[tgt], R_ARM_THM_CALL))
+        enc, rtype = ((SELF_BL, R_ARM_THM_CALL) if kind == "bl"
+                      else (SELF_B, R_ARM_THM_JUMP24))
+        struct.pack_into("<HH", blob, off, *enc)
+        relocs.append((off, relocate[tgt], rtype))
 
     for v in b["data_references"]["vector_table"]:
         if not v.get("relocate"):
@@ -190,9 +206,13 @@ def main():
 
     os.makedirs(os.path.dirname(args.o), exist_ok=True)
     build(bytes(blob), relocs, defined, args.o)
-    thm = sum(1 for _, _, t in relocs if t == R_ARM_THM_CALL)
-    print("%s: %d bytes, %d R_ARM_THM_CALL, %d R_ARM_ABS32, %d defined symbols"
-          % (args.o, len(blob), thm, len(relocs) - thm, len(defined)))
+    counts = {R_ARM_THM_CALL: 0, R_ARM_THM_JUMP24: 0, R_ARM_ABS32: 0}
+    for _, _, t in relocs:
+        counts[t] += 1
+    print("%s: %d bytes, %d R_ARM_THM_CALL, %d R_ARM_THM_JUMP24, %d R_ARM_ABS32,"
+          " %d defined symbols"
+          % (args.o, len(blob), counts[R_ARM_THM_CALL], counts[R_ARM_THM_JUMP24],
+             counts[R_ARM_ABS32], len(defined)))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,27 @@
+Withings added one accessor to tasks.c, at 0x73634 in appl v3411: it hands back a
+task's stack bounds, with the usual "NULL handle means the running task" rule.
+It sits immediately after uxTaskGetStackHighWaterMark in the image, so it goes
+there here too. The image's body is six instructions -- no assert, no critical
+section -- storing pxEndOfStack through the first pointer and pxStack through
+the second. The SDK's sources are CRLF, so this patch is too.
+
+--- a/tasks.c
++++ b/tasks.c
+@@ -3671,6 +3671,17 @@
+ #endif /* INCLUDE_uxTaskGetStackHighWaterMark */
+ /*-----------------------------------------------------------*/
+ 
++void vTaskGetStackBounds( TaskHandle_t xTask, StackType_t **ppxEndOfStack, StackType_t **ppxStack )
++{
++TCB_t *pxTCB;
++
++	pxTCB = prvGetTCBFromHandle( xTask );
++
++	*ppxEndOfStack = pxTCB->pxEndOfStack;
++	*ppxStack = pxTCB->pxStack;
++}
++/*-----------------------------------------------------------*/
++
+ #if ( INCLUDE_vTaskDelete == 1 )
+ 
+ 	static void prvDeleteTCB( TCB_t *pxTCB )

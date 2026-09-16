@@ -6,14 +6,19 @@
 # any boundary site whose target is not listed here.
 #
 # Sites were found twice and agreed exactly: a raw scan of appl.bin for Thumb
-# BL encodings whose target lands in a library range, and the linear
-# disassembly abi/match.py already produces. 647 app->library call sites reach
-# 62 distinct library entry points; 26 library->app sites reach 14.
+# branch encodings whose target lands in a library range, and the linear
+# disassembly abi/match.py already produces. 647 app->library `bl` sites and 96
+# `b.w` tail calls reach 62 distinct library entry points; 26 library->app sites
+# reach 14. The tail calls are a boundary crossing exactly like the calls, and
+# missing them is what wedged the first relinked image: three of them are
+# vPortExitCritical, so the blob decremented its own dead uxCriticalNesting
+# while the source kernel's climbed, basepri never dropped and PendSV was never
+# taken (see tail_sites below).
 
 meta:
   image: appl.bin
   app_base: 0x27000
-  app_to_lib: {sites: 647, targets: 62}
+  app_to_lib: {sites: 647, tail_sites: 96, targets: 62}
   lib_to_app: {sites: 26, targets: 14}
 
 # Config corrections forced by the image's own struct layouts. refbuild.sh's
@@ -25,6 +30,7 @@ config_corrections:
   configUSE_QUEUE_SETS: 1        # Queue_t is 0x54 with pxQueueSetContainer at 0x48
   configMAX_TASK_NAME_LEN: 12    # with RECORD_STACK_HIGH_ADDRESS this is the only
   configRECORD_STACK_HIGH_ADDRESS: 1  # TCB layout giving pxTaskTag 0x54 in 0x60 bytes
+  configUSE_TICK_HOOK: 1         # xTaskIncrementTick calls 0x36e84 from both arms
   notes: >
     Queue_t read off the image: pcHead 0x00, pcTail 0x04, pcWriteTo 0x08,
     u 0x0c, xTasksWaitingToSend 0x10, xTasksWaitingToReceive 0x24,
@@ -62,11 +68,13 @@ app_to_lib:
   # heap_4.c
   - addr: 0x51a04
     sites: 2
+    tail_sites: 2
     symbol: "pvPortMalloc"
     how: "matches.yaml 0.727"
     confidence: "high"
   - addr: 0x51afc
     sites: 2
+    tail_sites: 1
     symbol: "vPortFree"
     how: "matches.yaml 1.000"
     confidence: "high"
@@ -119,6 +127,7 @@ app_to_lib:
     confidence: "high"
   - addr: 0x731dc
     sites: 3
+    tail_sites: 1
     symbol: "xTaskResumeAll"
     how: "matches.yaml 0.737"
     confidence: "high"
@@ -163,13 +172,16 @@ app_to_lib:
     confidence: "high"
   - addr: 0x73634
     sites: 1
-    symbol: null
-    keep: true
-    confidence: low
+    symbol: vTaskGetStackBounds
+    confidence: high
     how: >
-      UNNAMED. NULL handle -> pxCurrentTCB, then *r1 = TCB+0x40 (pxEndOfStack)
-      and *r2 = TCB+0x30 (pxStack). No stock FreeRTOS API returns that pair, so
-      this is a Withings addition to tasks.c. One call site; left unrelocated.
+      NULL handle -> pxCurrentTCB, then *r1 = TCB+0x40 (pxEndOfStack) and
+      *r2 = TCB+0x30 (pxStack). No stock FreeRTOS API returns that pair, so this
+      is a Withings addition to tasks.c; abi/patches/tasks-stack-bounds.patch
+      puts it back where the image emits it (right after
+      uxTaskGetStackHighWaterMark) so the call can be relocated. Keeping the
+      blob's copy would have been a latent NULL deref: its pxCurrentTCB pool
+      word is the blob's own, which the relink leaves at zero forever.
   - addr: 0x73648
     sites: 10
     symbol: xTaskGetCurrentTaskHandle
@@ -198,6 +210,7 @@ app_to_lib:
     confidence: "high"
   - addr: 0x738b8
     sites: 8
+    tail_sites: 2
     symbol: xTaskGenericNotify
     confidence: high
     how: >
@@ -229,6 +242,7 @@ app_to_lib:
     confidence: "high"
   - addr: 0x73e5c
     sites: 18
+    tail_sites: 3
     symbol: "vPortExitCritical"
     how: "matches.yaml 1.000"
     confidence: "high"
@@ -244,6 +258,7 @@ app_to_lib:
       xQueueGenericReset@0x9e6e8, ucQueueType at +0x50.
   - addr: 0x73a90
     sites: 82
+    tail_sites: 56
     symbol: "xQueueGenericSend"
     how: "hwa10.yaml/symbols.txt"
     confidence: "high"
@@ -257,6 +272,7 @@ app_to_lib:
       give it -- prvInitialiseMutex exactly.
   - addr: 0x73c10
     sites: 6
+    tail_sites: 2
     symbol: xQueueGiveMutexRecursive
     confidence: high
     how: >
@@ -308,6 +324,7 @@ app_to_lib:
       data copy. Reference score 0.82 once configUSE_QUEUE_SETS is corrected.
   - addr: 0x9e890
     sites: 105
+    tail_sites: 20
     symbol: "xQueueSemaphoreTake"
     how: "hwa10.yaml + reference 0.86"
     confidence: "high"
@@ -341,11 +358,13 @@ app_to_lib:
     confidence: "high"
   - addr: 0x9e516
     sites: 1
+    tail_sites: 1
     symbol: "vListInsertEnd"
     how: "reference score 0.82"
     confidence: "high"
   - addr: 0x9e52c
     sites: 1
+    tail_sites: 1
     symbol: "vListInsert"
     how: "reference score 0.91"
     confidence: "high"
@@ -368,6 +387,7 @@ app_to_lib:
     confidence: "high"
   - addr: 0x9e46c
     sites: 77
+    tail_sites: 6
     symbol: vPortYield
     confidence: high
     how: >
@@ -411,6 +431,7 @@ app_to_lib:
     confidence: "low"
   - addr: 0x7df40
     sites: 3
+    tail_sites: 1
     symbol: "nrfx_saadc_buffer_convert"
     keep: true
     how: "symbols.txt (reference calls it nrfx_saadc_buffer_set, 0.89)"
@@ -465,13 +486,17 @@ lib_to_app:
     how: "only caller is vTaskSwitchContext@0x7333c, i.e. taskCHECK_FOR_STACK_OVERFLOW with method 2"
   - addr: 0x36e84
     sites: 2
-    symbol: null
-    confidence: low
+    symbol: vApplicationTickHook
+    confidence: high
     how: >
-      UNNAMED. Called from inside xTaskIncrementTick (0x73112) and
-      xTaskResumeAll (0x731aa) -- the two places a task is moved to a ready
-      list. A Withings trace hook; not a stock FreeRTOS hook
-      (configUSE_TICK_HOOK would only fire from xTaskIncrementTick).
+      Both sites are inside xTaskIncrementTick, not one there and one in
+      xTaskResumeAll as first read: 0x73112 sits in the not-suspended arm behind
+      `cbnz uxPendedTicks`, and 0x731aa in the suspended arm right after
+      `++uxPendedTicks`. That is configUSE_TICK_HOOK == 1 verbatim, guard
+      comment included ("guard against the tick hook being called when the
+      pended tick count is being unwound"), so tasks.c is stock here and the
+      config needs configUSE_TICK_HOOK 1. xTaskResumeAll at 0x731dc is stock and
+      calls no hook at all.
   - addr: 0x5e7a8
     sites: 6
     symbol: vAssertCalled

@@ -73,8 +73,9 @@ cat > "$CFG/FreeRTOSConfig.h" <<'EOF'
 #define configMINIMAL_STACK_SIZE                ( 60 )
 #define configTOTAL_HEAP_SIZE                   ( 16384 )
 #ifndef configMAX_TASK_NAME_LEN
-#define configMAX_TASK_NAME_LEN ( 16 )
+#define configMAX_TASK_NAME_LEN ( 12 )
 #endif
+#define configRECORD_STACK_HIGH_ADDRESS         1
 #define configUSE_16_BIT_TICKS                  0
 #define configIDLE_SHOULD_YIELD                 1
 #define configUSE_MUTEXES                       1
@@ -84,7 +85,7 @@ cat > "$CFG/FreeRTOSConfig.h" <<'EOF'
 #ifndef configQUEUE_REGISTRY_SIZE
 #define configQUEUE_REGISTRY_SIZE 0
 #endif
-#define configUSE_QUEUE_SETS                    0
+#define configUSE_QUEUE_SETS                    1
 #ifndef configUSE_TIME_SLICING
 #define configUSE_TIME_SLICING 1
 #endif
@@ -96,7 +97,7 @@ cat > "$CFG/FreeRTOSConfig.h" <<'EOF'
 #define configSUPPORT_DYNAMIC_ALLOCATION        1
 #define configUSE_TASK_NOTIFICATIONS            1
 #define configUSE_IDLE_HOOK                     0
-#define configUSE_TICK_HOOK                     0
+#define configUSE_TICK_HOOK                     1
 #ifndef configCHECK_FOR_STACK_OVERFLOW
 #define configCHECK_FOR_STACK_OVERFLOW 2
 #endif
@@ -363,6 +364,10 @@ build_variant() {
 # message. TCB_t in the image is 0x60 bytes with ucNotifyState at +0x5c, which is
 # 12 bytes more than the baseline: configUSE_TRACE_FACILITY adds uxTCBNumber and
 # uxTaskNumber (8) and configUSE_APPLICATION_TASK_TAG adds pxTaskTag (4).
+# The four knobs above the hunt -- queue sets, a 12-byte task name, the recorded
+# stack high address and the tick hook -- are read straight off the image's own
+# struct layouts and call sites, so they are not variants; abi/boundary.yaml
+# carries the evidence.
 HUNT="-DREF_ASSERT=0 -DconfigUSE_TRACE_FACILITY=1 -DconfigUSE_APPLICATION_TASK_TAG=1"
 TCB="-DconfigUSE_TRACE_FACILITY=1 -DconfigUSE_APPLICATION_TASK_TAG=1"
 for o in Os O2 O3; do

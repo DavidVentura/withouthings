@@ -28,6 +28,16 @@ COMMON="-Os -ffunction-sections -fdata-sections -fno-strict-aliasing -fno-builti
 sed -e 's/NRF_RTC1/NRF_RTC2/' -e 's/RTC1_IRQn/RTC2_IRQn/' \
     "$PORT/CMSIS/nrf52/portmacro_cmsis.h" > "$OUT/portmacro_cmsis.h"
 
+# The kernel is compiled out of a staged copy so abi/patches/ can recover the
+# changes Withings made to it; each patch is -p1 against the kernel source dir.
+SRC=$OUT/src
+rm -rf "$SRC"
+cp -r "$KERNEL" "$SRC"
+for p in patches/*.patch; do
+    patch -s -d "$SRC" -p1 < "$p"
+done
+KERNEL=$SRC
+
 INC="-I$OUT -Iconfig-relink -I$KERNEL/include -I$PORT/GCC/nrf52 -I$PORT/CMSIS/nrf52 -I$SDK/examples/ble_peripheral/ble_app_hrs_freertos/pca10056/s140/config"
 for d in components/toolchain/cmsis/include modules/nrfx modules/nrfx/hal \
          modules/nrfx/mdk modules/nrfx/drivers/include components/libraries/util \
