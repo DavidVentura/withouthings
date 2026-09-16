@@ -76,15 +76,28 @@ def close_round():
 
 
 mgr = AutoAnalysisManager.getAnalysisManager(currentProgram)
-for round_no in range(8):
+# Cheap rounds analyse only what the round changed, which follows the new
+# functions' own branches and pool words; a whole-program pass then finds the
+# owners the change-only analysis does not reach (it found about 100 more
+# functions than change-only rounds alone), and the outer loop runs until a full
+# pass adds nothing. Full passes cost 15 s each, change-only rounds about 1 s.
+round_no = 0
+while True:
+    while True:
+        made, extended, absorbed, left = close_round()
+        println("orphans round %d: %d new functions, %d joined the function above, "
+                "%d already claimed, %d left" % (round_no, made, extended, absorbed, len(left)))
+        round_no += 1
+        if not made and not extended:
+            break
+        mgr.startAnalysis(monitor)
+    mgr.reAnalyzeAll(None)
+    mgr.startAnalysis(monitor)
     made, extended, absorbed, left = close_round()
-    println("orphans round %d: %d new functions, %d joined the function above, "
-            "%d already claimed, %d left" % (round_no, made, extended, absorbed, len(left)))
+    println("orphans after full pass: %d new functions, %d joined the function above, "
+            "%d already claimed, %d left" % (made, extended, absorbed, len(left)))
     if not made and not extended:
         break
-    # Re-analysis follows the new functions' own branches and pool words, which
-    # is what brings their address constants into the candidate set.
-    mgr.reAnalyzeAll(None)
     mgr.startAnalysis(monitor)
 
 for start, end in left[:20]:
