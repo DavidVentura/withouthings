@@ -56,6 +56,13 @@ spi2: SPI.NrfSpimCapture @ sysbus 0x40023000
     preinit:
         include @NrfSpim.cs
 
+// The accelerometer shares SPIM2 with the flash; the controller tells them
+// apart by chip select, so this is registered at its CS pin number.
+adxl367: Sensors.Adxl367 @ spi2 16
+    0 -> gpio0@27
+    preinit:
+        include @NrfAdxl367.cs
+
 spi3: SPI.OledSpimCapture @ sysbus 0x4002F000
     -> nvic@47
     preinit:
@@ -91,6 +98,7 @@ pwm3: Miscellaneous.NrfPwm @ sysbus 0x4002D000
 
 gpio0: GPIOPort.NrfGpio @ sysbus 0x50000500
     15 -> spi2@15
+    16 -> spi2@16
     preinit:
         include @NrfGpio.cs
 

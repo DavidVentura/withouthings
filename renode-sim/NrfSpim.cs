@@ -1,9 +1,16 @@
 //
-// nRF SPIM (EasyDMA) controller for spi2 = the external MX25R SPI-NOR flash.
-// Renode's stock NRF52840_SPI doesn't run the EasyDMA transfer (so the flash
-// driver spun on EVENTS_END and the reset/JEDEC detect never completed). This
-// model performs the DMA on TASKS_START, answers the SPI-NOR command protocol
-// from a real 8 MB flash dump, raises EVENTS_END, and records the byte stream.
+// nRF SPIM (EasyDMA) controller for spi2. Renode's stock NRF52840_SPI doesn't
+// run the EasyDMA transfer (so the flash driver spun on EVENTS_END and the
+// reset/JEDEC detect never completed). This model performs the DMA on
+// TASKS_START, raises EVENTS_END, and records the byte stream.
+//
+// Two devices share this bus, told apart by chip select: the MX25R SPI-NOR
+// flash on P0.15 and the ADXL367 accelerometer on P0.16. The flash stays inside
+// the controller because the scripts drive it through this object
+// (LoadImage/DumpStream/ReadImageWord) and because its session state is what
+// makes the SPI-NOR command stream readable at all; every other chip select
+// routes to an ISPIPeripheral registered at that pin number, so the ADXL367 is
+// an ordinary registered device.
 //
 using System;
 using System.IO;
@@ -17,11 +24,10 @@ using Antmicro.Renode.Peripherals.Bus;
 
 namespace Antmicro.Renode.Peripherals.SPI
 {
-    public class NrfSpimCapture : IDoubleWordPeripheral, IKnownSize, INumberedGPIOOutput, IGPIOReceiver
+    public class NrfSpimCapture : SimpleContainer<ISPIPeripheral>, IDoubleWordPeripheral, IKnownSize, INumberedGPIOOutput, IGPIOReceiver
     {
-        public NrfSpimCapture(IMachine machine)
+        public NrfSpimCapture(IMachine machine) : base(machine)
         {
-            this.machine = machine;
             this.sysbus = machine.GetSystemBus(this);
             regs = new Dictionary<long, uint>();
             stream = new List<byte>();
@@ -36,26 +42,41 @@ namespace Antmicro.Renode.Peripherals.SPI
 
         public byte PollReply { get; set; }  // default reply for unhandled reads
 
-        // Chip select (P0.15), active low. The driver splits one SPI-NOR command
-        // across several EasyDMA transfers while CS stays asserted, so the command
-        // only makes sense per CS session, not per transfer.
+        // Chip select, active low, one pin per device: P0.15 is the flash, every
+        // other pin is looked up among the registered devices. The driver splits
+        // one command across several EasyDMA transfers while CS stays asserted,
+        // so a command only makes sense per CS session, not per transfer.
         public void OnGPIO(int number, bool value)
         {
-            if(number != ChipSelectPin)
+            ISPIPeripheral device;
+            var known = number == FlashChipSelectPin || TryGetByAddress(number, out device);
+            if(!known)
             {
                 return;
             }
-            if(value)
+            if(!value)
             {
-                selected = false;
+                if(selectedPin != NoChipSelect && selectedPin != number)
+                {
+                    this.Log(LogLevel.Error, "chip select P0.{0} asserted while P0.{1} still is: both devices drive MISO", number, selectedPin);
+                }
+                selectedPin = number;
+                StartSession();
                 return;
             }
-            StartSession();
+            if(selectedPin != number)
+            {
+                return;
+            }
+            if(TryGetByAddress(selectedPin, out device))
+            {
+                device.FinishTransmission();
+            }
+            selectedPin = NoChipSelect;
         }
 
         private void StartSession()
         {
-            selected = true;
             sessionIndex = 0;
             sessionCommand = NoCommand;
             sessionAddress = 0;
@@ -107,13 +128,13 @@ namespace Antmicro.Renode.Peripherals.SPI
             IRQ.Set(endFlag && (inten & EndIntBit) != 0);
         }
 
-        public void Reset()
+        public override void Reset()
         {
             regs.Clear();
             stream.Clear();
             endFlag = false;
             inten = 0;
-            selected = false;
+            selectedPin = NoChipSelect;
             sessionIndex = 0;
             sessionCommand = NoCommand;
             sessionAddress = 0;
@@ -147,28 +168,37 @@ namespace Antmicro.Renode.Peripherals.SPI
 
         private void DoTransfer()
         {
-            uint txp = Get(TxPtr), txn = Get(TxCnt), rxp = Get(RxPtr), rxn = Get(RxCnt);
-            if(!selected)
+            if(selectedPin == NoChipSelect)
             {
                 if(!warnedNoChipSelect)
                 {
                     warnedNoChipSelect = true;
-                    this.Log(LogLevel.Error, "transfer with chip select deasserted: P0.15 is not wired to this peripheral, SPI-NOR commands cannot be tracked");
+                    this.Log(LogLevel.Error, "transfer with no chip select asserted: no device is listening, the transfer reads as zero");
                 }
-                StartSession();
+                regs[TxAmount] = Get(TxCnt);
+                regs[RxAmount] = Get(RxCnt);
+                endFlag = true;
+                UpdateIrq();
+                return;
             }
+            ISPIPeripheral device;
+            var toDevice = TryGetByAddress(selectedPin, out device);
+            uint txp = Get(TxPtr), txn = Get(TxCnt), rxp = Get(RxPtr), rxn = Get(RxCnt);
             uint n = Math.Max(txn, rxn);
             var tx = new byte[txn];
             for(uint i = 0; i < txn; i++)
             {
                 tx[i] = sysbus.ReadByte((ulong)(txp + i));
-                stream.Add(tx[i]);
+                if(!toDevice)
+                {
+                    stream.Add(tx[i]);
+                }
             }
             var rx = new byte[rxn];
             for(uint i = 0; i < n; i++)
             {
                 byte outgoing = i < txn ? tx[i] : (byte)0x00;
-                byte incoming = ServeByte(outgoing);
+                byte incoming = toDevice ? device.Transmit(outgoing) : ServeByte(outgoing);
                 if(i < rxn)
                 {
                     rx[i] = incoming;
@@ -393,12 +423,13 @@ namespace Antmicro.Renode.Peripherals.SPI
             ChipEraseC7 = 0xC7,
         }
 
-        private const int ChipSelectPin = 15;
+        private const int FlashChipSelectPin = 15;
+        private const int NoChipSelect = -1;
         private const int NoCommand = -1;
         private static readonly byte[] JedecId = { 0xC2, 0x28, 0x17 };
 
         private byte[] flash;
-        private bool selected;
+        private int selectedPin = NoChipSelect;
         private bool writeEnableLatch;
         private bool sessionWriteAllowed;
         private bool warnedNoChipSelect;
@@ -411,7 +442,6 @@ namespace Antmicro.Renode.Peripherals.SPI
         private readonly Dictionary<byte, long> cmdHist;
         private readonly List<byte> stream;
         private readonly HashSet<byte> unknownCommands;
-        private readonly IMachine machine;
         private readonly IBusController sysbus;
     }
 }
