@@ -8,17 +8,24 @@ meta:
   image: appl.bin
   app_base: 0x27000
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
-  toolchain: gcc-arm-none-eabi-9-2020-q2-update
-  counts: {extlib: 4, libc: 54, shell: 79, shell_table_rows: 79, string: 12, svc: 79, wpp_table_rows: 156, wppcmd: 156}
-  known_addresses: {agree: 1, disagree: 9}
+  toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)
+  libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
+  counts: {extlib: 4, libc: 98, shell: 79, shell_table_rows: 79, string: 12, svc: 79, wpp_table_rows: 156, wppcmd: 156}
+  known_addresses: {agree: 2, disagree: 10}
 
 functions:
   - name: memchr
     address: 0x27ec0
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 58 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 58 insns, direct"
     header: arm-none-eabi/include/string.h
     proto: "void * memchr (const void *, int, size_t);"
+  - name: scalbn
+    address: 0x2c1f0
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 77 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "double scalbn (double, int);"
   - name: shell_cmd_light_sensor
     address: 0x2f04c
     class: shell
@@ -1065,139 +1072,219 @@ functions:
     address: 0x7fd5c
     class: string
     evidence: "wlog('[%s] context: %d', 'move_hands_update') at 0x7fd66"
+  - name: __fpclassifyd
+    address: 0x8ca84
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 28 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "int __fpclassifyd (double);"
   - name: __fpclassifyf
     address: 0x8cd1c
     class: libc
-    evidence: "libc_nano.a, score 0.95 over 21 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.95 over 21 insns, direct"
     header: arm-none-eabi/include/math.h
-    proto: "int __fpclassifyf (float x);"
+    proto: "int __fpclassifyf (float);"
+  - name: scalbnf
+    address: 0x8d6f8
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.98 over 58 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "float scalbnf (float, int);"
   - name: __aeabi_dadd
     address: 0x8d7d0
     class: libc
-    evidence: "libgcc.a, score 0.98 over 203 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 0.98 over 203 insns, direct"
   - name: __floatunsidf
     address: 0x8da48
     class: libc
-    evidence: "libgcc.a, score 1.00 over 11 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 11 insns, direct"
   - name: __floatsidf
     address: 0x8da68
     class: libc
-    evidence: "libgcc.a, score 1.00 over 13 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 13 insns, direct"
   - name: __extendsfdf2
     address: 0x8da8c
     class: libc
-    evidence: "libgcc.a, score 1.00 over 22 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 22 insns, direct"
   - name: __floatdidf
     address: 0x8dae0
     class: libc
-    evidence: "libgcc.a, score 1.00 over 29 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 29 insns, direct"
   - name: __muldf3
     address: 0x8db3c
     class: libc
-    evidence: "libgcc.a, score 0.99 over 178 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 0.99 over 178 insns, direct"
   - name: __divdf3
     address: 0x8dd90
     class: libc
-    evidence: "libgcc.a, score 0.99 over 141 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 0.99 over 141 insns, direct"
   - name: __nedf2
     address: 0x8df70
     class: libc
-    evidence: "libgcc.a, score 1.00 over 41 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 41 insns, direct"
   - name: __aeabi_cdrcmple
     address: 0x8dfec
     class: libc
-    evidence: "libgcc.a, score 1.00 over 8 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 8 insns, direct"
   - name: __aeabi_cdcmple
     address: 0x8dffc
     class: libc
-    evidence: "libgcc.a, score 1.00 over 6 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 6 insns, direct"
     also_matched: [__aeabi_cfcmple]
   - name: __unorddf2
     address: 0x8e070
     class: libc
-    evidence: "libgcc.a, score 1.00 over 14 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 14 insns, direct"
   - name: __fixdfsi
     address: 0x8e09c
     class: libc
-    evidence: "libgcc.a, score 0.96 over 26 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 0.96 over 26 insns, direct"
   - name: __fixunsdfsi
     address: 0x8e0ec
     class: libc
-    evidence: "libgcc.a, score 0.90 over 21 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 0.90 over 21 insns, direct"
   - name: __truncdfsf2
     address: 0x8e12c
     class: libc
-    evidence: "libgcc.a, score 1.00 over 47 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 47 insns, direct"
   - name: __aeabi_fadd
     address: 0x8e1d8
     class: libc
-    evidence: "libgcc.a, score 0.97 over 120 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 0.97 over 120 insns, direct"
   - name: __floatsisf
     address: 0x8e340
     class: libc
-    evidence: "libgcc.a, score 1.00 over 10 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 10 insns, direct"
   - name: __floatdisf
     address: 0x8e36c
     class: libc
-    evidence: "libgcc.a, score 1.00 over 39 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 39 insns, direct"
   - name: __aeabi_ldivmod
     address: 0x8e3e8
     class: libc
-    evidence: "libgcc.a, score 1.00 over 55 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 55 insns, direct"
   - name: __aeabi_uldivmod
     address: 0x8e488
     class: libc
-    evidence: "libgcc.a, score 1.00 over 16 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 16 insns, direct"
   - name: __fixsfdi
     address: 0x8e4b8
     class: libc
-    evidence: "libgcc.a, score 1.00 over 12 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 12 insns, direct"
   - name: __fixunssfdi
     address: 0x8e4e0
     class: libc
-    evidence: "libgcc.a, score 1.00 over 21 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 21 insns, direct"
+  - name: __udivmoddi4
+    address: 0x8e520
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 0.95 over 242 insns, direct"
+  - name: _setenv_r
+    address: 0x8eb9c
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.92 over 111 insns, direct"
+    header: arm-none-eabi/include/stdlib.h
+    proto: "int _setenv_r (struct _reent *, const char *__string, const char *__value, int __overwrite);"
+  - name: _printf_float
+    address: 0x8ece0
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.98 over 434 insns, direct"
   - name: snprintf
     address: 0x8f5d0
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 42 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 42 insns, direct"
   - name: sprintf
     address: 0x8f638
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 24 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 24 insns, direct"
+  - name: __swsetup_r
+    address: 0x8f6e0
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.94 over 70 insns, direct"
   - name: strlwr
     address: 0x8f78c
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 14 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 14 insns, direct"
     header: arm-none-eabi/include/string.h
     proto: "char *strlwr (char *);"
+  - name: validate_structure
+    address: 0x8f980
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 180 insns, direct"
+  - name: __gethex
+    address: 0x90480
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.99 over 415 insns, direct"
+  - name: _findenv_r
+    address: 0x908a0
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 42 insns, direct"
+    header: arm-none-eabi/include/stdlib.h
+    proto: "char * _findenv_r (struct _reent *, const char *, int *);"
+  - name: __multadd
+    address: 0x90918
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 51 insns, direct"
   - name: __s2b
     address: 0x909a4
     class: libc
-    evidence: "libc_nano.a, score 0.98 over 58 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 58 insns, direct"
   - name: __i2b
     address: 0x90a38
     class: libc
-    evidence: "libc_nano.a, score 0.93 over 15 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 15 insns, direct"
+  - name: __multiply
+    address: 0x90a64
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.99 over 116 insns, direct"
   - name: __lshift
     address: 0x90c28
     class: libc
-    evidence: "libc_nano.a, score 0.92 over 76 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 76 insns, direct"
+  - name: __mdiff
+    address: 0x90d00
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.99 over 108 insns, direct"
+  - name: __ulp
+    address: 0x90e28
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 28 insns, direct"
+  - name: __b2d
+    address: 0x90e74
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 50 insns, direct"
+  - name: __d2b
+    address: 0x90f08
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 63 insns, direct"
   - name: _svfprintf_r
     address: 0x90fb8
     class: libc
-    evidence: "libc_nano.a, score 0.92 over 201 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.95 over 198 insns, direct"
+  - name: _scanf_chars
+    address: 0x916cc
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 80 insns, direct"
+  - name: _scanf_i
+    address: 0x91780
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.91 over 191 insns, direct"
+  - name: cleanup_stdio
+    address: 0x91b00
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 22 insns, direct"
   - name: __assert_func
     address: 0x91d3c
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 19 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 19 insns, direct"
   - name: __fixdfdi
     address: 0x91ed8
     class: libc
-    evidence: "libgcc.a, score 1.00 over 18 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 18 insns, direct"
   - name: __fixunsdfdi
     address: 0x91f08
     class: libc
-    evidence: "libgcc.a, score 1.00 over 20 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 20 insns, direct"
   - name: sd_power_mode_set
     address: 0x91f44
     class: svc
@@ -1693,7 +1780,7 @@ functions:
   - name: fcntl
     address: 0x97fd0
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 6 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 6 insns, direct"
     header: arm-none-eabi/include/sys/_default_fcntl.h
     proto: "int fcntl (int, int, ...);"
   - name: GREENTEG_SENSITIVITY_BIN_DEL
@@ -1727,6 +1814,12 @@ functions:
     address: 0x9b9aa
     class: shell
     evidence: "shell_cmd_table row 0x27284: key 637415, label 'hwa10'"
+  - name: _tzset_r
+    address: 0x9bd0c
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 7 insns, direct"
+    header: arm-none-eabi/include/time.h
+    proto: "void _tzset_r (struct _reent *);"
   - name: sd_ble_version_get_copy_0x9d5c8
     address: 0x9d5c8
     class: svc
@@ -1798,104 +1891,223 @@ functions:
   - name: finite
     address: 0xa7d74
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 8 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 8 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "int finite (double);"
+  - name: finitef
+    address: 0xa7dde
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 7 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "int finitef (float);"
+  - name: with_errnof
+    address: 0xa7e66
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libm.a, score 1.00 over 9 insns, direct"
   - name: sulp
     address: 0xa7f20
     class: libc
-    evidence: "libc_nano.a, score 0.95 over 20 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 21 insns, direct"
   - name: swapfunc
     address: 0xa7f68
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 21 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 21 insns, direct"
+  - name: qsort
+    address: 0xa7fda
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.99 over 270 insns, direct"
+    header: arm-none-eabi/include/stdlib.h
+    proto: "void qsort (void *__base, size_t __nmemb, size_t __size, __compar_fn_t _compar);"
+  - name: __cvt
+    address: 0xa8268
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.99 over 80 insns, direct"
+  - name: __exponent
+    address: 0xa8332
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.98 over 49 insns, direct"
+  - name: _printf_common
+    address: 0xa83a6
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 95 insns, direct"
+  - name: _fputs_unlocked_r
+    address: 0xa8480
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.98 over 46 insns, direct"
+    header: arm-none-eabi/include/stdio.h
+    proto: "int _fputs_unlocked_r (struct _reent *, const char *__restrict, FILE *__restrict);"
   - name: __swrite
     address: 0xa858e
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 21 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 21 insns, direct"
   - name: __sseek
     address: 0xa85c6
     class: libc
-    evidence: "libc_nano.a, score 0.93 over 14 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.93 over 14 insns, direct"
+  - name: __swbuf_r
+    address: 0xa85f2
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.98 over 57 insns, direct"
+    header: arm-none-eabi/include/stdio.h
+    proto: "int __swbuf_r (struct _reent *, int, FILE *);"
+  - name: memcmp
+    address: 0xa866e
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 15 insns, direct"
+    header: arm-none-eabi/include/string.h
+    proto: "int memcmp (const void *, const void *, size_t);"
   - name: memmove
     address: 0xa868e
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 21 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 21 insns, direct"
     header: arm-none-eabi/include/string.h
     proto: "void * memmove (void *, const void *, size_t);"
   - name: memset
     address: 0xa86c2
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 7 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 7 insns, direct"
     header: arm-none-eabi/include/string.h
     proto: "void * memset (void *, int, size_t);"
+  - name: strchr
+    address: 0xa86d2
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 12 insns, direct"
+    header: arm-none-eabi/include/string.h
+    proto: "char *strchr (const char *, int);"
+  - name: strlcat
+    address: 0xa86ec
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 33 insns, direct"
+    header: arm-none-eabi/include/string.h
+    proto: "size_t strlcat (char *, const char *, size_t);"
+  - name: strlcpy
+    address: 0xa8734
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 17 insns, direct"
+    header: arm-none-eabi/include/string.h
+    proto: "size_t strlcpy (char *, const char *, size_t);"
+  - name: strncmp
+    address: 0xa875c
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 16 insns, direct"
+    header: arm-none-eabi/include/string.h
+    proto: "int strncmp (const char *, const char *, size_t);"
   - name: strncpy
     address: 0xa8780
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 16 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 16 insns, direct"
     header: arm-none-eabi/include/string.h
     proto: "char *strncpy (char *__restrict, const char *__restrict, size_t);"
+  - name: strnlen
+    address: 0xa87a6
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 12 insns, direct"
+    header: arm-none-eabi/include/string.h
+    proto: "size_t strnlen (const char *, size_t);"
+  - name: strrchr
+    address: 0xa87be
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 18 insns, direct"
+    header: arm-none-eabi/include/string.h
+    proto: "char *strrchr (const char *, int);"
   - name: strcmp
     address: 0xa87ee
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 8 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 8 insns, direct"
     header: arm-none-eabi/include/string.h
     proto: "int strcmp (const char *, const char *);"
   - name: strcpy
     address: 0xa8802
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 6 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 6 insns, direct"
     header: arm-none-eabi/include/string.h
     proto: "char *strcpy (char *__restrict, const char *__restrict);"
   - name: memcpy
     address: 0xa8812
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 11 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 11 insns, direct"
     header: arm-none-eabi/include/string.h
     proto: "void * memcpy (void *__restrict, const void *__restrict, size_t);"
   - name: strlen
     address: 0xa882e
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 7 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 7 insns, direct"
     header: arm-none-eabi/include/string.h
     proto: "size_t strlen (const char *);"
-  - name: rshift
-    address: 0xa8962
+  - name: quorem
+    address: 0xa884e
     class: libc
-    evidence: "libc_nano.a, score 0.95 over 62 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.95 over 102 insns, direct"
   - name: __hexdig_fun
     address: 0xa8a06
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 18 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 18 insns, direct"
   - name: L_shift
     address: 0xa8a30
     class: libc
-    evidence: "libc_nano.a, score 0.93 over 14 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.93 over 14 insns, direct"
   - name: __match
     address: 0xa8a54
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 17 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 17 insns, direct"
+  - name: __hexnan
+    address: 0xa8a7c
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.97 over 129 insns, direct"
+  - name: __hi0bits
+    address: 0xa8c40
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 25 insns, direct"
+  - name: __lo0bits
+    address: 0xa8c7e
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 43 insns, direct"
+  - name: __mcmp
+    address: 0xa8cd8
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.91 over 22 insns, direct"
+  - name: __ratio
+    address: 0xa8d0e
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 36 insns, direct"
   - name: __copybits
     address: 0xa8d72
     class: libc
-    evidence: "libc_nano.a, score 0.93 over 28 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.93 over 28 insns, direct"
   - name: __any_on
     address: 0xa8db8
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 26 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 26 insns, direct"
+  - name: __ssputs_r
+    address: 0xa8e14
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 73 insns, direct"
   - name: __sfputc_r
     address: 0xa8f7e
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 20 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 20 insns, direct"
   - name: __sfputs_r
     address: 0xa8fac
     class: libc
-    evidence: "libc_nano.a, score 1.00 over 16 insns, direct"
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 16 insns, direct"
+  - name: _fwalk_sglue
+    address: 0xa8ff4
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 25 insns, direct"
+  - name: __smakebuf_r
+    address: 0xa9072
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.98 over 48 insns, direct"
+  - name: __sccl
+    address: 0xa912c
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 53 insns, direct"
 
 # Addresses symbols.txt or hwa10.yaml already names, and what this run
 # derived for them. A disagreement is a finding: one of the two is wrong.
 agrees_with_hand_map:
   - {address: 0x3baf0, name: adxl367_power_check, class: string}
+  - {address: 0xa866e, name: memcmp, class: libc}
 disagrees_with_hand_map:
   - {address: 0x58b34, hand: cmd_raw_data, derived: WPP_CMD_RAW_DATA, class: wppcmd}
   - {address: 0x5bda4, hand: cmd_spi_flash, derived: WPP_CMD_SPI_FLASH, class: wppcmd}
@@ -1905,4 +2117,5 @@ disagrees_with_hand_map:
   - {address: 0x6ca44, hand: cmd_restart_to_update, derived: WPP_CMD_RESTART_TO_UPDATE, class: wppcmd}
   - {address: 0x6ca90, hand: wpp_cmd_battery_status, derived: WPP_CMD_BATTERY_STATUS, class: wppcmd}
   - {address: 0x9301e, hand: sd_mbr_command_thunk, derived: sd_mbr_command, class: svc}
+  - {address: 0x93022, hand: sd_vector_table_base_set, derived: sd_softdevice_vector_table_base_set, class: svc}
   - {address: 0x935b4, hand: sd_ble_gatts_hvx_thunk, derived: sd_ble_gatts_hvx, class: svc}

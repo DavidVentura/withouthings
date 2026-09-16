@@ -32,6 +32,14 @@ CFG=$ROOT/cfg
 
 SDK_URL=https://files.nordicsemi.com/artifactory/nRF5-SDK/external/nRF5_SDK_v17.x.x/nRF5_SDK_17.1.0_ddde560.zip
 GCC_URL=https://developer.arm.com/-/media/Files/downloads/gnu-rm/9-2020q2/gcc-arm-none-eabi-9-2020-q2-update-x86_64-linux.tar.bz2
+# Arm GNU Toolchain releases whose prebuilt newlib is matched against the image
+# by abi/autonames.py. The image names its own newlib in three source paths
+# (.../newlib-4.3.0.20230120/newlib/libc/stdlib/{dtoa,mprec,gdtoa-gethex}.c),
+# and 12.3.Rel1 and 13.2.Rel1 are the releases that ship exactly that newlib;
+# 13.3 and 14.2 ship 4.4.0 and are fetched only as controls for the GCC-version
+# comparison, since their newlib cannot be the image's.
+TC_RELEASES="12.3.rel1 13.2.rel1 13.3.rel1 14.2.rel1"
+TC_BASE=https://developer.arm.com/-/media/Files/downloads/gnu
 
 mkdir -p "$ROOT/dl"
 if [ ! -d "$SDK" ]; then
@@ -42,6 +50,14 @@ if [ ! -d "$(dirname "$GCC")" ]; then
     [ -f "$ROOT/dl/gcc.tar.bz2" ] || curl -L -o "$ROOT/dl/gcc.tar.bz2" "$GCC_URL"
     tar xf "$ROOT/dl/gcc.tar.bz2" -C "$ROOT"
 fi
+mkdir -p "$ROOT/tc"
+for v in $TC_RELEASES; do
+    if ! ls -d "$ROOT/tc/arm-gnu-toolchain-$v"* >/dev/null 2>&1; then
+        f="$ROOT/dl/arm-gnu-toolchain-$v.tar.xz"
+        [ -f "$f" ] || curl -L -o "$f" "$TC_BASE/$v/binrel/arm-gnu-toolchain-$v-x86_64-arm-none-eabi.tar.xz"
+        tar xf "$f" -C "$ROOT/tc"
+    fi
+done
 
 mkdir -p "$OUT" "$CFG"
 

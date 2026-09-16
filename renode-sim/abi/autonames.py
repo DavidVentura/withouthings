@@ -45,9 +45,22 @@ GCC = os.path.join(ROOT, "gcc-arm-none-eabi-9-2020-q2-update")
 SD_HEADERS = os.path.join(SDK, "components/softdevice/s140/headers")
 APP_BASE = match.APP_BASE
 
-# The toolchain's own libraries, in the multilib the app is built for.
-LIBDIR = os.path.join(GCC, "arm-none-eabi/lib/thumb/v7e-m+fp/hard")
-LIBGCC_GLOB = os.path.join(GCC, "lib/gcc/arm-none-eabi")
+# The libc reference is not the SDK's compiler: the image carries Withings' own
+# toolchain, whose newlib names itself in three source paths in the flash
+# (/home/mbouillot/dev/pro/cortex-toolchain/src/newlib-4.3.0.20230120/newlib/
+# libc/stdlib/{dtoa,mprec,gdtoa-gethex}.c). Arm GNU Toolchain 13.2.Rel1 ships
+# exactly that newlib, and its code generation matches the image better than
+# 12.3.Rel1's, which ships the same newlib source -- so the difference is the
+# compiler, not the library. The archive that matches is libc_nano.a: the full
+# libc.a reaches four bodies where the nano one reaches 73, which says Withings
+# configured newlib-nano (reent-small, nano-malloc, nano formatted io).
+LIBC_TC = os.path.join(ROOT, "tc", "arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi")
+LIBC_TC_LABEL = "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120)"
+# The app runs with the VFP on and single precision only; +fp/hard beats
+# +dp/hard, +fp/softfp and nofp by 9, 12 and 13 matched bodies.
+MULTILIB = "thumb/v7e-m+fp/hard"
+LIBDIR = os.path.join(LIBC_TC, "arm-none-eabi/lib", MULTILIB)
+LIBGCC_GLOB = os.path.join(LIBC_TC, "lib/gcc/arm-none-eabi")
 LIBC_ARCHIVES = ["libc_nano.a", "libc.a", "libm.a"]
 
 # Prebuilt, so they can be matched without building anything.
@@ -529,7 +542,8 @@ def write_yaml(path, entries, agree, disagree, stats):
         "  image: appl.bin",
         "  app_base: 0x%x" % APP_BASE,
         "  softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)",
-        "  toolchain: gcc-arm-none-eabi-9-2020-q2-update",
+        "  toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)",
+        "  libc_toolchain: %s, multilib %s" % (LIBC_TC_LABEL, MULTILIB),
         "  counts: {%s}" % ", ".join("%s: %d" % kv for kv in sorted(stats.items())),
         "  known_addresses: {agree: %d, disagree: %d}" % (len(agree), len(disagree)),
         "",
@@ -591,16 +605,18 @@ def main():
         libgcc = ""
         if os.path.isdir(LIBGCC_GLOB):
             for v in sorted(os.listdir(LIBGCC_GLOB)):
-                cand = os.path.join(LIBGCC_GLOB, v, "thumb/v7e-m+fp/hard/libgcc.a")
+                cand = os.path.join(LIBGCC_GLOB, v, MULTILIB, "libgcc.a")
                 if os.path.exists(cand):
                     libgcc = cand
-        sources = [(a, os.path.join(LIBDIR, a)) for a in LIBC_ARCHIVES]
+        sources = [("%s %s" % (LIBC_TC_LABEL, a), os.path.join(LIBDIR, a))
+                   for a in LIBC_ARCHIVES]
         if libgcc:
-            sources.append(("libgcc.a", libgcc))
+            sources.append(("%s libgcc.a" % LIBC_TC_LABEL, libgcc))
         found = library_names(img, sources, "libc", args.threshold,
                               args.propagate_threshold, args.min_insns)
         protos = prototypes([e["name"] for e in found],
-                            [("arm-none-eabi/include", os.path.join(GCC, "arm-none-eabi/include"))])
+                            [("arm-none-eabi/include",
+                              os.path.join(LIBC_TC, "arm-none-eabi/include"))])
         for e in found:
             e.update(protos.get(e["name"], {}))
         stats["libc"] = len(found)
