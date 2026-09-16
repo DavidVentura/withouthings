@@ -12,6 +12,7 @@ import json
 import os
 
 from ghidra.program.model.address import AddressSet
+from ghidra.program.model.data import Array, Structure
 from ghidra.program.model.listing import Instruction
 from ghidra.program.model.symbol import RefType, SourceType
 
@@ -119,8 +120,23 @@ for instr in listing.getInstructions(app_set, True):
             jump_owner.setdefault(off, owner)
 
 
+def item_class(dt, name):
+    """classify_gaps.py's name prefixes, plus what Ghidra itself typed."""
+    if name.startswith("pad_"):
+        return "padding"
+    if name.startswith("ptrtab_"):
+        return "pointer_table"
+    if name.startswith("flttab_"):
+        return "float_table"
+    if dt.getName().lower().startswith(("string", "unicode", "char")):
+        return "string"
+    if dt.getName().startswith("undefined"):
+        return "untyped"
+    return "typed"
+
+
 # --- the cover: every code unit is code, data or undefined -------------------
-data_items, inline_items, gaps = [], [], []
+data_items, inline_items, gaps, array_rows = [], [], [], []
 code_bytes = data_bytes = gap_bytes = 0
 orphan_code = []
 gap_run = None
@@ -156,7 +172,8 @@ for cu in listing.getCodeUnits(app_set, True):
         # An undefined word the code reads as a constant: still an item, and the
         # objectification needs it as one even though Ghidra left it untyped.
         inline_items.append({"start": start, "end": start + 4, "type": "undefined4",
-                             "name": "", "kind": "jumptable" if start in jump_owner else "pool",
+                             "name": "", "class": "untyped",
+                             "kind": "jumptable" if start in jump_owner else "pool",
                              "function": jump_owner.get(start) or pool_owner.get(start) or 0})
         data_bytes += length
         claim_end = start + 4
@@ -178,9 +195,15 @@ for cu in listing.getCodeUnits(app_set, True):
         gap_run = None
     data_bytes += length
     sym = getSymbolAt(cu.getMinAddress())
-    item = {"start": start, "end": start + length,
-            "type": cu.getDataType().getName(),
-            "name": sym.getName() if sym is not None else ""}
+    dt = cu.getDataType()
+    name = sym.getName() if sym is not None else ""
+    item = {"start": start, "end": start + length, "type": dt.getName(), "name": name,
+            "class": item_class(dt, name)}
+    if isinstance(dt, Array) and isinstance(dt.getDataType(), (Structure, Array)):
+        stride = dt.getElementLength()
+        for i in range(dt.getNumElements()):
+            array_rows.append({"start": start + i * stride,
+                               "end": start + (i + 1) * stride, "array": start})
     if start in jump_owner or start in pool_owner:
         item["kind"] = "jumptable" if start in jump_owner else "pool"
         item["function"] = (jump_owner.get(start) or pool_owner.get(start) or
@@ -191,7 +214,8 @@ for cu in listing.getCodeUnits(app_set, True):
 if gap_run:
     gaps.append(gap_run)
 
-item_starts = set(d["start"] for d in data_items) | set(d["start"] for d in inline_items)
+item_starts = (set(d["start"] for d in data_items) | set(d["start"] for d in inline_items)
+               | set(r["start"] for r in array_rows))
 # The lookup the classification uses: the cover, plus the code Ghidra
 # disassembled but attributed to no function, which is a class of its own
 # because a pointer to the head of such a run is a function Ghidra missed.
@@ -204,8 +228,14 @@ uncovered = [(a[1], b[0]) for a, b in zip(spans, spans[1:]) if a[1] < b[0]]
 orphan_starts = set(o["start"] for o in orphan_code)
 
 # --- references --------------------------------------------------------------
+# The relocation a site needs follows from the instruction, not from Ghidra's
+# reference type: Ghidra records a `b.w` tail call as a call like any other.
 calls, ext_calls = [], []
 for src in rm.getReferenceSourceIterator(app_set, True):
+    instr = listing.getInstructionAt(src)
+    if instr is None:
+        continue
+    owner = fm.getFunctionContaining(src)
     for ref in rm.getReferencesFrom(src):
         t = ref.getReferenceType()
         if not (t.isCall() or t.isJump()):
@@ -213,7 +243,11 @@ for src in rm.getReferenceSourceIterator(app_set, True):
         to = ref.getToAddress().getOffset()
         row = {"from": src.getOffset(), "to": to,
                "kind": "call" if t.isCall() else "jump",
-               "target_is_function": to in fn_by_start}
+               "mnemonic": instr.getMnemonicString().lower(),
+               "width": instr.getLength(),
+               "function": owner.getEntryPoint().getOffset() if owner is not None else 0,
+               "target_is_function": to in fn_by_start,
+               "external": not in_app(to)}
         (calls if in_app(to) else ext_calls).append(row)
 
 table_words = []
@@ -261,8 +295,7 @@ for addr_off, kind in [(a, "pool") for a in sorted(pool_words)] + \
         klass, item = "out_of_range", 0
     resolved = len(rm.getReferencesFrom(space.getAddress(addr_off))) > 0
     counts[kind + ":" + klass] = counts.get(kind + ":" + klass, 0) + 1
-    if klass != "out_of_range":
-        words.append({"addr": addr_off, "value": value, "kind": kind, "class": klass,
+    words.append({"addr": addr_off, "value": value, "kind": kind, "class": klass,
                       "item": item, "offset": (value & ~1) - item if item else 0,
                       "thumb": thumb, "resolved": resolved})
 
@@ -276,6 +309,10 @@ def rows(dicts, keys):
                 else d[k]) for k in keys]
 
 
+split = [{"function": f["start"], "ranges": f["ranges"],
+          "span_start": f["start"], "span_end": f["end"]}
+         for f in functions if f["ranges"] > 1]
+
 totals = {
     "functions": len(functions),
     "functions_seeded": sum(1 for f in functions if f["named"] == "seed"),
@@ -288,6 +325,14 @@ totals = {
     "code_bytes": code_bytes,
     "data_bytes": data_bytes,
     "gap_bytes": gap_bytes,
+    "padding_bytes": sum(d["end"] - d["start"] for d in data_items if d["class"] == "padding"),
+    "string_bytes": sum(d["end"] - d["start"] for d in data_items if d["class"] == "string"),
+    "typed_data_bytes": sum(d["end"] - d["start"] for d in data_items
+                            if d["class"] not in ("padding", "untyped")),
+    "untyped_data_bytes": sum(d["end"] - d["start"] for d in data_items
+                              if d["class"] == "untyped")
+                          + sum(d["end"] - d["start"] for d in inline_items),
+    "split_functions": len(split),
     "image_bytes": APP_END - APP_BASE,
     "orphan_code_runs": len(orphan_code),
     "orphan_code_bytes": sum(o["end"] - o["start"] for o in orphan_code),
@@ -305,9 +350,11 @@ emit(os.path.join(out_dir, "items.yaml"),
      "# `named: seed` is a name this repo supplied, `ghidra` is FUN_/DAT_.\n",
      [("totals", totals),
       ("functions", rows(functions, ["start", "end", "name", "named", "bytes", "ranges"])),
-      ("data", rows(data_items, ["start", "end", "type", "name"])),
+      ("data", rows(data_items, ["start", "end", "type", "class", "name"])),
       ("inline", rows(inline_items, ["start", "end", "kind", "function", "type"])),
       ("function_ranges", ({"start": a, "end": b, "function": f} for a, b, f in fn_ranges)),
+      ("split_functions", split),
+      ("array_rows", rows(array_rows, ["start", "end", "array"])),
       ("gaps", rows(gaps, ["start", "end"])),
       ("orphan_code", rows(orphan_code, ["start", "end"])),
       ("overlaps", rows(overlaps, ["a", "b", "start", "end"]))])
@@ -319,8 +366,10 @@ emit(os.path.join(out_dir, "references.yaml"),
      [("counts", dict(counts, calls=len(calls), external_calls=len(ext_calls),
                       pool_words=len(pool_words), data_words=len(table_words),
                       unresolved=len(unresolved))),
-      ("calls", rows(calls, ["from", "to", "kind", "target_is_function"])),
-      ("external_calls", rows(ext_calls, ["from", "to", "kind"])),
+      ("calls", rows(calls, ["from", "to", "kind", "mnemonic", "width", "function",
+                             "target_is_function", "external"])),
+      ("external_calls", rows(ext_calls, ["from", "to", "kind", "mnemonic", "width",
+                                          "function", "external"])),
       ("words", rows(words, ["addr", "value", "kind", "class", "item", "offset", "thumb", "resolved"])),
       ("unresolved", rows(unresolved, ["addr", "value", "kind", "class"]))])
 

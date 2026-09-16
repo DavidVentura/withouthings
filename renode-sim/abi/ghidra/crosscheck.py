@@ -32,6 +32,9 @@ sys.path.insert(0, HERE)
 import seed as seedmod
 
 BL = re.compile(r"^\s*([0-9a-f]+):.*\tbl\t(0x[0-9a-f]+)")
+# llvm-objdump prints a pc-relative load's target as an offset from the section
+# start, which is the app base.
+POOL = re.compile(r"\tldr[^\t]*\tr[0-9]+, \[pc, [^]]*\].*@ (0x[0-9a-f]+)\s*$")
 
 
 def load(path):
@@ -51,6 +54,9 @@ def main():
     starts = {f["start"]: f for f in items["functions"]}
     data_starts = {d["start"] for d in items["data"]}
     inline_starts = {d["start"] for d in (items["inline"] or [])}
+    # A row of a typed table is an item start too: it is where a section and a
+    # relocation would begin.
+    row_starts = {r["start"] for r in (items["array_rows"] or [])}
     data_spans = sorted((d["start"], d["end"]) for d in items["data"] + (items["inline"] or []))
     orphan = sorted((o["start"], o["end"]) for o in (items["orphan_code"] or []))
     bodies = sorted((r["start"], r["end"]) for r in items["function_ranges"])
@@ -103,7 +109,7 @@ def main():
     for group in ("functions", "labels", "data", "tables"):
         for e in seed[group]:
             a = e["address"]
-            if a in starts or a in data_starts or a in inline_starts:
+            if a in starts or a in data_starts or a in inline_starts or a in row_starts:
                 continue
             named_bad.append((group, e["name"], a, placement(a)))
 
@@ -127,19 +133,42 @@ def main():
         if a not in starts:
             bnd_bad.append((e["symbol"], a, "not a Ghidra function start", "", "", ""))
 
+    # What the linear sweep thinks is a literal pool, against the partition: a
+    # pool word the sweep sees inside Ghidra data is the sweep misreading data
+    # as code, and one inside code is a pool Ghidra did not reach.
+    sweep = set()
+    with open(args.dis) as fh:
+        for line in fh:
+            m = POOL.search(line)
+            if m:
+                v = int(m.group(1), 16) + 0x27000
+                if seedmod.in_app(v) and v % 4 == 0:
+                    sweep.add(v)
+    ghidra_pools = {w["addr"] for w in refs["words"] or [] if w["kind"] == "pool"}
+    extra = sweep - ghidra_pools
+    extra_where = collections.Counter()
+    for v in extra:
+        extra_where["in code" if inside(bodies, v) is not None
+                    else "in code with no function" if inside(orphan, v) is not None
+                    else "in data or a gap"] += 1
+
     t = items["totals"]
     print("functions %d (seeded %d, FUN_ %d); bl targets %d, of which not a function start %d %s"
           % (t["functions"], t["functions_seeded"], t["functions_ghidra"],
              len(bl_targets), len(missed), dict(where)))
-    print("bytes: code %d, data %d, gap %d of %d; overlaps %d, orphan code runs %d"
-          % (t["code_bytes"], t["data_bytes"], t["gap_bytes"], t["image_bytes"],
-             t["overlaps"], t["orphan_code_runs"]))
+    print("bytes: code %d (orphan %d in %d runs), typed data %d (strings %d), "
+          "untyped data %d, padding %d, gap %d of %d; overlaps %d"
+          % (t["code_bytes"], t["orphan_code_bytes"], t["orphan_code_runs"],
+             t["typed_data_bytes"], t["string_bytes"], t["untyped_data_bytes"],
+             t["padding_bytes"], t["gap_bytes"], t["image_bytes"], t["overlaps"]))
     print("named addresses not on an item start: %d" % len(named_bad))
     for row in named_bad[:40]:
         print("   %-10s %-32s 0x%x  %s" % row)
     print("boundary.yaml disagreements: %d" % len(bnd_bad))
     for row in bnd_bad[:40]:
         print("   %-28s 0x%x boundary %s vs ghidra %s (tail %s vs jumps %s)" % row)
+    print("literal pools: ghidra %d, linear sweep %d, sweep-only %d %s"
+          % (len(ghidra_pools), len(sweep), len(extra), dict(extra_where)))
     print("reference classes: %s" % {k: v for k, v in sorted(refs["counts"].items())})
     for t_ in missed[:40]:
         print("   bl target not a function start: 0x%x" % t_)

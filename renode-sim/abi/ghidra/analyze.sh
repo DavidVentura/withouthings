@@ -51,6 +51,8 @@ start=$(date +%s)
     -loader BinaryLoader -loader-baseAddr 0x27000 \
     -scriptPath "$HERE" \
     -preScript seed_symbols.py "$OUT/seed.json" \
+    -postScript close_partition.py \
+    -postScript classify_gaps.py \
     -postScript export_partition.py "$OUT" \
     -log "$OUT/analysis.log" -scriptlog "$OUT/script.log" 2>&1 | tee "$OUT/headless.log"
 
