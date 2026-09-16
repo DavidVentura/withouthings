@@ -68,8 +68,11 @@ for s in "$PORT/GCC/nrf52/port.c" "$PORT/CMSIS/nrf52/port_cmsis.c" \
     objs="$objs $o"
 done
 
-python3 blobify.py -o "$OUT/appl-blob.o"
-"$GCC-ld" -T relink.ld --gc-sections -o "$OUT/relinked.elf" "$OUT/appl-blob.o" $objs
+# The objectified blob must link back to the stock image before it is worth
+# linking against anything else; this writes $OUT/appl-blob.o and the two
+# generated fragments the real link then reuses.
+./identity.sh
+"$GCC-ld" -L ../out -T relink.ld --gc-sections -o "$OUT/relinked.elf" "$OUT/appl-blob.o" $objs
 "$GCC-objcopy" -O binary --only-section=.libtext "$OUT/relinked.elf" "$OUT/libtext.bin"
 "$GCC-objcopy" -O binary --only-section=.blob "$OUT/relinked.elf" "$OUT/blob.bin"
 "$GCC-size" -A "$OUT/relinked.elf"
