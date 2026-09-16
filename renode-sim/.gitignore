@@ -1,3 +1,5 @@
 *.svd
 *.bin
+*.png
 out/*
+__pycache__

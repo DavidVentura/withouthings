@@ -1,0 +1,59 @@
+#!/bin/bash
+# Build FreeRTOS from source with the image's own config, link it against the
+# app blob, and write out/flash-relinked.bin.
+#
+#   abi/relink.sh            # needs ~/ref-build populated by abi/refbuild.sh
+#
+# Only the kernel is built: the boundary (abi/boundary.yaml) crosses into nrfx
+# exactly once, the SAADC, and that driver is Withings-modified and kept.
+set -eu
+cd "$(dirname "$0")"
+ROOT=${ROOT:-$HOME/ref-build}
+SDK=$ROOT/sdk/nRF5_SDK_17.1.0_ddde560
+GCC=$ROOT/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi
+KERNEL=$SDK/external/freertos/source
+PORT=$SDK/external/freertos/portable
+OUT=../out/relink
+mkdir -p "$OUT"
+
+ARCH="-mcpu=cortex-m4 -mthumb -mabi=aapcs -mfpu=fpv4-sp-d16 -mfloat-abi=hard"
+COMMON="-Os -ffunction-sections -fdata-sections -fno-strict-aliasing -fno-builtin
+ -fshort-enums -std=gnu99 -g3 -w -DNRF52840_XXAA -DFLOAT_ABI_HARD -DS140
+ -DSOFTDEVICE_PRESENT -DNRF_SD_BLE_API_VERSION=7 -DFREERTOS -DSWI_DISABLE0"
+
+INC="-Iconfig-relink -I$KERNEL/include -I$PORT/GCC/nrf52 -I$PORT/CMSIS/nrf52 -I$SDK/examples/ble_peripheral/ble_app_hrs_freertos/pca10056/s140/config"
+for d in components/toolchain/cmsis/include modules/nrfx modules/nrfx/hal \
+         modules/nrfx/mdk modules/nrfx/drivers/include components/libraries/util \
+         components/softdevice/s140/headers components/softdevice/s140/headers/nrf52 \
+         integration/nrfx components/libraries/experimental_section_vars \
+         components/softdevice/common components/libraries/log components/libraries/log/src \
+         components/libraries/delay components/libraries/atomic components/libraries/mutex \
+         modules/nrfx/soc integration/nrfx/legacy; do
+    INC="$INC -I$SDK/$d"
+done
+
+objs=""
+"$GCC-gcc" $ARCH $COMMON $INC -DconfigUSE_TIMERS=0 -c relink_glue.c -o "$OUT/relink_glue.o"
+objs="$objs $OUT/relink_glue.o"
+for s in tasks.c queue.c list.c portable/MemMang/heap_4.c; do
+    o="$OUT/$(echo "$s" | tr / _ | sed 's/\.c$/.o/')"
+    "$GCC-gcc" $ARCH $COMMON $INC -DconfigUSE_TIMERS=0 -c "$KERNEL/$s" -o "$o"
+    objs="$objs $o"
+done
+# port.c's configASSERTs are build-time sanity checks about the core revision
+# (it compares CPUID against 0x410fc241) and the image does not carry them:
+# xPortStartScheduler in the blob has no such compare. Building them in wedges
+# the boot on Renode's CPUID, so port.c takes the empty assert.
+for s in "$PORT/GCC/nrf52/port.c" "$PORT/CMSIS/nrf52/port_cmsis.c" \
+         "$PORT/CMSIS/nrf52/port_cmsis_systick.c"; do
+    o="$OUT/$(basename "$s" .c).o"
+    "$GCC-gcc" $ARCH $COMMON $INC -DconfigUSE_TIMERS=0 -DREF_ASSERT=2 -c "$s" -o "$o"
+    objs="$objs $o"
+done
+
+python3 blobify.py -o "$OUT/appl-blob.o"
+"$GCC-ld" -T relink.ld --gc-sections -o "$OUT/relinked.elf" "$OUT/appl-blob.o" $objs
+"$GCC-objcopy" -O binary --only-section=.libtext "$OUT/relinked.elf" "$OUT/libtext.bin"
+"$GCC-objcopy" -O binary --only-section=.blob "$OUT/relinked.elf" "$OUT/blob.bin"
+"$GCC-size" -A "$OUT/relinked.elf"
+python3 relink_image.py
