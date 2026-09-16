@@ -258,7 +258,7 @@
 
 # --- board device tables and the absent sensors' drivers (2026-09-16, identification pass) ---
 0x000b22c4  i2c_device_table             7 words/entry {bus 0xb2390 (TWI0), addr, ?, fn0..fn3}: 0x6A, 0x49, 0x48, 0x52, 0x79, 0x77, 0x76
-0x000b23c0  spi_device_table             5 words/entry {bus, cs pin, mode, state, name}; 0xb2460 = SPIM2 bus (flash CS P0.15, ADXL CS P0.16)
+0x000b23c0  spi_device_table             rows of 0x14 {bus, cs {u16 port,u16 pin}, mode, state, name}, each followed by its bus descriptor: 0xb23c0 max86173 (bus 0xb23d4 = SPIM1), 0xb2404 CS P0.25, then the SPIM2 pair 0xb2438 ADXL CS P0.16 / 0xb244c flash CS P0.15 on bus 0xb2460 (hwa10.yaml: spi_device_table = the pair)
 0x000be470  gpio_pin_table               4-byte {port u16, pin u16} descriptors (0xbe458..0xbe46f = three ble_gap_conn_params_t) (0xbe478 crown MOTION P1.13, 0xbe4c8 click P1.11, 0xbe4a4/0xbe4a8 AFE supply P1.12/P1.14)
 0x0005e450  tmp117_driver                TWI0 0x48; writes CONFIG 0x01 (BE), reads TEMP 0x00, Q7 split @0x5e5d8; table fns 0x5e614..0x5e644
 0x0005b20c  ads1115_driver               TWI0 0x49 "SN19020X6" heat flux; config 0x01 (0x0AE3 default @0x5b400), OS poll @0x5b234, uV conversion @0x5b384
