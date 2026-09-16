@@ -21,7 +21,14 @@ COMMON="-Os -ffunction-sections -fdata-sections -fno-strict-aliasing -fno-builti
  -fshort-enums -std=gnu99 -g3 -w -DNRF52840_XXAA -DFLOAT_ABI_HARD -DS140
  -DSOFTDEVICE_PRESENT -DNRF_SD_BLE_API_VERSION=7 -DFREERTOS -DSWI_DISABLE0"
 
-INC="-Iconfig-relink -I$KERNEL/include -I$PORT/GCC/nrf52 -I$PORT/CMSIS/nrf52 -I$SDK/examples/ble_peripheral/ble_app_hrs_freertos/pca10056/s140/config"
+# The SDK port hardcodes RTC1 as the tick source; this firmware's tick is RTC2
+# (symbols.txt 0x74034 writes RTC2 PRESCALER 0x20, and vector 52 is the tick
+# ISR). The macro is an unconditional #define, so the header is rewritten into
+# the build directory and shadowed on the include path rather than -D'd.
+sed -e 's/NRF_RTC1/NRF_RTC2/' -e 's/RTC1_IRQn/RTC2_IRQn/' \
+    "$PORT/CMSIS/nrf52/portmacro_cmsis.h" > "$OUT/portmacro_cmsis.h"
+
+INC="-I$OUT -Iconfig-relink -I$KERNEL/include -I$PORT/GCC/nrf52 -I$PORT/CMSIS/nrf52 -I$SDK/examples/ble_peripheral/ble_app_hrs_freertos/pca10056/s140/config"
 for d in components/toolchain/cmsis/include modules/nrfx modules/nrfx/hal \
          modules/nrfx/mdk modules/nrfx/drivers/include components/libraries/util \
          components/softdevice/s140/headers components/softdevice/s140/headers/nrf52 \

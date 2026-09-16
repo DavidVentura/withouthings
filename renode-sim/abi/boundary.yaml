@@ -1,0 +1,591 @@
+# The Withings-code <-> open-source-library boundary of appl v3411, named.
+#
+# Hand-written from abi/matches.yaml plus body reading against the reference
+# build (~/ref-build, abi/refbuild.sh). `how` records what decided each name,
+# `confidence` is high/medium/low. blobify.py consumes this file and refuses
+# any boundary site whose target is not listed here.
+#
+# Sites were found twice and agreed exactly: a raw scan of appl.bin for Thumb
+# BL encodings whose target lands in a library range, and the linear
+# disassembly abi/match.py already produces. 647 app->library call sites reach
+# 62 distinct library entry points; 26 library->app sites reach 14.
+
+meta:
+  image: appl.bin
+  app_base: 0x27000
+  app_to_lib: {sites: 647, targets: 62}
+  lib_to_app: {sites: 26, targets: 14}
+
+# Config corrections forced by the image's own struct layouts. refbuild.sh's
+# FreeRTOSConfig.h is wrong on three knobs; every queue.c body's match score
+# rises when they are fixed (xQueueGiveFromISR 0.29 -> 0.82,
+# xQueueGenericSendFromISR 0.44 -> 0.67, xQueueGenericSend 0.29 -> 0.57,
+# xQueueGenericCreate 0.17 -> 0.48, xQueueGenericCreateStatic 0.29 -> 0.42).
+config_corrections:
+  configUSE_QUEUE_SETS: 1        # Queue_t is 0x54 with pxQueueSetContainer at 0x48
+  configMAX_TASK_NAME_LEN: 12    # with RECORD_STACK_HIGH_ADDRESS this is the only
+  configRECORD_STACK_HIGH_ADDRESS: 1  # TCB layout giving pxTaskTag 0x54 in 0x60 bytes
+  notes: >
+    Queue_t read off the image: pcHead 0x00, pcTail 0x04, pcWriteTo 0x08,
+    u 0x0c, xTasksWaitingToSend 0x10, xTasksWaitingToReceive 0x24,
+    uxMessagesWaiting 0x38, uxLength 0x3c, uxItemSize 0x40, cRxLock 0x44,
+    cTxLock 0x45, ucStaticallyAllocated 0x46, pxQueueSetContainer 0x48,
+    uxQueueNumber 0x4c, ucQueueType 0x50, sizeof 0x54 (xQueueGenericCreate
+    mallocs len*size + 0x54). TCB_t: pxTopOfStack 0x00, xStateListItem 0x04,
+    xEventListItem 0x18, uxPriority 0x2c, pxStack 0x30, pcTaskName[12] 0x34,
+    pxEndOfStack 0x40, uxTCBNumber 0x44, uxTaskNumber 0x48, uxBasePriority
+    0x4c, uxMutexesHeld 0x50, pxTaskTag 0x54, ulNotifiedValue 0x58,
+    ucNotifyState 0x5c, sizeof 0x60.
+    configASSERT is a logging assert: the queue.c asserts call 0x5e7a8 with the
+    __LINE__ value in r1 (400 in xQueueGenericCreate, 523 in xQueueCreateMutex,
+    617 in xQueueGiveMutexRecursive), which also dates the kernel source.
+
+# Spans of the image the library occupies, as abi/matches.yaml brackets them
+# (first to last matched function of each run). A `bl` from inside a span is a
+# library-internal call and is not part of the boundary. The spans understate
+# the library slightly at their edges -- prvInitialiseTaskLists below 0x72eb0,
+# SAADC_IRQHandler above 0x7e138 -- which is why a handful of kernel-global pool
+# references look like app references; see data_references.
+library_ranges:
+  - [0x27da6, 0x27e50]
+  - [0x51a04, 0x51afc]
+  - [0x72eb0, 0x73e5c]
+  - [0x7db08, 0x7e138]
+  - [0x81220, 0x812a8]
+  - [0x8f42c, 0x8f42c]
+  - [0x9e32c, 0x9ea2e]
+  - [0xa4e3a, 0xa4e3a]
+
+# --- app -> library ---------------------------------------------------------
+# `keep` means the call is NOT relocated: the blob keeps calling its own copy.
+app_to_lib:
+  # heap_4.c
+  - addr: 0x51a04
+    sites: 2
+    symbol: "pvPortMalloc"
+    how: "matches.yaml 0.727"
+    confidence: "high"
+  - addr: 0x51afc
+    sites: 2
+    symbol: "vPortFree"
+    how: "matches.yaml 1.000"
+    confidence: "high"
+
+  # tasks.c
+  - addr: 0x72f10
+    sites: 11
+    symbol: vTaskDelete
+    confidence: high
+    how: >
+      body: enter critical, NULL handle -> pxCurrentTCB,
+      uxListRemove(&xStateListItem), uxListRemove(&xEventListItem) when
+      pvContainer(+0x28) set, uxTaskNumber++,
+      vListInsertEnd(xTasksWaitingTermination) and
+      uxDeletedTasksWaitingCleanUp++ for the running task, then
+      portYIELD_WITHIN_API. Top reference candidate too.
+  - addr: 0x7300c
+    sites: 1
+    symbol: "vTaskStartScheduler"
+    how: "matches.yaml 0.750"
+    confidence: "high"
+  - addr: 0x73084
+    sites: 5
+    symbol: "vTaskSuspendAll"
+    how: "matches.yaml 1.000"
+    confidence: "high"
+  - addr: 0x73094
+    sites: 68
+    symbol: xTaskGetTickCount
+    confidence: high
+    how: >
+      ldr r3,[pc]; ldr r0,[r3]; bx lr with the pool word 0x20021920 = xTickCount
+      (the same word vTaskStepTick at 0x730ac increments). The FromISR twin is
+      the identical body at 0x730a0; tasks.c emits xTaskGetTickCount first and
+      this is the one with 68 callers.
+  - addr: 0x730a0
+    sites: 1
+    symbol: "xTaskGetTickCountFromISR"
+    confidence: "medium"
+    how: "same body and same xTickCount pool word as 0x73094, emitted second"
+  - addr: 0x730ac
+    sites: 2
+    symbol: "vTaskStepTick"
+    how: "symbols.txt/hand-named; xTickCount += r0"
+    confidence: "high"
+  - addr: 0x730bc
+    sites: 2
+    symbol: "xTaskIncrementTick"
+    how: "symbols.txt/hand-named"
+    confidence: "high"
+  - addr: 0x731dc
+    sites: 3
+    symbol: "xTaskResumeAll"
+    how: "matches.yaml 0.737"
+    confidence: "high"
+  - addr: 0x732b0
+    sites: 2
+    symbol: "vTaskDelayUntil"
+    how: "matches.yaml 0.800"
+    confidence: "high"
+  - addr: 0x73300
+    sites: 2
+    symbol: "vTaskSetApplicationTaskTag"
+    how: "matches.yaml 1.000"
+    confidence: "high"
+  - addr: 0x73320
+    sites: 1
+    symbol: "xTaskGetApplicationTaskTag"
+    confidence: "high"
+    how: "NULL handle -> pxCurrentTCB, critical section around ldr r4,[r4,#0x54] = pxTaskTag"
+  - addr: 0x7333c
+    sites: 2
+    symbol: "vTaskSwitchContext"
+    how: "matches.yaml 0.655 + symbols.txt"
+    confidence: "high"
+  - addr: 0x734d0
+    sites: 1
+    symbol: "eTaskConfirmSleepModeStatus"
+    how: "reference score 0.89"
+    confidence: "high"
+  - addr: 0x73580
+    sites: 1
+    symbol: uxTaskGetSystemState
+    confidence: high
+    how: >
+      vTaskSuspendAll, then a loop of 5 (configMAX_PRIORITIES) over an array of
+      stride 0x14 (List_t) calling prvListTasksWithinSingleList@0x9e49a with
+      eState=1, then the delayed/overflow/suspended/terminated lists with
+      eState=2. Needs configUSE_TRACE_FACILITY, which the TCB size already says.
+  - addr: 0x73614
+    sites: 1
+    symbol: "uxTaskGetStackHighWaterMark"
+    how: "reference score 1.000"
+    confidence: "high"
+  - addr: 0x73634
+    sites: 1
+    symbol: null
+    keep: true
+    confidence: low
+    how: >
+      UNNAMED. NULL handle -> pxCurrentTCB, then *r1 = TCB+0x40 (pxEndOfStack)
+      and *r2 = TCB+0x30 (pxStack). No stock FreeRTOS API returns that pair, so
+      this is a Withings addition to tasks.c. One call site; left unrelocated.
+  - addr: 0x73648
+    sites: 10
+    symbol: xTaskGetCurrentTaskHandle
+    confidence: high
+    how: >
+      ldr r3,[pc]; ldr r0,[r3]; bx lr with pool word 0x200219fc, which 0x73634
+      and vTaskDelete both use as the "NULL means the running task" fallback,
+      i.e. pxCurrentTCB.
+  - addr: 0x73654
+    sites: 15
+    symbol: xTaskGetSchedulerState
+    confidence: high
+    how: >
+      if xSchedulerRunning == 0 return 1 (NOT_STARTED); else
+      clz(uxSchedulerSuspended)>>5<<1, i.e. 2 (RUNNING) when zero, 0 (SUSPENDED)
+      otherwise.
+  - addr: 0x737c8
+    sites: 1
+    symbol: "ulTaskNotifyTake"
+    how: "reference score 0.90"
+    confidence: "high"
+  - addr: 0x7382c
+    sites: 11
+    symbol: "xTaskNotifyWait"
+    how: "reference 0.94 + symbols.txt"
+    confidence: "high"
+  - addr: 0x738b8
+    sites: 8
+    symbol: xTaskGenericNotify
+    confidence: high
+    how: >
+      critical section, optional *pulPreviousNotifyValue = TCB+0x58
+      (ulNotifiedValue), ucNotifyState(+0x5c) <- 2, tbb over the four eAction
+      values, then unblock through uxListRemove/vListInsertEnd/
+      prvResetNextTaskUnblockTime.
+  - addr: 0x73960
+    sites: 5
+    symbol: xTaskGenericNotifyFromISR
+    confidence: high
+    how: >
+      same body as 0x738b8 with basepri 0xC0 instead of vPortEnterCritical and a
+      pxHigherPriorityTaskWoken argument read from the stack.
+  - addr: 0x73dfc
+    sites: 1
+    symbol: "vPortEnableVFP"
+    how: "symbols.txt/hand-named (naked asm)"
+    confidence: "high"
+  - addr: 0x73dd0
+    sites: 1
+    symbol: "vPortStartFirstTask"
+    how: "reference score 0.82"
+    confidence: "high"
+  - addr: 0x73e3c
+    sites: 18
+    symbol: "vPortEnterCritical"
+    how: "matches.yaml + symbols.txt"
+    confidence: "high"
+  - addr: 0x73e5c
+    sites: 18
+    symbol: "vPortExitCritical"
+    how: "matches.yaml 1.000"
+    confidence: "high"
+
+  # queue.c
+  - addr: 0x73a20
+    sites: 23
+    symbol: xQueueGenericCreate
+    confidence: high
+    how: >
+      configASSERT at queue.c line 400, pvPortMalloc(uxLength*uxItemSize +
+      0x54), ucStaticallyAllocated(+0x46) <- 0, prvInitialiseNewQueue ->
+      xQueueGenericReset@0x9e6e8, ucQueueType at +0x50.
+  - addr: 0x73a90
+    sites: 82
+    symbol: "xQueueGenericSend"
+    how: "hwa10.yaml/symbols.txt"
+    confidence: "high"
+  - addr: 0x73bc0
+    sites: 23
+    symbol: xQueueCreateMutex
+    confidence: high
+    how: >
+      configASSERT at queue.c line 523, xQueueGenericCreate(1, 0, type), then
+      pxMutexHolder/u.uxRecursiveCallCount cleared and one xQueueGenericSend to
+      give it -- prvInitialiseMutex exactly.
+  - addr: 0x73c10
+    sites: 6
+    symbol: xQueueGiveMutexRecursive
+    confidence: high
+    how: >
+      configASSERT at queue.c line 617, compares pxMutexHolder(+0x04) against
+      xTaskGetCurrentTaskHandle@0x73648, decrements uxRecursiveCallCount(+0x0c)
+      and calls xQueueGenericSend when it reaches zero.
+  - addr: 0x73c64
+    sites: 9
+    symbol: xQueueReceive
+    confidence: medium
+    how: >
+      reference score 0.70 as xQueueReceive against 0.68 as xQueuePeek; the two
+      differ only in whether pcReadFrom is restored. The pair is the known
+      ambiguity of this matcher.
+  - addr: 0x73d78
+    sites: 7
+    symbol: "xQueueTakeMutexRecursive"
+    confidence: "high"
+    how: "reference score 0.61 and it is the partner of xQueueGiveMutexRecursive@0x73c10"
+  - addr: 0x9e6e8
+    sites: 2
+    symbol: "xQueueGenericReset"
+    how: "reference score 0.82"
+    confidence: "high"
+  - addr: 0x9e752
+    sites: 8
+    symbol: "xQueueGenericCreateStatic"
+    how: "symbols.txt/hand-named"
+    confidence: "high"
+  - addr: 0x9e782
+    sites: 25
+    symbol: "xQueueCreateMutexStatic"
+    how: "reference score 1.000"
+    confidence: "high"
+  - addr: 0x9e7ac
+    sites: 4
+    symbol: xQueueGenericSendFromISR
+    confidence: high
+    how: >
+      basepri critical, uxMessagesWaiting(+0x38) vs uxLength(+0x3c) with the
+      xCopyPosition==2 override, prvCopyDataToQueue@0x9e590, cTxLock(+0x45)
+      tested against -1, pxQueueSetContainer(+0x48) branch.
+  - addr: 0x9e828
+    sites: 3
+    symbol: xQueueGiveFromISR
+    confidence: high
+    how: >
+      same shape as 0x9e7ac but increments uxMessagesWaiting directly with no
+      data copy. Reference score 0.82 once configUSE_QUEUE_SETS is corrected.
+  - addr: 0x9e890
+    sites: 105
+    symbol: "xQueueSemaphoreTake"
+    how: "hwa10.yaml + reference 0.86"
+    confidence: "high"
+  - addr: 0x9e9ac
+    sites: 1
+    symbol: "xQueueReceiveFromISR"
+    how: "reference score 0.74"
+    confidence: "high"
+  - addr: 0x9ea10
+    sites: 1
+    symbol: "prvIsQueueEmpty"
+    keep: true
+    how: "reference score 0.75"
+    confidence: "medium"
+  - addr: 0x9ea22
+    sites: 22
+    symbol: "vQueueDelete"
+    how: "reference score 1.000"
+    confidence: "high"
+  - addr: 0x9ea2e
+    sites: 1
+    symbol: "xQueueIsQueueFullFromISR"
+    how: "reference score 1.000"
+    confidence: "medium"
+
+  # list.c
+  - addr: 0x9e4fa
+    sites: 6
+    symbol: "vListInitialise"
+    how: "reference score 1.000"
+    confidence: "high"
+  - addr: 0x9e516
+    sites: 1
+    symbol: "vListInsertEnd"
+    how: "reference score 0.82"
+    confidence: "high"
+  - addr: 0x9e52c
+    sites: 1
+    symbol: "vListInsert"
+    how: "reference score 0.91"
+    confidence: "high"
+  - addr: 0x9e55a
+    sites: 1
+    symbol: "uxListRemove"
+    how: "matches.yaml"
+    confidence: "high"
+
+  # tasks.c, the out-of-line port glue and task creation
+  - addr: 0x9e3dc
+    sites: 6
+    symbol: "xTaskCreateStatic"
+    how: "matches.yaml 1.000"
+    confidence: "high"
+  - addr: 0x9e410
+    sites: 11
+    symbol: "xTaskCreate"
+    how: "reference score 0.83"
+    confidence: "high"
+  - addr: 0x9e46c
+    sites: 77
+    symbol: vPortYield
+    confidence: high
+    how: >
+      symbols.txt: pends PendSV via ICSR. NOT vTaskDelay -- DEVELOPMENT.md
+      records the trap that calling it with a tick count returns immediately.
+      The reference's portYIELD is inlined with __SEV(); the image's is out of
+      line without it, which is why it never matched by body.
+
+  # nrfx SAADC: Withings-modified, matches no nrfx release. Kept as-is so the
+  # blob keeps calling its own copy (DEVELOPMENT.md says to recover the
+  # modification at source level later).
+  - addr: 0x7dc2c
+    sites: 2
+    symbol: "saadc_event_limits_handle"
+    keep: true
+    how: "reference 0.81"
+    confidence: "medium"
+  - addr: 0x7dcc0
+    sites: 1
+    symbol: "nrfx_saadc_init"
+    keep: true
+    how: "symbols.txt"
+    confidence: "high"
+  - addr: 0x7dd10
+    sites: 1
+    symbol: null
+    keep: true
+    confidence: "low"
+    how: "UNNAMED saadc entry; NRFX_ASSERT on cb+0x22 then a channel index compared against 8"
+  - addr: 0x7de34
+    sites: 1
+    symbol: "nrfx_saadc_channel_init"
+    keep: true
+    how: "symbols.txt"
+    confidence: "high"
+  - addr: 0x7de94
+    sites: 1
+    symbol: "nrfx_saadc_advanced_mode_set"
+    keep: true
+    how: "reference 0.45 (best)"
+    confidence: "low"
+  - addr: 0x7df40
+    sites: 3
+    symbol: "nrfx_saadc_buffer_convert"
+    keep: true
+    how: "symbols.txt (reference calls it nrfx_saadc_buffer_set, 0.89)"
+    confidence: "high"
+  - addr: 0x7dfb8
+    sites: 2
+    symbol: "nrfx_saadc_sample_convert"
+    keep: true
+    how: "symbols.txt"
+    confidence: "high"
+  - addr: 0x7e108
+    sites: 2
+    symbol: "nrfx_saadc_abort"
+    keep: true
+    how: "symbols.txt + reference 0.53"
+    confidence: "medium"
+  - addr: 0x7e138
+    sites: 1
+    symbol: "nrfx_saadc_uninit"
+    keep: true
+    how: "reference score 1.000"
+    confidence: "high"
+  - addr: 0xa4e3a
+    sites: 4
+    symbol: "nrf_saadc_event_clear"
+    keep: true
+    how: "matches.yaml 1.000 (constprop)"
+    confidence: "high"
+
+  # nrf_fprintf: SDK code, but the image's copy is wired into Withings' own wlog
+  # ring (symbols.txt 0x8f460). Kept rather than relinked.
+  - addr: 0x8f42c
+    sites: 8
+    symbol: "nrf_fprintf"
+    keep: true
+    how: "matches.yaml/reference 0.67"
+    confidence: "medium"
+
+# --- library -> app ---------------------------------------------------------
+# These become PROVIDE-style defined symbols in the blob object, so the source
+# library can be linked against the app's hooks.
+lib_to_app:
+  - addr: 0x2eca8
+    sites: 1
+    symbol: "vApplicationGetIdleTaskMemory"
+    confidence: "high"
+    how: "only caller is vTaskStartScheduler@0x7300c, which calls it right before xTaskCreateStatic"
+  - addr: 0x36cbc
+    sites: 1
+    symbol: "vApplicationStackOverflowHook"
+    confidence: "high"
+    how: "only caller is vTaskSwitchContext@0x7333c, i.e. taskCHECK_FOR_STACK_OVERFLOW with method 2"
+  - addr: 0x36e84
+    sites: 2
+    symbol: null
+    confidence: low
+    how: >
+      UNNAMED. Called from inside xTaskIncrementTick (0x73112) and
+      xTaskResumeAll (0x731aa) -- the two places a task is moved to a ready
+      list. A Withings trace hook; not a stock FreeRTOS hook
+      (configUSE_TICK_HOOK would only fire from xTaskIncrementTick).
+  - addr: 0x5e7a8
+    sites: 6
+    symbol: vAssertCalled
+    confidence: high
+    how: >
+      the configASSERT logger; called with a format/file pointer in r0 and the
+      __LINE__ value in r1 from queue.c lines 400/523/617 and from tasks.c.
+      symbols.txt calls it wlog_fmt_r0d.
+  - addr: 0x80b8c
+    sites: 1
+    symbol: null
+    confidence: "low"
+    how: "app callback out of the 0x81220 SDK-library span"
+  - addr: 0x80bb8
+    sites: 1
+    symbol: null
+    confidence: "low"
+    how: "app callback out of the 0x81220 SDK-library span"
+  - addr: 0x80bfc
+    sites: 1
+    symbol: null
+    confidence: "low"
+    how: "app callback out of the 0x81220 SDK-library span"
+  - addr: 0x933c6
+    sites: 1
+    symbol: null
+    confidence: "low"
+    how: "called from nrfx_saadc_init; inside the kept SAADC driver, so it never crosses the relink boundary"
+  - addr: 0xa86c2
+    sites: 2
+    symbol: "memset"
+    confidence: "high"
+    how: "(ptr, 0, len) from prvInitialiseNewTask and the SAADC driver"
+  - addr: 0xa8812
+    sites: 2
+    symbol: "memcpy"
+    confidence: "high"
+    how: "both call sites are inside prvCopyDataToQueue@0x9e590"
+  # These four are not really app code: they are library bodies that fall outside
+  # the spans matches.yaml bracketed, so the site classifier calls them app.
+  - addr: 0x519b8
+    sites: 1
+    symbol: "prvHeapInit"
+    library_not_app: true
+    confidence: "high"
+    how: "sole caller is pvPortMalloc@0x51a04"
+  - addr: 0x72d40
+    sites: 2
+    symbol: "prvAddNewTaskToReadyList"
+    library_not_app: true
+    confidence: "high"
+    how: "callers are xTaskCreateStatic@0x9e3dc and xTaskCreate@0x9e410"
+  - addr: 0x72e40
+    sites: 4
+    symbol: "prvAddCurrentTaskToDelayedList"
+    library_not_app: true
+    confidence: "high"
+    how: "callers are vTaskDelayUntil, ulTaskNotifyTake, xTaskNotifyWait and vTaskDelay"
+  - addr: 0x73ec8
+    sites: 1
+    symbol: "vPortSuppressTicksAndSleep"
+    library_not_app: true
+    confidence: "high"
+    how: "symbols.txt; sole caller is prvIdleTask@0x27da6"
+
+# --- data references --------------------------------------------------------
+# Literal-pool words holding an address of a kernel or driver global.
+#
+# The kernel's own RAM was located from the pools of the matched library bodies:
+# 39 distinct RAM addresses, clustering at 0x200218fc..0x20021a84 (tasks.c and
+# queue.c statics: xTickCount 0x20021920, pxCurrentTCB 0x200219fc, the ready
+# lists, xSchedulerRunning, uxSchedulerSuspended) and 0x2001ae04..0x2001af9c
+# (heap_4).
+#
+# Result: NO pool word in Withings code points into either cluster. Every one of
+# the 79 sites that looked like an app reference is inside a library body that
+# the matches.yaml spans simply failed to bracket -- 0x72d4a..0x72e9c
+# (prvInitialiseTaskLists / prvCheckTasksWaitingTermination, below the 0x72eb0
+# span start), 0x27da2..0x27da4 (prvIdleTask), 0x519ba..0x519dc (prvHeapInit),
+# 0x7e41a..0x7e4c2 (SAADC_IRQHandler, past the 0x7e138 span end). The remaining
+# words (0x20006d48, 0x20007208, 0x20017c84, 0x20024670, 0x20027185, 0x20027248)
+# are Withings globals that library code also touches, not kernel state.
+#
+# So the app carries no R_ARM_ABS32 against a kernel global. What it does carry
+# is the vector table.
+data_references:
+  kernel_ram: [0x200218fc, 0x20021a84]
+  heap4_ram: [0x2001ae04, 0x2001af9c]
+  app_pool_words_into_kernel_ram: 0
+  app_pool_words_into_library_flash: 2   # 0x7e2a9 and 0xa4fa1, both SAADC, both kept
+  vector_table:
+    # appl.bin's vector table at 0x27000. Three entries are kernel code and must
+    # move with the relink, or the image ends up with two kernels: the source one
+    # the app calls and the blob's one the interrupts still enter.
+    - index: 11
+      word: 0x27e21
+      symbol: "SVC_Handler"
+      relocate: true
+    - index: 14
+      word: 0x27e51
+      symbol: "PendSV_Handler"
+      relocate: true
+    - index: 52
+      word: 0x73e71
+      symbol: "RTC2_IRQHandler"
+      relocate: true
+      note: "the FreeRTOS tick ISR; the RTC2 port owns RTC2, so nrfx must not"
+    - index: 23
+      word: 0x7e16d
+      symbol: "SAADC_IRQHandler"
+      relocate: false
+      note: "part of the kept Withings SAADC driver"
+    - index: 1
+      word: 0x34939
+      symbol: "Reset_Handler"
+      relocate: false
+      note: "app entry, exported"
