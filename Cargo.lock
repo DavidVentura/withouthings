@@ -794,6 +794,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "wpp-sim-client"
+version = "0.1.0"
+dependencies = [
+ "wpp",
+]
+
+[[package]]
 name = "wpp-store"
 version = "0.1.0"
 dependencies = [

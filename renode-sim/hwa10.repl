@@ -186,3 +186,13 @@ sysbus:
         Tag <0x100000a4, 0x100000a7> "DEVICEADDR[0]" 0xAABBCCDD
         Tag <0x10001200, 0x10001203> "PSELRESET"
 
+wppPipe: Miscellaneous.WppPipe @ sysbus
+    port: 7788
+    evtPresentHook: 0x37370
+    evtPollHook: 0x3739c
+    evtBuffer: 0x20017ce0
+    hvxThunk: 0x935b4
+    wppServiceContext: 0x20017f28
+    sdEventIrq: 22
+    preinit:
+        include @WppPipe.cs

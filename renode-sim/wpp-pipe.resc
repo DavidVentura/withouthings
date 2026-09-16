@@ -1,0 +1,17 @@
+:name: HWA10 WPP pipe
+:description: Batch run with a WPP link into the firmware and no radio peer.
+:  The pipe listens on 127.0.0.1:7788, framing [len u16 big-endian][payload];
+:  a TCP connection stands for the BLE one. Drive it with wpp-sim-client:
+:    renode --disable-xwt --console -e "include @wpp-pipe.resc"
+:    cargo run -p wpp-sim-client            # once out/uart0.log has "Add WPPS chars."
+
+include @machine.resc
+
+# main init sleeps vTaskDelay(30001) before bringing up the UI (0x91faa,
+# `movw r0, #0x7531`); make that 2001 ticks so the link is usable sooner.
+sysbus WriteDoubleWord 0x91faa 0x70D1F240
+
+logLevel -1 sysbus.wppPipe
+emulation SetAdvanceImmediately true
+sysbus.wppPipe Attach
+start
