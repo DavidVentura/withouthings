@@ -1,0 +1,316 @@
+# HWA10 (ScanWatch 2) application firmware v3411 — machine-readable ABI.
+# Hand-edited; `python3 abi/gen.py` turns it into out/hwa10.h and out/hwa10.ld.
+# Addresses are virtual (appl image is linked at 0x27000) and are given WITHOUT
+# the Thumb bit; gen.py sets it for everything under `functions`.
+# symbols.txt is the prose map of the same firmware; this file is the subset
+# whose prototype is known well enough to call.
+
+meta:
+  firmware: appl v3411
+  cpu: cortex-m4
+  float_abi: hard          # the app runs with the VFP on (vPortEnableVFP @0x73dfc)
+  app_base: 0x27000
+  app_end: 0xf117c
+  bootloader_base: 0xfc000
+
+regions:
+  # Both ranges are argued for in notes; gen.py turns them into MEMORY entries.
+  - name: OVERLAY_FLASH
+    start: 0xf4000
+    size: 0x8000
+    kind: flash
+    notes: >
+      Internal flash between the end of the app image (0xf117c) and the
+      bootloader (0xfc000). The app can only program internal flash through two
+      leaf routines, int_flash_erase_range (0x3a318) and int_flash_write
+      (0x3a348); the only callers in the image are the thunks 0x9ab8e/0x93786,
+      whose single caller is the UART debug shell's "erase range" command
+      (strings 'erase'/'range' at 0xde12b/0xda248, handler around 0x53920).
+      Nothing on the normal boot or WPP path writes internal flash: settings and
+      the firmware banks live in the external MX25R (dblib / fwblk). Confirmed
+      in the sim over 600 s of virtual time with a WPP session and a time write:
+      the NVMC model logged no ERASEPAGE and a snapshot of 0xf1000..0xfc000
+      taken at reset verified byte-identical at the end of the run.
+      0xf1180..0xf4000 is left as a margin for the app image growing.
+  - name: OVERLAY_RAM
+    start: 0x20034000
+    size: 0x1000
+    kind: ram
+    notes: >
+      The app's initial MSP is 0x20040000 (top of the 256 KB SRAM) and the main
+      stack grows down from there. After 600 s of virtual time that included a
+      BLE connection, a WPP probe, the read-only command walk, a time write and
+      the algorithm manager running, a dump of 0x20026000..0x20040000 was
+      non-zero only in 0x20026000..0x2002ae00 (statics and the FreeRTOS heap)
+      and 0x2003f000..0x20040000 (the main stack's low-water mark). The 0x14200
+      bytes between them were never written. 0x20034000 sits in the middle of
+      that hole, 0x9200 above the highest used static and 0xb000 below the
+      deepest the stack reached. Cross-checked by snapshotting this exact range
+      at reset with the NVMC model's SnapshotProtectedRegion (it works on any
+      sysbus range, not just flash) and verifying it at the end of the run:
+      zero words differed.
+
+functions:
+  # --- FreeRTOS ---
+  - name: xTaskCreateStatic
+    address: 0x9e3dc
+    ret: void *
+    args: [[void *, pxTaskCode], [const char *, pcName], [u32, ulStackDepth],
+           [void *, pvParameters], [u32, uxPriority], [void *, puxStackBuffer],
+           [void *, pxTaskBuffer]]
+    notes: stock FreeRTOS prototype; r0=entry, r2=stack words, priority on the stack
+  - name: xQueueSemaphoreTake
+    address: 0x9e890
+    ret: i32
+    args: [[void *, xQueue], [u32, xTicksToWait]]
+    notes: 0xffffffff ticks = block forever
+  - name: xQueueGenericSend
+    address: 0x73a90
+    ret: i32
+    args: [[void *, xQueue], [const void *, pvItemToQueue], [u32, xTicksToWait],
+           [i32, xCopyPosition]]
+    notes: >
+      called with a NULL handle by battery_sem_give before battery_task exists;
+      machine.resc patches the sim around it
+  - name: xTaskNotifyWait
+    address: 0x7382c
+    ret: i32
+    args: [[u32, ulBitsToClearOnEntry], [u32, ulBitsToClearOnExit],
+           [u32 *, pulNotificationValue], [u32, xTicksToWait]]
+    notes: main's wait; the bit dispatcher is 0x4ec0c
+  - name: vPortYield
+    address: 0x9e46c
+    ret: void
+    args: []
+    notes: >
+      pends PendSV via ICSR and returns — taskYIELD, NOT vTaskDelay. Anything
+      calling this address as vTaskDelay(ticks) would silently not delay.
+  - name: vTaskStepTick
+    address: 0x730ac
+    ret: void
+    args: [[u32, xTicksToJump]]
+    notes: inferred from the tickless-idle catch-up call site at 0x73f82
+  - name: xTaskIncrementTick
+    address: 0x730bc
+    ret: i32
+    args: []
+
+  # --- logging ---
+  - name: wlog
+    address: 0x8f460
+    ret: void
+    args: [[const char *, fmt]]
+    variadic: true
+    notes: >
+      the app's printf into the wlog ring that reaches UART0; `push {r0,r1,r2,r3}`
+      prologue is the AAPCS va_list spill, so it is callable as a plain variadic.
+      Format strings carry their own trailing newline.
+  - name: wlog_level
+    address: 0x50ca8
+    ret: void
+    args: [[u32, level], [const char *, fmt]]
+    variadic: true
+    notes: inferred; r0 is a small level constant (5 at the 0x4029a call site), fmt in r1
+  - name: wlog_putchar
+    address: 0x56e8e
+    ret: void
+    args: [[u8, c]]
+    notes: >
+      NOT AAPCS-callable: the ring context comes in r12, so this is the sink the
+      formatter installs, not an entry point. Listed for completeness; call wlog.
+
+  # --- WPP / BLE ---
+  - name: wpp_bytes_received
+    address: 0x392fc
+    ret: void
+    args: [[const void *, data], [u32, len]]
+    notes: entry the three GATT write demuxes at 0x93654 funnel into
+  - name: sd_ble_gatts_hvx_send
+    address: 0x935c0
+    ret: i32
+    args: [[const void *, p_data], [u16, len], [u8, type]]
+    notes: builds ble_gatts_hvx_params_t and issues svc 0xae via the thunk at 0x935b4
+  - name: wpp_cmd_battery_status
+    address: 0x6ca91
+    ret: void
+    args: [[void *, req]]
+    notes: >
+      WPP command 1284 handler, entry 23 of wpp_cmd_table. Reads the battery
+      level, then replies with command 0x504. Ignores its argument, but the
+      overlay hook forwards it unchanged. Address carries the Thumb bit as it
+      is stored in the table; gen.py masks it off and sets it again.
+
+  # --- battery / charger ---
+  - name: battery_adc_read
+    address: 0x400b4
+    ret: i32
+    args: []
+    notes: SAADC AIN0; the gain adaptation is gated on product id 0x280010
+  - name: battery_level_get
+    address: 0x920f4
+    ret: void
+    args: [[u8 *, out_percent]]
+    notes: inferred from the WPP battery handler, which passes a single byte slot
+  - name: battery_pct_to_mv
+    address: 0x40220
+    ret: i16
+    args: [[i32, percent]]
+    notes: >
+      inferred; empty_mv + (percent * (full_mv - empty_mv) + 50) / 100, i.e. it
+      turns a percentage into the millivolts the battery reply carries
+  - name: bq25180_status
+    address: 0x43960
+    ret: i32
+    args: [[void *, dev]]
+    notes: inferred; reads STAT0, logs "VIN_PGOOD = %hu"
+  - name: bq25180_charge_enable
+    address: 0x43a0c
+    ret: i32
+    args: [[void *, dev], [i32, enable]]
+    notes: inferred; sets/clears ICHG_CTRL bit 7 (CHG_DIS)
+  - name: bat_charging_decision
+    address: 0x2fc8c
+    ret: i32
+    args: []
+    notes: I2C error -> 2, VIN_PGOOD=0 -> 0, else the table at 0xc6cbc
+
+  # --- crown ---
+  - name: crown_read_reg
+    address: 0x49074
+    ret: i32
+    args: [[u8, reg], [u8 *, out]]
+    notes: inferred from the PAT9125 probe's id reads
+  - name: crown_read_motion
+    address: 0x49218
+    ret: i32
+    args: [[i16 *, delta_x], [i16 *, delta_y]]
+    notes: >
+      Delta_XY_Hi decode, negated. The caller at 0x2ee64 passes NULL for
+      delta_y and 0x979d8 stores through it; machine.resc patches the sim.
+  - name: crown_probe
+    address: 0x4943c
+    ret: i32
+    args: []
+    notes: power-up sequence plus the 0x31/0x92 id gate
+
+globals:
+  - name: xTickCount
+    address: 0x20021920
+    type: u32
+  - name: rtc1_overflow_count
+    address: 0x20018258
+    type: u32
+  - name: battery_sem_handle
+    address: 0x2001753c
+    type: void *
+    notes: NULL until battery_task's first run
+  - name: main_task_tcb
+    address: 0x20014d40
+    type: void *
+    notes: static TCB of the "main" task, not a pointer to one; declared opaque
+  - name: ble_evt_buffer
+    address: 0x20017ce0
+    type: "u8[0xec]"
+  - name: sd_enabled_magic
+    address: 0x20000058
+    type: u32
+    notes: 0xCAFEBABE once sd_softdevice_enable succeeded
+  - name: nrf_nvic_state
+    address: 0x20017c84
+    type: struct nrf_nvic_state
+  - name: crown_ctx
+    address: 0x20006000
+    type: struct crown_ctx
+  - name: wpp_service_ctx
+    address: 0x20017f28
+    type: struct wpp_service_ctx
+  - name: rambkp_block
+    address: 0x20002800
+    type: struct rambkp
+  - name: battery_curve_bounds
+    address: 0xb2520
+    type: struct battery_curve_bounds
+    notes: in flash, read-only; the two int16 bounds battery_pct_rescale interpolates
+  - name: spi_flash_handle
+    address: 0xb244c
+    type: void *
+
+structs:
+  - name: nrf_nvic_state
+    fields: [[u32, __irq_masks_0], [u32, __irq_masks_1], [u32, __cr_flag]]
+  - name: crown_ctx
+    fields: [["u8[0x10]", pad], [u16, idle_window_ms], [u16, step_threshold]]
+    notes: only the two fields at +0x10/+0x12 are identified
+  - name: wpp_service_ctx
+    fields: [[u32, pad0], [u16, wpp_v2_value], [u16, pad1], [u16, wpp_v2_cccd],
+             [u16, pad2], [u16, wpp_v3_value], [u16, pad3], [u16, wpp_v3_cccd],
+             [u16, pad4], [u16, wpps_value], [u16, pad5], [u16, wpps_cccd],
+             ["u8[0x32]", pad6], [u32, subscribe_bits]]
+    notes: >
+      handle pairs at +4/+8 (WPP_V2), +0xc/+0x10 (WPP_V3), +0x14/+0x18 (WPPS);
+      subscribe bits at +0x4c, bit 3 selects the WPPS TLS record path
+  - name: rambkp
+    fields: [["u8[0x14]", pad], [u8, boot_mode], [u8, boot_attempts], ["u8[0xa]", pad2], [u32, crc]]
+    notes: mode at +20, attempt counter at +21, CRC at +32
+  - name: battery_curve_bounds
+    fields: [[u32, pad], [i16, full_mv], [i16, empty_mv]]
+  - name: wpp_cmd_entry
+    fields: [[u32, id], [void *, handler], [const char *, name]]
+    notes: handler carries the Thumb bit as stored
+
+tables:
+  - name: wpp_cmd_table
+    address: 0x27994
+    entry: wpp_cmd_entry
+    stride: 12
+    count: 54
+    notes: >
+      master-request dispatch: the commands the phone sends. Ends at 0x27c04.
+      No literal-pool reference to 0x27994 exists in the image, so the walker
+      reaches it some other way; replacing a handler word in place works
+      regardless and is what the overlay proof does.
+  - name: i2c_device_table
+    address: 0xb22c4
+    entry: i2c_device
+    stride: 28
+    count: 7
+  - name: spi_device_table
+    address: 0xb23c0
+    entry: spi_device
+    stride: 20
+    count: 3
+  - name: gpio_pin_table
+    address: 0xbe470
+    entry: gpio_pin
+    stride: 4
+    count: 24
+    notes: >
+      symbols.txt puts this at 0xbe458; that is 0x18 too low. 0xbe458..0xbe46f
+      are the three ble_gap_conn_params_t (12,12,{0,15,30},600) FIRMWARE.md
+      describes. The {port,pin} descriptors start at 0xbe470, which is what
+      makes 0xbe478 = {1,13} (crown MOTION) and 0xbe4c8 = {1,11} (click).
+  - name: ble_conn_params_table
+    address: 0xbe458
+    entry: ble_gap_conn_params
+    stride: 8
+    count: 3
+  - name: flash_id_table
+    address: 0xb427c
+    entry: flash_id
+    stride: 16
+    count: 28
+
+table_structs:
+  - name: i2c_device
+    fields: [[void *, bus], [u32, addr], [u32, unknown], [void *, fn0],
+             [void *, fn1], [void *, fn2], [void *, fn3]]
+  - name: spi_device
+    fields: [[void *, bus], [u32, cs_pin], [u32, mode], [u32, state], [const char *, name]]
+  - name: gpio_pin
+    fields: [[u16, port], [u16, pin]]
+  - name: ble_gap_conn_params
+    fields: [[u16, min_conn_interval], [u16, max_conn_interval],
+             [u16, slave_latency], [u16, conn_sup_timeout]]
+  - name: flash_id
+    fields: [[u32, jedec_id], ["u8[12]", params]]
+    notes: params are not decoded; only jedec_id is matched
