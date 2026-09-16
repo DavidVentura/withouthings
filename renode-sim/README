@@ -8,17 +8,27 @@ It simulates the main SoC (nRF52840) running the three images in flash
 - S140 SoftDevice (Nordic's BLE stack and SoC services)
 - The application
 
-It models some of the peripherals:
+All the main sensors are modelled
 
-- external SPI flash
-- battery ADC
-- SSD1320 OLED
+| device | bus / pins |
+|---|---|---|
+| MX25R6435F SPI flash | SPIM2 (0x40023000), CS P0.15 |
+| ADXL367 accelerometer | SPIM2, CS P0.16, INT1 P0.27 |
+| MAX86173 optical HR front end | SPIM1 (0x40004000), CS P0.26, INT P1.14 |
+| SSD1320 OLED 144x98 | SPIM3 (0x4002F000), D/C P1.09 |
+| BQ25180 charger | TWI0 (0x40003000) 0x6A |
+| PAT9125 crown | TWI0 0x79, MOTION P1.13 |
+| crown click | GPIO P1.11, active low |
+| TMP117 skin temperature | TWI0 0x48 |
+| ADS1115-class heat-flux ADC | TWI0 0x49 |
+| APDS-9306 ambient light | TWI0 0x52 |
+| battery sense | SAADC AIN0 |
 
-It boots the whole application (RTOS, BLE advertising, algorithm manager, display).
+There are some hacks to patch over Renode, i'd like to upstream them at some point.
 
-At the moment, it's not very fast due to some hacks; in the future, ideally, it will be
-fast enough to run live as a simulator. Maybe it's too ambitious and it's only good
-as integration testing. We'll see.
+The simulator can run faster than real time so it's usable for development; there's a BLE
+to-socket adapter so that the simulator can talk to the rust code implementing the protocol.
+
 
 ## Dependencies
 
@@ -32,19 +42,30 @@ as integration testing. We'll see.
 
 Once, extract the 'partitions' from the package with `extract.py`
 
-To run the simulator with display, run
+Batch run (headless, 60 s of virtual time in ~15 s, output in `out/`):
 
 ```bash
 renode --disable-xwt --console -e "include @display-run.resc" < <(sleep 1000)
 ```
 
-It will create these files at `out/`:
+Interactive run:
 
- - uart0.log
- - frames/frameNNN.bin
- - oled_stream.txt
+```bash
+renode --console --port 12345 -e "include @live.resc"
+printf 'keys Tap "Enter"\n' | nc -q 1 localhost 12345
+printf 'twi0.crown Rotate 1\n' | nc -q 1 localhost 12345
+```
 
-If you want to render the .bin files to png:
+To validate the network protocol via TCP:
+
+```bash
+renode --disable-xwt --console -e "include @wpp-pipe.resc" < <(sleep 1000)
+cargo run -p wpp-sim-client -- --secret-from-dump external_flash.bin   # once out/uart0.log shows "Add WPPS chars."
+```
+
+There's a hardcoded 30s start-up delay on the firmware, `live.resc` patches that out.
+
+If you want to render the screen capture .bin files to png:
 
 ```bash
 python3 render_png.py --w 144 --h 98 --fmt gray4 out/frames/frame400.bin out/frame400.png
