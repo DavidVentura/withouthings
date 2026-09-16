@@ -39,6 +39,9 @@ APPL_VERSION_TRAILER = 4
 # A bank on the external flash starts at 0x6000 and the next at 0x11f000, and a
 # bank is the package file verbatim (FIRMWARE.md, "The fwblk external table").
 BANK_CAPACITY = 0x11F000 - 0x6000
+# UICR.NRFFW[0] points the MBR at the bootloader here, and the bootloader's copy
+# (0xfc78c) bounds the part only by the length the package declares.
+BOOTLOADER_BASE = 0xFC000
 
 
 class Entry:
@@ -127,6 +130,11 @@ def main():
             raise SystemExit(
                 f"the appl image is {len(replacement):#x} bytes, too short to hold the version"
                 f" trailer get_fw_version reads at {APPL_VERSION_ADDRESS:#x}")
+        if APPL_BASE + len(replacement) > BOOTLOADER_BASE:
+            raise SystemExit(
+                f"the appl image ends at {APPL_BASE + len(replacement):#x}, past the bootloader"
+                f" at {BOOTLOADER_BASE:#x}; the bootloader copies the whole part to"
+                f" {APPL_BASE:#x} and would overwrite itself")
         parts = {IE_APPL: replacement}
         appl_length = len(replacement)
 
