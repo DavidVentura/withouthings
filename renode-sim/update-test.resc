@@ -1,0 +1,48 @@
+:name: HWA10 update path
+:description: The WPP pipe run with the boot chain that applies a pending bank:
+:  the MBR hands control to the bootloader at 0xfc000, which copies the bank the
+:  application downloaded into internal flash, and the application is re-patched
+:  on the way in.
+
+include @machine.resc
+
+# UICR.NRFFW[0] holds the bootloader start address the MBR reads, and boot.resc
+# leaves it erased so the MBR forwards to the SoftDevice. This run arms it only
+# for the reboot that has a bank to apply: the bootloader compares the whole
+# 1.15 MB bank against internal flash one SPI byte at a time, so taking that
+# path on every boot costs minutes per boot, and the sim's own patches make
+# internal flash differ from the bank by construction, so the comparison would
+# never settle.
+
+# CMD_RESTART_TO_UPDATE's handler (0x6ca44) is the moment the application asks
+# for the bank to be applied: arm the hand-off so the reboot it is about to
+# cause lands in the bootloader.
+cpu AddHook 0x6ca44 'machine.SystemBus.WriteDoubleWord(0x10001014, 0xfc000)'
+
+# The bootloader's reset entry. It reads POWER.RESETREAS to decide whether the
+# RAM control block the application filled in survived; the sim has no reset
+# cause to report, and every reset that reaches the bootloader here came from
+# SYSRESETREQ, which is bit 2.
+cpu AddHook 0xfc920 'monitor.Parse("sysbus.clock ResetReason 4")'
+
+# The application's reset entry. The bootloader has just overwritten internal
+# flash with the bank, so the sim's patches are gone and the protected-region
+# reference is stale; both are restored here, and the hand-off is disarmed so
+# the next ordinary reboot goes straight to the SoftDevice.
+#
+# 0x20000000 is where the MBR keeps the vector table it forwards SVCs and
+# interrupts to. Launching the bootloader pointed it at the bootloader's own
+# table and the bootloader jumps to the application without putting it back, so
+# the first SVC -- the one that starts the FreeRTOS scheduler -- lands in the
+# bootloader and the application never runs a task. Point it at the SoftDevice,
+# which is what the MBR leaves behind when it starts the SoftDevice itself.
+cpu AddHook 0x34938 'monitor.Parse("runMacro $imagePatches"); monitor.Parse("sysbus WriteDoubleWord 0x91faa 0x70D1F240"); machine.SystemBus.WriteDoubleWord(0x20000000, 0x1000); monitor.Parse("sysbus.nvmc SnapshotProtectedRegion 0x0 0x27000"); machine.SystemBus.WriteDoubleWord(0x10001014, 0xFFFFFFFF)'
+
+# main init sleeps vTaskDelay(30001) before bringing up the UI (0x91faa,
+# `movw r0, #0x7531`); make that 2001 ticks so the link is usable sooner.
+sysbus WriteDoubleWord 0x91faa 0x70D1F240
+
+logLevel -1 sysbus.wppPipe
+emulation SetAdvanceImmediately true
+sysbus.wppPipe Attach
+start

@@ -31,6 +31,7 @@ namespace Antmicro.Renode.Peripherals.SPI
             this.sysbus = machine.GetSystemBus(this);
             regs = new Dictionary<long, uint>();
             stream = new List<byte>();
+            legacyAnswers = new Queue<byte>();
             cmdHist = new Dictionary<byte, long>();
             unknownCommands = new HashSet<byte>();
             IRQ = new GPIO();
@@ -112,6 +113,14 @@ namespace Antmicro.Renode.Peripherals.SPI
                 endFlag = false;
                 UpdateIrq();
             }
+            else if(offset == LegacyTxd)
+            {
+                ExchangeLegacyByte((byte)value);
+            }
+            else if(offset == LegacyReady && value == 0)
+            {
+                CompleteLegacyByte();
+            }
             else if(offset == IntenSet)
             {
                 inten |= value;
@@ -132,6 +141,7 @@ namespace Antmicro.Renode.Peripherals.SPI
         {
             regs.Clear();
             stream.Clear();
+            legacyAnswers.Clear();
             endFlag = false;
             inten = 0;
             selectedPin = NoChipSelect;
@@ -164,6 +174,52 @@ namespace Antmicro.Renode.Peripherals.SPI
                 }
             }
             this.Log(LogLevel.Info, "spi2 stream: {0} bytes -> {1}", stream.Count, path);
+        }
+
+        // The bootloader drives the same pins through the legacy SPI interface
+        // rather than EasyDMA: one byte per TXD write, EVENTS_READY when it has
+        // been clocked, the answer in RXD. Without it the bootloader spins on
+        // EVENTS_READY before it can read the firmware banks.
+        private void ExchangeLegacyByte(byte outgoing)
+        {
+            byte incoming = 0;
+            if(selectedPin == NoChipSelect)
+            {
+                if(!warnedNoChipSelect)
+                {
+                    warnedNoChipSelect = true;
+                    this.Log(LogLevel.Error, "legacy SPI byte with no chip select asserted: no device is listening");
+                }
+            }
+            else
+            {
+                ISPIPeripheral device;
+                if(TryGetByAddress(selectedPin, out device))
+                {
+                    incoming = device.Transmit(outgoing);
+                }
+                else
+                {
+                    stream.Add(outgoing);
+                    incoming = ServeByte(outgoing);
+                }
+            }
+            // The driver runs one byte ahead: it writes the next TXD before it
+            // reads the answer to the previous one, so completions queue and
+            // clearing EVENTS_READY is what moves the next answer into RXD.
+            legacyAnswers.Enqueue(incoming);
+            regs[LegacyReady] = 1;
+        }
+
+        private void CompleteLegacyByte()
+        {
+            if(legacyAnswers.Count == 0)
+            {
+                regs[LegacyReady] = 0;
+                return;
+            }
+            regs[LegacyRxd] = legacyAnswers.Dequeue();
+            regs[LegacyReady] = legacyAnswers.Count > 0 ? 1u : 0u;
         }
 
         private void DoTransfer()
@@ -386,6 +442,9 @@ namespace Antmicro.Renode.Peripherals.SPI
 
         public long Size { get { return 0x1000; } }
 
+        private const long LegacyReady = 0x108;
+        private const long LegacyRxd = 0x518;
+        private const long LegacyTxd = 0x51C;
         private const long TasksStart = 0x10;
         private const long EventsEnd = 0x118;
         private const long IntenSet = 0x304;
@@ -438,6 +497,7 @@ namespace Antmicro.Renode.Peripherals.SPI
         private int sessionAddress;
         private uint inten;
         private bool endFlag;
+        private readonly Queue<byte> legacyAnswers;
         private readonly Dictionary<long, uint> regs;
         private readonly Dictionary<byte, long> cmdHist;
         private readonly List<byte> stream;

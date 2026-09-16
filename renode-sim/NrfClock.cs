@@ -32,6 +32,16 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         public GPIO IRQ { get; private set; }
         public IReadOnlyDictionary<int, IGPIO> Connections { get; private set; }
 
+        // POWER shares this block, and RESETREAS is the only part of it anything
+        // reads: the bootloader treats a zero here as a power-on and throws away
+        // the RAM control block the application left it. Renode has no reset
+        // cause to report, so the run script sets this at the point it knows.
+        public uint ResetReason
+        {
+            get { return Get(ResetReas); }
+            set { regs[ResetReas] = value; }
+        }
+
         public uint ReadDoubleWord(long offset)
         {
             uint v;
@@ -67,6 +77,9 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             case EventsLfclkStarted:
                 regs[offset] = value; // write 0 clears the event
                 UpdateIrq();
+                break;
+            case ResetReas:
+                regs[offset] &= ~value; // write-1-to-clear
                 break;
             case IntenSet:
                 inten |= value;
@@ -111,6 +124,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private const long TasksLfclkStop = 0x00C;
         private const long EventsHfclkStarted = 0x100;
         private const long EventsLfclkStarted = 0x104;
+        private const long ResetReas = 0x400;
         private const long IntenSet = 0x304;
         private const long IntenClr = 0x308;
         private const long HfclkRun = 0x408;

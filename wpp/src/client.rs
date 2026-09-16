@@ -1614,7 +1614,7 @@ fn delete_frame(signal: &Signal) -> Frame {
     )
 }
 
-fn sha1(data: &[u8]) -> [u8; 20] {
+pub fn sha1(data: &[u8]) -> [u8; 20] {
     let mut h: [u32; 5] = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0];
     let bit_len = (data.len() as u64) * 8;
     let mut message = data.to_vec();

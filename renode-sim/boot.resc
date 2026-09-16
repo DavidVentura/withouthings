@@ -16,6 +16,12 @@ sysbus.spi2 LoadImage @external_flash.bin
 sysbus.uart0 CreateFileBackend $ORIGIN/out/uart0.log true
 sysbus.uart1 CreateFileBackend $ORIGIN/out/uart1.log true
 
+# Erased UICR: NRFFW[0] is the MBR's bootloader start address and NRFFW[1] its
+# parameter page, and an erased word is what tells the MBR to forward to the
+# SoftDevice instead. The update run overwrites NRFFW[0] to take the other path.
+sysbus WriteDoubleWord 0x10001014 0xFFFFFFFF
+sysbus WriteDoubleWord 0x10001018 0xFFFFFFFF
+
 # boot from the MBR vector table at 0x0 (real reset entry)
 cpu VectorTableOffset 0x0
 

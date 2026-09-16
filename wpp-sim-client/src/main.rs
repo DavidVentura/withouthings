@@ -1,4 +1,5 @@
 mod dblib;
+mod update;
 
 use std::env;
 use std::io::{ErrorKind, Read, Write};
@@ -10,7 +11,7 @@ use wpp::client::{probe_frame, Credentials};
 use wpp::commands::Command;
 use wpp::frame::{Channel, Frame};
 use wpp::objects::{
-    InfoType, ProbeChallenge, ProbeChallengeResponse, TimeSet, VasistasType, Version,
+    InfoType, ProbeChallenge, ProbeChallengeResponse, ProbeReply, TimeSet, VasistasType, Version,
     WamVasistasGet,
 };
 use wpp::WppObject;
@@ -21,12 +22,17 @@ use wpp::WppObject;
 const DEFAULT_ENDPOINT: &str = "127.0.0.1:7788";
 const ATT_MTU: usize = 23;
 const WRITE_LIMIT: usize = ATT_MTU - 3;
+// A whole WPP frame in one write, as a phone that negotiated a larger MTU
+// does. The update pushes a megabyte, so the twenty-byte split would be ten
+// times the GATT writes for the same bytes.
+const FRAME_PER_WRITE_LIMIT: usize = wpp::frame::MAX_FRAME_BYTES;
 const REPLY_TIMEOUT: Duration = Duration::from_secs(120);
 const QUIET: Duration = Duration::from_secs(20);
 
 struct Link {
     socket: TcpStream,
     received: Vec<u8>,
+    write_limit: usize,
 }
 
 impl Link {
@@ -34,13 +40,17 @@ impl Link {
         let socket = TcpStream::connect(endpoint)?;
         socket.set_nodelay(true)?;
         socket.set_read_timeout(Some(REPLY_TIMEOUT))?;
-        Ok(Link { socket, received: Vec::new() })
+        Ok(Link { socket, received: Vec::new(), write_limit: WRITE_LIMIT })
     }
 
     fn send(&mut self, frame: &Frame) -> std::io::Result<()> {
         println!("-> {:?} {:?}", frame.command.opcode_name(), frame.objects);
+        self.send_quietly(frame)
+    }
+
+    fn send_quietly(&mut self, frame: &Frame) -> std::io::Result<()> {
         for part in frame.to_wire() {
-            for write in part.to_bytes().chunks(WRITE_LIMIT) {
+            for write in part.to_bytes().chunks(self.write_limit) {
                 let mut message = Vec::with_capacity(write.len() + 2);
                 message.extend_from_slice(&(write.len() as u16).to_be_bytes());
                 message.extend_from_slice(write);
@@ -216,11 +226,16 @@ fn report(frame: &Frame) {
     }
 }
 
-fn authenticate(link: &mut Link, association: &dblib::Association) -> std::io::Result<bool> {
+/// The firmware version is in the probe reply and nowhere else, so the reply
+/// is what a caller wants back rather than a yes/no.
+fn authenticate(
+    link: &mut Link,
+    association: &dblib::Association,
+) -> std::io::Result<Option<ProbeReply>> {
     link.send(&probe_frame())?;
     let Some(challenge_frame) = link.next_answer(Instant::now() + REPLY_TIMEOUT)? else {
         println!("the watch never answered the probe");
-        return Ok(false);
+        return Ok(None);
     };
     report(&challenge_frame);
     let Some(challenge) = challenge_frame.objects.iter().find_map(|o| match o {
@@ -230,12 +245,12 @@ fn authenticate(link: &mut Link, association: &dblib::Association) -> std::io::R
         // Answering a watch that does not challenge means associating with it,
         // which this client deliberately does not do.
         println!("the watch did not challenge; nothing to authenticate against");
-        return Ok(false);
+        return Ok(None);
     };
     let identity = challenge.mac.to_ascii_lowercase();
     if identity != association.mac {
         println!("the watch's identity {identity} is not the one the dump holds a secret for");
-        return Ok(false);
+        return Ok(None);
     }
     let credentials = Credentials { mac: identity.clone(), secret: association.secret.clone() };
     let answer = credentials.answer(&challenge.challenge);
@@ -248,16 +263,24 @@ fn authenticate(link: &mut Link, association: &dblib::Association) -> std::io::R
     ))?;
     let Some(reply) = link.next_answer(Instant::now() + REPLY_TIMEOUT)? else {
         println!("the watch never answered the challenge response");
-        return Ok(false);
+        return Ok(None);
     };
     report(&reply);
-    Ok(reply.command.opcode() == Command::CMD_PROBE.0)
+    if reply.command.opcode() != Command::CMD_PROBE.0 {
+        return Ok(None);
+    }
+    Ok(reply.objects.iter().find_map(|o| match o {
+        WppObject::ProbeReply(r) => Some(r.clone()),
+        _ => None,
+    }))
 }
 
 fn main() -> ExitCode {
     let mut endpoint = DEFAULT_ENDPOINT.to_string();
     let mut dump_path: Option<String> = None;
     let mut set_time: Option<u32> = None;
+    let mut package_path: Option<String> = None;
+    let mut probe_only = false;
     let mut arguments = env::args().skip(1);
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
@@ -274,8 +297,12 @@ fn main() -> ExitCode {
                         .expect("--set-time takes a unix timestamp"),
                 )
             }
+            "--update" => {
+                package_path = Some(arguments.next().expect("--update takes a package path"))
+            }
+            "--probe-only" => probe_only = true,
             other => {
-                eprintln!("usage: wpp-sim-client [--endpoint host:port] --secret-from-dump <external_flash.bin> [--set-time <unix>]");
+                eprintln!("usage: wpp-sim-client [--endpoint host:port] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--update <package>]");
                 eprintln!("unknown argument {other}");
                 return ExitCode::FAILURE;
             }
@@ -289,12 +316,40 @@ fn main() -> ExitCode {
     let association = dblib::association(&dump).expect("the dump holds a dblib association");
     println!("{association:?}");
 
+    let package = package_path.map(|path| {
+        let bytes = std::fs::read(&path).expect("the package is readable");
+        match update::Package::parse(bytes) {
+            Ok(package) => package,
+            Err(reason) => panic!("{path} is not a usable package: {reason}"),
+        }
+    });
+
     let mut link = Link::connect(&endpoint).expect("the pipe accepts the connection");
     println!("connected to {endpoint}");
-    if !authenticate(&mut link, &association).expect("the link stays up through the handshake") {
+    let Some(identity) = authenticate(&mut link, &association).expect("the link stays up through the handshake")
+    else {
         return ExitCode::FAILURE;
-    }
+    };
     println!("authenticated");
+    // The line the test harness reads; everything else here is for a human.
+    println!("soft_version={}", identity.soft_version);
+
+    if let Some(package) = package {
+        link.write_limit = FRAME_PER_WRITE_LIMIT;
+        match update::run(&mut link, &package).expect("the link stays up through the transfer") {
+            Ok(()) => {}
+            Err(reason) => {
+                eprintln!("update failed: {reason}");
+                return ExitCode::FAILURE;
+            }
+        }
+        update::restart(&mut link).expect("the link stays up to the restart");
+        println!("update pushed");
+        return ExitCode::SUCCESS;
+    }
+    if probe_only {
+        return ExitCode::SUCCESS;
+    }
 
     for step in read_only_steps() {
         run(&mut link, &step).expect("the link stays up");
