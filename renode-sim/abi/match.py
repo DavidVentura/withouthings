@@ -280,8 +280,11 @@ def main():
     args = ap.parse_args()
 
     if not args.variants:
+        # The mbedtls_* variants belong to abi/autonames.py's extlib class, not
+        # to the kernel/driver boundary this file maps.
         args.variants = ",".join(sorted(d for d in os.listdir(REF_ROOT)
-                                        if os.path.exists(os.path.join(REF_ROOT, d, "ref.elf"))))
+                                        if not d.startswith("mbedtls_")
+                                        and os.path.exists(os.path.join(REF_ROOT, d, "ref.elf"))))
     streams = parse_image(args.image, APP_BASE)
     idx = build_kgram_index(streams)
 

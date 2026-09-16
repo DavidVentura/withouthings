@@ -376,6 +376,32 @@ for o in Os O2 O3; do
     done
 done
 
+# ---- mbedTLS ----------------------------------------------------------------
+# The image contains mbedTLS (its oid.c description strings -- "ecdsa-with-SHA256",
+# "TLS Web Client Authentication" -- are in the flash verbatim), and the WPPS
+# characteristic drives a TLS handshake. The SDK's own copy is 2.16.10, which is
+# the first candidate version; it builds standalone against its default config.
+build_mbedtls() {
+    local name="$1"; shift
+    local od="$OUT/$name"
+    local src="$SDK/external/mbedtls"
+    [ -d "$src" ] || return 0
+    rm -rf "$od"; mkdir -p "$od"
+    local objs=""
+    for s in "$src"/library/*.c; do
+        local o="$od/$(basename "$s" .c).o"
+        if "$GCC-gcc" $ARCH $COMMON "$@" -I"$src/include" -c "$s" -o "$o" 2>>"$od/err.log"; then
+            objs="$objs $o"
+        else
+            echo "  skip $s" >> "$od/skipped.log"
+        fi
+    done
+    "$GCC-ld" -r -o "$od/ref.elf" $objs
+    printf '%-10s %3d objs  %s\n' "$name" "$(echo $objs | wc -w)" "$od/ref.elf"
+}
+build_mbedtls mbedtls_Os -Os
+build_mbedtls mbedtls_O2 -O2
+
 # Older nrfx trees, if they were fetched next to the SDK.
 for n in "$ROOT"/nrfx/nrfx-*; do
     [ -d "$n" ] || continue

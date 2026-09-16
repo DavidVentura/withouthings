@@ -3,6 +3,9 @@
 
     python3 abi/gen.py [--out DIR]
 
+Matched library symbols (abi/matches.yaml) and mechanically derived names
+(abi/autonames.yaml) are folded in, both refusing to contradict the manifest.
+
 The header declares every manifest function as an extern prototype and every
 known global as an extern object; the linker script PROVIDEs each name at its
 address (Thumb bit set for functions, plain for data). Placement is
@@ -118,12 +121,48 @@ def load_matches(path, threshold, seen_fn, seen_obj, manifest):
     return out
 
 
+def load_autonames(path, seen_fn, seen_obj, manifest, matched):
+    """Mechanically derived names (abi/autonames.py) good enough to link against.
+
+    The same rule as the matches: a hand-written entry wins, but a contradiction
+    is an error rather than a silent overwrite, because one of the two is wrong.
+    """
+    if not os.path.exists(path):
+        return []
+    with open(path) as f:
+        an = yaml.safe_load(f)
+    by_name = {fn["name"]: fn["address"] & ~1 for fn in manifest["functions"]}
+    by_name.update({fn["name"]: fn["address"] & ~1 for fn in matched})
+    out, names = [], set()
+    for fn in an.get("functions", []):
+        if not IDENT.match(fn["name"]):
+            raise ManifestError("autonames.yaml name %r is not an identifier" % fn["name"])
+        addr = fn["address"] & ~1
+        if fn["name"] in by_name:
+            if by_name[fn["name"]] != addr:
+                raise ManifestError(
+                    "autonames.yaml puts %s at 0x%x, the manifest at 0x%x"
+                    % (fn["name"], addr, by_name[fn["name"]]))
+            continue
+        if fn["name"] in names:
+            raise ManifestError("autonames.yaml repeats the name %s" % fn["name"])
+        for seen, what in ((seen_fn, "a function"), (seen_obj, "data")):
+            if addr in seen:
+                raise ManifestError(
+                    "autonames.yaml names 0x%x %s, the manifest already has %s %s there"
+                    % (addr, fn["name"], what, seen[addr]))
+        names.add(fn["name"])
+        out.append(fn)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     here = os.path.dirname(os.path.abspath(__file__))
     ap.add_argument("--manifest", default=os.path.join(here, "hwa10.yaml"))
     ap.add_argument("--out", default=os.path.join(here, "out"))
     ap.add_argument("--matches", default=os.path.join(here, "matches.yaml"))
+    ap.add_argument("--autonames", default=os.path.join(here, "autonames.yaml"))
     ap.add_argument("--match-threshold", type=float, default=0.80,
                     help="score a match must reach to enter the manifest")
     args = ap.parse_args()
@@ -197,8 +236,19 @@ def main():
           "   linker script provides every address either way. */",
           "#ifdef HWA10_MATCHED_PROTOTYPES"]
     ld += ["", "/* matched library functions (abi/matches.yaml) */"]
-    for fn in load_matches(args.matches, args.match_threshold, seen_fn, seen_obj, m):
+    matched = load_matches(args.matches, args.match_threshold, seen_fn, seen_obj, m)
+    for fn in matched:
         check_unique(seen_fn, fn["address"], fn["name"], "matched function")
+        ld.append("PROVIDE(%s = 0x%x | 1);" % (fn["name"], fn["address"]))
+        if fn.get("proto"):
+            h.append("/* %s */" % fn["header"])
+            h.append("extern %s" % fn["proto"])
+    h += ["", "/* mechanically derived names -- abi/autonames.yaml, from",
+          "   abi/autonames.py. Only the classes whose reference supplies a real",
+          "   header get a prototype; the rest are addresses the linker can bind. */"]
+    ld += ["", "/* derived names (abi/autonames.yaml) */"]
+    for fn in load_autonames(args.autonames, seen_fn, seen_obj, m, matched):
+        check_unique(seen_fn, fn["address"], fn["name"], "derived function")
         ld.append("PROVIDE(%s = 0x%x | 1);" % (fn["name"], fn["address"]))
         if fn.get("proto"):
             h.append("/* %s */" % fn["header"])

@@ -143,7 +143,7 @@ functions:
     ret: void
     args: [[void *, req]]
     notes: >
-      WPP command 1284 handler, entry 23 of wpp_cmd_table. Reads the battery
+      WPP command 1284 handler, entry 127 of wpp_cmd_table. Reads the battery
       level, then replies with command 0x504. Ignores its argument. Address
       carries the Thumb bit as it is stored in the table; gen.py masks it off
       and sets it again.
@@ -268,13 +268,20 @@ structs:
 
 tables:
   - name: wpp_cmd_table
-    address: 0x27994
+    address: 0x274b4
     entry: wpp_cmd_entry
     stride: 12
-    count: 54
+    count: 156
     notes: >
-      master-request dispatch: the commands the phone sends. Ends at 0x27c04.
-      No literal-pool reference to 0x27994 exists in the image, so the walker
+      master-request dispatch: the commands the phone sends. Runs 0x274b4 to
+      0x27c04; an earlier reading started it at 0x27994, which is row 104, not
+      the head. abi/autonames.py walks it in both directions from there and
+      stops where the row stops being {command id, odd handler in the image,
+      pointer to a printable name}; the row above the head belongs to the
+      shell's own table (0x270f8, 79 rows, same shape but a large opaque key
+      and a lowercase command word). Each row's name string is the handler's
+      source name, which is where abi/autonames.yaml's wppcmd class comes from.
+      No literal-pool reference to the table exists in the image, so the walker
       reaches it some other way; replacing a handler word in place works
       regardless (proven by diverting the battery handler to a logging hook).
   - name: i2c_device_table
