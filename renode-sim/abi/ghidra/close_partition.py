@@ -48,30 +48,47 @@ def orphan_runs():
     return runs
 
 
+def claim_head(start, end, instrs):
+    """Give the run's head an owner; returns "made", "extended" or None."""
+    before = listing.getInstructionBefore(start)
+    owner = fm.getFunctionContaining(before.getMinAddress()) if before is not None else None
+    falls = (before is not None and before.getMaxAddress().add(1).equals(start)
+             and before.hasFallthrough())
+    if rm.hasReferencesTo(start) or falls is False \
+            or instrs[0].getMnemonicString().lower().startswith(PROLOGUES):
+        if createFunction(start, None) is not None:
+            return "made"
+    if falls and owner is not None:
+        body = AddressSet(owner.getBody())
+        body.add(AddressSet(start, end.subtract(1)))
+        owner.setBody(body)
+        return "extended"
+    return None
+
+
 def close_round():
     made, extended, absorbed, left = 0, 0, 0, []
     for start, end, instrs in orphan_runs():
-        span = AddressSet(start, end.subtract(1))
-        if list(fm.getFunctionsOverlapping(span)):
+        if list(fm.getFunctionsOverlapping(AddressSet(start, end.subtract(1)))):
             # An earlier extension in this round already took these bytes.
             absorbed += 1
             continue
-        before = listing.getInstructionBefore(start)
-        owner = fm.getFunctionContaining(before.getMinAddress()) if before is not None else None
-        falls = (before is not None and before.getMaxAddress().add(1).equals(start)
-                 and before.hasFallthrough())
-        if rm.hasReferencesTo(start) or falls is False \
-                or instrs[0].getMnemonicString().lower().startswith(PROLOGUES):
-            if createFunction(start, None) is not None:
+        # A run is usually several back-to-back functions (a chain of
+        # constant-returning stubs, say), and a claimed head owns only its own
+        # body, so the rest of the run is re-examined from the first instruction
+        # still without an owner rather than left for the next round.
+        while instrs:
+            outcome = claim_head(start, end, instrs)
+            if outcome is None:
+                left.append((start, end))
+                break
+            if outcome == "made":
                 made += 1
-                continue
-        if falls and owner is not None:
-            body = AddressSet(owner.getBody())
-            body.add(span)
-            owner.setBody(body)
-            extended += 1
-            continue
-        left.append((start, end))
+            else:
+                extended += 1
+            instrs = [i for i in instrs if fm.getFunctionContaining(i.getMinAddress()) is None]
+            if instrs:
+                start = instrs[0].getMinAddress()
     return made, extended, absorbed, left
 
 

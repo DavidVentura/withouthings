@@ -39,7 +39,7 @@ POOL = re.compile(r"\tldr[^\t]*\tr[0-9]+, \[pc, [^]]*\].*@ (0x[0-9a-f]+)\s*$")
 
 def load(path):
     with open(path) as fh:
-        return yaml.safe_load(fh)
+        return json.load(fh) if path.endswith(".json") else yaml.safe_load(fh)
 
 
 def main():
@@ -48,8 +48,8 @@ def main():
     ap.add_argument("--dis", default=os.path.join(SIM, "out", "appl.dis"))
     args = ap.parse_args()
 
-    items = load(os.path.join(args.out, "items.yaml"))
-    refs = load(os.path.join(args.out, "references.yaml"))
+    items = load(os.path.join(args.out, "items.json"))
+    refs = load(os.path.join(args.out, "references.json"))
 
     starts = {f["start"]: f for f in items["functions"]}
     data_starts = {d["start"] for d in items["data"]}
