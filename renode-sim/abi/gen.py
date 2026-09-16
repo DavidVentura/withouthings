@@ -78,11 +78,54 @@ def check_unique(seen, address, name, kind):
     seen[address] = "%s %s" % (kind, name)
 
 
+# A C identifier; a match like "prvInitialiseNewTask.isra.0" is a GCC clone of a
+# static, and neither its name nor its ABI is the source function's.
+IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def load_matches(path, threshold, seen_fn, seen_obj, manifest):
+    """Matched symbols good enough to enter the manifest.
+
+    A hand-written entry always wins on content but never silently: a match that
+    contradicts one is an error, because one of the two is wrong and picking
+    either would hide that.
+    """
+    if not os.path.exists(path):
+        return []
+    with open(path) as f:
+        mm = yaml.safe_load(f)
+    by_name = {fn["name"]: fn["address"] & ~1 for fn in manifest["functions"]}
+    out = []
+    for fn in mm.get("functions", []):
+        if fn["score"] < threshold or not IDENT.match(fn["name"]):
+            continue
+        addr = fn["address"] & ~1
+        if fn["name"] in by_name:
+            if by_name[fn["name"]] != addr:
+                raise ManifestError(
+                    "matches.yaml puts %s at 0x%x, hwa10.yaml at 0x%x"
+                    % (fn["name"], addr, by_name[fn["name"]]))
+            continue
+        if addr in seen_fn:
+            raise ManifestError(
+                "matches.yaml names 0x%x %s, hwa10.yaml already has %s there"
+                % (addr, fn["name"], seen_fn[addr]))
+        if addr in seen_obj:
+            raise ManifestError(
+                "matches.yaml names 0x%x %s, hwa10.yaml has data %s there"
+                % (addr, fn["name"], seen_obj[addr]))
+        out.append(fn)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     here = os.path.dirname(os.path.abspath(__file__))
     ap.add_argument("--manifest", default=os.path.join(here, "hwa10.yaml"))
     ap.add_argument("--out", default=os.path.join(here, "out"))
+    ap.add_argument("--matches", default=os.path.join(here, "matches.yaml"))
+    ap.add_argument("--match-threshold", type=float, default=0.80,
+                    help="score a match must reach to enter the manifest")
     args = ap.parse_args()
 
     with open(args.manifest) as f:
@@ -154,7 +197,18 @@ def main():
         h.append("extern struct %s %s[%d]; /* stride %d */"
                  % (t["entry"], t["name"], t["count"], t["stride"]))
         ld.append("PROVIDE(%s = 0x%x);" % (t["name"], t["address"]))
-    h += ["", "#endif"]
+    h += ["", "/* matched library functions -- abi/matches.yaml, from abi/match.py.",
+          "   Their prototypes are the SDK's own, so they need the SDK types; the",
+          "   linker script provides every address either way. */",
+          "#ifdef HWA10_MATCHED_PROTOTYPES"]
+    ld += ["", "/* matched library functions (abi/matches.yaml) */"]
+    for fn in load_matches(args.matches, args.match_threshold, seen_fn, seen_obj, m):
+        check_unique(seen_fn, fn["address"], fn["name"], "matched function")
+        ld.append("PROVIDE(%s = 0x%x | 1);" % (fn["name"], fn["address"]))
+        if fn.get("proto"):
+            h.append("/* %s */" % fn["header"])
+            h.append("extern %s" % fn["proto"])
+    h += ["#endif", "", "#endif"]
 
     fl, ram = regions["OVERLAY_FLASH"], regions["OVERLAY_RAM"]
     ld += ["", "MEMORY", "{",
