@@ -250,46 +250,58 @@ namespace Antmicro.Renode.Peripherals.Sensors
             frameCounter++;
             foreach(var measurement in EnabledMeasurements)
             {
-                foreach(var channel in Channels(measurement))
+                var photodiodes = EnabledPhotodiodes(measurement);
+                if(photodiodes.Count == 0)
                 {
-                    Push(channel, Synthesise(seconds, channel));
+                    this.Log(LogLevel.Warning, "MEAS{0} is enabled with no photodiode selected, so it contributes no sample", measurement);
+                    continue;
+                }
+                foreach(var photodiode in photodiodes)
+                {
+                    Push(measurement, Synthesise(seconds, measurement, photodiode));
                 }
             }
+            // The frame-ready status bit stands for the whole frame, so it is
+            // raised once every measurement of this frame has been written; the
+            // driver arms it instead of the almost-full one partway into a
+            // measurement session (0x78 goes from 0x80 to 0x40) and then reads
+            // the FIFO one frame at a time.
+            registers[(byte)Register.Status1] |= FrameReadyBit;
             UpdateFifoCount();
             UpdateInterrupt();
         }
 
-        // One sample per photodiode of each enabled measurement, tagged the way
-        // the silicon tags them: MEAS<n> photodiode 1 is 2n-1 and photodiode 2
-        // is 2n, which is the order the driver registers as it programs the
-        // measurements, and it faults on a sample that arrives out of that order.
-        private IEnumerable<int> Channels(int measurement)
+        // Every sample of a measurement carries that measurement's number as its
+        // tag, photodiode 1 first: the driver registers one channel per selected
+        // photodiode but gives both the same expected tag (0x8b026/0x53260), and
+        // checks the tag only against that (0x53230), so the photodiodes are told
+        // apart by their position in the frame, not by the tag.
+        private List<int> EnabledPhotodiodes(int measurement)
         {
-            yield return 2 * measurement - 1;
-            if(SecondPhotodiodeEnabled(measurement))
+            var selects = registers[MeasurementRegister(measurement, MeasurementSelectsOffset)];
+            var photodiodes = new List<int>();
+            for(var photodiode = 1; photodiode <= PhotodiodeCount; photodiode++)
             {
-                yield return 2 * measurement;
+                if((selects & (PhotodiodeSelectBase << (photodiode - 1))) != 0)
+                {
+                    photodiodes.Add(photodiode);
+                }
             }
+            return photodiodes;
         }
 
-        private bool SecondPhotodiodeEnabled(int measurement)
-        {
-            var configuration = registers[MeasurementRegister(measurement, MeasurementConfig2Offset)];
-            return (configuration & SecondPhotodiodeBit) != 0;
-        }
-
-        private uint Synthesise(double seconds, int channel)
+        private uint Synthesise(double seconds, int measurement, int photodiode)
         {
             var baseline = Worn ? WornBaseline : UnwornBaseline;
             // Each photodiode sees its own share of the returned light, so the
             // channels differ; the algorithm needs them to move together in time.
-            var scale = 1.0 - 0.15 * ((channel - 1) % 4);
+            var scale = 1.0 - 0.15 * (photodiode - 1);
             var pulse = Worn ? PulseAmplitude * scale * Math.Sin(2 * Math.PI * heartRateBpm * seconds / 60.0) : 0;
             var value = (int)Math.Round(baseline * scale + pulse);
             return (uint)Math.Min(Math.Max(value, 0), MaxSampleValue);
         }
 
-        private void Push(int channel, uint value)
+        private void Push(int tag, uint value)
         {
             if(fifo.Count >= FifoDepth)
             {
@@ -300,7 +312,7 @@ namespace Antmicro.Renode.Peripherals.Sensors
                 }
                 fifo.Dequeue();
             }
-            fifo.Enqueue((uint)((channel & 0xF) << 20 | (int)(value & 0xFFFFF)));
+            fifo.Enqueue((uint)((tag & 0xF) << 20 | (int)(value & 0xFFFFF)));
         }
 
         private void UpdateFifoCount()
@@ -391,8 +403,9 @@ namespace Antmicro.Renode.Peripherals.Sensors
         private const int MeasurementCount = 8;
         private const byte MeasurementBase = 0x18;
         private const int MeasurementStride = 8;
-        private const int MeasurementConfig2Offset = 2;
-        private const byte SecondPhotodiodeBit = 1 << 3;
+        private const int MeasurementSelectsOffset = 1;
+        private const int PhotodiodeCount = 2;
+        private const byte PhotodiodeSelectBase = 1 << 3;
         private const byte PowerReadyBit = 1 << 0;
         private const byte FrameReadyBit = 1 << 6;
         private const byte AlmostFullBit = 1 << 7;
