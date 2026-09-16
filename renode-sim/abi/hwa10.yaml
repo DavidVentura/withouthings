@@ -14,10 +14,10 @@ meta:
   bootloader_base: 0xfc000
 
 regions:
-  # Both ranges are argued for in notes; gen.py turns them into MEMORY entries.
-  - name: OVERLAY_FLASH
-    start: 0xf4000
-    size: 0x8000
+  # Both ranges are argued for in notes; abi/relink.ld's MEMORY mirrors them.
+  - name: LIBRARY_FLASH
+    start: 0xf1180
+    size: 0xae80
     kind: flash
     notes: >
       Internal flash between the end of the app image (0xf117c) and the
@@ -31,25 +31,16 @@ regions:
       in the sim over 600 s of virtual time with a WPP session and a time write:
       the NVMC model logged no ERASEPAGE and a snapshot of 0xf1000..0xfc000
       taken at reset verified byte-identical at the end of the run.
-      0xf1180..0xf4000 was left as a margin for the app image growing, and is
-      where LIBRARY_FLASH now starts.
-  - name: LIBRARY_FLASH
-    start: 0xf1180
-    size: 0xae80
-    kind: flash
-    notes: >
-      The same free span as OVERLAY_FLASH, taken from the app image end (0xf117c,
-      rounded up to the 16 bytes .libtext's own alignment asks for) rather than
-      from a round address: abi/relink.ld puts the relinked library here so
-      that app and library are one contiguous block and travel as one `appl`
-      part in a firmware package. Word alignment is all the package needs, since
-      a part's CRC32 is taken over its length rounded up to a word and the
-      bootloader's copy (0xfc78c) is byte-addressed and 512-byte chunked. The
-      size runs to the bootloader at 0xfc000; the older abi/overlay.c experiment
-      uses the same space from 0xf4000 and the two cannot be used at once.
-  - name: OVERLAY_RAM
+      The start is the app image end rounded up to the 16 bytes .libtext's own
+      alignment asks for, not a round address: abi/relink.ld puts the relinked
+      library here so that app and library are one contiguous block and travel
+      as one `appl` part in a firmware package. Word alignment is all the
+      package needs, since a part's CRC32 is taken over its length rounded up
+      to a word and the bootloader's copy (0xfc78c) is byte-addressed and
+      512-byte chunked. The size runs to the bootloader at 0xfc000.
+  - name: LIBRARY_RAM
     start: 0x20034000
-    size: 0x1000
+    size: 0x6000
     kind: ram
     notes: >
       The app's initial MSP is 0x20040000 (top of the 256 KB SRAM) and the main
@@ -60,7 +51,9 @@ regions:
       and 0x2003f000..0x20040000 (the main stack's low-water mark). The 0x14200
       bytes between them were never written. 0x20034000 sits in the middle of
       that hole, 0x9200 above the highest used static and 0xb000 below the
-      deepest the stack reached. Cross-checked by snapshotting this exact range
+      deepest the stack reached, and 0x2003a000 is still 0x5000 below it; the
+      source heap_4 brings its own 16 KB ucHeap, which is what the size holds.
+      Cross-checked by snapshotting this exact range
       at reset with the NVMC model's SnapshotProtectedRegion (it works on any
       sysbus range, not just flash) and verifying it at the end of the run:
       zero words differed.
@@ -151,9 +144,9 @@ functions:
     args: [[void *, req]]
     notes: >
       WPP command 1284 handler, entry 23 of wpp_cmd_table. Reads the battery
-      level, then replies with command 0x504. Ignores its argument, but the
-      overlay hook forwards it unchanged. Address carries the Thumb bit as it
-      is stored in the table; gen.py masks it off and sets it again.
+      level, then replies with command 0x504. Ignores its argument. Address
+      carries the Thumb bit as it is stored in the table; gen.py masks it off
+      and sets it again.
 
   # --- battery / charger ---
   - name: battery_adc_read
@@ -283,7 +276,7 @@ tables:
       master-request dispatch: the commands the phone sends. Ends at 0x27c04.
       No literal-pool reference to 0x27994 exists in the image, so the walker
       reaches it some other way; replacing a handler word in place works
-      regardless and is what the overlay proof does.
+      regardless (proven by diverting the battery handler to a logging hook).
   - name: i2c_device_table
     address: 0xb22c4
     entry: i2c_device

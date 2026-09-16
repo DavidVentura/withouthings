@@ -1,10 +1,10 @@
 /* Link the app blob (abi/blobify.py) against a FreeRTOS built from source.
  *
  * The blob stays at its original 0x27000; the source kernel goes into the free
- * flash argued for in hwa10.yaml's OVERLAY_FLASH, which starts at the app image
+ * flash argued for in hwa10.yaml's LIBRARY_FLASH, which starts at the app image
  * end so app and library are one contiguous block, and its statics into
- * OVERLAY_RAM. The blob's own copy of the kernel stays in place and becomes
- * dead: the relocations point every app call at LIB_FLASH instead. */
+ * LIBRARY_RAM. The blob's own copy of the kernel stays in place and becomes
+ * dead: the relocations point every app call at LIB instead. */
 
 MEMORY
 {
@@ -17,9 +17,9 @@ MEMORY
      * relink_image.py takes the placed address out of the ELF rather than
      * trusting this number. */
     LIB   (rx)  : ORIGIN = 0x000f1180, LENGTH = 0x0000ae80
-    /* LRAM is hwa10.yaml's OVERLAY_RAM grown to 0x6000: the source heap_4 brings
-     * its own 16 KB ucHeap, and 0x2003a000 is still 0x5000 below the deepest the
-     * main stack reached in a 600 s run. */
+    /* hwa10.yaml's LIBRARY_RAM: room for the source heap_4's 16 KB ucHeap, and
+     * 0x2003a000 is still 0x5000 below the deepest the main stack reached in a
+     * 600 s run. */
     LRAM  (rw)  : ORIGIN = 0x20034000, LENGTH = 0x00006000
 }
 
