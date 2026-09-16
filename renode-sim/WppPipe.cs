@@ -57,7 +57,6 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             this.wppServiceContext = wppServiceContext;
             this.sdEventIrq = sdEventIrq;
             inbound = new ConcurrentQueue<byte[]>();
-            outbound = new BlockingCollection<byte[]>(new ConcurrentQueue<byte[]>());
         }
 
         // Installing the hooks needs the CPU, which does not exist yet while the
@@ -110,8 +109,10 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 {
                     client.NoDelay = true;
                     this.Log(LogLevel.Info, "WPP client connected");
+                    var queue = new BlockingCollection<byte[]>(new ConcurrentQueue<byte[]>());
+                    outbound = queue;
                     Link();
-                    var reader = new Thread(() => Drain(client)) { IsBackground = true, Name = "wpp-pipe-tx" };
+                    var reader = new Thread(() => Drain(client, queue)) { IsBackground = true, Name = "wpp-pipe-tx" };
                     reader.Start();
                     try
                     {
@@ -121,6 +122,8 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                     {
                     }
                     Unlink();
+                    outbound = null;
+                    queue.CompleteAdding();
                     this.Log(LogLevel.Info, "WPP client gone");
                 }
             }
@@ -150,12 +153,12 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             }
         }
 
-        private void Drain(TcpClient client)
+        private void Drain(TcpClient client, BlockingCollection<byte[]> queue)
         {
             var stream = client.GetStream();
             try
             {
-                foreach(var notification in outbound.GetConsumingEnumerable())
+                foreach(var notification in queue.GetConsumingEnumerable())
                 {
                     var framed = new byte[notification.Length + 2];
                     framed[0] = (byte)(notification.Length >> 8);
@@ -316,7 +319,19 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             // ble_gatts_hvx_params_t: handle(2), type(1), offset(2), p_len(4), p_data(4)
             var length = machine.SystemBus.ReadWord((ulong)machine.SystemBus.ReadDoubleWord(parameters + 8));
             var data = machine.SystemBus.ReadBytes(machine.SystemBus.ReadDoubleWord(parameters + 12), length, true);
-            outbound.Add(data);
+            var queue = outbound;
+            if(queue == null)
+            {
+                this.Log(LogLevel.Warning, "notification with no client connected, dropped ({0} bytes)", length);
+            }
+            else
+            {
+                queue.Add(data);
+            }
+            // The firmware counts notifications in flight and waits for the SoftDevice's
+            // HVN_TX_COMPLETE before queueing more; without it a reply longer than the
+            // queue depth stalls forever.
+            Post(() => Event(GattsEvtHvnTxComplete, new byte[] { 0x01, 0x00 }));
             this.Log(LogLevel.Debug, "captured hvx handle=0x{0:x4} type={1} len={2}",
                      machine.SystemBus.ReadWord(parameters), machine.SystemBus.ReadByte(parameters + 2), length);
             // Return NRF_SUCCESS instead of running the SVC: the SoftDevice has no
@@ -336,6 +351,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private const ushort GapEvtConnected = 0x10;
         private const ushort GapEvtDisconnected = 0x11;
         private const ushort GattsEvtWrite = 0x50;
+        private const ushort GattsEvtHvnTxComplete = 0x57;
         private const ushort WppCharacteristicUuid = 0x0001;
         private const byte VendorUuidType = 0x02;
         private const int EventBufferLength = 0xec;
@@ -362,6 +378,6 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private readonly ulong wppServiceContext;
         private readonly int sdEventIrq;
         private readonly ConcurrentQueue<byte[]> inbound;
-        private readonly BlockingCollection<byte[]> outbound;
+        private volatile BlockingCollection<byte[]> outbound;
     }
 }
