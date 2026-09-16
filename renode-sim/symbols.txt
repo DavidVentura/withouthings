@@ -259,7 +259,7 @@
 # --- board device tables and the absent sensors' drivers (2026-09-16, identification pass) ---
 0x000b22c4  i2c_device_table             7 words/entry {bus 0xb2390 (TWI0), addr, ?, fn0..fn3}: 0x6A, 0x49, 0x48, 0x52, 0x79, 0x77, 0x76
 0x000b23c0  spi_device_table             5 words/entry {bus, cs pin, mode, state, name}; 0xb2460 = SPIM2 bus (flash CS P0.15, ADXL CS P0.16)
-0x000be458  gpio_pin_table               4-byte {port u16, pin u16} descriptors (0xbe478 crown MOTION P1.13, 0xbe4c8 click P1.11, 0xbe4a4/0xbe4a8 AFE supply P1.12/P1.14)
+0x000be470  gpio_pin_table               4-byte {port u16, pin u16} descriptors (0xbe458..0xbe46f = three ble_gap_conn_params_t) (0xbe478 crown MOTION P1.13, 0xbe4c8 click P1.11, 0xbe4a4/0xbe4a8 AFE supply P1.12/P1.14)
 0x0005e450  tmp117_driver                TWI0 0x48; writes CONFIG 0x01 (BE), reads TEMP 0x00, Q7 split @0x5e5d8; table fns 0x5e614..0x5e644
 0x0005b20c  ads1115_driver               TWI0 0x49 "SN19020X6" heat flux; config 0x01 (0x0AE3 default @0x5b400), OS poll @0x5b234, uV conversion @0x5b384
 0x000508ec  apds9306_driver              TWI0 0x52; enable @0x508ec, read data @0x50960 (MAIN_STATUS bit3, LS_DATA_0 3 bytes), part id @0x509c8
@@ -275,3 +275,10 @@
 0x0003d994  am_arm_next                  arms the next RTC1 alarm, or notifies bit 1 again when it is already due
 0x0002e924  main_notify_wait             main's xTaskNotifyWait(forever) -> dispatch 0x4ec0c -> swdog feed id 0 at 0x2e940
 0x0005df94  swdog_feed                   r0 = id; stores "now" into table[id].last
+
+# --- corrections from the ABI manifest work (2026-09-16); abi/hwa10.yaml supersedes this file ---
+0x0009e46c  vPortYield                   (task_yield above) pends PendSV and returns; NOT vTaskDelay
+0x0008f460  wlog                         variadic logger, the callable entry (0x56e8e is the ring sink, context in r12)
+0x00027994  wpp_master_cmd_table         54 x {u32 id, handler|1, const char *name}, ends 0x27c04; entry 23 = 1284 BATTERY_STATUS -> 0x6ca91
+0x0003a318  int_flash_erase_range        only reachable from the debug shell's `erase range`; nothing on the boot/WPP path writes internal flash
+0x0003a348  int_flash_write              same
