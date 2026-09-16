@@ -290,10 +290,22 @@ tables:
     stride: 28
     count: 7
   - name: spi_device_table
-    address: 0xb23c0
+    address: 0xb2438
     entry: spi_device
     stride: 20
-    count: 3
+    count: 2
+    notes: >
+      The two SPIM2 devices, the external flash (cs_pin 0x000f0000) and the
+      ADXL367 (0x00100000); cs_pin is the {u16 port, u16 pin} pair the gpio_pin
+      table uses, so those read as P0.15 and P0.16. An earlier reading put the
+      table at 0xb23c0 with three rows, which is wrong: 0xb23c0 and 0xb2404 are
+      two more devices of the same shape (max86173 on SPIM1 CS P0.26 and the
+      device on CS P0.25) but they are not contiguous with each other or with
+      this pair, because each one's bus descriptor sits between them (0xb23c0's
+      bus is 0xb23d4, which holds SPIM1's 0x40004000 at 0xb23f4, the address
+      symbols.txt calls spi1_cfg). At stride 20 from 0xb23c0 the second row
+      would start inside that bus descriptor and its name field would be
+      0xb23ec, which is not a string.
   - name: gpio_pin_table
     address: 0xbe470
     entry: gpio_pin
