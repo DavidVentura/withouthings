@@ -127,6 +127,14 @@ spi1: SPI.NrfSpimBus @ sysbus 0x40004000
     preinit:
         include @NrfSpimBus.cs
 
+// The optical front end is the only device on SPIM1; its chip select is P0.26
+// and its interrupt is P1.14, which the driver configures as a pulled-up input
+// with SENSE=Low at 0x52620 and registers with the PORT dispatcher at 0x527a8.
+max86173: Sensors.Max86173 @ spi1 0
+    0 -> gpio1@14
+    preinit:
+        include @NrfMax86173.cs
+
 crown: Sensors.Crown @ twi0 0x79
     -> gpio1@13
     preinit:
