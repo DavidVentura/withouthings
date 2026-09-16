@@ -233,3 +233,13 @@
 0x0003a008  gpiote_port_handler          walks registered pins by reading GPIO LATCH (0x39f58), clears LATCH (0x39f74)
 0x000b2334  crown_i2c_cfg                {bus ptr 0xb2390, addr 0x79}
 0x000be478  crown_int_pin                {port 1, pin 13}; same 4-byte {port,pin} struct as the OLED pin table @0xbe490
+
+# --- main task, SPIM1 front end, crown scale (2026-09-16) ---
+0x20014d40  main_task_tcb                (RAM) static TCB of task "main" (created @0x2ec3c); notifications at +0x58, state +0x5C
+0x0007382c  xTaskNotifyWait              the "main" task's wait; bit dispatcher 0x4ec0c (bit 11 = 0x800 -> crown handler 0x2ef4c)
+0x0004ebf0  xTaskNotifyFromISR_main      notifies *0x2001a824 with eSetBits (crown callback path via 0x92070)
+0x0003ae8e  spim_xfer_wait               shared nrfx EasyDMA driver: INTENSET END, TASKS_START, xSemaphoreTake forever; instance 0x40004000 is SPIM1
+0x00052678  max8617x_probe               optical front end on SPIM1; reads part id from reg 0xFF, expects 0x48; frame {reg, 0x80 read/0x00 write, data}
+0x000b23c0  max8617x_cfg                 -> bus descriptor holding 0x40004000
+0x000979d8  crown_delta_store            strh through r1 (delta_y); crown caller 0x2ee64 passes NULL (patched in machine.resc)
+0x20006000  crown_ctx                    (RAM) +0x10 idle window 250 ms, +0x12 threshold 150 counts per UI step
