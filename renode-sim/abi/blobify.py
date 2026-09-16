@@ -10,7 +10,9 @@ thing the app function does) an R_ARM_THM_JUMP24, with the branch displacement
 rewritten to `.-4` so the REL addend is 0. Every vector-table word marked
 `relocate` becomes an R_ARM_ABS32 against the handler symbol, zeroed likewise.
 Library->app targets and the app's entry points become defined symbols so the
-source library can be linked against them.
+source library can be linked against them. The `startup` list diverts named
+startup calls the same way, exporting the original target so the glue can chain
+to it.
 
 The blob keeps its own copy of the library bytes: the relocations move the calls
 away from them, and leaving them in place keeps an A/B comparison possible.
@@ -193,7 +195,18 @@ def main():
         struct.pack_into("<I", blob, off, 0)
         relocs.append((off, v["symbol"], R_ARM_ABS32))
 
+    for e in b.get("startup", []):
+        off = int(e["site"]) - APP_BASE
+        found = decode_branch(blob, off)
+        if found != ("bl", int(e["original"])):
+            sys.exit("startup site 0x%x is %r, boundary.yaml expects a bl to 0x%x"
+                     % (int(e["site"]), found, int(e["original"])))
+        struct.pack_into("<HH", blob, off, *SELF_BL)
+        relocs.append((off, e["symbol"], R_ARM_THM_CALL))
+
     defined = {}
+    for e in b.get("startup", []):
+        defined[e["original_symbol"]] = (int(e["original"]), STT_FUNC)
     for e in b["lib_to_app"]:
         if e["symbol"] and not e.get("library_not_app"):
             defined[e["symbol"]] = (int(e["addr"]), STT_FUNC)

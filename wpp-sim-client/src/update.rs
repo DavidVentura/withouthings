@@ -22,9 +22,13 @@ use crate::{report, Link, QUIET};
 const HEADER_VERSION: u16 = 1;
 const IE_APPL: u16 = 1;
 const IE_ENTRY_LEN: u16 = 16;
-/// The appl image ends with the u32 the firmware's `get_fw_version` (0x36e70)
-/// returns and the probe reply carries.
-const APPL_VERSION_TRAILER: usize = 4;
+/// `get_fw_version` (0x36e70) loads this absolute address -- the u32 after the
+/// build string -- and the probe reply carries what it returns. The appl part is
+/// flashed at 0x27000, so the version sits at a fixed offset into the part and
+/// not at its end: a part that carries more than the stock app image is longer
+/// without moving it.
+const APPL_BASE: usize = 0x27000;
+const APPL_VERSION_ADDRESS: usize = 0xf1178;
 /// Beyond the protocol's own cap the watch has no say in the split, so the
 /// largest chunk that leaves room for the frame and object headers is the one
 /// that costs the fewest round trips.
@@ -80,7 +84,7 @@ impl Package {
                 return Err(format!("entry ie={ie} CRC {crc:#010x} != computed {computed:#010x}"));
             }
             if ie == IE_APPL {
-                let trailer = address + length - APPL_VERSION_TRAILER;
+                let trailer = address + (APPL_VERSION_ADDRESS - APPL_BASE);
                 let embedded = read_u32(&bytes, trailer)?;
                 if embedded != component_version {
                     return Err(format!(

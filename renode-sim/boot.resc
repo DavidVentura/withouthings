@@ -7,8 +7,11 @@ mach create "hwa10"
 machine LoadPlatformDescription @hwa10.repl
 sysbus ApplySVD @NRF52840.svd
 
-# whole internal flash image: MBR+SD @0, appl @0x27000, bl @0xfc000
-sysbus LoadBinary @flash.bin 0x0
+# whole internal flash image: MBR+SD @0, appl @0x27000, bl @0xfc000.
+# `set image @out/flash-relinked.bin` before the include runs another image
+# through the same rig; `?=` leaves an already-set value alone.
+$image?=@flash.bin
+sysbus LoadBinary $image 0x0
 # external SPI-NOR content (untracked dump; see README) served by spi2's flash model
 sysbus.spi2 LoadImage @external_flash.bin
 

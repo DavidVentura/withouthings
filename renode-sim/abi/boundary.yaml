@@ -614,3 +614,21 @@ data_references:
       symbol: "Reset_Handler"
       relocate: false
       note: "app entry, exported"
+
+# --- startup ----------------------------------------------------------------
+# Calls diverted at startup so the relinked image can initialise what the blob
+# knows nothing about. Each entry rewrites one `bl` to call `symbol` instead of
+# `original`, and exports `original` so the glue can call it afterwards.
+startup:
+  - site: 0x34968
+    original: 0x34854
+    original_symbol: appl_SystemInit
+    symbol: relink_startup
+    how: >
+      Reset_Handler is 0x34938 (vector 1 holds 0x34939) and 0x34968 is its first
+      instruction that is a call; the target 0x34854 is the MDK SystemInit
+      (NFCT/reset-pin UICR handling and the errata workarounds, ending in the
+      FICR-to-RAM copy). Everything before it is the DEBUG/RESET register writes
+      at the top of Reset_Handler, and the blob's own .bss clear and first kernel
+      call (0x36a94, 0x51974) come after, so this is the earliest point that
+      still precedes any use of the source library's RAM.

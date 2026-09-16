@@ -31,7 +31,22 @@ regions:
       in the sim over 600 s of virtual time with a WPP session and a time write:
       the NVMC model logged no ERASEPAGE and a snapshot of 0xf1000..0xfc000
       taken at reset verified byte-identical at the end of the run.
-      0xf1180..0xf4000 is left as a margin for the app image growing.
+      0xf1180..0xf4000 was left as a margin for the app image growing, and is
+      where LIBRARY_FLASH now starts.
+  - name: LIBRARY_FLASH
+    start: 0xf1180
+    size: 0xae80
+    kind: flash
+    notes: >
+      The same free span as OVERLAY_FLASH, taken from the app image end (0xf117c,
+      rounded up to the 16 bytes .libtext's own alignment asks for) rather than
+      from a round address: abi/relink.ld puts the relinked library here so
+      that app and library are one contiguous block and travel as one `appl`
+      part in a firmware package. Word alignment is all the package needs, since
+      a part's CRC32 is taken over its length rounded up to a word and the
+      bootloader's copy (0xfc78c) is byte-addressed and 512-byte chunked. The
+      size runs to the bootloader at 0xfc000; the older abi/overlay.c experiment
+      uses the same space from 0xf4000 and the two cannot be used at once.
   - name: OVERLAY_RAM
     start: 0x20034000
     size: 0x1000
