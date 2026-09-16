@@ -107,8 +107,13 @@ gpiote: GPIOPort.NRF52840_GPIOTasksEvents @ sysbus 0x40006000
     port1: gpio1
     -> nvic@6
 
-twi1: I2C.NRF52840_I2C @ sysbus 0x40004000
+// Instance 1 at 0x40004000 is driven as SPIM1, not as TWI: the firmware arms
+// TXD/RXD EasyDMA and TASKS_START on it for the MAX8617x optical front end,
+// which is not modelled, so nothing is registered on the bus yet.
+spi1: SPI.NrfSpimBus @ sysbus 0x40004000
     -> nvic@4
+    preinit:
+        include @NrfSpimBus.cs
 
 crown: Sensors.Crown @ twi0 0x79
     -> gpio1@13

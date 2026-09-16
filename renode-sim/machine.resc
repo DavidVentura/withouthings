@@ -20,6 +20,12 @@ sysbus WriteDoubleWord 0xb224 0xBF004668
 # Return early from the give when the handle is NULL (cbz r0 + bx lr).
 sysbus WriteWord 0x30614 0xB108
 sysbus WriteWord 0x3061a 0x4770
+# The crown driver asks for the rotation delta with a NULL delta_y pointer
+# (`mov r1, r4` with r4 = 0 at 0x2ee64) and 0x979f8 stores through it: silicon
+# drops the store because it lands in flash with NVMC read-only, Renode's memory
+# takes it and word 0 of the MBR changes. Pass the caller's dead scratch slot
+# instead (`add r1, sp, #0`); the halfword it holds is not read back.
+sysbus WriteWord 0x2ee64 0xA900
 # MBR + SoftDevice must come out of the run byte-identical to this point: a
 # difference means a stray store that silicon would have dropped (flash is
 # read-only unless NVMC WEN).
