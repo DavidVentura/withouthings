@@ -128,6 +128,18 @@ bq25180: Sensors.BQ25180 @ twi0 0x6A
     preinit:
         include @NrfBq25180.cs
 
+tmp117: Sensors.TMP117 @ twi0 0x48
+    preinit:
+        include @NrfTmp117.cs
+
+ads1115: Sensors.ADS1115 @ twi0 0x49
+    preinit:
+        include @NrfAds1115.cs
+
+apds9306: Sensors.APDS9306 @ twi0 0x52
+    preinit:
+        include @NrfApds9306.cs
+
 timer0: Timers.NRF52840_Timer @ sysbus 0x40008000
     numberOfEvents: 4
     -> nvic@8
