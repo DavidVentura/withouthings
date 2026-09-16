@@ -255,3 +255,14 @@
 0x20017ce0  ble_evt_buffer               (RAM) 0xec bytes, ble_evt_t = [id u16][len u16][conn u16][params]
 0x20017f28  wpp_service_ctx              (RAM) handle pairs value/CCCD: +4/+8 WPP_V2, +0xc/+0x10 WPP_V3, +0x14/+0x18 WPPS; subscribe bits at +0x4c
 0x0005dfcc  swdog_assert                 udf when a software watchdog (registration 0x5df44, table via 0x36fdc) expires; id 0 is 90 s
+
+# --- board device tables and the absent sensors' drivers (2026-09-16, identification pass) ---
+0x000b22c4  i2c_device_table             7 words/entry {bus 0xb2390 (TWI0), addr, ?, fn0..fn3}: 0x6A, 0x49, 0x48, 0x52, 0x79, 0x77, 0x76
+0x000b23c0  spi_device_table             5 words/entry {bus, cs pin, mode, state, name}; 0xb2460 = SPIM2 bus (flash CS P0.15, ADXL CS P0.16)
+0x000be458  gpio_pin_table               4-byte {port u16, pin u16} descriptors (0xbe478 crown MOTION P1.13, 0xbe4c8 click P1.11, 0xbe4a4/0xbe4a8 AFE supply P1.12/P1.14)
+0x0005e450  tmp117_driver                TWI0 0x48; writes CONFIG 0x01 (BE), reads TEMP 0x00, Q7 split @0x5e5d8; table fns 0x5e614..0x5e644
+0x0005b20c  ads1115_driver               TWI0 0x49 "SN19020X6" heat flux; config 0x01 (0x0AE3 default @0x5b400), OS poll @0x5b234, uV conversion @0x5b384
+0x000508ec  apds9306_driver              TWI0 0x52; enable @0x508ec, read data @0x50960 (MAIN_STATUS bit3, LS_DATA_0 3 bytes), part id @0x509c8
+0x0003baf0  adxl367_power_check          SPIM2 CS P0.16; 0x0B 0x00 expects DEVID_AD 0xAD @0x94376; pre-power-on INT1 (P0.27) polarity check @0x3bbe4
+0x00093e56  adxl367_reg_layer            ..0x940e0: FIFO_CONTROL/SAMPLES @0x94022, INTMAP1 @0x94078, FILTER_CTL @0x940b0, POWER_CTL @0x940cc; SPI transport 0x94392/0x943a6
+0x00052180  max86173_driver              ..0x53400 on SPIM1 CS P0.26; part id 0xFF == 0x48 @0x52678; reg read @0x53284; power rails @0x52620/0x5264c
