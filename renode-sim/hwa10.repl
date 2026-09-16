@@ -17,9 +17,13 @@ rtc0: Timers.NRF52840_RTC @ sysbus 0x4000B000
     numberOfEvents: 3
     -> nvic@11
 
-rtc1: Timers.NRF52840_RTC @ sysbus 0x40011000
+// The firmware's uptime seconds come from RTC1's counter plus an overflow count
+// it keeps in the OVRFLW handler, which the stock model never raises.
+rtc1: Timers.NrfRtc @ sysbus 0x40011000
     numberOfEvents: 3
     -> nvic@17
+    preinit:
+        include @NrfRtc.cs
 
 rtc2: Timers.NRF52840_RTC @ sysbus 0x40024000
     numberOfEvents: 4
