@@ -6,35 +6,16 @@ include @boot.resc
 logLevel 3
 
 # --- known-good boot patch set ---
-# A macro because the bootloader rewrites internal flash from the external bank
-# on an update, which takes these with it; the update run re-applies them when
-# the freshly flashed application is entered.
-macro imagePatches
-"""
-    # sd_mbr: skip the MBR forwarding-address check that otherwise wedges early boot
-    sysbus WriteWord 0x9301e 0x2000
-    # SoftDevice: `mov.w r0, sp` (T3 encoding, legal on silicon) is rejected by
-    # Renode's tlib decoder as undefined, so re-encode both sites as the 16-bit
-    # `mov r0, sp` plus a nop. Reached only once the app enables the SoftDevice.
-    sysbus WriteDoubleWord 0x13024 0xBF004668
-    sysbus WriteDoubleWord 0xb224 0xBF004668
-    # After its 30 s start-up delay the UI task (priority 2) handles event 7 and gives
-    # the battery task's semaphore before that task (priority 1) has run and created
-    # it. xQueueGenericSend on the NULL handle then memcpy's flash 0x0.. onto 0x715:
-    # silicon drops writes to flash while NVMC is read-only, Renode's memory does not.
-    # Return early from the give when the handle is NULL (cbz r0 + bx lr).
-    sysbus WriteWord 0x30614 0xB108
-    sysbus WriteWord 0x3061a 0x4770
-    # The crown driver asks for the rotation delta with a NULL delta_y pointer
-    # (`mov r1, r4` with r4 = 0 at 0x2ee64) and 0x979f8 stores through it: silicon
-    # drops the store because it lands in flash with NVMC read-only, Renode's memory
-    # takes it and word 0 of the MBR changes. Pass the caller's dead scratch slot
-    # instead (`add r1, sp, #0`); the halfword it holds is not read back.
-    sysbus WriteWord 0x2ee64 0xA900
-    # OLED settle-delay busy loops -> nop (µs-ms HW settle, only burns sim wall time)
-    sysbus WriteWord 0x3bb96 0xBF00
-    sysbus WriteWord 0x3bbae 0xBF00
-"""
+# The patches are generated from abi/sim.yaml by abi/rig.py, which resolves each
+# site as a symbol plus an offset against the symbol table of the image this run
+# loads and refuses if the bytes there are not the ones the entry expects, so a
+# relinked or relaid-out image needs no rewriting step here.
+# imagePatches is a macro because the bootloader rewrites internal flash from the
+# external bank on an update, which takes the patches with it; the update run
+# re-applies them when the freshly flashed application is entered.
+include @out/rig/patches.resc
+# The addresses the runs hook, from the same generator.
+include @out/rig/hooks.resc
 runMacro $imagePatches
 # MBR + SoftDevice must come out of the run byte-identical to this point: a
 # difference means a stray store that silicon would have dropped (flash is

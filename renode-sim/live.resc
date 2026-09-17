@@ -6,9 +6,7 @@
 
 include @machine.resc
 
-# main init sleeps vTaskDelay(30001) before bringing up the UI (0x91faa,
-# `movw r0, #0x7531`); make that 2001 ticks so the face appears in seconds.
-sysbus WriteDoubleWord 0x91faa 0x70D1F240
+runMacro $fastStartup
 
 showAnalyzer sysbus.spi3
 start

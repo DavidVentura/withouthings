@@ -5,9 +5,6 @@
 :  on the way in.
 
 include @machine.resc
-# Where this run hooks the application and what it re-applies after the update;
-# abi/sim_patches.py rewrites it for a layout that moved the text.
-include @moved-patches.resc
 
 # UICR.NRFFW[0] holds the bootloader start address the MBR reads, and boot.resc
 # leaves it erased so the MBR forwards to the SoftDevice. This run arms it only
@@ -17,28 +14,62 @@ include @moved-patches.resc
 # internal flash differ from the bank by construction, so the comparison would
 # never settle.
 
-# CMD_RESTART_TO_UPDATE's handler (0x6ca44) is the moment the application asks
-# for the bank to be applied: arm the hand-off so the reboot it is about to
-# cause lands in the bootloader.
-cpu AddHook 0x6ca44 'machine.SystemBus.WriteDoubleWord(0x10001014, 0xfc000)'
+# CMD_RESTART_TO_UPDATE's handler is the moment the application asks for the
+# bank to be applied: arm the hand-off so the reboot it is about to cause lands
+# in the bootloader.
+cpu AddHook $hook_restart_to_update 'machine.SystemBus.WriteDoubleWord(0x10001014, 0xfc000)'
 
 # The bootloader's reset entry. It reads POWER.RESETREAS to decide whether the
 # RAM control block the application filled in survived; the sim has no reset
 # cause to report, and every reset that reaches the bootloader here came from
 # SYSRESETREQ, which is bit 2.
-cpu AddHook 0xfc920 'monitor.Parse("sysbus.clock ResetReason 4")'
+cpu AddHook $hook_bootloader_reset 'monitor.Parse("sysbus.clock ResetReason 4")'
 
-# The application's reset entry. The bootloader has just overwritten internal
-# flash with the bank, so the sim's patches are gone and the protected-region
-# reference is stale; moved-patches.resc's postUpdate restores both and disarms
-# the hand-off so the next ordinary reboot goes straight to the SoftDevice.
-cpu AddHook $appReset 'monitor.Parse("runMacro $postUpdate")'
-
-# main init sleeps vTaskDelay(30001) before bringing up the UI (0x91faa,
-# `movw r0, #0x7531`); make that 2001 ticks so the link is usable sooner.
-sysbus WriteDoubleWord 0x91faa 0x70D1F240
+runMacro $fastStartup
 
 logLevel -1 sysbus.wppPipe
 emulation SetAdvanceImmediately true
-sysbus.wppPipe Attach
+sysbus.wppPipe Attach $hook_ble_evt_present $hook_ble_evt_poll $hook_hvx_thunk
+
+# From here on the addresses belong to the image the update installs, not to the
+# one this run started from, so the rig abi/rig.py generated for it redefines
+# every macro and variable above. The two are the same file for a run that
+# installs the image it booted, and different for one that installs a relinked
+# or relaid-out image.
+include @out/rig-updated/patches.resc
+include @out/rig-updated/hooks.resc
+
+macro postUpdate
+"""
+    runMacro $imagePatches
+    runMacro $fastStartup
+    sysbus.wppPipe Attach $hook_ble_evt_present $hook_ble_evt_poll $hook_hvx_thunk
+    # 0x20000000 is where the MBR keeps the vector table it forwards SVCs and
+    # interrupts to. Launching the bootloader pointed it at the bootloader's own
+    # table and the bootloader jumps to the application without putting it back,
+    # so the first SVC -- the one that starts the FreeRTOS scheduler -- lands in
+    # the bootloader and the application never runs a task. Point it at the
+    # SoftDevice, which is what the MBR leaves behind when it starts the
+    # SoftDevice itself.
+    sysbus WriteDoubleWord 0x20000000 0x1000
+    sysbus.nvmc SnapshotProtectedRegion 0x0 0x27000
+    sysbus WriteDoubleWord 0x10001014 0xFFFFFFFF
+"""
+
+# The application's reset entry, in the image the update installs. The
+# bootloader has just overwritten internal flash with the bank, so the sim's
+# patches are gone and the protected-region reference is stale; postUpdate
+# restores both and disarms the hand-off so the next ordinary reboot goes
+# straight to the SoftDevice.
+#
+# The address belongs to the installed image, so under a layout that moved the
+# text it is an ordinary instruction of the image this run booted from, and that
+# one executes it on the way up. UICR.NRFFW[0] is what tells the two apart: only
+# the reboot the application asked for leaves the bootloader armed, and
+# postUpdate disarms it again.
+cpu AddHook $hook_app_reset """
+if cpu.GetMachine().SystemBus.ReadDoubleWord(0x10001014)==0xfc000:
+    monitor.Parse("runMacro $postUpdate")
+"""
+
 start

@@ -42,6 +42,14 @@ to-socket adapter so that the simulator can talk to the rust code implementing t
 
 Once, extract the 'partitions' from the package with `extract.py`
 
+Before each run, resolve the memory patches and hooks the rig needs against the
+image it is about to load, which writes `out/rig/`:
+
+```bash
+python3 abi/rig.py                                     # the stock flash.bin
+python3 abi/rig.py --image out/flash-relinked.bin --symbols out/relink/relinked.elf
+```
+
 Batch run (headless, 60 s of virtual time in ~15 s, output in `out/`):
 
 ```bash

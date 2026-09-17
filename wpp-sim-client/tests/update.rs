@@ -172,6 +172,54 @@ fn reported_version(output: &str) -> u32 {
         .expect("the reported version is a number")
 }
 
+/// The image a rig is generated for: the internal-flash binary the addresses
+/// are read out of, and where the symbol table to resolve them against lives
+/// (`partition` for a stock image, which has no ELF).
+struct Rig {
+    image: PathBuf,
+    symbols: String,
+}
+
+impl Rig {
+    fn stock() -> Rig {
+        Rig {
+            image: repository().join("renode-sim/flash.bin"),
+            symbols: "partition".to_string(),
+        }
+    }
+
+    fn relinked() -> Rig {
+        Rig {
+            image: repository().join("renode-sim/out/flash-relinked.bin"),
+            symbols: repository()
+                .join("renode-sim/out/relink/relinked.elf")
+                .display()
+                .to_string(),
+        }
+    }
+
+    /// Resolve abi/sim.yaml against this image and write the fragments the run
+    /// scripts include, into the scratch rig rather than into the source tree.
+    fn generate(&self, directory: &Path, into: &str) {
+        let repository = repository();
+        let generated = Command::new("python3")
+            .arg(repository.join("renode-sim/abi/rig.py"))
+            .arg("--image")
+            .arg(&self.image)
+            .args(["--symbols", &self.symbols])
+            .arg("--out")
+            .arg(directory.join("out").join(into))
+            .output()
+            .expect("python3 runs");
+        assert!(
+            generated.status.success(),
+            "abi/rig.py refused the {into} addresses: {}",
+            String::from_utf8_lossy(&generated.stderr)
+        );
+        print!("{}", String::from_utf8_lossy(&generated.stdout));
+    }
+}
+
 /// One update scenario: which flash image the watch starts from, what package
 /// is pushed, and what the watch must report before and after.
 struct Case {
@@ -179,6 +227,10 @@ struct Case {
     image: Option<PathBuf>,
     /// The `appl` part to package, or None to keep the stock package's.
     appl: Option<PathBuf>,
+    /// The rig for the image the run boots, and the one for the image the
+    /// update installs; they differ exactly when the two layouts differ.
+    boot: Rig,
+    target: Rig,
     installed_version: u32,
     target_version: u32,
 }
@@ -192,9 +244,18 @@ impl Case {
                 .map(|v| v.parse().expect("the version in the environment is a number"))
                 .unwrap_or(fallback)
         };
+        let rig = |image: &str, symbols: &str| match std::env::var(image) {
+            Err(_) => Rig::stock(),
+            Ok(path) => Rig {
+                image: PathBuf::from(path),
+                symbols: std::env::var(symbols).unwrap_or_else(|_| "partition".to_string()),
+            },
+        };
         Case {
             image: std::env::var("UPDATE_TEST_IMAGE").ok().map(PathBuf::from),
             appl: std::env::var("UPDATE_TEST_APPL").ok().map(PathBuf::from),
+            boot: rig("UPDATE_TEST_IMAGE", "UPDATE_TEST_SYMBOLS"),
+            target: rig("UPDATE_TEST_TARGET_IMAGE", "UPDATE_TEST_TARGET_SYMBOLS"),
             installed_version: number("UPDATE_TEST_INSTALLED_VERSION", INSTALLED_VERSION),
             target_version: number("UPDATE_TEST_VERSION", TEST_VERSION),
         }
@@ -240,13 +301,9 @@ fn run_update(case: &Case) -> Option<(Renode, PathBuf)> {
         }
     }
 
-    // UPDATE_TEST_RIG points the run at a rig whose scripts were rewritten for
-    // an application image with a different layout (abi/sim_patches.py); the
-    // images and models in it are the same files.
-    let rig = std::env::var("UPDATE_TEST_RIG")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| repository.join("renode-sim"));
-    let directory = scratch(&rig);
+    let directory = scratch(&repository.join("renode-sim"));
+    case.boot.generate(&directory, "rig");
+    case.target.generate(&directory, "rig-updated");
     let package = directory.join(format!("hwa10_{}.bin", case.target_version));
     mkpkg(&repository, case, &source, &package);
     if case.appl.is_none() {
@@ -359,6 +416,8 @@ fn the_relinked_image_installs_through_the_update_path() {
     let case = Case {
         image: None,            // the update starts from the stock image
         appl: Some(appl.clone()),
+        boot: Rig::stock(),
+        target: Rig::relinked(),
         installed_version: INSTALLED_VERSION,
         target_version: RELINKED_VERSION,
     };

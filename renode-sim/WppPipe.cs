@@ -45,65 +45,49 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 {
     public class WppPipe : IPeripheral, IDisposable
     {
-        public WppPipe(IMachine machine, int port, ulong evtPresentHook, ulong evtPollHook, ulong evtBuffer,
-                       ulong hvxThunk, ulong wppServiceContext, int sdEventIrq)
+        public WppPipe(IMachine machine, int port, ulong evtBuffer, ulong wppServiceContext,
+                       int sdEventIrq)
         {
-            this.evtPresentHook = evtPresentHook;
             this.machine = machine;
             this.port = port;
-            this.evtPollHook = evtPollHook;
             this.evtBuffer = evtBuffer;
-            this.hvxThunk = hvxThunk;
             this.wppServiceContext = wppServiceContext;
             this.sdEventIrq = sdEventIrq;
             inbound = new ConcurrentQueue<byte[]>();
         }
 
-        // Installing the hooks needs the CPU, which does not exist yet while the
-        // platform description is being parsed, so this is a separate step the
-        // run script takes once the machine is up.
-        public void Attach()
+        // The three hook sites are addresses in the application image, so they
+        // belong to the image that is running rather than to the platform: the
+        // run script passes what abi/rig.py resolved them to. Installing them
+        // also needs the CPU, which does not exist yet while the platform
+        // description is being parsed. Attaching again moves the hooks, which
+        // is what the update run does once the bootloader has replaced the
+        // application with one whose text is laid out differently.
+        public void Attach(ulong evtPresentHook, ulong evtPollHook, ulong hvxThunk)
         {
-            if(cpu != null)
+            if(cpu == null)
             {
-                throw new RecoverableException("the pipe is already attached");
+                cpu = machine.SystemBus.GetCPUs().OfType<ICPUWithHooks>().Single();
+                listener = new TcpListener(IPAddress.Loopback, port);
+                listener.Start();
+                worker = new Thread(Serve) { IsBackground = true, Name = "wpp-pipe" };
+                worker.Start();
+                this.Log(LogLevel.Info, "WPP pipe listening on 127.0.0.1:{0}", port);
             }
-            cpu = machine.SystemBus.GetCPUs().OfType<ICPUWithHooks>().Single();
+            else
+            {
+                foreach(var old in new[] { present, poll, hvx0 })
+                {
+                    cpu.RemoveHooksAt(old);
+                }
+            }
             present = evtPresentHook;
             poll = evtPollHook;
             hvx0 = hvxThunk;
             cpu.AddHook(present, OnEventPresenceCheck);
             cpu.AddHook(poll, OnEventPoll);
             cpu.AddHook(hvx0, OnHvx);
-            listener = new TcpListener(IPAddress.Loopback, port);
-            listener.Start();
-            worker = new Thread(Serve) { IsBackground = true, Name = "wpp-pipe" };
-            worker.Start();
-            this.Log(LogLevel.Info, "WPP pipe listening on 127.0.0.1:{0}", port);
-        }
-
-        // The three hooks are addresses in the application image, so an image
-        // whose text was placed elsewhere needs them moved with it. The update
-        // run is where that happens: it starts from the stock image and only
-        // runs the new one after the bootloader has installed it, so the hooks
-        // cannot be right for both from the start.
-        public void Rehook(ulong evtPresent, ulong evtPoll, ulong hvx)
-        {
-            if(cpu == null)
-            {
-                throw new RecoverableException("the pipe is not attached yet");
-            }
-            foreach(var old in new[] { present, poll, hvx0 })
-            {
-                cpu.RemoveHooksAt(old);
-            }
-            present = evtPresent;
-            poll = evtPoll;
-            hvx0 = hvx;
-            cpu.AddHook(present, OnEventPresenceCheck);
-            cpu.AddHook(poll, OnEventPoll);
-            cpu.AddHook(hvx0, OnHvx);
-            this.Log(LogLevel.Info, "hooks moved to {0:X}, {1:X}, {2:X}", present, poll, hvx0);
+            this.Log(LogLevel.Info, "hooks at {0:X}, {1:X}, {2:X}", present, poll, hvx0);
         }
 
         public void Reset()
@@ -401,10 +385,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         private readonly IMachine machine;
         private readonly int port;
-        private readonly ulong evtPresentHook;
-        private readonly ulong evtPollHook;
         private readonly ulong evtBuffer;
-        private readonly ulong hvxThunk;
         private readonly ulong wppServiceContext;
         private readonly int sdEventIrq;
         private readonly ConcurrentQueue<byte[]> inbound;

@@ -1,0 +1,176 @@
+# Every address the Renode rig reaches into the running image with, as a
+# symbol and an offset rather than as a number. abi/rig.py resolves each entry
+# against the symbol table of the image that is about to run -- the partition
+# export for a stock flash.bin run, the linked ELF for a relink or a moved
+# layout -- checks that the bytes there are the ones the entry expects, and
+# writes out/rig/{patches,hooks}.resc for the scripts to include.
+#
+# `symbol` is a name the partition or the boundary gives; the partition names
+# every function, so an address inside code always has one. `absolute` is for
+# the addresses that belong to the MBR, the SoftDevice or the bootloader, none
+# of which this work relinks or moves.
+#
+# `original` is the little-endian value of `width` bytes at the resolved
+# address; a mismatch is refused rather than repaired, because a patch applied
+# to whatever landed at an address is worse than no patch.
+
+meta:
+  app_base: 0x27000
+  app_end: 0xf117c
+
+# Each key becomes a Renode macro of the same name in out/rig/patches.resc.
+macros:
+
+  imagePatches:
+    - name: sd_mbr_command_thunk
+      symbol: svc_24_wrapper
+      offset: 0
+      width: 2
+      original: 0xdf18
+      new: 0x2000
+      why: >
+        The app's sd_mbr_command thunk (`svc #24`) hard-faults under the
+        emulated MBR and wedges early boot; `movs r0, #0` returns success
+        instead.
+
+    - name: softdevice_mov_sp_sd
+      absolute: 0x13024
+      width: 4
+      original: 0xdea4f
+      new: 0xBF004668
+      why: >
+        `mov.w r0, sp` (T3 encoding, legal on silicon) is rejected by Renode's
+        tlib decoder as undefined, so re-encode as the 16-bit `mov r0, sp` plus
+        a nop. Inside the SoftDevice, which nothing here relinks.
+
+    - name: softdevice_mov_sp_mbr
+      absolute: 0xb224
+      width: 4
+      original: 0xdea4f
+      new: 0xBF004668
+      why: The second site of the same encoding, in the MBR.
+
+    - name: battery_sem_give_guard
+      symbol: battery_sem_give
+      offset: 0x8
+      width: 2
+      original: 0x4619
+      new: 0xB108
+      why: >
+        After its 30 s start-up delay the UI task (priority 2) handles event 7
+        and gives the battery task's semaphore before that task (priority 1)
+        has run and created it. xQueueGenericSend on the NULL handle then
+        memcpy's flash 0x0.. onto 0x715: silicon drops writes to flash while
+        NVMC is read-only, Renode's memory does not. This is the `cbz r0` half
+        of an early return when the handle is NULL.
+
+    - name: battery_sem_give_return
+      symbol: battery_sem_give
+      offset: 0xe
+      width: 2
+      original: 0xbf00
+      new: 0x4770
+      why: >
+        The `bx lr` the guard above branches to, in the alignment nop that
+        follows the function and travels in its section.
+
+    - name: crown_delta_scratch
+      symbol: FUN_0002ee48
+      offset: 0x1c
+      width: 2
+      original: 0x4621
+      new: 0xA900
+      why: >
+        The crown driver asks for the rotation delta with a NULL delta_y
+        pointer (`mov r1, r4` with r4 = 0) and 0x979f8 stores through it:
+        silicon drops the store because it lands in flash with NVMC read-only,
+        Renode's memory takes it and word 0 of the MBR changes. Pass the
+        caller's dead scratch slot instead (`add r1, sp, #0`); the halfword it
+        holds is not read back.
+
+    - name: oled_settle_delay_first
+      symbol: FUN_0003bb3c
+      offset: 0x5a
+      width: 2
+      original: 0xd5fd
+      new: 0xBF00
+      why: >
+        OLED settle-delay busy loop -> nop; a microsecond-to-millisecond
+        hardware settle that only burns sim wall time.
+
+    - name: oled_settle_delay_second
+      symbol: FUN_0003bb3c
+      offset: 0x72
+      width: 2
+      original: 0xd5fd
+      new: 0xBF00
+      why: The second busy loop of the same sequence.
+
+  fastStartup:
+    - name: main_init_delay
+      symbol: main_init_delay
+      offset: 0x18
+      width: 4
+      original: 0x5031f247
+      new: 0x70D1F240
+      why: >
+        main init sleeps vTaskDelay(30001) before bringing up the UI
+        (`movw r0, #0x7531`); 2001 ticks makes the link usable sooner. Only the
+        runs that want a link take it, so it is its own macro.
+
+# Each becomes `$<name>=0x...` in out/rig/hooks.resc, for a script to hook or
+# to hand to a peripheral.
+hooks:
+  - name: hook_restart_to_update
+    symbol: WPP_CMD_RESTART_TO_UPDATE
+    offset: 0
+    width: 4
+    original: 0x4c11b510
+    why: >
+      CMD_RESTART_TO_UPDATE's handler is the moment the application asks for
+      the bank to be applied: the run arms the bootloader hand-off there.
+
+  - name: hook_bootloader_reset
+    absolute: 0xfc920
+    width: 4
+    original: 0xf04f4668
+    why: >
+      The bootloader's reset entry, where the run reports a reset cause. In the
+      bootloader, which this work neither relinks nor moves.
+
+  - name: hook_app_reset
+    symbol: Reset_Handler
+    offset: 0
+    width: 4
+    original: 0xf04fb530
+    why: >
+      The application's reset entry, which the bootloader jumps to once it has
+      overwritten internal flash with the bank. The run re-applies its patches
+      there.
+
+  - name: hook_ble_evt_present
+    symbol: ble_evt_poll
+    offset: 0xc
+    width: 4
+    original: 0xd0032805
+    why: >
+      The SD-event ISR's presence check, where the WPP pipe answers whether an
+      event is waiting.
+
+  - name: hook_ble_evt_poll
+    symbol: FUN_00037388
+    offset: 0x14
+    width: 4
+    original: 0x4628b948
+    why: >
+      The instruction after sd_ble_evt_get, where the WPP pipe writes a
+      synthesised event into the buffer the application passed.
+
+  - name: hook_hvx_thunk
+    symbol: svc_174_wrapper
+    offset: 0
+    width: 2
+    original: 0xdfae
+    why: >
+      The sd_ble_gatts_hvx thunk, where the WPP pipe takes the notification and
+      returns success without running the SVC.

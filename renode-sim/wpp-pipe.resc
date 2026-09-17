@@ -7,11 +7,9 @@
 
 include @machine.resc
 
-# main init sleeps vTaskDelay(30001) before bringing up the UI (0x91faa,
-# `movw r0, #0x7531`); make that 2001 ticks so the link is usable sooner.
-sysbus WriteDoubleWord 0x91faa 0x70D1F240
+runMacro $fastStartup
 
 logLevel -1 sysbus.wppPipe
 emulation SetAdvanceImmediately true
-sysbus.wppPipe Attach
+sysbus.wppPipe Attach $hook_ble_evt_present $hook_ble_evt_poll $hook_hvx_thunk
 start

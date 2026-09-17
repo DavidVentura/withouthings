@@ -16,6 +16,10 @@ The signals, strongest first, are below in DECISIONS; every word records the one
 that decided it, and what none of them decides goes on the review list rather
 than being guessed at.
 
+abi/words.yaml holds the hand-declared facts: words whose shape says nothing or
+says the wrong thing, each with the argument for what it is. They are applied
+first and the heuristics never overrule one.
+
 Writes abi/out/ghidra/words.json: one row per candidate with its class, its
 target and addend, the deciding signal, and a summary with the counts per
 bucket. abi/objectify.py turns the `pointer` rows into R_ARM_ABS32.
@@ -26,6 +30,8 @@ import json
 import os
 import sys
 
+import yaml
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIM = os.path.dirname(HERE)
 
@@ -33,19 +39,43 @@ APP_BASE = 0x27000
 APP_END = 0xF117C
 RAM_BASE, RAM_END = 0x20000000, 0x20040000
 
-# Values in the app's flash range that name something by contract rather than by
-# the linker having put it there, so they are constants and a move must not
-# touch them. Each is argued for where it is used, not assumed:
-#   0x27000  the SoftDevice's application base. It is the size field of the
-#            MBR/SoftDevice structure (FIRMWARE.md), the address the bootloader
-#            copies the appl part to, and what the app hands
-#            sd_softdevice_vector_table_base_set. The vector table is pinned
-#            there anyway, so a word holding it cannot go stale either way.
-#   0xf117c  the app image end, which is a length in disguise.
-CONTRACT = {
-    APP_BASE: "softdevice application base",
-    APP_END: "app image end",
-}
+def read_facts(path, blob, functions):
+    """abi/words.yaml: the contracts by value and the overrides by address.
+
+    Every override is checked against the image here, so an entry that the
+    image no longer agrees with is refused rather than applied to whatever the
+    word now holds, and a pointer's target is resolved to an address once.
+    """
+    spec = yaml.safe_load(open(path))
+    reasons = spec["reasons"]
+    contracts = {int(v): " ".join(str(why).split())
+                 for v, why in spec["contracts"].items()}
+    overrides = {}
+    for entry in spec["overrides"]:
+        addr = entry["address"]
+        held = int.from_bytes(blob[addr - APP_BASE:addr - APP_BASE + 4], "little")
+        if held != entry["value"]:
+            sys.exit("abi/words.yaml claims 0x%x holds 0x%08x; the image holds"
+                     " 0x%08x" % (addr, entry["value"], held))
+        if entry["why"] not in reasons:
+            sys.exit("abi/words.yaml gives 0x%x the reason %s, which it does not"
+                     " state" % (addr, entry["why"]))
+        if entry["class"] == "pointer":
+            target = entry["target"]
+            if not isinstance(target, int):
+                named = [f["start"] for f in functions if f["name"] == target]
+                if len(named) != 1:
+                    sys.exit("abi/words.yaml points 0x%x at %s, which the"
+                             " partition names %d times" % (addr, target, len(named)))
+                target = named[0]
+            entry = dict(entry, target=target + entry["addend"])
+        elif entry["class"] != "constant":
+            sys.exit("abi/words.yaml gives 0x%x the class %s, which is neither"
+                     " constant nor pointer" % (addr, entry["class"]))
+        if addr in overrides:
+            sys.exit("abi/words.yaml declares 0x%x twice" % addr)
+        overrides[addr] = entry
+    return contracts, overrides
 
 
 def word_shaped(start, end, blob):
@@ -191,7 +221,7 @@ def slot_objects(items, blob, part):
     return slots
 
 
-def decide(word, part):
+def decide(word, part, contracts, overrides):
     """(class, signal, note) for one candidate word.
 
     class is "pointer", "constant" or "review"; signal names the rule that
@@ -201,8 +231,15 @@ def decide(word, part):
     target = value & ~1 if thumb else value
     uses = set(word.get("uses") or ())
 
-    if value in CONTRACT:
-        return "constant", "contract", CONTRACT[value]
+    if word["addr"] in overrides:
+        # Hand-declared, so no rule below is consulted at all: an override is
+        # someone's argument about this exact word, and a heuristic that
+        # disagreed with it would only be re-running the shape test the
+        # argument was made to answer.
+        return overrides[word["addr"]]["class"], "override", \
+            overrides[word["addr"]]["why"]
+    if value in contracts:
+        return "constant", "contract", contracts[value]
     if RAM_BASE <= value < RAM_END:
         # RAM does not move in this step. The word is still an address, and the
         # export carries it so that a later RAM move knows where they are.
@@ -280,15 +317,21 @@ def owning_item(part, target):
     return target, 0
 
 
-def classify(items, refs, blob):
+def classify(items, refs, blob, contracts, overrides):
+    outside = sorted(set(overrides) - set(w["addr"] for w in refs["words"]))
+    if outside:
+        sys.exit("abi/words.yaml declares %d addresses the candidate set does"
+                 " not offer, starting at 0x%x" % (len(outside), outside[0]))
     part = Partition(items, refs["words"])
     part.slots = slot_objects(items, blob, part)
     rows, buckets, review = [], {}, {}
     for word in refs["words"]:
-        klass, signal, note = decide(word, part)
+        klass, signal, note = decide(word, part, contracts, overrides)
         # `thumb_*` are the only signals that read bit 0 as the Thumb bit; for
         # every other one the value is the address, odd or not.
-        target = (word["value"] & ~1 if signal.startswith("thumb_")
+        target = (overrides[word["addr"]]["target"] if signal == "override"
+                  and klass == "pointer"
+                  else word["value"] & ~1 if signal.startswith("thumb_")
                   else word["value"])
         item, addend = (owning_item(part, target) if klass == "pointer"
                         else (0, 0))
@@ -297,7 +340,8 @@ def classify(items, refs, blob):
                      "note": note, "target": target if klass == "pointer" else 0,
                      "item": item, "addend": addend, "thumb": word["thumb"],
                      "in_code": klass == "pointer" and part.in_code(target),
-                     "thumb_target": signal.startswith("thumb_"),
+                     "thumb_target": signal.startswith("thumb_")
+                                     or (klass == "pointer" and target % 2 == 1),
                      "uses": word.get("uses") or []})
         key = "%s:%s:%s" % (word["kind"], klass, signal)
         buckets[key] = buckets.get(key, 0) + 1
@@ -310,6 +354,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"))
     ap.add_argument("--image", default=os.path.join(SIM, "appl.bin"))
+    ap.add_argument("--facts", default=os.path.join(HERE, "words.yaml"))
     args = ap.parse_args()
     with open(os.path.join(args.export, "items.json")) as fh:
         items = json.load(fh)
@@ -318,7 +363,8 @@ def main():
 
     with open(args.image, "rb") as fh:
         blob = fh.read()
-    rows, buckets, review = classify(items, refs, blob)
+    contracts, overrides = read_facts(args.facts, blob, items["functions"])
+    rows, buckets, review = classify(items, refs, blob, contracts, overrides)
     pointers = [r for r in rows if r["class"] == "pointer"]
     summary = {
         "candidates": len(rows),
@@ -326,6 +372,7 @@ def main():
         "pointers_into_code": sum(1 for r in pointers if r["in_code"]),
         "constants": sum(1 for r in rows if r["class"] == "constant"),
         "review": sum(1 for r in rows if r["class"] == "review"),
+        "overrides": len(overrides),
         "buckets": buckets,
         "review_buckets": {k: len(v) for k, v in sorted(review.items())},
     }
@@ -339,7 +386,8 @@ def main():
             fh.write("%s\n%s" % ("," if i else "", json.dumps(row)))
         fh.write("]}\n")
 
-    print("%s: %d candidates, %d pointers (%d into code), %d constants, %d to review"
+    print("%s: %d candidates, %d pointers (%d into code), %d constants, %d to"
+          " review"
           % (path, summary["candidates"], summary["pointers"],
              summary["pointers_into_code"], summary["constants"], summary["review"]))
     for key in sorted(buckets):
