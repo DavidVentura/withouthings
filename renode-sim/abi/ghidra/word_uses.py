@@ -26,6 +26,24 @@
 # fixpoint over the call graph closes "passed on to someone else" into what is
 # finally done with it. The callee's own code is the prototype.
 #
+# Two more ways a value leaves the function it was loaded in, which between them
+# cover most of what embedded C does with a pointer:
+#
+#   the return value   a function that loads a word and returns it says nothing
+#                      itself; the caller is where the value is used. The
+#                      return register of a call is seeded with the callee's
+#                      return taint, so the same fixpoint carries the caller's
+#                      uses back to every word the callee returns.
+#   a struct field     a value stored to `base+d` and loaded from `base+d`
+#                      somewhere else is one value; the cell is keyed by the
+#                      absolute address the base resolves to plus the
+#                      displacement, so the store side inherits what every load
+#                      side does. This is the module-static-plus-field shape
+#                      that carries most long-lived pointers in this image.
+#
+# Both are edges in the same graph as the argument edges, so one fixpoint closes
+# all three.
+#
 # Raw p-code rather than the decompiler's high p-code: the decompiler costs
 # minutes over 5341 functions, and the question -- which op reads this
 # register -- is answered before register allocation is undone.
@@ -54,6 +72,16 @@ for r in refs["pool_reads"]:
     pool_targets.add(r["target"])
 
 ARG_REGS = ["r0", "r1", "r2", "r3"]
+
+# The address each pool word holds, so that two functions loading the same
+# object through their own pool words name the same memory cell.
+pool_value = {}
+for target in pool_targets:
+    try:
+        pool_value[target] = currentProgram.getMemory().getInt(
+            space.getAddress(target)) & 0xFFFFFFFF
+    except Exception:
+        pass
 
 
 def in_app(v):
@@ -116,9 +144,10 @@ def record(targets, name):
         uses[t][name] = uses[t].get(name, 0) + 1
 
 
-def pass_on(targets, callee, index):
+def pass_on(targets, key):
     for t in targets:
-        edges.setdefault(t, set()).add((callee, index))
+        if t != key:
+            edges.setdefault(t, set()).add(key)
 
 
 def seeded(op):
@@ -138,6 +167,32 @@ def seeded(op):
         if vn.isAddress() and vn.getOffset() in pool_targets:
             return vn.getOffset()
     return None
+
+
+def cell_of(vn, cur, disp):
+    """The memory cell `vn` addresses: base object plus constant displacement.
+
+    Only a base the walk can resolve to one absolute address counts -- a pool
+    word's value, or a folded constant address -- because the point of the cell
+    is that two functions reaching the same field name the same key.
+    """
+    if vn.isConstant() or vn.isAddress():
+        at = vn.getOffset()
+        return ("mem", at) if at else None
+    at = disp.get(vnkey(vn))
+    if at is None:
+        return None
+    bases = set()
+    for taint in cur.get(vnkey(vn), ()):
+        if taint[0] == "pool" and taint[1] in pool_value:
+            bases.add(pool_value[taint[1]])
+        elif taint[0] == "mem":
+            return None
+        else:
+            return None
+    if len(bases) != 1:
+        return None
+    return ("mem", (bases.pop() + at) & 0xFFFFFFFF)
 
 
 def analyse(fn):
@@ -214,6 +269,7 @@ def analyse(fn):
                     tainted.append((k, got))
             if code == PcodeOp.LOAD or code == PcodeOp.STORE:
                 base = 1
+                cell = cell_of(ins[base], cur, disp)
                 for k, got in tainted:
                     if k == base:
                         record(got, "load_base" if code == PcodeOp.LOAD
@@ -226,6 +282,8 @@ def analyse(fn):
                             record(got, "field%+d:%d" % (at, width))
                     elif k == 2:
                         record(got, "stored_value")
+                        if cell is not None and ins[2].getSize() == 4:
+                            pass_on(got, cell)
             elif code in BRANCH:
                 for k, got in tainted:
                     if k == 0:
@@ -238,17 +296,23 @@ def analyse(fn):
                         if not got:
                             continue
                         if code == PcodeOp.CALL and in_app(ins[0].getOffset()):
-                            pass_on(got, ins[0].getOffset(), a)
+                            pass_on(got, ("param", ins[0].getOffset(), a))
                         else:
                             record(got, "argument_opaque")
                 if code in (PcodeOp.CALL, PcodeOp.CALLIND):
                     for key in CLOBBERED:
                         if key in cur:
                             del cur[key]
+                            disp.pop(key, None)
+                    if code == PcodeOp.CALL and in_app(ins[0].getOffset()):
+                        cur[arg_keys[0]] = frozenset(
+                            [("ret", ins[0].getOffset())])
+                        disp[arg_keys[0]] = 0
                 if code == PcodeOp.RETURN:
                     got = cur.get(arg_keys[0])
                     if got:
                         record(got, "returned")
+                        pass_on(got, ("ret", entry))
             elif code in COMPARE:
                 for _, got in tainted:
                     record(got, "compare")
@@ -279,6 +343,12 @@ def analyse(fn):
                 cur[key] = frozenset([("pool", seed)])
                 disp[key] = 0
                 continue
+            if code == PcodeOp.LOAD and out.getSize() == 4:
+                cell = cell_of(ins[1], cur, disp)
+                if cell is not None:
+                    cur[key] = frozenset([cell])
+                    disp[key] = 0
+                    continue
             carried = set()
             if code in COPY_OPS or code in ADDR_ARITH:
                 for _, got in tainted:
@@ -341,8 +411,8 @@ while changed:
     rounds += 1
     for taint in list(edges):
         got = uses.setdefault(taint, {})
-        for callee, index in edges[taint]:
-            for name, count in uses.get(("param", callee, index), {}).items():
+        for key in edges[taint]:
+            for name, count in uses.get(key, {}).items():
                 if name not in got:
                     got[name] = count
                     changed = True
@@ -353,8 +423,8 @@ for target in sorted(pool_targets):
     rows.append({"addr": target,
                  "uses": {k: got[k] for k in sorted(got)},
                  "pc_sites": sorted(pc_sites.get(("pool", target), ())),
-                 "callees": sorted((c, i) for c, i
-                                   in edges.get(("pool", target), ()))})
+                 "callees": sorted("%s:%s" % (k[0], ":".join("0x%x" % v for v in k[1:]))
+                                   for k in edges.get(("pool", target), ()))})
 
 with open(os.path.join(out_dir, "word_uses.json"), "w") as fh:
     fh.write('{"_generated": %s,\n"functions": %d,\n"uses": ['
