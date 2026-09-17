@@ -277,6 +277,7 @@ def analyse(fn):
             seed = seeded(op)
             if seed is not None:
                 cur[key] = frozenset([("pool", seed)])
+                disp[key] = 0
                 continue
             carried = set()
             if code in COPY_OPS or code in ADDR_ARITH:

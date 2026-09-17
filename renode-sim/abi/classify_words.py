@@ -120,10 +120,13 @@ def word_shaped(start, end, blob):
     return True
 
 
+PRINTABLE_MIN = 3
+
+
 class Partition(object):
     """Where an address lands: the starts the export knows and the spans."""
 
-    def __init__(self, items, words):
+    def __init__(self, items, words, blob):
         self.functions = {f["start"]: f for f in items["functions"]}
         self.starts = {}
         for d in items["data"]:
@@ -141,6 +144,10 @@ class Partition(object):
         # the table as soon as that function moved.
         self.items = sorted((d["start"], d["end"]) for d in items["data"])
         self.gaps = sorted((g["start"], g["end"]) for g in items["gaps"])
+        self.blob = blob
+        bits = bytes.fromhex(items["instruction_bytes"]["bits"])
+        self.covered = bytes((bits[i >> 3] >> (i & 7)) & 1
+                             for i in range(len(blob)))
         self.slots = None
         # A word inside a function body that an instruction reads is data the
         # compiler put between two basic blocks; something pointing at it is a
@@ -149,6 +156,30 @@ class Partition(object):
         # between two basic blocks, whether or not a literal load reads it;
         # something pointing at one is a pointer, not a stray constant.
         self.in_body_words = set(w["addr"] for w in words if self.in_code(w["addr"]))
+
+    def names_a_string(self, value):
+        """Is `value` the first byte of a printable NUL-terminated run?
+
+        309 words of this image are a pointer to a string the partition never
+        typed, because the run sits inside an untyped gap and the analysis had
+        no reference to start it from. The shape is specific enough to decide
+        on: the byte before is a NUL, the run is printable ASCII to its
+        terminator, and the disassembly covers none of it. Anything else that
+        happened to hold the address of such a byte would have to reproduce the
+        whole address, which is the same argument a function start gets.
+        """
+        at = value - APP_BASE
+        if not 0 < at < len(self.blob) or self.covered[at]:
+            return False
+        if self.blob[at - 1] != 0:
+            return False
+        end = at
+        while end < len(self.blob) and self.blob[end]:
+            c = self.blob[end]
+            if not (0x20 <= c < 0x7F or c in (9, 10, 13)) or self.covered[end]:
+                return False
+            end += 1
+        return end - at >= PRINTABLE_MIN and end < len(self.blob)
 
     def is_slot(self, addr):
         return addr in self.slots
@@ -292,6 +323,12 @@ def decide(word, part, contracts, overrides):
         # the record tables this image fragments across several items and gaps
         # hold their handlers exactly this way.
         return "pointer", "thumb_function_start", part.functions[target]["name"]
+    if (value not in part.starts and part.item_of(value) is None
+            and part.names_a_string(value)):
+        # Ahead of the word-slot test, like a function start and for the same
+        # reason: a window over two fields would have to reproduce the whole
+        # address of a string's first byte.
+        return "pointer", "names_a_string_run", ""
     if word["kind"] in ("data", "gap") and not part.is_slot(word["addr"]):
         # The word is a window over an object whose stride is not four, so what
         # it reads is two halves of two fields, not one value the compiler put
@@ -357,7 +394,7 @@ def classify(items, refs, blob, contracts, overrides):
     if outside:
         sys.exit("abi/words.yaml declares %d addresses the candidate set does"
                  " not offer, starting at 0x%x" % (len(outside), outside[0]))
-    part = Partition(items, refs["words"])
+    part = Partition(items, refs["words"], blob)
     part.slots = slot_objects(items, blob, part)
     rows, buckets, review, displacements = [], {}, {}, []
     first = [dict(word, **dict(zip(("class", "signal", "note"),
