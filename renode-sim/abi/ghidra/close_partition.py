@@ -466,7 +466,7 @@ def remove_data_named_functions():
         body = fn.getBody()
         lo = body.getMinAddress().getOffset()
         hi = body.getMaxAddress().getOffset() + 1
-        if not any(a in even for a in range(lo, hi, 4)):
+        if not any(a in even for a in range(lo + (-lo) % 4, hi, 4)):
             continue
         if any(a in odd for a in range(lo, hi)):
             continue
