@@ -74,11 +74,21 @@ done
 ./identity.sh
 # LAYOUT=shift|reverse re-cuts the same object with every text section moved;
 # the identity link above still ran first, so the cutting is proven either way.
-if [ -n "${LAYOUT:-}" ]; then
+# GC=1 re-cuts it with a placement that KEEPs only what the linker cannot see,
+# so --gc-sections drops what no root reaches; LAYOUT=reverse then means the
+# order the kept sections are packed in, not addresses chosen in advance.
+if [ -n "${GC:-}" ]; then
+    python3 blobify.py -o "$OUT/appl-blob.o" --gc ${LAYOUT:+--layout "$LAYOUT"} ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"}
+elif [ -n "${LAYOUT:-}" ]; then
     python3 blobify.py -o "$OUT/appl-blob.o" --layout "$LAYOUT"
 fi
-"$GCC-ld" -L ../out -T relink.ld ${GC:---gc-sections} --emit-relocs -o "$OUT/relinked.elf" \
-    "$OUT/appl-blob.o" $objs
+# The map and the list of what gc removed are the inputs abi/stale_scan.py needs
+# to check a gc link: where each surviving section ended up, and which ranges
+# are gone, so a word still holding one of those addresses can be found.
+"$GCC-ld" -L ../out -T relink.ld --gc-sections --print-gc-sections -M \
+    --emit-relocs -o "$OUT/relinked.elf" "$OUT/appl-blob.o" $objs \
+    > "$OUT/relinked.map" 2> "$OUT/relinked.gc"
+cat "$OUT/relinked.gc" >&2
 "$GCC-objcopy" -O binary --gap-fill 0xff "$OUT/relinked.elf" "$OUT/appl.bin"
 "$GCC-size" -A "$OUT/relinked.elf"
 python3 relink_image.py

@@ -29,6 +29,7 @@ output is a plain REL object that arm-none-eabi-ld consumes directly.
 """
 
 import argparse
+import collections
 import json
 import os
 import struct
@@ -323,6 +324,48 @@ def pinned_addresses(manifest, layout):
     return pinned
 
 
+def gc_keep_list(sections, layout, pinned, words, reach_path):
+    """(section, why) for everything --gc-sections must not be allowed to drop.
+
+    Three kinds, and only three. The fixed points are a contract with the MBR,
+    the bootloader and the phone, so they are pinned and kept. The roots
+    abi/roots.yaml derives are the places the image is entered that no
+    relocation shows -- a vector word is in the vector table, which is itself
+    kept, but a dispatch table whose address a walker computes is referenced by
+    nothing at all. And a word the classification has not decided may be a
+    pointer, so the section it would name stays until it is decided; that is the
+    review list made into bytes, and it is the one kind that is not permanent.
+
+    A root the object already reaches is not listed: gc keeps it either way, and
+    listing it would hide how much of the root set is really unreferenced.
+    """
+    if not os.path.exists(reach_path):
+        sys.exit("%s does not exist; run abi/reach.py first" % reach_path)
+    with open(reach_path) as fh:
+        reach = json.load(fh)
+    keep, seen = [], set()
+    already = set(reach["gc_sections"]["addrs"])
+
+    def add(addr, why, redundant_if_reached=True):
+        section = layout.at(addr)
+        if section is None or section.start in seen:
+            return
+        if redundant_if_reached and section.start in already:
+            return
+        seen.add(section.start)
+        keep.append((section, why))
+
+    for start in sorted(pinned):
+        add(start, "fixed point", False)
+    for root in reach["roots"]:
+        add(int(root["addr"], 16), "root %s/%s" % (root["group"], root["name"]))
+    for word in words:
+        if word["class"] != "review":
+            continue
+        add(word["value"] & ~1, "named by the unclassified word 0x%x" % word["addr"])
+    return keep
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-o", default=os.path.join(SIM, "out", "relink", "appl-blob.o"))
@@ -334,6 +377,15 @@ def main():
                     help="move every text section: `shift` keeps the order and"
                          " slides it, `reverse` turns it round. The stale-address"
                          " scan is what this is for.")
+    ap.add_argument("--gc", action="store_true",
+                    help="place only the fixed points and KEEP only what the"
+                         " linker cannot see, so --gc-sections drops the rest;"
+                         " reads the root set from abi/reach.py's out/reach")
+    ap.add_argument("--reach", default=os.path.join(SIM, "out", "reach", "reach.json"),
+                    help="the reachability map --gc takes its roots from")
+    ap.add_argument("--keep-also", help="a file of section names to add to the"
+                    " --gc KEEP list; bisecting a gc link that does not boot"
+                    " over the sections it dropped is what this is for")
     ap.add_argument("--reclaim", action="store_true",
                     help="place nothing but the fixed points, so --gc-sections"
                          " can drop and pack; for the size measurement only")
@@ -386,9 +438,19 @@ def main():
     bits = bytes.fromhex(items["instruction_bytes"]["bits"])
     covered = bytes((bits[i >> 3] >> (i & 7)) & 1 for i in range(len(blob)))
     strings = objectify.string_runs(blob, covered)
+    # What a data tile has to be its own section for: a word names it, an `adr`
+    # computes it, the boundary or a fixed point needs the symbol at that
+    # address. Anything else in a run of data is a field of the object above it.
+    named = set(w["target"] for w in words if w["class"] == "pointer")
+    named |= set(w["value"] & ~1 for w in words if w["class"] == "pointer")
+    named |= set(r["target"] for r in refs["pc_addresses"])
+    named |= set(a for a in reserved.values() if a >= 0)
+    named |= set(int(str(f["addr"]), 0) for f in manifest["fixed_points"])
+    named |= set(f["start"] for f in items["functions"])
     sections, shared, slivers, distant = objectify.build_sections(
         items, refs["calls"], reads, refs["fallthrough"],
-        [w["addr"] for w in words if w["class"] == "pointer"], strings, reserved)
+        [w["addr"] for w in words if w["class"] == "pointer"], strings, reserved,
+        named)
     layout = objectify.Layout(sections)
 
     owned, boundary_counts = boundary_relocations(blob, boundary, layout)
@@ -472,7 +534,24 @@ def main():
         os.makedirs(os.path.dirname(path), exist_ok=True)
     build(sections, blob, symbols, args.o)
     obj = "*" + os.path.basename(args.o)
-    if args.reclaim:
+    if args.gc:
+        pinned = pinned_addresses(manifest, layout)
+        keep = gc_keep_list(sections, layout, pinned, words, args.reach)
+        if args.keep_also:
+            by_name = {s.name: s for s in sections}
+            listed = set(s.name for s, _ in keep)
+            for line in open(args.keep_also):
+                name = line.strip()
+                if name and name not in listed:
+                    keep.append((by_name[name], "asked for on the command line"))
+        objectify.placement(sections, moves, args.place, obj,
+                            keep=dict((s.start, why) for s, why in keep))
+        reasons = collections.Counter(why.split(" 0x")[0].split("/")[0]
+                                      for _, why in keep)
+        print("  --gc keeps %d sections (%d bytes) the linker cannot see: %s"
+              % (len(keep), sum(s.end - s.start for s, _ in keep),
+                 ", ".join("%s %d" % (k, n) for k, n in sorted(reasons.items()))))
+    elif args.reclaim:
         objectify.reclaim_placement(sections, pinned_addresses(manifest, layout),
                                     args.place, obj)
     else:
