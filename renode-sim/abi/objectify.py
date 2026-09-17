@@ -63,6 +63,36 @@ class Section(object):
         return self.start <= addr < self.end
 
 
+MIN_STRING = 2
+
+
+def string_runs(blob, instruction_bytes):
+    """Every run of non-NUL bytes the disassembly does not cover.
+
+    A string is delimited by NULs, so that is what the partition has to keep
+    whole, and not the printable part of it: this image logs with ANSI escapes,
+    so "\x1b[31mNot charging\x1b[m" is one object whose first byte is not
+    printable and whose pointer names that byte. Bytes an instruction covers end
+    a run and disqualify it, which is what keeps this away from code that
+    happens to read as text.
+    """
+    runs, i = [], 0
+    while i < len(blob):
+        if blob[i] == 0 or instruction_bytes[i]:
+            i += 1
+            continue
+        j = i
+        while j < len(blob) and blob[j] != 0 and not instruction_bytes[j]:
+            j += 1
+        # The NUL belongs to the object: a pointer to the run is a pointer to
+        # everything up to and including its terminator.
+        end = j + 1 if j < len(blob) and blob[j] == 0 else j
+        if end - i >= MIN_STRING:
+            runs.append((APP_BASE + i, APP_BASE + end))
+        i = j + 1
+    return runs
+
+
 def unique(names, reserved, sym, start):
     """Export names repeat (`caseD_2` once per switch); the address is the key.
 
@@ -135,7 +165,7 @@ class Union(object):
         self.parent[max(a, b)] = min(a, b)
 
 
-def build_sections(items, calls, reads, pointer_words, reserved):
+def build_sections(items, calls, reads, falls, pointer_words, strings, reserved):
     """Cut the cover into sections and name each one.
 
     Two tiles have to share a section when the distance between them is part of
@@ -183,6 +213,17 @@ def build_sections(items, calls, reads, pointer_words, reserved):
     # instruction that reads it have to end up at the same distance from each
     # other as they are now, which means one section. The export names each
     # reading instruction; a pool read from two functions binds both.
+    # A NUL-delimited run is one object however the partition cut it. This
+    # image shares string tails -- "BEFORE_PREDICTED_OVULATION" and "PREDICTED_OVULATION" are
+    # one run of bytes with a pointer into each -- so the analysis types the
+    # suffix and leaves the head to whatever claims it, and a section boundary
+    # inside the run puts the head and the tail in different places.
+    for start, end in strings:
+        union.join(tile_of(start), tile_of(end - 1))
+    # Falling off the end of one item into the next: nothing encodes the
+    # distance, so the only way for it to survive a move is one section.
+    for row in falls:
+        union.join(tile_of(row["from"]), tile_of(row["to"]))
     # A word that holds an address is one slot, so the four bytes cannot be
     # split between two sections: the linker would write the relocation into the
     # first and then copy the second over its tail.
@@ -206,16 +247,26 @@ def build_sections(items, calls, reads, pointer_words, reserved):
             distant_pools.append(tile[0])
 
     while True:
-        spans = {}
+        spans, has_code = {}, set()
         for i, tile in enumerate(tiles):
             root = union.find(i)
             lo, hi = spans.get(root, (tile[0], tile[1]))
             spans[root] = (min(lo, tile[0]), max(hi, tile[1]))
+            if tile[3] == "code":
+                has_code.add(root)
         order = sorted(spans.items(), key=lambda kv: kv[1])
         merged = False
         for (a, (alo, ahi)), (b, (blo, bhi)) in zip(order, order[1:]):
             if blo < ahi:
                 union.join(a, b)
+                merged = True
+        # An interior symbol's value is its offset from the section start with
+        # bit 0 set for Thumb, so a code section that starts at an odd address
+        # would have that bit already spent on the base. Swallowing the byte
+        # before it is the only way to keep both.
+        for root, (lo, hi) in order:
+            if lo % 2 and root in has_code:
+                union.join(root, tile_of(lo - 1))
                 merged = True
         if not merged:
             break
@@ -439,7 +490,7 @@ def residue(section):
     return section.start % 4
 
 
-def relayout(sections, mode, pinned):
+def relayout(sections, mode, pinned, unclassified):
     """Give every text section a new address, and prove none keeps its old one.
 
     Data does not move in this step, so the space the text may use is exactly
@@ -449,7 +500,18 @@ def relayout(sections, mode, pinned):
     the order and starts one word further in, so every section slides; `reverse`
     puts the last function first, so nothing is near where it was.
     """
-    movable = [s for s in sections if s.kind == "code" and s.start not in pinned]
+    # A section a word points into that the classification could not decide is
+    # not moved: the word is either a pointer that would be left stale or a
+    # constant that must not be rewritten, and there is no way to be right about
+    # both while the target moves. Untyped record tables end up inside code
+    # sections when the span between two code tiles is one component, which is
+    # how they come to be movable at all.
+    held = set()
+    for s in sections:
+        if any(s.start <= v < s.end for v in unclassified):
+            held.add(s.start)
+    movable = [s for s in sections
+               if s.kind == "code" and s.start not in pinned and s.start not in held]
     if not movable:
         raise SystemExit("no text section to move")
     free = []
@@ -495,7 +557,28 @@ def relayout(sections, mode, pinned):
     spare = max((a + (s.end - s.start) for s, a in
                  ((s, moves[s.sym]) for s in movable) if a >= SPARE_BASE),
                 default=SPARE_BASE)
-    return moves, spare
+    return moves, spare, held
+
+
+def reclaim_placement(sections, pinned, path, obj):
+    """A placement that lets the linker drop and pack, for the size measurement.
+
+    Nothing is pinned but the fixed points and nothing is KEEPed but them, so
+    `--gc-sections` walks from the vector table and the hooks the library calls
+    and drops every section nothing reaches -- the blob's own copy of the kernel
+    first of all. The result is not an image anything can boot, because the
+    version trailer is no longer where the bootloader reads it and the sim's
+    patch addresses no longer mean anything; it answers how much is dead, which
+    is what this step measures.
+    """
+    with open(path, "w") as fh:
+        fh.write("/* Generated by abi/blobify.py --reclaim, do not edit: the"
+                 " placement that measures what nothing references. */\n")
+        fh.write(".blob 0x%08x :\n{\n" % APP_BASE)
+        for s in sections:
+            if s.start in pinned:
+                fh.write("  KEEP(%s(%s))\n" % (obj, s.name))
+        fh.write("  %s(.text.*)\n  %s(.rodata.*)\n} > APP\n" % (obj, obj))
 
 
 def placement(sections, moves, path, obj):

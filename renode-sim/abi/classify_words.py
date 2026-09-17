@@ -48,6 +48,25 @@ CONTRACT = {
 }
 
 
+def word_shaped(start, end, blob):
+    """Is this object an array of 32-bit words, so that a word in it is a slot?
+
+    A 4-aligned window over a table of 6-byte records reads two halves of two
+    fields as one address often enough to matter: this image's unit table at
+    0xbe4d0 gave four of them, and relocating those corrupted the table. The
+    test is classify_gaps.py's pointer-table test applied to the object rather
+    than to the run: every word has to be zero or an address, which no record
+    table of mixed integers satisfies.
+    """
+    if start % 4 or (end - start) % 4 or end - start < 8:
+        return False
+    for at in range(start, end, 4):
+        v = int.from_bytes(blob[at - APP_BASE:at - APP_BASE + 4], "little")
+        if v and not (APP_BASE <= (v & ~1) < APP_END or RAM_BASE <= v < RAM_END):
+            return False
+    return True
+
+
 class Partition(object):
     """Where an address lands: the starts the export knows and the spans."""
 
@@ -65,6 +84,7 @@ class Partition(object):
         self.items = sorted((d["start"], d["end"]) for d in
                             items["data"] + items["inline"])
         self.gaps = sorted((g["start"], g["end"]) for g in items["gaps"])
+        self.slots = None
         # A word inside a function body that an instruction reads is data the
         # compiler put between two basic blocks; something pointing at it is a
         # pointer, not a stray constant that happens to land in code.
@@ -72,6 +92,9 @@ class Partition(object):
         # between two basic blocks, whether or not a literal load reads it;
         # something pointing at one is a pointer, not a stray constant.
         self.in_body_words = set(w["addr"] for w in words if self.in_code(w["addr"]))
+
+    def is_slot(self, addr):
+        return addr in self.slots
 
     def item_of(self, value):
         """The item `value` lands in, or None: strings are indexed from the
@@ -98,6 +121,76 @@ class Partition(object):
         return lo and self.code[lo - 1][1] > value
 
 
+STRIDES = tuple(range(4, 68, 4))
+MIN_RECORDS = 3
+
+
+def pointer_fields(start, end, blob, plausible):
+    """The positions of a record table that hold a pointer in every record.
+
+    An untyped run is usually a table of records mixing integers and pointers,
+    and a 4-aligned window over it reads two halves of two fields as often as it
+    reads a field: the unit table at 0xbe4d0 has 6-byte records and gave four
+    false addresses. What a real pointer field looks like is that every record
+    has one at the same offset, so the stride and the offset are what has to be
+    found, not the individual word. A field is only claimed when every one of at
+    least three records holds either zero or something the partition can name.
+    """
+    slots = []
+    for stride in STRIDES:
+        if (end - start) < stride * MIN_RECORDS:
+            break
+        for offset in range(0, stride, 4):
+            at = start + offset + (-(start + offset)) % 4
+            positions = list(range(at, end - 3, stride))
+            if len(positions) < MIN_RECORDS:
+                continue
+            values = [int.from_bytes(blob[p - APP_BASE:p - APP_BASE + 4], "little")
+                      for p in positions]
+            if all(v == 0 for v in values) or not all(plausible(v) for v in values):
+                continue
+            slots.extend(positions)
+    return slots
+
+
+def slot_objects(items, blob, part):
+    """Every address at which a word may be read as a word.
+
+    A literal pool and an absolute jump table are words by construction, so the
+    export's own kinds carry them. What is left is the data items and the
+    untyped runs, where a word is only a slot if the object is an array of them
+    or if it is a pointer field of a record table.
+    """
+
+    def plausible(v):
+        if v == 0 or RAM_BASE <= v < RAM_END:
+            return True
+        if v & 1 and (v & ~1) in part.functions:
+            return True
+        return v in part.starts
+
+    slots = set()
+    for d in items["data"]:
+        if d["class"] == "string":
+            continue
+        # Ghidra types a word it resolved a reference from as a pointer, and a
+        # word something read as a word as `undefined4`; either way the object
+        # is one word and the analysis already said where it starts.
+        if (d["type"].endswith("*") or d["type"] == "undefined4") \
+                and d["start"] % 4 == 0 and d["end"] - d["start"] == 4:
+            slots.add(d["start"])
+        elif word_shaped(d["start"], d["end"], blob):
+            slots.update(range(d["start"], d["end"] - 3, 4))
+        else:
+            slots.update(pointer_fields(d["start"], d["end"], blob, plausible))
+    for g in items["gaps"]:
+        if word_shaped(g["start"], g["end"], blob):
+            slots.update(range(g["start"], g["end"] - 3, 4))
+        else:
+            slots.update(pointer_fields(g["start"], g["end"], blob, plausible))
+    return slots
+
+
 def decide(word, part):
     """(class, signal, note) for one candidate word.
 
@@ -116,6 +209,12 @@ def decide(word, part):
         return "constant", "ram", "static or stack address; RAM is not moved yet"
     if not APP_BASE <= (target if thumb else value) < APP_END:
         return "constant", "out_of_range", ""
+    if word["kind"] in ("data", "gap") and not part.is_slot(word["addr"]):
+        # The word is a window over an object whose stride is not four, so what
+        # it reads is two halves of two fields, not one value the compiler put
+        # there. Out of range it does not matter; in range it would relocate the
+        # middle of a record.
+        return "review", "not_a_word_slot", word["kind"]
 
     if thumb and target in part.functions:
         return "pointer", "thumb_function_start", part.functions[target]["name"]
@@ -177,8 +276,9 @@ def owning_item(part, target):
     return target, 0
 
 
-def classify(items, refs):
+def classify(items, refs, blob):
     part = Partition(items, refs["words"])
+    part.slots = slot_objects(items, blob, part)
     rows, buckets, review = [], {}, {}
     for word in refs["words"]:
         klass, signal, note = decide(word, part)
@@ -205,13 +305,16 @@ def classify(items, refs):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"))
+    ap.add_argument("--image", default=os.path.join(SIM, "appl.bin"))
     args = ap.parse_args()
     with open(os.path.join(args.export, "items.json")) as fh:
         items = json.load(fh)
     with open(os.path.join(args.export, "references.json")) as fh:
         refs = json.load(fh)
 
-    rows, buckets, review = classify(items, refs)
+    with open(args.image, "rb") as fh:
+        blob = fh.read()
+    rows, buckets, review = classify(items, refs, blob)
     pointers = [r for r in rows if r["class"] == "pointer"]
     summary = {
         "candidates": len(rows),

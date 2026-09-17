@@ -226,7 +226,44 @@ def report(label, counts, absorbed, left):
             % (label, counts["made"], counts["extended"], counts["case"], absorbed, len(left)))
 
 
+def disassemble_code_holes():
+    """Disassemble the undefined runs that sit between two instruction runs.
+
+    A hole with an instruction on each side is code the first pass did not
+    reach, not data: nothing else can be there, because the run above it either
+    falls through into it or branches over it, and in both cases the bytes are
+    executed. Leaving it undefined loses whatever control flow it contains --
+    this image has a `b.w` into such a hole -- and the objectification then
+    moves the surrounding function with a branch in it that no relocation
+    rewrote. Most of the 49 holes are two bytes of alignment padding and
+    disassemble to nothing useful, which costs nothing.
+    """
+    runs, run, previous = [], None, None
+    for cu in listing.getCodeUnits(app_set, True):
+        start = cu.getMinAddress()
+        if listing.getInstructionAt(start) is not None:
+            if run is not None:
+                runs.append(run)
+                run = None
+            previous = "code"
+            continue
+        if cu.isDefined():
+            run, previous = None, "data"
+            continue
+        if run is not None and run[1].equals(start):
+            run[1] = cu.getMaxAddress().add(1)
+            continue
+        run = [start, cu.getMaxAddress().add(1)] if previous == "code" else None
+    made = 0
+    for start, end in runs:
+        if disassemble(start):
+            made += 1
+    println("code holes disassembled: %d of %d" % (made, len(runs)))
+
+
 mgr = AutoAnalysisManager.getAnalysisManager(currentProgram)
+disassemble_code_holes()
+mgr.startAnalysis(monitor)
 # Cheap rounds analyse only what the round changed, which follows the new
 # functions' own branches and pool words; a whole-program pass then finds the
 # owners the change-only analysis does not reach (it found about 100 more
@@ -248,6 +285,55 @@ while True:
     if not any(counts.values()):
         break
     mgr.startAnalysis(monitor)
+
+def remove_string_functions():
+    """Undo the functions the analysis made out of string bytes.
+
+    A tail-shared string is the trap: "BEFORE_PREDICTED_OVULATION" and
+    "PREDICTED_OVULATION" are one run of bytes with two pointers into it, the
+    string analyzer types only the suffix, and the prefix is left over for
+    something else to claim. A function made of such bytes is not code, and
+    moving it as one takes the head of a string away from its tail.
+
+    The rule is narrow enough that it cannot fire on real code: the body has to
+    be printable ASCII and NUL throughout, nothing may call it, and it has to
+    either contain a NUL-terminated printable run or run straight into a string
+    the analyzer did type. The image's four-byte `movs r0,#0; bx lr` stubs are
+    all printable too, which is why the call graph is part of the rule.
+    """
+    called = set()
+    for fn in fm.getFunctions(app_set, True):
+        for ref in rm.getReferencesTo(fn.getEntryPoint()):
+            if ref.getReferenceType().isCall():
+                called.add(fn.getEntryPoint().getOffset())
+    removed = []
+    for fn in list(fm.getFunctions(app_set, True)):
+        start = fn.getEntryPoint().getOffset()
+        if start in called or fn.getBody().getNumAddressRanges() != 1:
+            continue
+        end = fn.getBody().getMaxAddress().getOffset() + 1
+        body = bytearray(b & 0xFF for b in
+                         getBytes(space.getAddress(start), end - start))
+        if not body or any(not (32 <= c < 127 or c == 0) for c in body):
+            continue
+        terminated = any(body[i] == 0 and 32 <= body[i - 1] < 127
+                         and 32 <= body[i - 2] < 127 for i in range(2, len(body)))
+        after = listing.getDataAt(space.getAddress(end))
+        follows_string = (after is not None and after.isDefined()
+                          and after.getDataType().getName().lower().startswith(
+                              ("string", "unicode", "char")))
+        if not (terminated or follows_string):
+            continue
+        removed.append((start, end))
+    for start, end in removed:
+        removeFunctionAt(space.getAddress(start))
+        listing.clearCodeUnits(space.getAddress(start),
+                               space.getAddress(end - 1), False)
+    println("functions that were string bytes removed: %d (%d bytes)"
+            % (len(removed), sum(e - s for s, e in removed)))
+
+
+remove_string_functions()
 
 # Last, because every full pass puts some of them back: the switch analyser
 # promotes a case target to a function of its own, which closing rounds never

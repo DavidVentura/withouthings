@@ -515,6 +515,25 @@ for instr in listing.getInstructions(app_set, True):
            "target_is_function": target in fn_by_start, "external": not in_app(target)}
     (calls if in_app(target) else ext_calls).append(row)
 
+# Falling off the end of one function into the next is a reference too, and the
+# only one with no instruction to relocate: the two have to stay adjacent or the
+# flow goes wherever the next section landed. The image does this at the wlog
+# putchar, where Ghidra ends a function on a 2-byte instruction that falls into
+# the one after it.
+fallthrough = []
+for instr in listing.getInstructions(app_set, True):
+    if not instr.getFlowType().isFallthrough():
+        continue
+    after = instr.getMaxAddress().add(1)
+    if not in_app(after.getOffset()):
+        continue
+    here = fm.getFunctionContaining(instr.getMinAddress())
+    there = fm.getFunctionContaining(after)
+    if here is not None and there is not None and here.equals(there):
+        continue
+    fallthrough.append({"from": instr.getMinAddress().getOffset(),
+                        "to": after.getOffset()})
+
 for src in rm.getReferenceSourceIterator(app_set, True):
     instr = listing.getInstructionAt(src)
     if instr is None or src.getOffset() in decoded:
@@ -684,13 +703,14 @@ emit(os.path.join(out_dir, "references.json"),
      [("counts", dict(counts, calls=len(calls), external_calls=len(ext_calls),
                       pool_words=len(pool_words), candidates=len(candidates),
                       pool_reads=len(pool_reads),
-                      jump_tables=len(tables), unclaimed_jumps=len(unclaimed_jumps),
+                      fallthrough=len(fallthrough), jump_tables=len(tables), unclaimed_jumps=len(unclaimed_jumps),
                       unresolved=len(unresolved))),
       ("calls", rows(calls, ["from", "to", "kind", "mnemonic", "width", "function",
                              "target_is_function", "external"])),
       ("external_calls", rows(ext_calls, ["from", "to", "kind", "mnemonic", "width",
                                           "function", "external"])),
       ("words", rows(words, ["addr", "value", "kind", "class", "item", "offset", "thumb", "resolved", "readers", "uses"])),
+      ("fallthrough", rows(fallthrough, ["from", "to"])),
       ("pool_reads", rows(pool_reads, ["site", "target", "function", "mnemonic", "width", "use"])),
       ("jump_tables", rows(tables, ["site", "function", "mnemonic", "start", "end",
                                     "stride", "absolute", "entries"])),

@@ -311,6 +311,18 @@ def stock_definitions(boundary, path):
     return len(defs)
 
 
+def pinned_addresses(manifest, layout):
+    """The section starts hwa10.yaml's fixed points name, checked against the cover."""
+    pinned = set()
+    for f in manifest["fixed_points"]:
+        addr = int(f["addr"], 0) if isinstance(f["addr"], str) else f["addr"]
+        section = layout.at(addr)
+        if section is None:
+            sys.exit("fixed point %s at 0x%x is outside the app" % (f["name"], addr))
+        pinned.add(section.start)
+    return pinned
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-o", default=os.path.join(SIM, "out", "relink", "appl-blob.o"))
@@ -322,6 +334,9 @@ def main():
                     help="move every text section: `shift` keeps the order and"
                          " slides it, `reverse` turns it round. The stale-address"
                          " scan is what this is for.")
+    ap.add_argument("--reclaim", action="store_true",
+                    help="place nothing but the fixed points, so --gc-sections"
+                         " can drop and pack; for the size measurement only")
     ap.add_argument("--move", action="append", default=[], metavar="SECTION=ADDR",
                     help="place one section elsewhere; the stale-address scan's"
                          " dry run is what this is for")
@@ -361,9 +376,12 @@ def main():
     for v in boundary["data_references"]["vector_table"]:
         reserved[v["symbol"]] = NOWHERE if v.get("relocate") else v["word"] & ~1
     reads = [(r["site"], r["target"]) for r in refs["pool_reads"]]
+    bits = bytes.fromhex(items["instruction_bytes"]["bits"])
+    covered = bytes((bits[i >> 3] >> (i & 7)) & 1 for i in range(len(blob)))
+    strings = objectify.string_runs(blob, covered)
     sections, shared, slivers, distant = objectify.build_sections(
-        items, refs["calls"], reads,
-        [w["addr"] for w in words if w["class"] == "pointer"], reserved)
+        items, refs["calls"], reads, refs["fallthrough"],
+        [w["addr"] for w in words if w["class"] == "pointer"], strings, reserved)
     layout = objectify.Layout(sections)
 
     owned, boundary_counts = boundary_relocations(blob, boundary, layout)
@@ -426,22 +444,29 @@ def main():
                      " called for it" % name)
 
     if args.layout:
-        pinned = {int(f["addr"], 0) if isinstance(f["addr"], str) else f["addr"]
-                  for f in manifest["fixed_points"]}
-        for addr in sorted(pinned):
-            if layout.at(addr) is None:
-                sys.exit("fixed point 0x%x is outside the app" % addr)
-        moves, spare = objectify.relayout(sections, args.layout, pinned)
+        pinned = pinned_addresses(manifest, layout)
+        unclassified = sorted(set(w["value"] & ~1 for w in words
+                                  if w["class"] == "review"))
+        moves, spare, held = objectify.relayout(sections, args.layout, pinned,
+                                                unclassified)
         print("  layout %s: %d text sections moved, %d bytes of spare flash used"
               % (args.layout, len(moves), spare - objectify.SPARE_BASE))
+        print("  %d text sections held in place because a word of unknown class"
+              " points into them (%d bytes)"
+              % (len(held), sum(s.end - s.start for s in sections
+                                if s.start in held)))
     unknown = set(moves) - set(s.sym for s in sections)
     if unknown:
         sys.exit("no section named %s" % ", ".join(sorted(unknown)))
     for path in (args.o, args.place, args.stock):
         os.makedirs(os.path.dirname(path), exist_ok=True)
     build(sections, blob, symbols, args.o)
-    objectify.placement(sections, moves, args.place,
-                        "*" + os.path.basename(args.o))
+    obj = "*" + os.path.basename(args.o)
+    if args.reclaim:
+        objectify.reclaim_placement(sections, pinned_addresses(manifest, layout),
+                                    args.place, obj)
+    else:
+        objectify.placement(sections, moves, args.place, obj)
     with open(os.path.splitext(args.place)[0] + "-moves.json", "w") as fh:
         json.dump([{"section": s.sym, "old": s.start, "end": s.end,
                     "new": moves[s.sym]} for s in sections if s.sym in moves], fh)
@@ -457,6 +482,8 @@ def main():
           " interleaved code that cannot be separated without moving bytes"
           % (len(shared), sum(len(s.functions) for s in shared),
              sum(s.end - s.start for s in shared)))
+    print("  %d NUL-delimited runs outside the disassembly keep their section"
+          " whole" % len(strings))
     print("  %d literal pools sit out of load range of the function the export"
           " reads them from, so their reader is still unknown" % len(distant))
     print("  boundary: %d R_ARM_THM_CALL, %d R_ARM_THM_JUMP24, %d R_ARM_ABS32"
