@@ -1,0 +1,180 @@
+# Where the app's reference graph starts. abi/reach.py reads this.
+#
+# A root is a section nothing in the relocatable object references and that the
+# image still enters: an interrupt vector, a task entry the kernel jumps to
+# through a stack frame, a dispatch-table row a walker reads, a callback stored
+# into a RAM registry at boot. Everything else is reached from one of these, so
+# a section under no root is either dead or a root this file is missing.
+#
+# `derive` names a rule in reach.py that reads the roots out of the image or the
+# export, so the evidence is the image itself and the list cannot go stale;
+# `roots` lists the ones only a trace can produce, each with what found it.
+
+groups:
+  - group: vector_table
+    derive: vector_table
+    evidence: >
+      abi/hwa10.yaml fixed_points: the application vector table at 0x27000, read
+      by the MBR, the SoftDevice and the bootloader. Every word is an
+      R_ARM_ABS32 in the object, so the handlers come out of the object itself.
+
+  - group: tasks
+    derive: tasks
+    evidence: >
+      Every xTaskCreateStatic (0x9e3dc) and xTaskCreate (0x9e410) call site in
+      the export, with the entry taken from the literal-pool word the call site
+      loads into r0 and the task name from r1. symbols.txt confirms two of them
+      independently (0x303a0 the battery/contrast task, 0x6ed34 ui_event_task).
+
+  - group: wpp_cmd_table
+    derive: wpp_cmd_table
+    evidence: >
+      abi/hwa10.yaml wpp_cmd_table: 156 rows of {u32 id, handler|1, const char
+      *name} at 0x274b4. No literal pool holds the table's address, so the rows
+      are roots; each row is listed separately so per-command cost is visible.
+
+  - group: shell_cmd_table
+    derive: shell_cmd_table
+    evidence: >
+      The UART shell's table at 0x270f8, 79 rows of the same shape with a hashed
+      key and a lowercase command word; abi/autonames.yaml's `shell` class is
+      built from it. The geometry is here rather than in abi/hwa10.yaml because
+      the manifest does not carry this table.
+    table: {address: 0x270f8, count: 79, stride: 12}
+
+  - group: i2c_device_table
+    derive: i2c_device_table
+    evidence: >
+      abi/hwa10.yaml i2c_device_table at 0xb22c4, 7 rows of i2c_device; fn0..fn3
+      are the per-device entry points the bus layer calls through the row.
+
+  - group: spi_device_table
+    derive: spi_device_table
+    evidence: >
+      abi/hwa10.yaml spi_device_table at 0xb2438. The row carries no function
+      slot (bus, cs_pin, mode, state, name), so this group is empty by
+      construction and the SPI devices are reached through their drivers.
+
+  - group: gpio_port_dispatch
+    evidence: >
+      The GPIO PORT dispatch table lives in RAM: gpiote_port_handler (0x3a008)
+      walks pins registered at runtime, and the callback address enters the
+      image as the pool word 0x493d0. Registration is a relocation in the
+      registering code, so the callbacks are already reachable; they are named
+      here so their cost is attributable, with the registering word as the entry
+      to cut.
+    roots:
+      - name: crown_pin_callback
+        address: 0x490c0
+        entry: 0x493d0
+        evidence: "symbols.txt: registered for P1.13 (SENSE=Low, pull-up) in the PORT dispatch table; pointer word 0x493d0"
+      - name: gpiote_port_handler
+        address: 0x3a008
+        evidence: "symbols.txt: walks the registered pins by reading GPIO LATCH (0x39f58) and clears it (0x39f74)"
+
+  - group: orphan_pointer_tables
+    derive: orphan_pointer_tables
+    evidence: >
+      Rodata items holding code pointers that nothing in the object references:
+      a table whose address a walker computes, or one copied into RAM at boot.
+      The rule takes the ones still unreached once every other root is applied,
+      and iterates, because one such table can point at another. An item with a
+      single pointer is not a table when that pointer names a handler that
+      already has a root: it is one row of a table whose rows became separate
+      sections.
+
+# A feature is what a removal would do: the roots it drops and the call sites it
+# cuts. It cannot be a root set alone -- the WPPS record path is a branch inside
+# the GATT write demux, so the BLE task reaches the tunnel whatever the roots
+# say, and only cutting that branch shows the tunnel's cost.
+features:
+  - feature: wpps_tls_tunnel
+    evidence: >
+      symbols.txt's WPPS tunnel heading. The tunnel is entered from the WPPS
+      branch of wpp_write_demux (0x93654) into wpp_bytes_received's record path
+      (0x392fc), from the tunnel-only WPP commands (TLS SNI 2495 and TLS CLOSE
+      2465 are control frames parsed at 0x7da34 before any command exists;
+      BOOTSTRAP_REDIRECT 2443 and BOOTSTRAP_REBOOT 2444 are gated on
+      wpps_established 0x39124; DEVICE_CHALLENGE 2482 signs with the tunnel's
+      Ed25519 key), and from the factory perso csr=/crt= shell commands that
+      install the client certificate the tunnel authenticates with.
+    remove_roots: [0x554c8, 0x555e8, 0x6d50c]
+    cut_edges:
+      - from: 0x39bc0
+        to: 0x392fc
+        why: >
+          the WPPS branch of wpp_write_demux (symbols.txt: WPP_V2 -> 0x397c8,
+          WPP_V3 -> 0x398e0, WPPS -> 0x39b2c, all into 0x392fc); the two plain
+          branches stay, so wpp_bytes_received itself stays
+      - from: 0x392fc
+        to: 0x38d68
+        why: "the record-path branch inside wpp_bytes_received: bit 3 of ctx+0x4c selects the TLS driver"
+      - from: 0x39284
+        to: 0x38f90
+        why: >
+          the send side: the WPP transmit path calls wpps_flush (0x38f90),
+          which is what pushes a queued frame through ptls_send; wpp_send_gate
+          0x38a30 keeps its other caller at 0x39226, so sends still go out
+          while WPPS is unsubscribed
+      - from: 0x5a7e4
+        to: 0x5a61c
+        why: "the perso parser's csr= arm"
+      - from: 0xb41fc
+        to: 0x5abbc
+        why: "the perso parser's table row for crt="
+    splits:
+      picotls_and_certificate: [0x72bdc, 0x46980, 0x46860, 0x46a10]
+      mbedtls_x509: [0x46980, 0x5abbc]
+      sha1: [0x95562, 0x9560e]
+      ed25519: [0x9712a, 0x46860]
+      perso_shell: [0x5a61c, 0x5abbc]
+      bootstrap_commands: [0x554c8, 0x555e8]
+      device_challenge: [0x6d50c]
+
+  - feature: shell_command_table
+    evidence: >
+      The 79 rows of shell_cmd_table 0x270f8 as one feature: the whole UART
+      debug console, removed by dropping every row's handler.
+    remove_groups: [shell_cmd_table]
+
+  - feature: wpp_command_table
+    evidence: >
+      Every row of wpp_cmd_table 0x274b4: what the phone protocol as a whole
+      costs over a firmware that answers nothing.
+    remove_groups: [wpp_cmd_table]
+
+# Functions the sim is known to execute, so the union has to contain them.
+sanity:
+  - {name: app_reset_entry, address: 0x34938}
+  - {name: main_task, address: 0x2e1d8}
+  - {name: main_notify_wait, address: 0x2e924}
+  - {name: wlog, address: 0x8f460}
+  - {name: oled_gpio_power_cfg, address: 0x370a0}
+  - {name: bq25180_setup, address: 0x437a0}
+  - {name: bat_charging_decision, address: 0x2fc8c}
+  - {name: crown_probe, address: 0x4943c}
+  - {name: crown_read_motion, address: 0x49218}
+  - {name: adxl367_power_check, address: 0x3baf0}
+  - {name: apds9306_driver, address: 0x508ec}
+  - {name: max86173_driver, address: 0x52180}
+  - {name: RTC1_IRQHandler, address: 0x3a6f0}
+  - {name: SWI2_EGU2_IRQHandler, address: 0x37298}
+  - {name: ble_evt_poll, address: 0x37364}
+  - {name: ble_evt_dispatch, address: 0x37594}
+  - {name: gpiote_port_handler, address: 0x3a008}
+  - {name: am_event_dispatch, address: 0x3dcc0}
+  - {name: uptime_seconds, address: 0x3a85c}
+  - {name: swdog_feed, address: 0x5df94}
+  - {name: get_fw_version, address: 0x36e70}
+  - {name: wpp_write_demux, address: 0x93654}
+  - {name: wpp_packet_handler, address: 0x38a60}
+  - {name: wpp_send_gate, address: 0x38a30}
+  - {name: wpp_fw_available_handler, address: 0x650e8}
+
+reset_reaches:
+  from: 0x34938
+  to: 0x2ec78
+  note: >
+    0x34938 is the entry the vector table's reset word 0x27004 holds (0x34939,
+    Thumb); it must reach the xTaskCreateStatic call at 0x2ec78 that creates the
+    "main" task, which is the boot path the sim executes.
