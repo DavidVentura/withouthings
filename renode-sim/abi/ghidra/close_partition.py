@@ -434,7 +434,58 @@ def remove_string_functions():
             % (len(removed), sum(e - s for s, e in removed)))
 
 
+def remove_data_named_functions():
+    """Undo the functions the analysis made out of data no execution can enter.
+
+    This image is Thumb throughout, so a word holding an even address in the
+    app names data, never an instruction. Where such a word names the inside of
+    a function that nothing calls, nothing branches to and no word names with
+    the Thumb bit, both readings cannot be right, and the one with evidence for
+    it wins: the bytes are a record table or a float table the linear pass
+    decoded. Leaving it as code is not neutral -- the pointer words inside it
+    are covered by the disassembly, so the relayout moves the table without
+    relocating anything it holds, and the pool word naming it reads as a number.
+    """
+    raw = getBytes(space.getAddress(APP_BASE), APP_END - APP_BASE)
+    even, odd = set(), set()
+    for at in range(0, len(raw) - 3, 4):
+        v = ((raw[at] & 0xFF) | ((raw[at + 1] & 0xFF) << 8)
+             | ((raw[at + 2] & 0xFF) << 16) | ((raw[at + 3] & 0xFF) << 24))
+        if APP_BASE <= (v & ~1) < APP_END:
+            (odd if v & 1 else even).add(v & ~1)
+
+    removed = []
+    for fn in fm.getFunctions(app_set, True):
+        entry = fn.getEntryPoint()
+        start = entry.getOffset()
+        if is_seeded(entry) or start in odd:
+            continue
+        if any(r.getReferenceType().isFlow()
+               for r in rm.getReferencesTo(entry)):
+            continue
+        body = fn.getBody()
+        lo = body.getMinAddress().getOffset()
+        hi = body.getMaxAddress().getOffset() + 1
+        if not any(a in even for a in range(lo, hi, 4)):
+            continue
+        if any(a in odd for a in range(lo, hi)):
+            continue
+        removed.append((lo, hi))
+    for lo, hi in removed:
+        area = AddressSet(space.getAddress(lo), space.getAddress(hi - 1))
+        # A body decoded out of data has other decoded bodies inside it; a
+        # function left behind with no instructions under it makes the export's
+        # cover claim the same bytes as a function and as a gap.
+        for fn in list(fm.getFunctionsOverlapping(area)):
+            removeFunctionAt(fn.getEntryPoint())
+        listing.clearCodeUnits(space.getAddress(lo), space.getAddress(hi - 1),
+                               False)
+    println("functions a word names as data removed: %d (%d bytes)"
+            % (len(removed), sum(e - s for s, e in removed)))
+
+
 remove_string_functions()
+remove_data_named_functions()
 
 # Last, because every full pass puts some of them back: the switch analyser
 # promotes a case target to a function of its own, which closing rounds never

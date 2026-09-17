@@ -29,7 +29,10 @@ APP_END = 0xF117C
 
 MIN_WORDS = 2
 MIN_WORD = 4
-MIN_CODE = 16
+# Any disassembly inside a proven text region is wrong, however little of it
+# there is: a four-byte "function" over the two NULs in front of "WITHINGS" is
+# what made the word naming that string read as a number.
+MIN_CODE = 2
 
 listing = currentProgram.getListing()
 fm = currentProgram.getFunctionManager()
@@ -45,6 +48,13 @@ def textual(at):
     """ASCII, or the two bytes of a Latin-1 character in UTF-8, and nothing else."""
     c = image[at - APP_BASE]
     if c == 0 or 0x20 <= c < 0x7F or c in (9, 10, 13):
+        return True
+    # The firmware colours its log lines, so an ANSI CSI introducer is part of
+    # the text. `\x1b[` is the whole sequence's marker and nothing else opens
+    # with it, so this does not widen the test to control bytes in general.
+    if c == 0x1B and image[at - APP_BASE + 1:at - APP_BASE + 2] == b"[":
+        return True
+    if c == ord("[") and at > APP_BASE and image[at - APP_BASE - 1] == 0x1B:
         return True
     nxt = image[at - APP_BASE + 1] if at + 1 < APP_END else 0
     if c in (0xC2, 0xC3) and 0x80 <= nxt < 0xC0:
