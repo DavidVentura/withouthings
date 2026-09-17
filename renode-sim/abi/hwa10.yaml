@@ -334,6 +334,27 @@ tables:
     entry: ble_gap_conn_params
     stride: 8
     count: 3
+  - name: asset_table
+    address: 0xbbf50
+    entry: asset_entry
+    stride: 12
+    count: 70
+    notes: >
+      The image assets the UI draws. 70 rows of {u8 width, u8 height, u16 zero,
+      const void *bits, u32 frames}, 0xbbf50..0xbc298, whose bits run
+      0xeba84..0xee6xx in internal flash -- so the app does carry bitmaps, which
+      is what the absence of a grid over this run hid. The extent is the run
+      itself: below 0xbbf50 the bytes are an array of 0x64, at 0xbc298 a
+      different object starts whose first word points back into itself, and 40
+      literal-pool words name rows of the table and nothing between them. width
+      is settled by the drawing routine 0x84878, whose first instruction is
+      `ldrb r5,[r2,#0]` followed by `rsb r5,r5,#144`, halved and added to the x
+      argument: the panel is 144 wide and the asset is centred on it. frames is
+      settled by the offsets: where the asset is uncompressed the distance to
+      the next row's offset is exactly width * height * frames / 8 (row 0 is
+      44 x 58, four frames, 1276 bytes). Without the grid the pool words naming
+      rows read as numbers and the 70 bits pointers read as numbers too, so a
+      layout that moved the bitmaps would have left every one of them stale.
   - name: flash_id_table
     address: 0xb427c
     entry: flash_id
@@ -362,6 +383,12 @@ table_structs:
   - name: ble_gap_conn_params
     fields: [[u16, min_conn_interval], [u16, max_conn_interval],
              [u16, slave_latency], [u16, conn_sup_timeout]]
+  - name: asset_entry
+    fields: [[u8, width], [u8, height], [u16, zero], [const u8 *, bits], [u32, frames]]
+    notes: >
+      bits points at the 1-bit-per-pixel rows in the image itself: 0xbc02c's
+      word 0xecbac, which words.yaml had to declare by hand as a pointer before
+      the table was known, holds 18 bytes that draw a cross for a 14 x 10 icon.
   - name: flash_id
     fields: [[u32, jedec_id], ["u8[12]", params]]
     notes: params are not decoded; only jedec_id is matched

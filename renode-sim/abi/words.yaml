@@ -713,12 +713,6 @@ overrides:
     target: 0xbbef4
     addend: 0
     why: names_a_string_run
-  - address: 0xbc02c
-    value: 0xecbac
-    class: pointer
-    target: 0xecbac
-    addend: 0
-    why: names_a_string_run
   - address: 0xbd918
     value: 0xefe13
     class: pointer

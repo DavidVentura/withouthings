@@ -51,7 +51,7 @@ start=$(date +%s)
     -loader BinaryLoader -loader-baseAddr 0x27000 \
     -scriptPath "$HERE" \
     -preScript seed_symbols.py "$OUT/seed.json" \
-    -postScript close_partition.py \
+    -postScript close_partition.py "$OUT/seed.json" \
     -postScript undisassemble_text.py \
     -postScript classify_gaps.py \
     -postScript export_partition.py "$OUT" \

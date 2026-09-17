@@ -23,6 +23,8 @@
 # softdevice_enable and crown_int_handler out of the switch they follow.
 # @category HWA10
 
+import json
+
 from ghidra.app.plugin.core.analysis import AutoAnalysisManager
 from ghidra.program.model.address import AddressSet
 from ghidra.program.model.symbol import SourceType
@@ -484,8 +486,71 @@ def remove_data_named_functions():
             % (len(removed), sum(e - s for s, e in removed)))
 
 
+FIELD_WIDTHS = {"u8": 1, "i8": 1, "u16": 2, "i16": 2, "u32": 4, "i32": 4}
+
+
+def declared_data_pointers(seed_path):
+    """Every address a declared table's pointer-to-data field holds.
+
+    A table declared in abi/hwa10.yaml says what each of its columns is. A
+    column typed `void *` is a handler and the analysis is right to follow it;
+    a column typed as a pointer to a scalar is data, and its target is data at
+    whatever address it lands on. That distinction is the only way to read the
+    asset table's `bits`, which points at 1-bit rows that start on an odd byte
+    as often as an even one: the parity test that decides everything else in
+    this file reads an odd one as a Thumb entry and lets the analysis
+    disassemble a bitmap.
+    """
+    with open(seed_path) as fh:
+        seed = json.load(fh)
+    targets = set()
+    for table in seed["tables"]:
+        fields = table.get("fields") or []
+        offset, wanted = 0, []
+        for ftype, _ in fields:
+            ftype = str(ftype).strip()
+            if ftype.endswith("*"):
+                width = 4
+                if not ftype[:-1].strip().endswith("void"):
+                    wanted.append(offset)
+            elif "[" in ftype:
+                base, _, count = ftype.partition("[")
+                width = FIELD_WIDTHS[base] * int(count.rstrip("]"))
+            else:
+                width = FIELD_WIDTHS[ftype]
+            offset += width
+        for row in range(table["count"]):
+            base = table["address"] + row * table["stride"]
+            for at in wanted:
+                targets.add(getInt(space.getAddress(base + at)) & 0xFFFFFFFF)
+    return targets
+
+
+def remove_declared_data_functions(targets):
+    """Undo the disassembly of the data a declared table points at."""
+    removed = []
+    for target in sorted(targets):
+        if not APP_BASE <= target < APP_END:
+            continue
+        fn = fm.getFunctionContaining(space.getAddress(target))
+        if fn is None or is_seeded(fn.getEntryPoint()):
+            continue
+        body = fn.getBody()
+        lo = body.getMinAddress().getOffset()
+        hi = body.getMaxAddress().getOffset() + 1
+        area = AddressSet(space.getAddress(lo), space.getAddress(hi - 1))
+        for inner in list(fm.getFunctionsOverlapping(area)):
+            removeFunctionAt(inner.getEntryPoint())
+        listing.clearCodeUnits(space.getAddress(lo), space.getAddress(hi - 1),
+                               False)
+        removed.append((lo, hi))
+    println("functions a declared data pointer names removed: %d (%d bytes)"
+            % (len(removed), sum(e - s for s, e in removed)))
+
+
 remove_string_functions()
 remove_data_named_functions()
+remove_declared_data_functions(declared_data_pointers(getScriptArgs()[0]))
 
 # Last, because every full pass puts some of them back: the switch analyser
 # promotes a case target to a function of its own, which closing rounds never
