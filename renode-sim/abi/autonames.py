@@ -135,10 +135,19 @@ class Image:
         if not 0 <= o < len(self.data):
             return None
         e = self.data.find(b"\0", o)
-        if e < 0 or e - o > limit or e - o < 2:
+        if e < 0 or e - o > limit or e - o < 1:
             return None
         s = self.data[o:e]
-        return s if all(32 <= c < 127 or c in (9, 10, 13) for c in s) else None
+        # ESC because most of this image's log lines are ANSI-coloured, and the
+        # high bytes because a few are UTF-8; requiring the whole run to decode
+        # is what keeps arbitrary data from reading as a string.
+        if not all(32 <= c < 127 or c in (9, 10, 13, 27) or c >= 0x80 for c in s):
+            return None
+        try:
+            s.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        return s
 
     def pool_string(self, ops):
         """The string a `ldr rX, [pc, #N]` loads a pointer to, or None.
@@ -450,11 +459,56 @@ def wlog_sites(img, ex):
             if not r or r.group(1) in regs:
                 continue
             regs[r.group(1)] = img.pool_string(o2) if m2.startswith("ldr") else None
-        fmt = regs.pop("r%d" % WLOG_FMT_REG[entry], None)
-        sites.append({"site": addr, "fn": ex.owner(addr) if ex.ok else img.owner(addr),
+        fmtreg = "r%d" % WLOG_FMT_REG[entry]
+        fmt = regs.pop(fmtreg, None)
+        fn = ex.owner(addr) if ex.ok else img.owner(addr)
+        if fmt is None:
+            fmt = hoisted_format(img, i, fmtreg, fn, addr)
+        sites.append({"site": addr, "fn": fn,
                       "entry": entry, "fmt": fmt.decode("latin1") if fmt else None,
                       "args": regs, "how": "calling sequence"})
     return sites
+
+
+CALLEE_SAVED = frozenset("r4 r5 r6 r7 r8 r9 r10 r11".split())
+WRITES = re.compile(r"^(r\d+),")
+
+
+def hoisted_format(img, i, fmtreg, fn, site):
+    """The format string of a call whose format register was loaded earlier.
+
+    A logger call in a loop has its format hoisted: the calling sequence only
+    does `mov r0, r7`, and the pool load that set r7 is outside the loop, past a
+    branch the straight-line walk stops at. Following the `mov` chain to the
+    callee-saved register it came from turns that into a question about the
+    whole function, and a callee-saved register with exactly one writer in the
+    function has that writer's value at every call in it, whatever the control
+    flow between them.
+    """
+    want = fmtreg
+    for j in range(i - 1, max(-1, i - 24), -1):
+        _, mnem, ops = img.insns[j]
+        m = WRITES.match(ops)
+        if m and m.group(1) == want:
+            if mnem != "mov":
+                return None
+            nxt = re.match(r"^r\d+,\s*(r\d+)$", ops.strip())
+            if not nxt:
+                return None
+            want = nxt.group(1)
+            continue
+        if mnem in ("bl", "bl.w", "blx") and want not in CALLEE_SAVED:
+            return None
+        if mnem in ("b", "b.w", "bx", "pop") and want not in CALLEE_SAVED:
+            return None
+    if want == fmtreg or want not in CALLEE_SAVED or fn is None:
+        return None
+    writers = [ops for addr, mnem, ops in img.insns
+               if fn <= addr < site and WRITES.match(ops)
+               and WRITES.match(ops).group(1) == want]
+    if len(writers) != 1:
+        return None
+    return img.pool_string(writers[0])
 
 
 WLOG_USE = re.compile(r"^wlog_a(\d):0x([0-9a-f]+)$")

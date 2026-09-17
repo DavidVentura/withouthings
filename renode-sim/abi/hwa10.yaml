@@ -159,6 +159,73 @@ functions:
       carries the Thumb bit as it is stored in the table; gen.py masks it off
       and sets it again.
 
+  # --- WPP wire codec primitives ---
+  # Every one of these was read off its own body: the cursor is a `void **`
+  # whose target the call advances by exactly the width it moved, and the
+  # big-endian order is the byte-by-byte stores themselves. They are declared
+  # here because they are the alphabet abi/protocol.py reads the object layouts
+  # in, and because the tail calls into them cost three of them their function
+  # start: 0x98d98 became a second range of wpp_obj_WamScreensList_encode the
+  # same way 0x4ca80 became one of fwblk_table_open.
+  - name: wpp_put_u8
+    address: 0x9a930
+    ret: void
+    args: [[void **, cursor], [u8, value]]
+  - name: wpp_get_u8
+    address: 0x9a93c
+    ret: void
+    args: [[u8 *, out], [void **, cursor]]
+  - name: wpp_put_be16
+    address: 0x9a954
+    ret: void
+    args: [[void **, cursor], [u16, value]]
+  - name: wpp_get_be16
+    address: 0x9a966
+    ret: void
+    args: [[u16 *, out], [void **, cursor]]
+  - name: wpp_put_be32
+    address: 0x9a982
+    ret: void
+    args: [[void **, cursor], [u32, value]]
+  - name: wpp_get_be32
+    address: 0x9a9a0
+    ret: void
+    args: [[u32 *, out], [void **, cursor]]
+  - name: wpp_put_string
+    address: 0x98d72
+    ret: void
+    args: [[void **, cursor], [const u8 *, pascal_string]]
+    notes: >
+      the source is length-prefixed and the length is clamped to 0x40 before
+      both the count byte and the copy, so a string field on this wire is at
+      most 64 bytes and the firmware truncates rather than failing
+  - name: wpp_put_array_u8
+    address: 0x98d98
+    ret: void
+    args: [[void **, cursor], [const u8 *, data], [u8, count]]
+  - name: wpp_put_array_be32
+    address: 0x98db8
+    ret: void
+    args: [[void **, cursor], [const u32 *, data], [u8, count]]
+  - name: wpp_get_string
+    address: 0x4eca4
+    ret: void
+    args: [[void **, cursor], [u8 *, out]]
+    notes: >
+      same 0x40 clamp as wpp_put_string, and it logs at level 3 when the wire
+      length is above it rather than rejecting the object
+  - name: wpp_get_array_u8
+    address: 0x4ece8
+    ret: void
+    args: [[void **, cursor], [u8 *, out], [u8, max_count]]
+    notes: >
+      the count byte is clamped to max_count, with a level-3 log when they
+      differ; the caller's buffer bound is the only check
+  - name: wpp_get_array_be32
+    address: 0x4ed3c
+    ret: void
+    args: [[void **, cursor], [u32 *, out], [u8, max_count]]
+
   # --- battery / charger ---
   - name: battery_adc_value_gain_adaptation
     address: 0x400b4
@@ -195,6 +262,49 @@ functions:
     ret: i32
     args: []
     notes: I2C error -> 2, VIN_PGOOD=0 -> 0, else the table at 0xc6cbc
+
+  # --- fwblk (external-flash firmware bank table) ---
+  - name: fwblk_table_parse
+    address: 0x4ca80
+    ret: struct fwblk_table *
+    args: [[u32, flash_offset], [struct fwblk_table *, out], [void *, body_buf]]
+    notes: >
+      Reads the {u16 ver, u16 len} header at flash_offset out of the external
+      flash through spi_flash_handle (0xb244c is its only pool word), rejects
+      the version with fwblk_unsupported_ext_table_ver (0x4ca64), reads
+      4 + align4(len) + 4 bytes into body_buf, and checks the trailing CRC32
+      against crc32(body, 4 + align4(len)) -- the log lines "version %d",
+      "size %d" and "[FWBLK] ext. table corrupted (crc computed=0x%lx,
+      extracted=0x%lx)" are its own. Both pointer arguments are optional: a
+      NULL body_buf is malloc'd (and freed again on any failure, which is how
+      the caller-supplied case is told apart at 0x4cb38), a NULL out is a
+      malloc of 12, the struct's size. Returns out, or NULL on any failure.
+      Declared here because seeding the neighbour 0x9800a cost this body its
+      function start: 0x9800e/0x98012 tail-call into it, so with no start of
+      its own the whole body became a second range of 0x9800a.
+  - name: fwblk_table_open
+    address: 0x9800a
+    ret: struct fwblk_table *
+    args: [[u32, flash_offset]]
+    notes: >
+      `movs r2,#0; mov r1,r2; b.w fwblk_table_parse` -- the both-allocated
+      form. Its caller 0x655f0 is the shell's bank dump, which passes 0x6000
+      for bank 1 and 0x11f000 for bank 2, the two bank offsets FIRMWARE.md
+      gives, so flash_offset is a byte offset into the external flash.
+  - name: fwblk_table_free
+    address: 0x98016
+    ret: struct fwblk_table *
+    args: [[struct fwblk_table *, table]]
+    notes: >
+      frees table->body then table, NULL-safe; returns its argument because the
+      free is a tail call
+  - name: fwblk_table_payload
+    address: 0x9802e
+    ret: void
+    args: [[struct fwblk_table *, table], [const void **, out_data], [u16 *, out_len]]
+    notes: >
+      hands back body+4 and the u16 length the header holds at body+2, i.e. the
+      IE stream fwblk_get_ie (0x4cb90) walks
 
   # --- crown ---
   - name: crown_read_reg
@@ -276,6 +386,12 @@ structs:
     notes: mode at +20, attempt counter at +21, CRC at +32
   - name: battery_curve_bounds
     fields: [[u32, pad], [i16, full_mv], [i16, empty_mv]]
+  - name: fwblk_table
+    fields: [[u32, payload_offset], [u32, len], [void *, body]]
+    notes: >
+      what fwblk_table_parse fills at 0x4cb5c..0x4cb66: the external-flash
+      offset of the payload (the header offset plus 4), the u16 length from the
+      header widened to a word, and the buffer holding header + payload + CRC32
   - name: wpp_cmd_entry
     fields: [[u32, id], [void *, handler], [const char *, name]]
     notes: handler carries the Thumb bit as stored
@@ -285,10 +401,16 @@ tables:
     address: 0x274b4
     entry: wpp_cmd_entry
     stride: 12
-    count: 156
+    count: 148
     notes: >
       master-request dispatch: the commands the phone sends. Runs 0x274b4 to
-      0x27c04; an earlier reading started it at 0x27994, which is row 104, not
+      0x27ba4, not to 0x27c04: the dispatcher at 0x6c784 and the send path's
+      name lookup at 0x6bdbe both load the pair (0x274b4, 0x27ba4) and step by
+      12 between them, and the eight rows above 0x27ba4 are walked by a
+      different dispatcher (0x6e788) that loads (0x27ba4, 0x27c04) and calls its
+      handler with three arguments instead of two. They are declared separately
+      as wpp_cmd_table_slave. The rows themselves have the same shape either
+      way, which is why a walk by shape alone reads the two as one table of 156; an earlier reading started it at 0x27994, which is row 104, not
       the head. abi/autonames.py walks it in both directions from there and
       stops where the row stops being {command id, odd handler in the image,
       pointer to a printable name}; the row above the head belongs to the
@@ -298,6 +420,21 @@ tables:
       No literal-pool reference to the table exists in the image, so the walker
       reaches it some other way; replacing a handler word in place works
       regardless (proven by diverting the battery handler to a logging hook).
+  - name: wpp_cmd_table_slave
+    address: 0x27ba4
+    entry: wpp_cmd_entry
+    stride: 12
+    count: 8
+    notes: >
+      The eight rows above wpp_cmd_table, dispatched by 0x6e788 rather than
+      0x6c784. Both bounds are its own literal pool pair (0x6e7d4 and 0x6e7d8,
+      repeated at 0x6e830/0x6e834), it logs "[WPP][<-]"-style lines with the
+      row's name from +8 like the master walk, and it tail-calls the handler at
+      +4 as `bx r3` after loading three arguments, so these handlers have a
+      different prototype from the master-request ones. In address order the
+      commands are SYNC_REQUEST 321, LOCAL_EVENT_NOTIFY 2459, MEASURE_STOP 2420,
+      MEASURE_START 2419, NOTIFICATION_GET 2404, GLYPH_GET 2403,
+      WORKOUT_STOP 318 and WORKOUT_START 317.
   - name: shell_cmd_table
     address: 0x27100
     entry: shell_cmd_entry
@@ -369,6 +506,67 @@ tables:
       44 x 58, four frames, 1276 bytes). Without the grid the pool words naming
       rows read as numbers and the 70 bits pointers read as numbers too, so a
       layout that moved the bitmaps would have left every one of them stale.
+  - name: bq25180_reg_names
+    address: 0xb2674
+    entry: name_ptr
+    stride: 4
+    count: 13
+    notes: >
+      The firmware's own name for every BQ25180 register, indexed by register
+      address 0x00..0x0c. The shape is a pointer table, not the char[12] array
+      the right-padded strings suggest: the reader at 0x435d2 loads this address
+      and does `ldr r2, [r2, r4, lsl #2]` with r4 the register number, and the
+      strings it points at are scattered (STAT0 0xd48f8, ICHG_CTRL 0xd4954 and
+      CHARGECTRL1 0xd4979 sit among the log formats that also name them, the
+      other ten run 0xd4a30..0xd4aa8). The names are padded to 11 columns
+      because they are printed in one aligned column by the shell's `dump`.
+      0xb2674 is where the run of string pointers starts and 0xb26a8 is where it
+      stops; the four pointers below it are ble_state_names. Three call sites
+      index it: 0x43600 (the register dump), 0x436ac and 0x43770/0x43784, all of
+      which report through "[BQ25180] error reading %s" (0xd4917).
+  - name: bq25180_charge_status_names
+    address: 0xb2664
+    entry: name_ptr
+    stride: 4
+    count: 4
+    notes: >
+      the four colourised strings the "[BQ25180] CHG = %hu, %s" line selects
+      between at 0x439fc, indexed by STAT0's two-bit CHG field: not charging,
+      constant current, constant voltage, done/disabled
+  - name: ble_state_names
+    address: 0xb2654
+    entry: name_ptr
+    stride: 4
+    count: 4
+    notes: >
+      BLE_STOP, BLE_SYNC_REQUEST, BLE_NORMAL, BLE_END; loaded by 0x40b38,
+      0x40b94, 0x40bc4 and 0x40c2c, and bounded below by a non-pointer word
+  - name: max86173_channel_names
+    address: 0xb411c
+    entry: name_ptr
+    stride: 4
+    count: 25
+    notes: >
+      the MAX86173 measurement channels by name (PPG_AFIB, HR_LOW, HR_HIGH,
+      INACTIVITY, PPG_AFIB_NIGHT, then the twenty LED/photodiode pairings and
+      the four ambient ones), loaded once at 0x518f4; the word below the run is
+      zero and the word above is not an address
+  - name: adxl367_mode_names
+    address: 0xb47f0
+    entry: name_ptr
+    stride: 4
+    count: 4
+    notes: >
+      OFF, BURST_AUTO_STOP, BURST_MANUAL_STOP, CONTINUOUS -- the measure modes
+      "[ADXL367] Set mode %d" counts; loaded at 0x62320
+  - name: afib_class_names
+    address: 0xb4824
+    entry: name_ptr
+    stride: 4
+    count: 5
+    notes: >
+      UNDEFINED, NSR, AFIB, OTHER, NOISE -- the AFib classifier's verdicts,
+      loaded at 0x63570 and 0x63608
   - name: flash_id_table
     address: 0xb427c
     entry: flash_id
@@ -376,6 +574,12 @@ tables:
     count: 28
 
 table_structs:
+  - name: fwblk_table
+    fields: [[u32, payload_offset], [u32, len], [void *, body]]
+    notes: >
+      what fwblk_table_parse fills at 0x4cb5c..0x4cb66: the external-flash
+      offset of the payload (the header offset plus 4), the u16 length from the
+      header widened to a word, and the buffer holding header + payload + CRC32
   - name: wpp_cmd_entry
     fields: [[u32, command], [void *, handler], [const char *, name]]
     notes: >
@@ -403,6 +607,11 @@ table_structs:
       bits points at the 1-bit-per-pixel rows in the image itself: 0xbc02c's
       word 0xecbac, which words.yaml had to declare by hand as a pointer before
       the table was known, holds 18 bytes that draw a cross for a 14 x 10 icon.
+  - name: name_ptr
+    fields: [[const char *, name]]
+    notes: >
+      a table of string pointers indexed by a small code, the shape every
+      *_names table in the image has
   - name: flash_id
     fields: [[u32, jedec_id], ["u8[12]", params]]
     notes: params are not decoded; only jedec_id is matched

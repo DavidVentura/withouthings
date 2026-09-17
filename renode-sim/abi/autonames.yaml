@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 4, helper: 433, libc: 98, logcb: 3, logline: 334, logtag: 8, module_functions: 1797, modules: 183, prototypes_derived: 13, shell: 156, shell_table_rows: 79, string: 20, svc: 79, wlog_call_sites: 2359, wlog_sites: 2170, wlog_sites_edges: 148, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {bleevt: 28, extlib: 4, helper: 426, libc: 98, logcb: 3, logline: 335, logtag: 8, module_functions: 1797, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 3, disagree: 14}
 
 functions:
@@ -1764,11 +1764,6 @@ functions:
     class: logline
     evidence: "the only line 0x4eb78 logs, wlog('[i2c] Device on address 0x%0x has not been requested') at 0x4eb88"
     module: I2C
-  - name: WPP_CMD_STORED_MEASURE_SIGNAL_GET__1__1
-    address: 0x4ed3c
-    class: helper
-    evidence: "only 0x4ede8 (WPP_CMD_STORED_MEASURE_SIGNAL_GET__1) calls 0x4ed3c; 76 bytes"
-    module: PAIRING_PROTO
   - name: wpp_obj_Null_parse
     address: 0x4ed90
     class: wppobj
@@ -2517,10 +2512,10 @@ functions:
     class: logline
     evidence: "the only line 0x54d90 logs, wlog('[MS5849] Write conf failed') at 0x54dbc"
     module: MS5849
-  - name: ms5849_failed_to_get_adc__1
+  - name: ms5849_start_conversion_failed
     address: 0x55030
-    class: helper
-    evidence: "only 0x3dd9c (ms5849_failed_to_get_adc) calls 0x55030; 36 bytes"
+    class: logline
+    evidence: "the only line 0x55030 logs, wlog('[MS5849]Â\\xa0Start conversion failed') at 0x55046"
     module: MS5849
   - name: WPP_CMD_BOOTSTRAP_REDIRECT__4
     address: 0x55454
@@ -5728,26 +5723,6 @@ functions:
     address: 0x97ff4
     class: helper
     evidence: "only 0x91d1c (__smakebuf_r__1) calls 0x97ff4; 10 bytes"
-  - name: firmware_addr_0x__2__1
-    address: 0x97ffe
-    class: helper
-    evidence: "only 0x9800a (firmware_addr_0x__2) calls 0x97ffe; 12 bytes"
-    module: FWBLK
-  - name: firmware_addr_0x__2
-    address: 0x9800a
-    class: helper
-    evidence: "only 0x655f0 (firmware_addr_0x) calls 0x9800a; 250 bytes"
-    module: FWBLK
-    proto: "uint32_t firmware_addr_0x__2(uint32_t);"
-    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 compared only; return type not derived, declared uint32_t"
-  - name: firmware_addr_0x__3
-    address: 0x98016
-    class: helper
-    evidence: "only 0x655f0 (firmware_addr_0x) calls 0x98016; 24 bytes"
-  - name: firmware_addr_0x__4
-    address: 0x9802e
-    class: helper
-    evidence: "only 0x655f0 (firmware_addr_0x) calls 0x9802e; 12 bytes"
   - name: glyph_cache_post_update__1
     address: 0x980ba
     class: helper
@@ -5773,17 +5748,13 @@ functions:
     class: helper
     evidence: "only 0x4e074 (gss_safe_erase_no_start) calls 0x9831a; 142 bytes"
     module: GSS
-  - name: ms5849_failed_to_get_adc__2
+  - name: ms5849_failed_to_get_adc__1
     address: 0x98cac
     class: helper
     evidence: "only 0x3dd9c (ms5849_failed_to_get_adc) calls 0x98cac; 30 bytes"
     module: MS5849
-    proto: "uint32_t ms5849_failed_to_get_adc__2(void *);"
+    proto: "uint32_t ms5849_failed_to_get_adc__1(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
-  - name: wpp_obj_StoredMeasureMeta_encode__1
-    address: 0x98db8
-    class: helper
-    evidence: "only 0x99266 (wpp_obj_StoredMeasureMeta_encode) calls 0x98db8; 34 bytes"
   - name: WPP_CMD_DEVICE_CHALLENGE__1
     address: 0x98e24
     class: helper
