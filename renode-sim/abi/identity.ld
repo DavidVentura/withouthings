@@ -6,13 +6,14 @@
  * output has to be the stock app image byte for byte. It is the proof that
  * cutting the image into sections and turning its branches into relocations
  * lost nothing; abi/relink.sh runs it before the link against the source
- * kernel. MOVED is only used by the stale-address dry run, which displaces a
- * section out of APP. */
+ * kernel. LIB holds whatever a moved layout could not fit
+ * back into the image's own span; in the link against the source kernel the
+ * library follows it in the same region. */
 
 MEMORY
 {
     APP   (rx)  : ORIGIN = 0x00027000, LENGTH = 0x000ca17c
-    MOVED (rx)  : ORIGIN = 0x000f1180, LENGTH = 0x0000ae80
+    LIB   (rx)  : ORIGIN = 0x000f1180, LENGTH = 0x0000ae80
 }
 
 SECTIONS

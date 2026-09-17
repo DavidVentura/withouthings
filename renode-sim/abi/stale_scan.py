@@ -69,6 +69,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--elf", default=os.path.join(SIM, "out", "relink", "identity.elf"))
     ap.add_argument("--moves", default=os.path.join(SIM, "out", "relink-place-moves.json"))
+    ap.add_argument("--words", default=os.path.join(HERE, "out", "ghidra", "words.json"))
+    ap.add_argument("--items", default=os.path.join(HERE, "out", "ghidra", "items.json"))
+    ap.add_argument("--list", type=int, default=20, help="survivors to print per bucket")
     args = ap.parse_args()
 
     with open(args.moves) as fh:
@@ -76,30 +79,100 @@ def main():
     if not moves:
         sys.exit("%s is empty: nothing moved, so there is nothing to scan for"
                  % args.moves)
+    with open(args.words) as fh:
+        words = {w["addr"]: w for w in json.load(fh)["words"]}
+    with open(args.items) as fh:
+        bits = bytes.fromhex(json.load(fh)["instruction_bytes"]["bits"])
+
+    def is_instruction(addr):
+        """A word the disassembly covers is not a slot anything could relocate.
+
+        Two Thumb instructions in a row hold an in-range value often enough --
+        `movs r1,r1` before a `push.w` reads as 0x0009e92d, which is inside this
+        image -- that without this the scan is mostly noise.
+        """
+        i = addr - 0x27000
+        return any(bits[(i + k) >> 3] >> ((i + k) & 7) & 1 for k in range(4))
 
     elf = Elf(args.elf)
     written = elf.relocation_sites()
+    moves.sort(key=lambda m: m["old"])
+    olds = [m["old"] for m in moves]
+    # The scan reads the linked image, so a word's address there is its new one;
+    # the classification is keyed by where the word was. Only moved sections
+    # need the translation, and they do not overlap.
+    news = sorted((m["new"], m["new"] + m["end"] - m["old"], m["old"]) for m in moves)
+
+    def original(at):
+        lo, hi = 0, len(news)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if news[mid][0] <= at:
+                lo = mid + 1
+            else:
+                hi = mid
+        if lo and news[lo - 1][1] > at:
+            return news[lo - 1][2] + at - news[lo - 1][0]
+        return at
+
+    def moved(value):
+        lo, hi = 0, len(olds)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if olds[mid] <= value:
+                lo = mid + 1
+            else:
+                hi = mid
+        return moves[lo - 1] if lo and moves[lo - 1]["end"] > value else None
+
     survivors = []
     for section in elf.allocated():
         blob = elf.bytes_of(section)
-        for off in range(0, len(blob) - 3, 4):
+        for off in range(0, len(blob) - 3, 2):
             at = section["addr"] + off
-            if at in written:
+            # An R_ARM_ABS32 slot is word-aligned in the image it came from, so
+            # a misaligned window is two halves of two different data fields;
+            # a moved section can change the parity, hence the old address.
+            if at in written or original(at) % 4:
                 continue
             value, = struct.unpack_from("<I", blob, off)
-            for m in moves:
-                if m["old"] <= value & ~1 < m["end"]:
-                    survivors.append((at, value, m))
-                    break
+            m = moved(value & ~1)
+            if m is not None:
+                survivors.append((at, value, m))
 
-    for m in moves:
-        print("moved %s: 0x%x..0x%x -> 0x%x (%d bytes)"
-              % (m["section"], m["old"], m["end"], m["new"], m["end"] - m["old"]))
+    print("moved %d sections, %d bytes" % (len(moves),
+                                           sum(m["end"] - m["old"] for m in moves)))
     print("%d words still hold an address inside a moved section" % len(survivors))
-    for at, value, m in survivors[:40]:
-        print("  0x%08x holds 0x%08x, %s + 0x%x"
-              % (at, value, m["section"], (value & ~1) - m["old"]))
-    return 0
+    buckets, unexplained, in_instructions = {}, [], 0
+    for at, value, m in survivors:
+        if is_instruction(original(at)):
+            in_instructions += 1
+            continue
+        word = words.get(original(at))
+        if word is None:
+            # The scan reads the linked image, which is laid out differently
+            # from the one the classification ran on, so a survivor at an
+            # address the candidate set does not know is a word the partition
+            # never offered -- the only kind that is a real miss.
+            unexplained.append((at, value, m, "not a candidate word"))
+            continue
+        if word["class"] == "pointer":
+            unexplained.append((at, value, m, "classified a pointer but not relocated"))
+            continue
+        key = "%s:%s:%s" % (word["kind"], word["class"], word["signal"])
+        buckets.setdefault(key, []).append((at, value, m))
+    for key in sorted(buckets):
+        rows = buckets[key]
+        print("  %-48s %d" % (key, len(rows)))
+        for at, value, m in rows[:args.list]:
+            print("      0x%08x (was 0x%08x) holds 0x%08x, %s + 0x%x"
+                  % (at, original(at), value, m["section"], (value & ~1) - m["old"]))
+    print("  %-48s %d" % ("(bytes of an instruction, not a slot)", in_instructions))
+    print("%d survivors are not explained" % len(unexplained))
+    for at, value, m, why in unexplained[:args.list * 4]:
+        print("  0x%08x (was 0x%08x) holds 0x%08x, %s + 0x%x: %s"
+              % (at, original(at), value, m["section"], (value & ~1) - m["old"], why))
+    return 1 if unexplained else 0
 
 
 if __name__ == "__main__":

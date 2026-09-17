@@ -231,6 +231,7 @@ def boundary_relocations(blob, boundary, layout):
         struct.pack_into("<I", blob, addr - APP_BASE, 0)
         section = layout.at(addr)
         section.relocs.append((addr - section.start, v["symbol"], R_ARM_ABS32))
+        owned.add(addr)
         counts[R_ARM_ABS32] += 1
 
     for e in boundary.get("startup", []):
@@ -317,6 +318,10 @@ def main():
     ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"))
     ap.add_argument("--place", default=os.path.join(SIM, "out", "relink-place.ld"))
     ap.add_argument("--stock", default=os.path.join(SIM, "out", "relink", "stock-defs.o"))
+    ap.add_argument("--layout", choices=("shift", "reverse"),
+                    help="move every text section: `shift` keeps the order and"
+                         " slides it, `reverse` turns it round. The stale-address"
+                         " scan is what this is for.")
     ap.add_argument("--move", action="append", default=[], metavar="SECTION=ADDR",
                     help="place one section elsewhere; the stale-address scan's"
                          " dry run is what this is for")
@@ -327,12 +332,15 @@ def main():
         moves[name] = int(where, 0)
 
     boundary = yaml.safe_load(open(os.path.join(HERE, "boundary.yaml")))
+    manifest = yaml.safe_load(open(os.path.join(HERE, "hwa10.yaml")))
     blob = bytearray(open(args.image, "rb").read())
     if len(blob) != APP_END - APP_BASE:
         sys.exit("%s is %d bytes, the app image is %d"
                  % (args.image, len(blob), APP_END - APP_BASE))
 
     items, refs = objectify.read_export(args.export)
+    with open(os.path.join(args.export, "words.json")) as fh:
+        words = json.load(fh)["words"]
     # Names the boundary owns, and the address each has to be at; the partition
     # must not hand one of them to a function of its own. The library's own
     # names are reserved at NOWHERE, because the partition gave the blob's copy
@@ -352,13 +360,16 @@ def main():
             reserved[e["symbol"]] = NOWHERE
     for v in boundary["data_references"]["vector_table"]:
         reserved[v["symbol"]] = NOWHERE if v.get("relocate") else v["word"] & ~1
+    reads = [(r["site"], r["target"]) for r in refs["pool_reads"]]
     sections, shared, slivers, distant = objectify.build_sections(
-        items, refs["calls"], reserved)
+        items, refs["calls"], reads,
+        [w["addr"] for w in words if w["class"] == "pointer"], reserved)
     layout = objectify.Layout(sections)
 
     owned, boundary_counts = boundary_relocations(blob, boundary, layout)
     counts, unrelocatable, indirect = objectify.internal_relocations(
         blob, layout, refs["calls"], owned)
+    word_counts = objectify.word_relocations(blob, layout, words, owned)
     if unrelocatable:
         for row in unrelocatable[:20]:
             print("0x%x: %s (%d bytes) to 0x%x leaves its section and cannot be"
@@ -372,12 +383,12 @@ def main():
         styp = STT_FUNC if s.kind == "code" else STT_OBJECT
         # ARM ELF carries Thumb-ness in bit 0 of a function symbol's value.
         symbols.add(s.sym, 1 if styp == STT_FUNC else 0, s.index + 1, STB_LOCAL, styp)
-        for addr, label in sorted(s.labels.items()):
+        for (addr, is_func), label in sorted(s.labels.items()):
             # STT_FUNC, because bit 0 only means Thumb on a function symbol: a
             # notype target makes the linker read the call as interworking and
             # plant a veneer.
-            symbols.add(label, (addr - s.start) | (1 if s.kind == "code" else 0),
-                        s.index + 1, STB_LOCAL, styp)
+            symbols.add(label, (addr - s.start) | (1 if is_func else 0), s.index + 1,
+                        STB_LOCAL, STT_FUNC if is_func else STT_OBJECT)
 
     def export(name, addr, styp):
         section = layout.at(addr)
@@ -414,6 +425,15 @@ def main():
             sys.exit("%s is defined in the blob, so the library would never be"
                      " called for it" % name)
 
+    if args.layout:
+        pinned = {int(f["addr"], 0) if isinstance(f["addr"], str) else f["addr"]
+                  for f in manifest["fixed_points"]}
+        for addr in sorted(pinned):
+            if layout.at(addr) is None:
+                sys.exit("fixed point 0x%x is outside the app" % addr)
+        moves, spare = objectify.relayout(sections, args.layout, pinned)
+        print("  layout %s: %d text sections moved, %d bytes of spare flash used"
+              % (args.layout, len(moves), spare - objectify.SPARE_BASE))
     unknown = set(moves) - set(s.sym for s in sections)
     if unknown:
         sys.exit("no section named %s" % ", ".join(sorted(unknown)))
@@ -446,6 +466,9 @@ def main():
           " %d cross-section transfers through a register or a word"
           % (counts[R_ARM_THM_CALL], counts[R_ARM_THM_JUMP24],
              counts[R_ARM_THM_JUMP19], indirect))
+    print("  words: %d R_ARM_ABS32 (%d into code, %d RAM pointers left as"
+          " constants because RAM does not move yet)"
+          % (word_counts["pointer"], word_counts["into_code"], word_counts["ram"]))
     print("  %s, %s (%d stand-in definitions)"
           % (args.place, args.stock, stock))
 

@@ -55,7 +55,7 @@ class Section(object):
         self.start, self.end, self.kind, self.sym = start, end, kind, sym
         self.name = ("%s.%s" % (".text" if kind == "code" else ".rodata", sym))
         self.relocs = []            # (offset, symbol, type)
-        self.labels = {}            # address -> symbol, for interior targets
+        self.labels = {}            # (address, is_function) -> symbol, interior targets
         self.functions = []         # the entry points the section holds
         self.index = 0
 
@@ -135,7 +135,7 @@ class Union(object):
         self.parent[max(a, b)] = min(a, b)
 
 
-def build_sections(items, calls, reserved):
+def build_sections(items, calls, reads, pointer_words, reserved):
     """Cut the cover into sections and name each one.
 
     Two tiles have to share a section when the distance between them is part of
@@ -166,6 +166,7 @@ def build_sections(items, calls, reserved):
                 hi = mid
         return lo - 1
 
+    read_targets = set(t for _, t in reads)
     union, distant_pools = Union(len(tiles)), []
     for row in calls:
         if row["external"] or is_relocatable(base_mnemonic(row["mnemonic"]),
@@ -178,12 +179,26 @@ def build_sections(items, calls, reserved):
     for i, tile in enumerate(tiles):
         if tile[2] is not None and tile[3] == "code":
             owner_tiles.setdefault(tile[2], []).append(i)
-    for i, tile in enumerate(tiles):
-        if tile[3] != "pool" or tile[2] is None:
+    # A pc-relative load carries no relocation, so the word and every
+    # instruction that reads it have to end up at the same distance from each
+    # other as they are now, which means one section. The export names each
+    # reading instruction; a pool read from two functions binds both.
+    # A word that holds an address is one slot, so the four bytes cannot be
+    # split between two sections: the linker would write the relocation into the
+    # first and then copy the second over its tail.
+    for addr in pointer_words:
+        union.join(tile_of(addr), tile_of(addr + 3))
+    for site, target in reads:
+        if abs(site - target) >= LDR_RANGE:
+            distant_pools.append(target)
             continue
-        # The reader is somewhere in the owning function; its range closest to
-        # the pool is the one the pc-relative load can have come from, and only
-        # if the load can reach, which on Thumb-2 is 4 KB forward.
+        union.join(tile_of(site), tile_of(target))
+    for i, tile in enumerate(tiles):
+        if tile[3] != "pool" or tile[2] is None or tile[0] in read_targets:
+            continue
+        # A jump table, or a pool the export attributes to a function without
+        # naming the instruction: the owning function's range closest to it is
+        # the only candidate, and only if a load could reach that far.
         near = min(owner_tiles[tile[2]], key=lambda j: abs(tiles[j][0] - tile[0]))
         if abs(tiles[near][0] - tile[0]) < LDR_RANGE:
             union.join(i, near)
@@ -226,8 +241,8 @@ def build_sections(items, calls, reserved):
             section.functions = owners
             for entry in owners:
                 if entry != lo:
-                    section.labels[entry] = unique(names, reserved,
-                                                   functions[entry]["name"], entry)
+                    section.labels[(entry, True)] = unique(
+                        names, reserved, functions[entry]["name"], entry)
             sections.append(section)
             current = sections[-1]
             continue
@@ -280,14 +295,24 @@ class Layout(object):
         s = self.sections[lo - 1]
         return s if addr in s else None
 
-    def label(self, addr):
-        """The symbol naming `addr`, creating an interior one if it is not a start."""
+    def label(self, addr, thumb=None):
+        """The symbol naming `addr`, creating an interior one if it is not a start.
+
+        `thumb` overrides what the section's kind would say: a word inside a
+        function body is data in a code section, and a symbol that carries the
+        Thumb bit would relocate one byte past it.
+        """
         s = self.at(addr)
         if s is None:
             raise SystemExit("0x%x is outside the cover" % addr)
-        if s.start == addr:
+        is_func = (s.kind == "code") if thumb is None else thumb
+        if s.start == addr and is_func == (s.kind == "code"):
             return s.sym
-        return s.labels.setdefault(addr, "L_%08x" % addr)
+        # The same address can be named twice, once as code and once as the
+        # data the compiler left in the middle of it; Thumb-ness is part of the
+        # symbol, so the two cannot share one.
+        name = "%s_%08x" % ("L" if is_func else "D", addr)
+        return s.labels.setdefault((addr, is_func), name)
 
 
 def base_mnemonic(mnemonic):
@@ -358,9 +383,119 @@ def internal_relocations(blob, layout, calls, skip):
         off = src - APP_BASE
         blob[off], blob[off + 1] = encoding[0] & 0xFF, encoding[0] >> 8
         blob[off + 2], blob[off + 3] = encoding[1] & 0xFF, encoding[1] >> 8
-        from_section.relocs.append((src - from_section.start, layout.label(dst), rtype))
+        # A branch target is code whatever the partition made of the bytes:
+        # a `b.w` into a run Ghidra never disassembled still lands in Thumb
+        # state, and a symbol without bit 0 makes the linker plant a veneer.
+        from_section.relocs.append((src - from_section.start,
+                                    layout.label(dst, thumb=True), rtype))
         counts[rtype] += 1
     return counts, unrelocatable, indirect
+
+
+def word_relocations(blob, layout, words, skip):
+    """Every word the classification calls a pointer, as an R_ARM_ABS32.
+
+    The symbol names the exact target rather than the enclosing item, so the
+    addend is always zero and the word is blanked: an interior pointer is then a
+    label in the item's section, which is the same thing the linker would
+    compute from symbol-plus-addend and leaves nothing for a sign or an
+    alignment to go wrong in. Bit 0 of a function symbol is what carries
+    Thumb-ness, so a word that names data inside a code section has to take a
+    symbol that is not one.
+
+    Words the boundary already relocated are skipped: the vector table's kernel
+    entries resolve to the source build, not to the blob's own copy.
+    """
+    counts = {"pointer": 0, "into_code": 0, "ram": 0}
+    for row in words:
+        if row["class"] != "pointer" or row["addr"] in skip:
+            continue
+        section = layout.at(row["addr"])
+        if section is None or row["addr"] + 4 > section.end:
+            raise SystemExit("word 0x%x is not inside one section" % row["addr"])
+        sym = layout.label(row["target"], thumb=row["thumb_target"])
+        off = row["addr"] - APP_BASE
+        blob[off:off + 4] = b"\0\0\0\0"
+        section.relocs.append((row["addr"] - section.start, sym, R_ARM_ABS32))
+        counts["pointer"] += 1
+        counts["into_code"] += 1 if row["in_code"] else 0
+    counts["ram"] = sum(1 for r in words if r["signal"] == "ram")
+    return counts
+
+
+SPARE_BASE, SPARE_END = 0xF1180, 0xFC000
+
+
+def residue(section):
+    """The address modulo 4 a section has to keep.
+
+    A literal pool is read with a pc-relative load that rounds the program
+    counter down to a word, and a `tbb`/`tbh` table is indexed from the
+    instruction, so every offset inside a section has to keep its alignment as
+    well as its distance. Preserving the section's own address modulo 4 is what
+    makes that true for everything inside it at once, and it costs at most three
+    bytes per section.
+    """
+    return section.start % 4
+
+
+def relayout(sections, mode, pinned):
+    """Give every text section a new address, and prove none keeps its old one.
+
+    Data does not move in this step, so the space the text may use is exactly
+    the space it uses now: the intervals the text sections cover, plus the free
+    flash after the image for whatever alignment costs. The two modes are the
+    two ways of being sure a stale address cannot survive by luck: `shift` keeps
+    the order and starts one word further in, so every section slides; `reverse`
+    puts the last function first, so nothing is near where it was.
+    """
+    movable = [s for s in sections if s.kind == "code" and s.start not in pinned]
+    if not movable:
+        raise SystemExit("no text section to move")
+    free = []
+    for s in sorted(movable, key=lambda s: s.start):
+        if free and free[-1][1] == s.start:
+            free[-1][1] = s.end
+        else:
+            free.append([s.start, s.end])
+    free.append([SPARE_BASE, SPARE_END])
+    if mode == "shift":
+        order, free[0][0] = sorted(movable, key=lambda s: s.start), free[0][0] + 4
+    elif mode == "reverse":
+        order = sorted(movable, key=lambda s: -s.start)
+    else:
+        raise SystemExit("unknown layout %r" % mode)
+
+    # First fit over the whole free list rather than a single cursor: the text
+    # is cut into intervals by the data between them, and a cursor that gives up
+    # on an interval as soon as one section does not fit wastes its tail. The
+    # spare flash is last in the list, so it is only used for what the image's
+    # own space cannot hold.
+    moves = {}
+    for s in order:
+        size, want = s.end - s.start, residue(s)
+        for interval in free:
+            at = interval[0] + (want - interval[0]) % 4
+            if at == s.start:
+                # The point of the layout is that no function keeps its
+                # address, so the one address this section may not have is its
+                # own; the next slot up is still in the same interval.
+                at += 4
+            if at + size <= interval[1]:
+                moves[s.sym] = at
+                interval[0] = at + size
+                break
+        else:
+            raise SystemExit("the text does not fit: %s needs %d bytes"
+                             % (s.sym, size))
+    kept = [s.sym for s in movable if moves[s.sym] == s.start]
+    if kept:
+        raise SystemExit("%d text sections keep their address under %s: %s"
+                         % (len(kept), mode, ", ".join(kept[:5])))
+    spare = max((a + (s.end - s.start) for s, a in
+                 ((s, moves[s.sym]) for s in movable) if a >= SPARE_BASE),
+                default=SPARE_BASE)
+    return moves, spare
 
 
 def placement(sections, moves, path, obj):
@@ -369,8 +504,10 @@ def placement(sections, moves, path, obj):
     One `. = <addr>` per section: if a section ever grows, the location counter
     moves backwards and the link fails instead of silently shifting the image.
     Everything not in `moves` keeps its original address, which is what makes
-    the link byte-identical; a moved section goes to `.blobmoved` in the region
-    the caller reserved for it, in the address order the moves ask for.
+    the link byte-identical; the placements are emitted in address order, so a
+    layout that permutes the text is the same fragment with different numbers.
+    What does not fit in the image's own span goes to `.blobmoved` in the free
+    flash after it.
 
     Each placement names the blob object: the partition's names include the
     library ones the blob carries its own copy of, so a bare `*(.text.<name>)`
@@ -378,20 +515,24 @@ def placement(sections, moves, path, obj):
     section the location counter runs from the section's start, so the
     placements are offsets and the comment carries the address.
     """
-    stay = [s for s in sections if s.sym not in moves]
-    moved = sorted((moves[s.sym], s) for s in sections if s.sym in moves)
+    placed = sorted((moves.get(s.sym, s.start), s) for s in sections)
+    image = [(a, s) for a, s in placed if a < APP_END]
+    spare = [(a, s) for a, s in placed if a >= APP_END]
+    for (a, s), (b, t) in zip(image, image[1:]):
+        if a + (s.end - s.start) > b:
+            raise SystemExit("%s at 0x%x overlaps %s at 0x%x" % (s.sym, a, t.sym, b))
     with open(path, "w") as fh:
         fh.write("/* Generated by abi/blobify.py, do not edit: where each of the app's"
                  " sections goes. */\n")
         fh.write(".blob 0x%08x :\n{\n" % APP_BASE)
-        for s in stay:
+        for at, s in image:
             fh.write("  . = 0x%06x; KEEP(%s(%s))   /* 0x%08x */\n"
-                     % (s.start - APP_BASE, obj, s.name, s.start))
+                     % (at - APP_BASE, obj, s.name, at))
         fh.write("  . = 0x%06x;\n} > APP\n" % (APP_END - APP_BASE))
-        if not moved:
+        if not spare:
             return
-        fh.write(".blobmoved 0x%08x :\n{\n" % moved[0][0])
-        for at, s in moved:
+        fh.write(".blobmoved 0x%08x :\n{\n" % spare[0][0])
+        for at, s in spare:
             fh.write("  . = 0x%06x; KEEP(%s(%s))   /* 0x%08x */\n"
-                     % (at - moved[0][0], obj, s.name, at))
-        fh.write("} > MOVED\n")
+                     % (at - spare[0][0], obj, s.name, at))
+        fh.write("} > LIB\n")

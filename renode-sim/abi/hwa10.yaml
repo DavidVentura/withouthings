@@ -341,3 +341,28 @@ table_structs:
   - name: flash_id
     fields: [[u32, jedec_id], ["u8[12]", params]]
     notes: params are not decoded; only jedec_id is matched
+
+fixed_points:
+  # Sections whose address is part of a contract with something outside the app,
+  # so no layout may move them. Everything else in the image is free to go
+  # wherever the linker puts it.
+  - addr: 0x27000
+    name: app_vector_table
+    read_by: MBR, SoftDevice, bootloader
+    notes: >
+      The application's vector table. The SoftDevice forwards every interrupt
+      through the table at the base it is given, the bootloader boots the app by
+      reading the initial MSP and the reset entry from the first two words, and
+      the linked library's port.c reads the same table for the main stack top.
+      0x27000 is also the size field of the MBR/SoftDevice structure, which is
+      why the app links there in the first place.
+  - addr: 0xf1178
+    name: fw_version_trailer
+    read_by: bootloader, phone
+    notes: >
+      The u32 firmware version at the end of the image, preceded by the build
+      string; get_fw_version (0x36e70) returns it and the WPP probe reply carries
+      it, and tools/mkpkg.py rewrites it in place to build a package with a
+      different version. FIRMWARE.md's update section is the evidence: a package
+      that changes only this word and the header's version field installs and is
+      reported back.

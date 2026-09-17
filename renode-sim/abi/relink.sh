@@ -72,8 +72,13 @@ done
 # linking against anything else; this writes $OUT/appl-blob.o and the two
 # generated fragments the real link then reuses.
 ./identity.sh
-"$GCC-ld" -L ../out -T relink.ld --gc-sections -o "$OUT/relinked.elf" "$OUT/appl-blob.o" $objs
-"$GCC-objcopy" -O binary --only-section=.libtext "$OUT/relinked.elf" "$OUT/libtext.bin"
-"$GCC-objcopy" -O binary --only-section=.blob "$OUT/relinked.elf" "$OUT/blob.bin"
+# LAYOUT=shift|reverse re-cuts the same object with every text section moved;
+# the identity link above still ran first, so the cutting is proven either way.
+if [ -n "${LAYOUT:-}" ]; then
+    python3 blobify.py -o "$OUT/appl-blob.o" --layout "$LAYOUT"
+fi
+"$GCC-ld" -L ../out -T relink.ld ${GC:---gc-sections} --emit-relocs -o "$OUT/relinked.elf" \
+    "$OUT/appl-blob.o" $objs
+"$GCC-objcopy" -O binary --gap-fill 0xff "$OUT/relinked.elf" "$OUT/appl.bin"
 "$GCC-size" -A "$OUT/relinked.elf"
 python3 relink_image.py

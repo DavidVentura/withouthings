@@ -44,34 +44,38 @@ def section_address(path, name):
 def main():
     out_dir = os.path.join(SIM, "out", "relink")
     image = bytearray(open(os.path.join(SIM, "flash.bin"), "rb").read())
-    blob = open(os.path.join(out_dir, "blob.bin"), "rb").read()
-    lib = open(os.path.join(out_dir, "libtext.bin"), "rb").read()
+    # One binary for everything the link allocated, gaps filled with the erased
+    # byte: under a moved layout the app's own span, the text that did not fit
+    # back into it and the library are three runs, not two, and only the linker
+    # knows where the boundaries fell.
+    appl = open(os.path.join(out_dir, "appl.bin"), "rb").read()
 
+    blob_base = section_address(os.path.join(out_dir, "relinked.elf"), ".blob")
     lib_base = section_address(os.path.join(out_dir, "relinked.elf"), ".libtext")
-    if APP_BASE + len(blob) != APP_END:
-        sys.exit("blob ends at 0x%x, not the app image end 0x%x"
-                 % (APP_BASE + len(blob), APP_END))
-    if not APP_END <= lib_base < APP_END + 0x100:
-        sys.exit("the library is linked at 0x%x, not just past the app end 0x%x"
-                 % (lib_base, APP_END))
-    if lib_base + len(lib) > LIB_LIMIT:
-        sys.exit("library runs to 0x%x, the bootloader starts at 0x%x"
-                 % (lib_base + len(lib), LIB_LIMIT))
-    if any(b != 0xFF for b in image[lib_base:lib_base + len(lib)]):
-        sys.exit("LIBRARY_FLASH at 0x%x is not erased in flash.bin" % lib_base)
+    if blob_base != APP_BASE:
+        sys.exit("the app is linked at 0x%x, not 0x%x" % (blob_base, APP_BASE))
+    if len(appl) < APP_END - APP_BASE:
+        sys.exit("the link covers 0x%x bytes, less than the app image's 0x%x"
+                 % (len(appl), APP_END - APP_BASE))
+    if APP_BASE + len(appl) > LIB_LIMIT:
+        sys.exit("the image runs to 0x%x, the bootloader starts at 0x%x"
+                 % (APP_BASE + len(appl), LIB_LIMIT))
+    if any(b != 0xFF for b in image[APP_END:APP_BASE + len(appl)]):
+        sys.exit("the flash past the app image at 0x%x is not erased in flash.bin"
+                 % APP_END)
 
-    image[APP_BASE:APP_BASE + len(blob)] = blob
-    image[lib_base:lib_base + len(lib)] = lib
+    lib = appl[lib_base - APP_BASE:]
+    image[APP_BASE:APP_BASE + len(appl)] = appl
 
     path = os.path.join(SIM, "out", "flash-relinked.bin")
     with open(path, "wb") as f:
         f.write(image)
     part = os.path.join(SIM, "out", "appl-relinked.bin")
     with open(part, "wb") as f:
-        f.write(image[APP_BASE:lib_base + len(lib)])
+        f.write(appl)
     print("%s (library %d bytes at 0x%x)" % (path, len(lib), lib_base))
     print("%s (%d bytes, 0x%x..0x%x)"
-          % (part, lib_base + len(lib) - APP_BASE, APP_BASE, lib_base + len(lib)))
+          % (part, len(appl), APP_BASE, APP_BASE + len(appl)))
 
 
 if __name__ == "__main__":

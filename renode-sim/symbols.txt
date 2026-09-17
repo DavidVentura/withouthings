@@ -295,3 +295,30 @@
 0x00034938  app_reset_entry              application Reset_Handler
 0x000fe28c  bl_reads_resetreas           bootloader: POWER.RESETREAS first; 0 = power-on discards the RAM control block
 0x000fe4d0  bl_spi_legacy_wait           bootloader drives SPI2 through the legacy SPI registers (TXD 0x51C, RXD 0x518, EVENTS_READY 0x108)
+
+# --- WPPS TLS tunnel to Withings, traced (2026-09-17): picotls + Ed25519 client cert, mbedTLS only parses X.509 ---
+0x00038d68  wpps_tls_driver              TLS record state machine; ctx+0x11c: 0 idle, 1 handshaking, 2 established; single caller wpp_bytes_received
+0x00038a60  wpp_packet_handler           plain WPP parser; both the WPP_V2 path and decrypted WPPS plaintext land here (shared dispatch table)
+0x00038a30  wpp_send_gate                returns -1 while WPPS is subscribed and the tunnel is not established; a stub must keep sends allowed when unsubscribed
+0x00038f90  wpps_flush                   pops queued WPP frames, ptls_send, notifies ciphertext over WPPS in MTU-3 fragments
+0x00039124  wpps_established             ctx[0x11c] == 2; gates CMD_BOOTSTRAP_REDIRECT 2443 and CMD_BOOTSTRAP_REBOOT 2444
+0x0007da34  wpps_control_frame_parse     first record in state 0: WPP frame cmd 2495 (CMD_TLS_SNI) with Version 2401 + WppString 519 = account id ("account:<id>" in v1), max 0x54 bytes
+0x000553b4  wpps_build_sni               "hwa10-bs%s.withings.net" with "wpp", or "%s.%s" from the stored redirect (dblib IE 0x141, 0x50 bytes)
+0x00046a10  tls_load_client_cert_key     dblib IE 0x12b client cert [u16 len][DER] <= 0x202, IE 0x12c key 0x40 bytes (Ed25519 seed||pub); factory perso only, no in-app setter
+0x00046980  ptls_verify_certificate_cb   picotls callback, one of the two roots of the 17 mbedTLS functions
+0x00046860  ed25519_verify               picotls callback ("Certificate Verify FAILURE")
+0x0005abbc  perso_crt_verify             factory shell crt= ingest and check ([CRTVFY]); the other mbedTLS root
+0x0005a61c  perso_csr_emit               factory shell csr= (BEGIN CERTIFICATE REQUEST, hmac=)
+0x00072bdc  ptls_new                     result at ctx+0x174
+0x0009e05e  ptls_set_server_name
+0x00072ac0  ptls_handshake               0x202 = PTLS_ERROR_IN_PROGRESS -> "Handshake started"
+0x0009e284  ptls_receive
+0x00072c50  ptls_send
+0x000717bc  ptls_send_alert
+0x000388e4  wpps_tls_cleanup             "TLS Cleanup"
+0x00095562  sha1_update                  standalone SHA-1, not mbedTLS; callers: association answer (0x395dc), auth (0x6c59c), update digest (0x64ddc)
+0x0009560e  sha1_final
+0x0009712a  ed25519_sign                 callers: csr shell command, CMD_DEVICE_CHALLENGE, picotls sign_certificate callbacks (0x9749e, 0x9d7fc)
+0x0006d50c  wpp_device_challenge         CMD_DEVICE_CHALLENGE 2482: signs [len][challenge][32-byte nonce] with IE 0x12c, returns 64-byte signature in chunks
+0x000554c8  wpp_bootstrap_redirect       CMD_BOOTSTRAP_REDIRECT 2443: BootstrapRedirect 2467 (ws_error_code 293 redirect/223/207), CertDer 2468 buffered, Null 256 finalises; persists subdomains to IE 0x141
+0x000555e8  wpp_bootstrap_reboot         CMD_BOOTSTRAP_REBOOT 2444: ack then reboot ~1 s later, reason 0x21
