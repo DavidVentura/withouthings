@@ -36,11 +36,12 @@ groups:
   - group: shell_cmd_table
     derive: shell_cmd_table
     evidence: >
-      The UART shell's table at 0x270f8, 79 rows of the same shape with a hashed
-      key and a lowercase command word; abi/autonames.yaml's `shell` class is
-      built from it. The geometry is here rather than in abi/hwa10.yaml because
-      the manifest does not carry this table.
-    table: {address: 0x270f8, count: 79, stride: 12}
+      abi/hwa10.yaml shell_cmd_table: 79 rows of {const char *name, run, help}
+      at 0x27100, the pair of pool words every reader of the table loads
+      (0x5a270 holds the head and 0x5a274 the end) with the reader's own stride
+      of 12. Both entry points are roots: the walk at 0x5a224 calls +4 for the
+      command and +8 for "--help". abi/autonames.yaml's `shell` class is built
+      from the same rows.
 
   - group: i2c_device_table
     derive: i2c_device_table
@@ -133,8 +134,8 @@ features:
 
   - feature: shell_command_table
     evidence: >
-      The 79 rows of shell_cmd_table 0x270f8 as one feature: the whole UART
-      debug console, removed by dropping every row's handler.
+      The 79 rows of shell_cmd_table 0x27100 as one feature: the whole UART
+      debug console, removed by dropping both entry points of every row.
     remove_groups: [shell_cmd_table]
 
   - feature: wpp_command_table

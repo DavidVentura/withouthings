@@ -278,12 +278,25 @@ tables:
       the head. abi/autonames.py walks it in both directions from there and
       stops where the row stops being {command id, odd handler in the image,
       pointer to a printable name}; the row above the head belongs to the
-      shell's own table (0x270f8, 79 rows, same shape but a large opaque key
-      and a lowercase command word). Each row's name string is the handler's
+      shell's own table (0x27100, 79 rows, a different shape: the command word
+      first and two entry points after it). Each row's name string is the handler's
       source name, which is where abi/autonames.yaml's wppcmd class comes from.
       No literal-pool reference to the table exists in the image, so the walker
       reaches it some other way; replacing a handler word in place works
       regardless (proven by diverting the battery handler to a logging hook).
+  - name: shell_cmd_table
+    address: 0x27100
+    entry: shell_cmd_entry
+    stride: 12
+    count: 79
+    notes: >
+      the UART debug console's dispatch, sorted by command word so the walk can
+      stop early. Head and end are the pair of literal-pool words every reader
+      loads (0x27100 and 0x274b4 at 0x59cb8, 0x5a020, 0x5a134 and 0x5a270), and
+      the stride is the reader's own `adds r5, #0xc` / `ldr r1, [r4], #12`; the
+      end is where wpp_cmd_table begins, so the two tables abut. An earlier
+      reading put the head at 0x270f8, which is inside the vector table and
+      shifted every row's name onto the previous row's handler.
   - name: i2c_device_table
     address: 0xb22c4
     entry: i2c_device
@@ -333,6 +346,12 @@ table_structs:
     notes: >
       handler has the Thumb bit set and name points at the handler's source
       name; abi/autonames.py walks the table on exactly that shape.
+  - name: shell_cmd_entry
+    fields: [[const char *, name], [void *, run], [void *, help]]
+    notes: >
+      both entry points carry the Thumb bit as stored. The walk at 0x5a224
+      strcmps the argument against +0, calls +4 with (argc, argv), and calls +8
+      instead when any argument is "--help" (0x5a278).
   - name: i2c_device
     fields: [[void *, bus], [u32, addr], [u32, unknown], [void *, fn0],
              [void *, fn1], [void *, fn2], [void *, fn3]]

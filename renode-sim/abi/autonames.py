@@ -18,8 +18,8 @@ Five classes, in order of certainty:
            image's `[MODULE][%s] ...` lines are __func__ logging.
   wppcmd   the WPP dispatch table stores {id, handler, name} per row and the
            name is a C identifier, so each handler is named by its own row.
-  shell    the UART debug shell's command table, which abuts the WPP one and has
-           the same shape, names each command's handler the same way.
+  shell    the UART debug shell's command table, which abuts the WPP one; its
+           row is {name, run, --help} and names both of a command's entries.
 
 Nothing here guesses: every entry carries the evidence that produced it, and
 abi/gen.py refuses any name that contradicts hwa10.yaml or matches.yaml.
@@ -459,22 +459,52 @@ def wpp_command_names(img, protocol):
     return dispatch_names(img, rows, "wppcmd", "", "wpp_cmd_table", protocol), rows
 
 
+def read_shell_row(img, addr):
+    """{name, run, help} for a shell row, or None if this is not one.
+
+    The shell's row is not the WPP one: 0x5a224's walk compares `[r5]` against
+    the typed word with strcmp, calls `[r5+4]` with (argc, argv) and `[r5+8]`
+    when an argument is "--help", so the columns are {name, run, help}.
+    """
+    namep, run, help_ = img.word(addr), img.word(addr + 4), img.word(addr + 8)
+    if None in (namep, run, help_):
+        return None
+    for fn in (run, help_):
+        if not (img.base <= fn < img.end) or not fn & 1:
+            return None
+    label = img.string(namep, limit=80)
+    if label is None or not SHELL_NAME.match(label.decode(errors="replace")):
+        return None
+    return {"address": addr, "text": label.decode(),
+            "run": run & ~1, "help": help_ & ~1}
+
+
+def walk_shell_table(img, anchor):
+    """Every shell row of the table the anchor sits in, extending both ways."""
+    a = anchor
+    while read_shell_row(img, a - TABLE_STRIDE):
+        a -= TABLE_STRIDE
+    rows = []
+    while True:
+        r = read_shell_row(img, a)
+        if not r:
+            break
+        rows.append(r)
+        a += TABLE_STRIDE
+    return rows
+
+
 def shell_command_names(img):
     """The UART debug shell's command table, which abuts the WPP one.
 
-    Its rows have the same shape but a large opaque key and a lowercase command
-    word; the word is the shell command, so the handler is that command's.
+    Its rows carry the command word and the command's two entry points, so each
+    row names both. The table is found, not assumed: the longest run of rows of
+    this shape in the image is it, and nothing else comes close.
     """
-    def accept(r):
-        return r["key"] >= WPP_ID_MAX and SHELL_NAME.match(r["text"])
-
-    # The table is found, not assumed: the longest run of rows of this shape in
-    # the image is it, and nothing else in the image comes close.
     best, addr = [], img.base
     while addr < img.base + 0x8000:
-        r = read_row(img, addr)
-        if r and accept(r):
-            run = walk_table(img, addr, accept)
+        if read_shell_row(img, addr):
+            run = walk_shell_table(img, addr)
             if len(run) > len(best):
                 best = run
             addr = run[-1]["address"] + TABLE_STRIDE
@@ -482,7 +512,21 @@ def shell_command_names(img):
             addr += 4
     if len(best) < 20:
         return [], []
-    return dispatch_names(img, best, "shell", "shell_cmd_", "shell_cmd_table", {}), best
+    counts = collections.Counter(r["text"] for r in best)
+    if counts.most_common(1)[0][1] != 1:
+        sys.exit("autonames: shell command %r appears twice"
+                 % counts.most_common(1)[0][0])
+    cand = []
+    for r in best:
+        ev = "shell_cmd_table row 0x%x: command %r" % (r["address"], r["text"])
+        cand.append((r["run"], "shell_cmd_" + r["text"], ev + ", run slot (+4)"))
+        cand.append((r["help"], "shell_help_" + r["text"], ev + ", --help slot (+8)"))
+    # Several rows share one entry point (help and ls, exit and factory_reset):
+    # a shared body is not any one command's, so it goes unnamed here.
+    uses = collections.Counter(a for a, _, _ in cand)
+    shared = {a for a, n in uses.items() if n > 1}
+    return [{"address": a, "name": n, "class": "shell", "evidence": e}
+            for a, n, e in cand if a not in shared], best
 
 
 CMD_CONST = re.compile(r'^\s*(\d+)\s*=>\s*Some\("([A-Za-z_][A-Za-z0-9_]*)"\)', re.M)

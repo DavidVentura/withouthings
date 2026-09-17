@@ -247,25 +247,42 @@ def rule_tasks(export, image, group, spec):
 
 
 def rule_command_table(export, image, group, spec, table, prefix):
-    """One root per dispatch-table row: {key, handler|1, name}.
+    """One root per function slot of a dispatch-table row.
 
     A row is a root because the walker reaches the table without a reference the
     object can see (hwa10.yaml: no literal pool holds the wpp table's address),
-    so per-command exclusivity is only computable if each row stands alone.
+    so per-command exclusivity is only computable if each row stands alone. The
+    columns come from the row struct the manifest declares, so the WPP table's
+    {id, handler, name} and the shell's {name, run, help} read the same way.
     """
     spec = spec.get("table") or export.tables[table]
+    fields = export.structs[spec["entry"]]["fields"]
     roots = []
     for i in range(spec["count"]):
         row = spec["address"] + i * spec["stride"]
-        key, handler, label = export.word(row), export.word(row + 4), export.word(row + 8)
-        if not handler & 1 or not export.in_image(handler):
-            raise SystemExit("%s row 0x%x holds no handler" % (table, row))
-        entry = handler & ~1
-        name = export.named.get(entry) or export.string(label) or "%s_%x" % (prefix, entry)
-        roots.append(Root(group, name, entry,
-                          "%s row 0x%08x: key %d, label %r"
-                          % (table, row, key, export.string(label)), None, image,
-                          command=key, entry=row))
+        cols = {fname: export.word(row + 4 * j)
+                for j, (_, fname) in enumerate(fields)}
+        types = {fname: ftype for ftype, fname in fields}
+        key = next((cols[f] for f, t in types.items() if t == "u32"), None)
+        label = next((export.string(cols[f]) for f, t in types.items()
+                      if t == "const char *"), None)
+        slots = [f for f, t in types.items() if t == "void *"]
+        for fname in slots:
+            handler = cols[fname]
+            if not handler & 1 or not export.in_image(handler):
+                raise SystemExit("%s row 0x%x holds no handler in %s"
+                                 % (table, row, fname))
+            entry = handler & ~1
+            name = export.named.get(entry)
+            if not name:
+                name = label or "%s_%x" % (prefix, entry)
+                if len(slots) > 1:
+                    name = "%s_%s" % (name, fname)
+            roots.append(Root(
+                group, name, entry,
+                "%s row 0x%08x field %s = 0x%08x: key %s, label %r"
+                % (table, row, fname, handler, key, label),
+                None, image, command=key, entry=row))
     return roots
 
 
