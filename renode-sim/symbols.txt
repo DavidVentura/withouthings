@@ -183,7 +183,7 @@
 0x0007de34  saadc_channel_init
 0x0007df40  saadc_buffer_convert
 0x000a4e52  adc_read_one                 channel init + 1-sample convert; keeps sample if >= 0
-0x000400b4  battery_adc_read             AIN0; the x6/x5/x4/x3/x2 gain adaptation is gated on product id 0x280010 @0x400be
+0x000400b4  battery_adc_value_gain_adaptation  its own __func__ (autonames); AIN0; the x6/x5/x4/x3/x2 gain adaptation is gated on product id 0x280010 @0x400be
 0x00036c8c  HardFault_Handler_app        wlog register dump, [STACKDUMP], then SYSRESETREQ
 0x00056e8e  wlog_putchar                 (already above) sim hooks this to print the watch log
 
