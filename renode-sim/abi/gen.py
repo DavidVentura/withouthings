@@ -259,7 +259,7 @@ def main():
         check_unique(seen_fn, fn["address"], fn["name"], "derived function")
         ld.append("PROVIDE(%s = 0x%x | 1);" % (fn["name"], fn["address"]))
         if fn.get("proto"):
-            h.append("/* %s */" % fn["header"])
+            h.append("/* %s */" % fn.get("header", fn.get("proto_derived", fn["class"])))
             h.append("extern %s" % fn["proto"])
     h += ["#endif", "", "#endif"]
 

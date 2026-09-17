@@ -4,7 +4,7 @@
     python3 abi/autonames.py                  # every class, writes abi/autonames.yaml
     python3 abi/autonames.py --classes svc    # one class
 
-Five classes, in order of certainty:
+Nine classes, in order of certainty:
 
   svc      a `svc #N; bx lr` body is the SoftDevice call whose SVC number is N,
            and the S140 headers give the number and the exact prototype.
@@ -20,6 +20,18 @@ Five classes, in order of certainty:
            name is a C identifier, so each handler is named by its own row.
   shell    the UART debug shell's command table, which abuts the WPP one; its
            row is {name, run, --help} and names both of a command's entries.
+  logtag   the same logging, with the format already expanded: a `[tag]` that is
+           a snake_case C identifier rather than a module name is __func__.
+  logcb    a log line that opens with an identifier ending _cb, _callback,
+           _handler or _isr, which is a name no variable carries.
+  bleevt   the BLE event dispatcher switches on the SoftDevice event id through
+           a `tbh` table, so each case names its handler out of the S140 event
+           enumerations (symbols.txt confirms four cases independently).
+  helper   a function only one dispatch-table handler calls is that command's
+           private helper and takes its name with an index.
+
+The same log tags give a module partition (which file a function came from),
+which abi/out/ghidra/modules.json carries and every entry above records.
 
 Nothing here guesses: every entry carries the evidence that produced it, and
 abi/gen.py refuses any name that contradicts hwa10.yaml or matches.yaml.
@@ -71,6 +83,10 @@ EXT_ARCHIVES = [
 ]
 # Built from source by abi/refbuild.sh, one directory per variant.
 EXT_VARIANTS = ["mbedtls_Os", "mbedtls_O2"]
+
+# Which class names an address when two reach it; earlier wins. See main().
+CLASS_RANK = ["svc", "libc", "extlib", "wppcmd", "shell", "string", "logtag",
+              "logcb", "bleevt", "helper"]
 
 INSN = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2,4} )+)\s*\t(\S+)\s*(.*)$")
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -338,54 +354,511 @@ def prototypes(names, roots):
     return protos
 
 
-# ------------------------------------------------------------- class: string
+# -------------------------------------------------- the Ghidra partition
 
-def string_names(img):
-    """Functions that log their own name through wlog's first vararg.
+class Export:
+    """The partition abi/ghidra/analyze.sh exports, as the call graph and the
+    function boundaries the logging classes attribute their evidence to.
 
-    The image's logging convention is `wlog("[MODULE][%s] ...", __func__)`, so a
-    bare snake_case identifier arriving in r1 at a wlog call is the name of the
-    function making the call. Only identifiers that exactly one function uses
-    this way are taken: a shared string is a value, not a name.
+    The `bl`-target ownership Image gives is a fallback: it merges a function
+    into the one before it whenever nothing calls the later one with a `bl`,
+    which is how a tail-called or table-only handler loses its log lines to its
+    neighbour. The export's function ranges are the real boundaries.
+    """
+
+    def __init__(self, outdir, prior=()):
+        import json
+        # The export is seeded from the last run of this script, so a name it
+        # already carries may be one of ours; those addresses are still open to
+        # derivation, or every class would name a function once and never again.
+        self.prior = set(prior)
+        self.ok = os.path.isdir(outdir) and os.path.exists(os.path.join(outdir, "items.json"))
+        if not self.ok:
+            return
+        items = json.load(open(os.path.join(outdir, "items.json")))
+        refs = json.load(open(os.path.join(outdir, "references.json")))
+        self.fns = {f["start"]: f for f in items["functions"]}
+        self._starts, self._ends, self._fn = [], [], []
+        for r in sorted(items["function_ranges"], key=lambda r: r["start"]):
+            self._starts.append(r["start"])
+            self._ends.append(r["end"])
+            self._fn.append(r["function"])
+        self.callers = collections.defaultdict(set)
+        self.callees = collections.defaultdict(set)
+        for c in refs["calls"]:
+            a, b = c["function"], c["to"]
+            if c["kind"] != "call" or a == b or a not in self.fns or b not in self.fns:
+                continue
+            self.callers[b].add(a)
+            self.callees[a].add(b)
+        try:
+            self.word_uses = json.load(open(os.path.join(outdir, "word_uses.json")))["uses"]
+        except (OSError, KeyError):
+            self.word_uses = []
+
+    def owner(self, addr):
+        i = bisect.bisect_right(self._starts, addr) - 1
+        if i < 0 or addr >= self._ends[i]:
+            return None
+        return self._fn[i]
+
+    def unnamed(self, fn):
+        """Whether the image, not a previous run of this script, names it.
+
+        Ghidra's own placeholder, or an address the last run of this script
+        derived a name for."""
+        name = self.fns.get(fn, {}).get("name", "")
+        return fn in self.prior or name.startswith(("FUN_", "thunk_FUN_"))
+
+    def size(self, fn):
+        return self.fns.get(fn, {}).get("bytes", 0)
+
+
+# ------------------------------------------------- the wlog call sites
+
+# fmt register per entry point, from symbols.txt: 0x50ca8 takes the format in
+# r2 (a level and a tag precede it), the rest in r0.
+WLOG_FMT_REG = {0x8F460: 0, 0x8F494: 0, 0x9B1C8: 0, 0x5E7A8: 0, 0x50CA8: 2}
+# %-conversion, less the literal %%; the group is the conversion character.
+SPEC = re.compile(r"%(?:[-+ #0]*)(?:\*|\d+)?(?:\.(?:\*|\d+))?(?:hh|h|ll|l|j|z|t|L)?"
+                  r"([diouxXeEfgGaAcspn%])")
+LOG_TAG = re.compile(r"^\[([^\]]{1,24})\]")
+
+
+def wlog_sites(img, ex):
+    """Every wlog call whose format string the straight-line setup resolves.
+
+    One pass back over the run of instructions that sets up the call, recording
+    the pool string each argument register was last loaded with; a prior call
+    ends the walk because AAPCS lets it clobber the argument registers.
     """
     sites = []
     for i, (addr, mnem, ops) in enumerate(img.insns):
         if mnem not in ("bl", "bl.w"):
             continue
         t = re.search(r"0x([0-9a-f]+)", ops.split("@")[0])
-        if not t or int(t.group(1), 16) not in WLOG_R0:
+        if not t or int(t.group(1), 16) not in WLOG_FMT_REG:
             continue
-        # Walk back over the straight-line run that sets up the call.
+        entry = int(t.group(1), 16)
         regs = {}
-        for j in range(i - 1, max(-1, i - 14), -1):
+        for j in range(i - 1, max(-1, i - 24), -1):
             _, m2, o2 = img.insns[j]
-            if m2 in ("bl", "bl.w", "b", "b.w", "bx", "pop"):
+            if m2 in ("bl", "bl.w", "blx", "b", "b.w", "bx", "pop"):
                 break
             r = re.match(r"^(r\d+),", o2)
-            if m2.startswith("ldr") and r and r.group(1) not in regs:
-                s = img.pool_string(o2)
-                if s is not None:
-                    regs[r.group(1)] = s
-        fmt, arg = regs.get("r0"), regs.get("r1")
-        if fmt and arg and b"%s" in fmt and FUNC_IDENT.match(arg):
-            sites.append((img.owner(addr), arg, fmt, addr))
+            if not r or r.group(1) in regs:
+                continue
+            regs[r.group(1)] = img.pool_string(o2) if m2.startswith("ldr") else None
+        fmt = regs.pop("r%d" % WLOG_FMT_REG[entry], None)
+        if fmt is None:
+            continue
+        sites.append({"site": addr, "fn": ex.owner(addr) if ex.ok else img.owner(addr),
+                      "entry": entry, "fmt": fmt.decode("latin1"), "args": regs})
+    return sites
 
-    by_fn, by_ident = collections.defaultdict(set), collections.defaultdict(set)
-    for fn, arg, _, _ in sites:
-        by_fn[fn].add(arg)
-        by_ident[arg].add(fn)
+
+def log_tag(fmt):
+    """The `[MODULE]` a format string opens with, normalised, or None."""
+    m = LOG_TAG.match(fmt)
+    if not m or "%" in m.group(1):
+        return None
+    tag = re.sub(r"[^A-Za-z0-9]+", "_", m.group(1)).strip("_").upper()
+    return tag or None
+
+
+def log_modules(ex, sites):
+    """Which module each function belongs to, from the log tags, on a fixpoint.
+
+    A function that logs under a tag belongs to that module. A function that
+    logs under none belongs to the module of its callers when every caller is in
+    one and the same module: a private helper is part of whatever calls it, and
+    a function two modules share is claimed by neither. Nothing else propagates,
+    so the partition is what the tags plus the call graph prove and no more.
+    """
+    tags = collections.defaultdict(collections.Counter)
+    for s in sites:
+        tag = log_tag(s["fmt"])
+        if tag and s["fn"] is not None:
+            tags[s["fn"]][tag] += 1
+    mod, direct = {}, {}
+    for fn, counts in tags.items():
+        top = counts.most_common()
+        # A function that logs under two tags equally is on a boundary; only a
+        # strict majority claims it.
+        if len(top) == 1 or top[0][1] > top[1][1]:
+            mod[fn] = direct[fn] = top[0][0]
+    while True:
+        grew = 0
+        for fn in ex.fns:
+            if fn in mod:
+                continue
+            callers = ex.callers.get(fn)
+            if not callers or not all(c in mod for c in callers):
+                continue
+            ms = {mod[c] for c in callers}
+            if len(ms) == 1:
+                mod[fn] = next(iter(ms))
+                grew += 1
+        if not grew:
+            return mod, direct
+
+
+def write_modules(path, ex, mod, direct):
+    import json
+    per = collections.defaultdict(lambda: {"functions": 0, "bytes": 0,
+                                           "unnamed_functions": 0, "unnamed_bytes": 0})
+    for fn, m in mod.items():
+        row = per[m]
+        row["functions"] += 1
+        row["bytes"] += ex.size(fn)
+        if ex.unnamed(fn):
+            row["unnamed_functions"] += 1
+            row["unnamed_bytes"] += ex.size(fn)
+    doc = {"_generated": "by abi/autonames.py: the module each function logs under,"
+                         " propagated to private helpers over the call graph",
+           "modules": dict(sorted(per.items(), key=lambda kv: -kv[1]["bytes"])),
+           "functions": {"0x%x" % fn: {"module": m, "evidence":
+                                       "own log tag" if fn in direct else "every caller"}
+                         for fn, m in sorted(mod.items())}}
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(doc, f, indent=1, sort_keys=False)
+    return per
+
+
+# ------------------------------------------------------------- class: string
+
+def string_names(img, ex, sites):
+    """Functions that log their own name as a `%s` argument.
+
+    The image's logging convention is `wlog("[MODULE][%s] ...", __func__)`, and
+    the same string turns up further into the format as often as first, so the
+    format's own conversions decide which register holds it: the nth `%s` is the
+    nth vararg, which is r1 upwards (r3 upwards for the logger that takes its
+    format in r2). Only identifiers that exactly one function uses this way are
+    taken, and only from a function that uses exactly one: a shared string is a
+    value, not a name.
+    """
+    cand, where = collections.defaultdict(set), {}
+    for s in sites:
+        base = 1 if WLOG_FMT_REG[s["entry"]] == 0 else 3
+        varargs = [c for c in (m.group(1) for m in SPEC.finditer(s["fmt"])) if c != "%"]
+        for k, conv in enumerate(varargs):
+            if conv != "s" or base + k > 3 or s["fn"] is None:
+                continue
+            arg = s["args"].get("r%d" % (base + k))
+            if arg is None or not FUNC_IDENT.match(arg):
+                continue
+            cand[s["fn"]].add(arg.decode())
+            where.setdefault((s["fn"], arg.decode()), s)
+    return _unique_names(cand, where, "string",
+                         lambda s, n: "wlog(%r, %r) at 0x%x"
+                                      % (s["fmt"].rstrip("\n"), n, s["site"]))
+
+
+# ------------------------------------------------------------- class: logtag
+
+def logtag_names(img, ex, sites):
+    """Functions whose log tag is their own name rather than their module's.
+
+    A handful of translation units write `wlog("[%s] ...", __func__)` with the
+    format already expanded, so the tag itself is a C identifier of function
+    shape. Distinguished from a module tag by that shape alone: module tags are
+    upper case or spaced words, never snake_case.
+    """
+    cand, where = collections.defaultdict(set), {}
+    for s in sites:
+        m = LOG_TAG.match(s["fmt"])
+        if not m or s["fn"] is None or not FUNC_IDENT.match(m.group(1).encode()):
+            continue
+        cand[s["fn"]].add(m.group(1))
+        where.setdefault((s["fn"], m.group(1)), s)
+    return _unique_names(cand, where, "logtag",
+                         lambda s, n: "wlog(%r) at 0x%x, tag is a C identifier"
+                                      % (s["fmt"].rstrip("\n"), s["site"]))
+
+
+# -------------------------------------------------------------- class: logcb
+
+# A leading identifier in a log line is as often a variable being printed
+# ("[M] reset_reason = %d") as the function's own name, so only the suffixes
+# that cannot name a variable are taken.
+CALLBACK_SUFFIX = ("_cb", "_callback", "_handler", "_isr")
+LEADING_IDENT = re.compile(r"^\[[^\]]{1,24}\]\s*([a-z][a-z0-9_]*)\b")
+
+
+def logcb_names(img, ex, sites):
+    """Callbacks that name themselves at the head of their own log line."""
+    cand, where = collections.defaultdict(set), {}
+    for s in sites:
+        m = LEADING_IDENT.match(s["fmt"])
+        if not m or s["fn"] is None:
+            continue
+        ident = m.group(1)
+        if not ident.endswith(CALLBACK_SUFFIX) or not FUNC_IDENT.match(ident.encode()):
+            continue
+        cand[s["fn"]].add(ident)
+        where.setdefault((s["fn"], ident), s)
+    return _unique_names(cand, where, "logcb",
+                         lambda s, n: "wlog(%r) at 0x%x, leading identifier is a callback name"
+                                      % (s["fmt"].rstrip("\n"), s["site"]))
+
+
+def _unique_names(cand, where, cls, evidence):
+    """The candidates that are one function's name and no other function's."""
+    by_ident = collections.defaultdict(set)
+    for fn, idents in cand.items():
+        for i in idents:
+            by_ident[i].add(fn)
     out = []
-    for fn, args in sorted(by_fn.items()):
-        if fn is None or len(args) != 1:
+    for fn, idents in sorted(cand.items()):
+        if len(idents) != 1:
             continue
-        arg = next(iter(args))
-        if len(by_ident[arg]) != 1:
+        name = next(iter(idents))
+        if len(by_ident[name]) != 1:
             continue
-        fmt, site = next((f, a) for o, g, f, a in sites if o == fn and g == arg)
-        out.append({"address": fn, "name": arg.decode(), "class": "string",
-                    "evidence": "wlog(%r, %r) at 0x%x"
-                                % (fmt.decode().rstrip("\n"), arg.decode(), site)})
+        out.append({"address": fn, "name": name, "class": cls,
+                    "evidence": evidence(where[(fn, name)], name)})
     return out
+
+
+# ------------------------------------------------------------- class: bleevt
+
+# `subs r3, #1; cmp r3, #N; bhi default; tbh [pc, r3, lsl #1]` -- the dispatcher
+# switches on the SoftDevice event id, biased by one because id 0 is not an
+# event. symbols.txt records the same table and four of its cases independently.
+BLE_EVT_DISPATCH = 0x37594
+BLE_EVT_ENUM_PREFIXES = ("BLE_EVT_", "BLE_GAP_EVT_", "BLE_GATTC_EVT_",
+                         "BLE_GATTS_EVT_", "BLE_L2CAP_EVT_")
+
+
+def ble_event_enums():
+    """{event id: enum name} for the S140 BLE event enumerations.
+
+    The enumerators are C enums over the per-module bases in ble_ranges.h, so
+    they are read by compiling them with the SDK's own toolchain and reading the
+    array back out rather than by parsing the headers.
+    """
+    if not os.path.isdir(SD_HEADERS) or not os.path.isdir(GCC):
+        return {}
+    names = set()
+    for f in sorted(os.listdir(SD_HEADERS)):
+        if not f.endswith(".h"):
+            continue
+        src = open(os.path.join(SD_HEADERS, f), errors="ignore").read()
+        for m in re.finditer(r"\b(BLE_(?:GAP|GATTC|GATTS|L2CAP)?_?EVT_[A-Z0-9_]+)\b", src):
+            names.add(m.group(1))
+    # Not enumerators: sizes, range markers and the reason enum that shares the
+    # BLE_GAP_EVT_ prefix without being an event id.
+    names = sorted(n for n in names
+                   if n.startswith(BLE_EVT_ENUM_PREFIXES)
+                   and not n.endswith(("_BASE", "_LAST", "_LEN_MAX", "_PTR_ALIGNMENT",
+                                       "_INVALID"))
+                   and "_TERMINATED_REASON" not in n)
+    inc = [os.path.join(SDK, p) for p in
+           ("components/softdevice/s140/headers",
+            "components/softdevice/s140/headers/nrf52",
+            "modules/nrfx/mdk", "components/toolchain/cmsis/include")]
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        c = os.path.join(tmp, "evt.c")
+        with open(c, "w") as f:
+            f.write("#include \"ble.h\"\n#include \"ble_gap.h\"\n#include \"ble_gattc.h\"\n"
+                    "#include \"ble_gatts.h\"\n#include \"ble_l2cap.h\"\n"
+                    "const int vals[]={%s};\n" % ",".join(names))
+        obj, binf = os.path.join(tmp, "evt.o"), os.path.join(tmp, "evt.bin")
+        tool = os.path.join(GCC, "bin", "arm-none-eabi-")
+        cmd = [tool + "gcc", "-mcpu=cortex-m4", "-mthumb", "-c", "-O0", "-DNRF52840_XXAA",
+               "-o", obj, c] + sum((["-I", d] for d in inc), [])
+        if subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL):
+            return {}
+        if subprocess.call([tool + "objcopy", "-O", "binary", "-j", ".rodata", obj, binf],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL):
+            return {}
+        vals = struct.unpack("<%di" % (os.path.getsize(binf) // 4), open(binf, "rb").read())
+    out = {}
+    for name, val in zip(names, vals):
+        out.setdefault(val, name)
+    return out
+
+
+def thunk_target(img, idx, fn, depth=4):
+    """Past a function that is one unconditional branch, to what it branches to."""
+    while fn is not None and depth:
+        i = idx.get(fn)
+        if i is None:
+            return fn
+        _, mnem, ops = img.insns[i]
+        if mnem not in ("b", "b.w"):
+            return fn
+        m = re.search(r"0x([0-9a-f]+)", ops.split("@")[0])
+        if not m:
+            return fn
+        fn, depth = int(m.group(1), 16), depth - 1
+    return fn
+
+
+def ble_event_names(img, ex):
+    """The per-event handlers the BLE event dispatcher's jump table reaches.
+
+    The table is a Thumb `tbh` of halfword offsets, so each case lands inside the
+    dispatcher; the handler is the call that case makes, through however many
+    branch-only thunks the linker put between them. A case block that only logs,
+    or whose call already has a name, yields nothing.
+    """
+    if not ex.ok:
+        return []
+    ids = ble_event_enums()
+    if not ids:
+        return []
+    idx = {a: i for i, (a, _, _) in enumerate(img.insns)}
+    # Locate the tbh from the dispatcher's own instructions rather than trusting
+    # a constant: the table follows it and its bound gives the case count.
+    i = idx.get(BLE_EVT_DISPATCH)
+    if i is None:
+        return []
+    table = bound = None
+    for j in range(i, i + 40):
+        addr, mnem, ops = img.insns[j]
+        if mnem == "cmp":
+            m = re.search(r"#(0x[0-9a-f]+|\d+)", ops)
+            if m:
+                bound = int(m.group(1), 0)
+        if mnem == "tbh" and "pc, r" in ops:
+            table = addr + 4
+            break
+    if table is None or bound is None:
+        return []
+    targets = {}
+    for k in range(bound + 1):
+        off = struct.unpack("<H", img.data[table + 2 * k - img.base:
+                                           table + 2 * k + 2 - img.base])[0]
+        targets[k + 1] = table + 2 * off
+    default = collections.Counter(targets.values()).most_common(1)[0][0]
+    handlers, where = collections.defaultdict(set), {}
+    for evt, block in sorted(targets.items()):
+        if block == default or evt not in ids:
+            continue
+        j = idx.get(block)
+        if j is None:
+            continue
+        callee = None
+        for k in range(j, j + 40):
+            _, mnem, ops = img.insns[k]
+            if mnem in ("bl", "bl.w"):
+                m = re.search(r"0x([0-9a-f]+)", ops.split("@")[0])
+                callee = int(m.group(1), 16) if m else None
+                break
+            if mnem in ("pop", "bx", "b", "b.w"):
+                break
+        callee = thunk_target(img, idx, callee)
+        if callee is None or callee not in ex.fns or not ex.unnamed(callee):
+            continue
+        name = "%s_handler" % ids[evt].lower()
+        handlers[callee].add(name)
+        where.setdefault((callee, name), (evt, block))
+    out = []
+    by_name = collections.defaultdict(set)
+    for fn, names in handlers.items():
+        for n in names:
+            by_name[n].add(fn)
+    for fn, names in sorted(handlers.items()):
+        # One function serving two events is that function's name for neither.
+        if len(names) != 1 or len(by_name[next(iter(names))]) != 1:
+            continue
+        name = next(iter(names))
+        evt, block = where[(fn, name)]
+        out.append({"address": fn, "name": name, "class": "bleevt",
+                    "evidence": "ble_evt_dispatch (0x%x) jump table at 0x%x, case %d "
+                                "(%s), block 0x%x calls it"
+                                % (BLE_EVT_DISPATCH, table, evt,
+                                   ids[evt], block)})
+    return out
+
+
+# ------------------------------------------------------------- class: helper
+
+def helper_names(ex, handlers):
+    """The private helpers of a dispatch-table handler.
+
+    A function the handler calls that nothing else in the image calls is part of
+    that command's implementation and nothing else's; it has no name of its own
+    in the image, so it takes the handler's with an index. Numbered by address
+    so the name is stable across runs.
+    """
+    if not ex.ok:
+        return []
+    out = []
+    for handler, hname in sorted(handlers.items()):
+        private = sorted(f for f in ex.callees.get(handler, ())
+                         if ex.unnamed(f) and ex.callers.get(f) == {handler})
+        for n, fn in enumerate(private, 1):
+            out.append({"address": fn, "name": "%s__%d" % (hname, n), "class": "helper",
+                        "evidence": "only 0x%x (%s) calls 0x%x; %d bytes"
+                                    % (handler, hname, fn, ex.size(fn))})
+    return out
+
+
+# --------------------------------------------------------------- prototypes
+
+# What abi/ghidra/word_uses.py saw done with a value, and what that makes it.
+POINTER_USES = ("load_base", "store_base", "call", "field")
+INTEGER_USES = ("compare", "scaled", "stride")
+
+
+def derived_prototypes(ex, entries):
+    """A prototype for a derived name, where the argument uses decide every one.
+
+    word_uses.py runs its data flow once with each function's argument registers
+    as seeds, so a parameter's own use summary is on record: a dereferenced
+    argument is a pointer, one only compared or scaled is an integer. The
+    prototype is emitted only when the parameters used run from the first
+    without a gap and each is unambiguously one or the other; a parameter both
+    dereferenced and compared is a tagged pointer or a union, and is refused.
+
+    The return type is not derivable this way and is declared uint32_t, which is
+    the direction AAPCS forgives: a caller that ignores r0 is correct either
+    way, while declaring void a function that returns would throw the value
+    away. Every such prototype says so in proto_derived.
+    """
+    if not ex.ok or not ex.word_uses:
+        return 0
+    params = collections.defaultdict(lambda: collections.defaultdict(collections.Counter))
+    for u in ex.word_uses:
+        for c in u.get("callees", ()):
+            part = c.split(":")
+            if len(part) != 3 or part[0] != "param":
+                continue
+            fn, i = int(part[1], 16), int(part[2], 16)
+            for use, n in u["uses"].items():
+                params[fn][i][use.split("+")[0].split("-")[0].split(":")[0]] += n
+    n = 0
+    for e in entries:
+        seen = params.get(e["address"])
+        if not seen or e.get("proto"):
+            continue
+        idx = sorted(seen)
+        if idx != list(range(len(idx))) or len(idx) > 4:
+            continue
+        args = []
+        for i in idx:
+            uses = seen[i]
+            ptr = any(uses.get(u) for u in POINTER_USES)
+            num = any(uses.get(u) for u in INTEGER_USES)
+            if ptr == num:
+                args = None
+                break
+            args.append("void *" if ptr else "uint32_t")
+        if not args:
+            continue
+        e["proto"] = "uint32_t %s(%s);" % (e["name"], ", ".join(args))
+        e["proto_derived"] = ("abi/ghidra/word_uses.py argument uses: %s; return type "
+                              "not derived, declared uint32_t"
+                              % "; ".join("arg%d %s" % (i, "dereferenced" if a == "void *"
+                                                        else "compared only")
+                                          for i, a in zip(idx, args)))
+        n += 1
+    return n
 
 
 # ---------------------------------------------------- classes: wppcmd, shell
@@ -581,6 +1054,8 @@ def write_yaml(path, entries, agree, disagree, stats):
         "# repo can point at: SoftDevice SVC numbers, matched library bodies, the",
         "# firmware's own __func__ logging and the WPP dispatch table's name",
         "# column. `evidence` is what produced the name; nothing here is a guess.",
+        "# `module` is which log tag's module the function belongs to, from the",
+        "# partition abi/out/ghidra/modules.json carries.",
         "",
         "meta:",
         "  image: appl.bin",
@@ -600,12 +1075,18 @@ def write_yaml(path, entries, agree, disagree, stats):
         if "command" in e:
             lines.append("    command: %d" % e["command"])
         lines.append("    evidence: %s" % yaml_str(e["evidence"]))
+        if e.get("module"):
+            lines.append("    module: %s" % e["module"])
+        if e.get("also_named"):
+            lines.append("    also_named: [%s]" % ", ".join(e["also_named"]))
         if e.get("also_matched"):
             lines.append("    also_matched: [%s]" % ", ".join(e["also_matched"]))
         if e.get("header"):
             lines.append("    header: %s" % e["header"])
         if e.get("proto"):
             lines.append("    proto: %s" % yaml_str(e["proto"]))
+        if e.get("proto_derived"):
+            lines.append("    proto_derived: %s" % yaml_str(e["proto_derived"]))
     lines += ["", "# Addresses symbols.txt or hwa10.yaml already names, and what this run",
               "# derived for them. A disagreement is a finding: one of the two is wrong."]
     lines.append("agrees_with_hand_map:")
@@ -623,12 +1104,32 @@ def yaml_str(s):
     return '"%s"' % s.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def prior_addresses(export):
+    """The addresses this script named in the run that seeded the export.
+
+    Read from the export's own seed.json rather than from autonames.yaml, so it
+    is the seed the partition was actually built with; taking it from the file
+    this run is about to overwrite would make the answer depend on run order.
+    """
+    import json
+    path = os.path.join(export, "seed.json")
+    if not os.path.exists(path):
+        return set()
+    doc = json.load(open(path))
+    return {fn["address"] for fn in doc.get("functions", ())
+            if fn.get("source") == "autonames"}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--image", default=os.path.join(SIM, "appl.bin"))
     ap.add_argument("--dis", default=os.path.join(SIM, "out", "appl.dis"))
     ap.add_argument("--out", default=os.path.join(HERE, "autonames.yaml"))
-    ap.add_argument("--classes", default="svc,libc,extlib,string,wppcmd,shell")
+    ap.add_argument("--classes",
+                    default="svc,libc,extlib,string,logtag,logcb,wppcmd,shell,bleevt,helper")
+    ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"),
+                    help="abi/ghidra/analyze.sh's export; the partition and call graph")
+    ap.add_argument("--modules", default=os.path.join(HERE, "out", "ghidra", "modules.json"))
     ap.add_argument("--threshold", type=float, default=0.90)
     ap.add_argument("--propagate-threshold", type=float, default=0.60)
     ap.add_argument("--min-insns", type=int, default=6)
@@ -638,7 +1139,17 @@ def main():
         sys.exit("autonames: %s missing (run renode-sim/mkdis.sh)" % args.dis)
     want = set(args.classes.split(","))
     img = Image(args.image, args.dis)
-    entries, stats = [], {}
+    ex = Export(args.export, prior_addresses(args.export))
+    if not ex.ok:
+        print("autonames: no export under %s; the classes that need the partition "
+              "and the call graph are skipped" % args.export, file=sys.stderr)
+    sites = wlog_sites(img, ex)
+    entries, stats = [], {"wlog_sites": len(sites)}
+    modules, direct = (log_modules(ex, sites) if ex.ok else ({}, {}))
+    if ex.ok:
+        per = write_modules(args.modules, ex, modules, direct)
+        stats["modules"] = len(per)
+        stats["module_functions"] = len(modules)
 
     if "svc" in want:
         found = find_svc_wrappers(img, softdevice_svcs())
@@ -678,9 +1189,12 @@ def main():
         stats["extlib"] = len(found)
         entries += found
 
-    if "string" in want:
-        found = string_names(img)
-        stats["string"] = len(found)
+    for cls, fn in (("string", string_names), ("logtag", logtag_names),
+                    ("logcb", logcb_names)):
+        if cls not in want:
+            continue
+        found = fn(img, ex, sites)
+        stats[cls] = len(found)
         entries += found
 
     if "wppcmd" in want:
@@ -695,16 +1209,36 @@ def main():
         stats["shell_table_rows"] = len(rows)
         entries += found
 
+    if "bleevt" in want:
+        found = ble_event_names(img, ex)
+        stats["bleevt"] = len(found)
+        entries += found
+
+    if "helper" in want:
+        # The handlers, and only the handlers: a helper's name is the command's,
+        # so it may only be built from a name a dispatch table row supplies.
+        handlers = {e["address"]: e["name"] for e in entries
+                    if e["class"] in ("wppcmd", "shell")}
+        found = helper_names(ex, handlers)
+        stats["helper"] = len(found)
+        entries += found
+
     # One address, one name, and one name, one address: the manifest cannot
-    # carry either kind of duplicate, and a collision here is a bug in a class.
+    # carry either kind of duplicate.
+    #
+    # Two classes reaching the same address with different names is not a bug in
+    # either: a dispatch table labels a handler with the protocol command it
+    # serves, and the handler's own __func__ is the C symbol Withings wrote, so
+    # WPP_CMD_INACTIVITY_CFG_SET and process_cmd_inactivity_cfg_set are both
+    # right. The table row wins, because the rest of the repo (roots.yaml,
+    # prunes.yaml, reach.py's per-command costs) addresses commands by it, and
+    # the other name is kept on the entry rather than thrown away.
     by_addr, by_name, final = {}, {}, []
-    for e in sorted(entries, key=lambda e: (e["address"], e["class"])):
+    for e in sorted(entries, key=lambda e: (e["address"], CLASS_RANK.index(e["class"]))):
         if e["address"] in by_addr:
             other = by_addr[e["address"]]
             if other["name"] != e["name"]:
-                sys.exit("autonames: 0x%x is both %s (%s) and %s (%s)"
-                         % (e["address"], other["name"], other["class"],
-                            e["name"], e["class"]))
+                other.setdefault("also_named", []).append("%s (%s)" % (e["name"], e["class"]))
             continue
         if e["name"] in by_name:
             # SVCALL is a static naked stub, so a header used by two translation
@@ -718,6 +1252,10 @@ def main():
         by_name[e["name"]] = e
         final.append(e)
 
+    for e in final:
+        if e["address"] in modules:
+            e["module"] = modules[e["address"]]
+    stats["prototypes_derived"] = derived_prototypes(ex, final)
     agree, disagree, emit = cross_check(final)
     write_yaml(args.out, emit, agree, disagree, stats)
     print("%s: %d names (%s); %d agree with the hand map, %d disagree"
