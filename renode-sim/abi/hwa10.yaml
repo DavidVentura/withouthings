@@ -160,11 +160,14 @@ functions:
       and sets it again.
 
   # --- battery / charger ---
-  - name: battery_adc_read
+  - name: battery_adc_value_gain_adaptation
     address: 0x400b4
     ret: i32
     args: []
-    notes: SAADC AIN0; the gain adaptation is gated on product id 0x280010
+    notes: >
+      SAADC AIN0; the gain adaptation is gated on product id 0x280010. Named by
+      the __func__ the function logs, which symbols.txt already follows; the
+      manifest still carried the older battery_adc_read.
   - name: battery_level_get
     address: 0x920f4
     ret: void

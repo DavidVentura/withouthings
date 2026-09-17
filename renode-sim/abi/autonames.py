@@ -85,8 +85,8 @@ EXT_ARCHIVES = [
 EXT_VARIANTS = ["mbedtls_Os", "mbedtls_O2"]
 
 # Which class names an address when two reach it; earlier wins. See main().
-CLASS_RANK = ["svc", "libc", "extlib", "wppcmd", "shell", "string", "logtag",
-              "logcb", "bleevt", "helper"]
+CLASS_RANK = ["svc", "libc", "extlib", "wppcmd", "shell", "wppobj", "string",
+              "logtag", "logcb", "bleevt", "logline", "helper"]
 
 INSN = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2,4} )+)\s*\t(\S+)\s*(.*)$")
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -372,6 +372,7 @@ class Export:
         # already carries may be one of ours; those addresses are still open to
         # derivation, or every class would name a function once and never again.
         self.prior = set(prior)
+        self.outdir = outdir
         self.ok = os.path.isdir(outdir) and os.path.exists(os.path.join(outdir, "items.json"))
         if not self.ok:
             return
@@ -450,11 +451,93 @@ def wlog_sites(img, ex):
                 continue
             regs[r.group(1)] = img.pool_string(o2) if m2.startswith("ldr") else None
         fmt = regs.pop("r%d" % WLOG_FMT_REG[entry], None)
-        if fmt is None:
-            continue
         sites.append({"site": addr, "fn": ex.owner(addr) if ex.ok else img.owner(addr),
-                      "entry": entry, "fmt": fmt.decode("latin1"), "args": regs})
+                      "entry": entry, "fmt": fmt.decode("latin1") if fmt else None,
+                      "args": regs, "how": "calling sequence"})
     return sites
+
+
+WLOG_USE = re.compile(r"^wlog_a(\d):0x([0-9a-f]+)$")
+
+
+def wlog_arg_words(img, ex):
+    """{(call site, argument index): {pool word: string}} from word_uses.py.
+
+    The back-walk above sees only what the calling sequence itself loads, which
+    leaves every site whose format or vararg arrives as a parameter, as a
+    returned value or out of a struct field unresolved. word_uses.py records the
+    argument slot of a logger call as a use of whatever value lands in it, and
+    its fixpoint carries that use back along the argument, return and field
+    edges to the literal-pool word the string was loaded from, which is the
+    whole answer this needs.
+    """
+    reach = collections.defaultdict(dict)
+    for u in ex.word_uses:
+        text = img.string(img.word(u["addr"]) or 0, limit=200)
+        if text is None:
+            continue
+        for use in u["uses"]:
+            m = WLOG_USE.match(use)
+            if m:
+                reach[(int(m.group(2), 16), int(m.group(1)))][u["addr"]] = text
+    return reach
+
+
+def pool_loaders(ex):
+    """{pool word: the functions that load it}, from the export's pool reads."""
+    import json
+    path = os.path.join(ex.outdir, "references.json")
+    loaders = collections.defaultdict(set)
+    for r in json.load(open(path))["pool_reads"]:
+        loaders[r["target"]].add(r["function"])
+    return loaders
+
+
+def widen_sites(img, ex, sites, reach, loaders):
+    """The sites the calling sequence could not resolve, resolved by the edges.
+
+    A word that reaches a logger's format slot was loaded somewhere, and where
+    exactly one function loads it that function is the one that logs the line --
+    which is the honest attribution when the call itself is in a wrapper several
+    modules share. A wrapper site therefore yields one record per calling
+    function rather than one per site, and the varargs are paired with the
+    format by the site they meet at and the function that loaded both.
+    """
+    out, seen = [], {(s["site"], s["fn"], s["fmt"]) for s in sites if s["fmt"]}
+    for s in sites:
+        base = 1 if WLOG_FMT_REG[s["entry"]] == 0 else 3
+        if s["fmt"] is not None:
+            # A resolved format with a vararg the sequence did not load: the
+            # identifier came in as a parameter, and the same edges supply it.
+            for k in range(base, 4):
+                if s["args"].get("r%d" % k) is not None:
+                    continue
+                mine = [w for w in reach.get((s["site"], k), ())
+                        if loaders.get(w) == {s["fn"]}]
+                if len(mine) == 1:
+                    s["args"]["r%d" % k] = reach[(s["site"], k)][mine[0]]
+            continue
+        by_loader = collections.defaultdict(dict)
+        for w, text in reach.get((s["site"], WLOG_FMT_REG[s["entry"]]), {}).items():
+            who = loaders.get(w)
+            if who and len(who) == 1:
+                by_loader[next(iter(who))][w] = text
+        for fn, words in sorted(by_loader.items()):
+            if len(words) != 1:
+                continue
+            text = next(iter(words.values())).decode("latin1")
+            if (s["site"], fn, text) in seen:
+                continue
+            seen.add((s["site"], fn, text))
+            args = {}
+            for k in range(base, 4):
+                mine = [w for w in reach.get((s["site"], k), ())
+                        if loaders.get(w) == {fn}]
+                if len(mine) == 1:
+                    args["r%d" % k] = reach[(s["site"], k)][mine[0]]
+            out.append({"site": s["site"], "fn": fn, "entry": s["entry"],
+                        "fmt": text, "args": args, "how": "word_uses edges"})
+    return out
 
 
 def log_tag(fmt):
@@ -776,26 +859,263 @@ def ble_event_names(img, ex):
     return out
 
 
-# ------------------------------------------------------------- class: helper
+# ------------------------------------------------------------ class: logline
 
-def helper_names(ex, handlers):
-    """The private helpers of a dispatch-table handler.
+# A word that carries no information about which function this is.
+LOGLINE_STOP = ("the", "a", "an", "to", "for", "of", "in", "on", "at", "as",
+                "is", "was", "and", "or", "with", "from", "by", "this", "that",
+                "s", "t", "d", "ll", "re")
+LOGLINE_WORDS = 5
+LOGLINE_MAX = 48
 
-    A function the handler calls that nothing else in the image calls is part of
-    that command's implementation and nothing else's; it has no name of its own
-    in the image, so it takes the handler's with an index. Numbered by address
-    so the name is stable across runs.
+
+def logline_slug(fmt):
+    """The C identifier a log line is, or None if the line does not make one.
+
+    Everything in the name is in the string: the module tag, then the line's own
+    words with the %-conversions removed, because a conversion is the value not
+    the message. A line of fewer than two words left is a continuation fragment
+    ("%02x", " | ") and names nothing.
+    """
+    tag = log_tag(fmt)
+    body = SPEC.sub(" ", re.sub(r"^\[[^\]]*\]\s*", "", fmt)).replace("'", "")
+    words = [w.lower() for w in re.split(r"[^A-Za-z0-9]+", body)
+             if w and not w.isdigit()]
+    while words and words[0] in LOGLINE_STOP:
+        words.pop(0)
+    words = words[:LOGLINE_WORDS]
+    while words and words[-1] in LOGLINE_STOP:
+        words.pop()
+    if len(words) < 2:
+        return None
+    parts = ([tag.lower()] if tag else []) + words
+    # "[factory_state] factory_state=%d" would otherwise say it twice.
+    while len(parts) > 1 and parts[0] == parts[1]:
+        parts.pop(0)
+    name = "_".join(parts)
+    if not re.match(r"^[a-z][a-z0-9_]*$", name) or len(name) > LOGLINE_MAX:
+        return None
+    return name
+
+
+def logline_names(img, ex, sites):
+    """Functions that log exactly one line, named by the line they log.
+
+    The `string`, `logtag` and `logcb` classes take a name the firmware wrote as
+    a name; this takes the milestone itself, which is what a function with one
+    log line and no __func__ convention has instead. Only one distinct format
+    per function counts -- a function that logs two things is doing two things
+    and neither line names it -- and only a slug no other function produces.
     """
     if not ex.ok:
         return []
-    out = []
-    for handler, hname in sorted(handlers.items()):
-        private = sorted(f for f in ex.callees.get(handler, ())
-                         if ex.unnamed(f) and ex.callers.get(f) == {handler})
-        for n, fn in enumerate(private, 1):
-            out.append({"address": fn, "name": "%s__%d" % (hname, n), "class": "helper",
-                        "evidence": "only 0x%x (%s) calls 0x%x; %d bytes"
-                                    % (handler, hname, fn, ex.size(fn))})
+    fmts = collections.defaultdict(set)
+    where = {}
+    for s in sites:
+        if s["fn"] is not None:
+            fmts[s["fn"]].add(s["fmt"])
+            where.setdefault((s["fn"], s["fmt"]), s)
+    cand, by_name = {}, collections.defaultdict(set)
+    for fn, seen in fmts.items():
+        if len(seen) != 1 or not ex.unnamed(fn):
+            continue
+        fmt = next(iter(seen))
+        name = logline_slug(fmt)
+        if name:
+            cand[fn] = (name, fmt)
+            by_name[name].add(fn)
+    return [{"address": fn, "name": name, "class": "logline",
+             "evidence": "the only line 0x%x logs, wlog(%r) at 0x%x"
+                         % (fn, fmt.rstrip("\n"), where[(fn, fmt)]["site"])}
+            for fn, (name, fmt) in sorted(cand.items()) if len(by_name[name]) == 1]
+
+
+# ------------------------------------------------------------- class: wppobj
+
+# The WPP wire object is {u16 type, u16 length, data}. 0x9a954 writes a
+# big-endian u16 into the frame under construction (0x9a966 reads one back,
+# 0x9a982 and 0x9a9a0 are the 32-bit pair), so a function whose first two calls
+# write a constant type and a constant length is that type's encoder, and the
+# field writes that follow are its layout.
+WPP_WRITE_BE16 = 0x9A954
+# 0x504b4 walks a TLV stream comparing each object's type against its own r3
+# and calls the parser it is handed on the stack when they match, so the fifth
+# argument of a call with a literal type is that type's parser.
+WPP_OBJ_PARSE = 0x504B4
+
+OBJ_DECL = re.compile(
+    r"impl WppObjectCodec for (\w+)\s*\{\s*"
+    r"const TYPE_ID: u16 = (\d+);\s*"
+    r"const TYPE_NAME: &'static str = \"(\w+)\";\s*"
+    r"const CLASS_NAME: &'static str = \"(\w+)\";\s*"
+    r"const FIXED_DATA_SIZE: Option<usize> = (Some\((\d+)\)|None);")
+
+
+def wpp_objects():
+    """{type id: (class name, TYPE_ constant, fixed data size or None)}.
+
+    From wpp/src/objects.rs, this repo's own decoder for the protocol: it is the
+    reference the names are read off, the way the S140 headers are for the SVCs.
+    """
+    path = os.path.join(os.path.dirname(SIM), "wpp", "src", "objects.rs")
+    if not os.path.exists(path):
+        return {}
+    out = {}
+    for m in OBJ_DECL.finditer(open(path, errors="ignore").read()):
+        out[int(m.group(2))] = (m.group(1), m.group(3),
+                                int(m.group(6)) if m.group(6) else None)
+    return out
+
+
+def _imm_before(img, i, reg, back=16):
+    """The literal `reg` was last set to before instruction i, or None."""
+    for j in range(i - 1, max(-1, i - back), -1):
+        _, mnem, ops = img.insns[j]
+        m = re.match(r"^%s,\s*#(0x[0-9a-f]+|\d+)$" % reg, ops)
+        if m and mnem.startswith("mov"):
+            return int(m.group(1), 0)
+        if re.match(r"^%s[,\s]" % reg, ops) or mnem in ("bl", "bl.w", "b", "b.w",
+                                                        "pop", "bx"):
+            return None
+    return None
+
+
+def _call_target(ops):
+    m = re.search(r"0x([0-9a-f]+)", ops.split("@")[0])
+    return int(m.group(1), 16) if m else None
+
+
+def wpp_object_names(img, ex):
+    """The per-object encoders and parsers of the WPP wire format.
+
+    An encoder opens with the object's type and its data length, both literal,
+    written through the frame's big-endian u16 primitive. A parser is the
+    callback the generic type-matching walk is handed alongside a literal type.
+    Both name the function after the Rust type in wpp/src/objects.rs, which is
+    the same protocol read from the other side.
+    """
+    objs = wpp_objects()
+    if not objs or not ex.ok:
+        return [], {}
+    sizes, out, checked = {}, [], set()
+    idx = {a: k for k, (a, _, _) in enumerate(img.insns)}
+    for fn in sorted(ex.fns):
+        k = idx.get(fn)
+        if k is None:
+            continue
+        calls = []
+        for j in range(k, min(k + 16, len(img.insns))):
+            addr, mnem, ops = img.insns[j]
+            if ex.owner(addr) != fn:
+                break
+            if mnem in ("bl", "bl.w", "b.w", "b"):
+                calls.append((j, _call_target(ops)))
+                if len(calls) == 2:
+                    break
+        if len(calls) != 2 or any(t != WPP_WRITE_BE16 for _, t in calls):
+            continue
+        oid = _imm_before(img, calls[0][0], "r1")
+        size = _imm_before(img, calls[1][0], "r1")
+        if oid not in objs:
+            continue
+        cls, type_name, fixed = objs[oid]
+        ev = ("writes type %d (%s) then length %s through the frame's u16 "
+              "writer (0x%x) as its first two calls" %
+              (oid, type_name, size, WPP_WRITE_BE16))
+        if fixed is not None and size is not None:
+            checked.add(cls)
+            if fixed != size:
+                sizes[cls] = (oid, size, fixed)
+                ev += "; wpp/src/objects.rs FIXED_DATA_SIZE is %d" % fixed
+        out.append({"address": fn, "name": "wpp_obj_%s_encode" % cls,
+                    "class": "wppobj", "evidence": ev})
+    parsers = collections.defaultdict(set)
+    where = {}
+    for j, (addr, mnem, ops) in enumerate(img.insns):
+        if mnem not in ("bl", "bl.w") or _call_target(ops) != WPP_OBJ_PARSE:
+            continue
+        oid = _imm_before(img, j, "r3")
+        if oid not in objs:
+            continue
+        cb = None
+        for m in range(j - 1, max(-1, j - 16), -1):
+            _, m2, o2 = img.insns[m]
+            if m2 in ("bl", "bl.w", "b", "b.w", "pop"):
+                break
+            r = re.match(r"^(r\d+),\s*\[sp\]$", o2)
+            if not m2.startswith("str") or not r:
+                continue
+            for n in range(m - 1, max(-1, m - 16), -1):
+                _, m3, o3 = img.insns[n]
+                if m3.startswith("ldr") and o3.startswith(r.group(1) + ",") \
+                        and "[pc" in o3:
+                    p = re.search(r"@ 0x([0-9a-f]+)", o3)
+                    cb = img.word(int(p.group(1), 16) + img.base) if p else None
+                    break
+                if re.match(r"^%s[,\s]" % r.group(1), o3):
+                    break
+            break
+        if cb and cb & 1 and img.base <= cb < img.end:
+            parsers[cb & ~1].add(oid)
+            where.setdefault((cb & ~1, oid), addr)
+    for fn, ids in sorted(parsers.items()):
+        if len(ids) != 1 or fn not in ex.fns:
+            continue
+        oid = next(iter(ids))
+        cls, type_name, _ = objs[oid]
+        out.append({"address": fn, "name": "wpp_obj_%s_parse" % cls,
+                    "class": "wppobj",
+                    "evidence": "the parser 0x%x hands the object walk (0x%x) "
+                                "for type %d (%s)"
+                                % (where[(fn, oid)], WPP_OBJ_PARSE, oid, type_name)})
+    return out, {"mismatch": sizes, "crate_types": len(objs), "size_checked": len(checked),
+                 "encode": sum(1 for e in out if e["name"].endswith("_encode")),
+                 "parse": sum(1 for e in out if e["name"].endswith("_parse")),
+                 "image_types": len({e["name"].split("wpp_obj_")[1].rsplit("_", 1)[0]
+                                     for e in out})}
+
+
+# ------------------------------------------------------------- class: helper
+
+HELPER_MAX = 56
+# Two steps down from a name the image itself supplies. A longer chain is
+# arithmetic rather than evidence: the third index says only that something
+# under something under a named function exists.
+HELPER_DEPTH = 2
+
+
+def helper_names(ex, named):
+    """The private helpers under a named function.
+
+    A function one named function calls that nothing else in the image calls is
+    part of that function's implementation and nothing else's; it has no name of
+    its own, so it takes its caller's with an index, numbered by address so the
+    name is stable across runs. The chain is followed down as long as each step
+    is still called by exactly one function, and stops where the derived name
+    would be longer than a name is useful.
+    """
+    if not ex.ok:
+        return []
+    out, taken = [], dict(named)
+    frontier, depth = dict(named), 0
+    while frontier and depth < HELPER_DEPTH:
+        depth += 1
+        nxt = {}
+        for owner, oname in sorted(frontier.items()):
+            if len(oname) > HELPER_MAX:
+                continue
+            private = sorted(f for f in ex.callees.get(owner, ())
+                             if ex.unnamed(f) and ex.callers.get(f) == {owner}
+                             and f not in taken)
+            for n, fn in enumerate(private, 1):
+                name = "%s__%d" % (oname, n)
+                if len(name) > HELPER_MAX:
+                    continue
+                taken[fn] = nxt[fn] = name
+                out.append({"address": fn, "name": name, "class": "helper",
+                            "evidence": "only 0x%x (%s) calls 0x%x; %d bytes"
+                                        % (owner, oname, fn, ex.size(fn))})
+        frontier = nxt
     return out
 
 
@@ -1126,7 +1446,8 @@ def main():
     ap.add_argument("--dis", default=os.path.join(SIM, "out", "appl.dis"))
     ap.add_argument("--out", default=os.path.join(HERE, "autonames.yaml"))
     ap.add_argument("--classes",
-                    default="svc,libc,extlib,string,logtag,logcb,wppcmd,shell,bleevt,helper")
+                    default="svc,libc,extlib,string,logtag,logcb,wppcmd,shell,"
+                            "bleevt,wppobj,logline,helper")
     ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"),
                     help="abi/ghidra/analyze.sh's export; the partition and call graph")
     ap.add_argument("--modules", default=os.path.join(HERE, "out", "ghidra", "modules.json"))
@@ -1143,8 +1464,15 @@ def main():
     if not ex.ok:
         print("autonames: no export under %s; the classes that need the partition "
               "and the call graph are skipped" % args.export, file=sys.stderr)
-    sites = wlog_sites(img, ex)
-    entries, stats = [], {"wlog_sites": len(sites)}
+    all_sites = wlog_sites(img, ex)
+    sites = [s for s in all_sites if s["fmt"] is not None]
+    stats = {"wlog_call_sites": len(all_sites), "wlog_sites": len(sites)}
+    if ex.ok and ex.word_uses:
+        widened = widen_sites(img, ex, all_sites, wlog_arg_words(img, ex),
+                              pool_loaders(ex))
+        stats["wlog_sites_edges"] = len(widened)
+        sites += widened
+    entries = []
     modules, direct = (log_modules(ex, sites) if ex.ok else ({}, {}))
     if ex.ok:
         per = write_modules(args.modules, ex, modules, direct)
@@ -1214,12 +1542,29 @@ def main():
         stats["bleevt"] = len(found)
         entries += found
 
+    if "wppobj" in want:
+        found, info = wpp_object_names(img, ex)
+        stats["wppobj"] = len(found)
+        for k in ("encode", "parse", "image_types", "crate_types", "size_checked"):
+            stats["wppobj_" + k] = info[k]
+        stats["wppobj_length_mismatch"] = len(info["mismatch"])
+        for cls, (oid, got, want_) in sorted(info["mismatch"].items()):
+            print("autonames: %s (type %d) encodes %d data bytes, "
+                  "wpp/src/objects.rs says %d" % (cls, oid, got, want_),
+                  file=sys.stderr)
+        entries += found
+
+    if "logline" in want:
+        found = logline_names(img, ex, sites)
+        stats["logline"] = len(found)
+        entries += found
+
     if "helper" in want:
-        # The handlers, and only the handlers: a helper's name is the command's,
-        # so it may only be built from a name a dispatch table row supplies.
-        handlers = {e["address"]: e["name"] for e in entries
-                    if e["class"] in ("wppcmd", "shell")}
-        found = helper_names(ex, handlers)
+        # Every name derived above, so a helper is named under whatever names
+        # its sole caller; a helper may not seed another helper's name from a
+        # name this run did not derive.
+        named = {e["address"]: e["name"] for e in entries}
+        found = helper_names(ex, named)
         stats["helper"] = len(found)
         entries += found
 

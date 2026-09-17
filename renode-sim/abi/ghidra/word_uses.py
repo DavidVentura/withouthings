@@ -73,6 +73,14 @@ for r in refs["pool_reads"]:
 
 ARG_REGS = ["r0", "r1", "r2", "r3"]
 
+# The logger entry points, from symbols.txt. A format string or a `%s` argument
+# that reaches one of these calls is a log line, and 395 of the image's 2565 call
+# sites get theirs from a parameter or a struct field rather than from their own
+# literal pool, which a back-walk over the calling sequence cannot see. Recording
+# the slot as a use lets the same fixpoint that closes the argument, return and
+# field edges carry the site back to whichever pool word supplies the string.
+WLOG_ENTRIES = [0x8F460, 0x8F494, 0x9B1C8, 0x5E7A8, 0x50CA8]
+
 # The address each pool word holds, so that two functions loading the same
 # object through their own pool words name the same memory cell.
 pool_value = {}
@@ -299,6 +307,13 @@ def analyse(fn):
                             pass_on(got, ("param", ins[0].getOffset(), a))
                         else:
                             record(got, "argument_opaque")
+                    if (code == PcodeOp.CALL
+                            and ins[0].getOffset() in WLOG_ENTRIES):
+                        site = instrs[i].getMinAddress().getOffset()
+                        for a, key in enumerate(arg_keys):
+                            got = cur.get(key)
+                            if got:
+                                record(got, "wlog_a%d:0x%x" % (a, site))
                 if code in (PcodeOp.CALL, PcodeOp.CALLIND):
                     for key in CLOBBERED:
                         if key in cur:

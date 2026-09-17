@@ -305,7 +305,7 @@
 0x0007da34  wpps_control_frame_parse     first record in state 0: WPP frame cmd 2495 (CMD_TLS_SNI) with Version 2401 + WppString 519 = account id ("account:<id>" in v1), max 0x54 bytes
 0x000553b4  wpps_build_sni               "hwa10-bs%s.withings.net" with "wpp", or "%s.%s" from the stored redirect (dblib IE 0x141, 0x50 bytes)
 0x00046a10  tls_load_client_cert_key     dblib IE 0x12b client cert [u16 len][DER] <= 0x202, IE 0x12c key 0x40 bytes (Ed25519 seed||pub); factory perso only, no in-app setter
-0x00046980  ptls_verify_certificate_cb   picotls callback, one of the two roots of the 17 mbedTLS functions
+0x00046980  ptls_verify_certificate_cb   picotls callback, one of the two roots of the 17 mbedTLS functions; logs under [verify_cert], which is the name in picotls' own source
 0x00046860  ed25519_verify               picotls callback ("Certificate Verify FAILURE")
 0x0005abbc  perso_crt_verify             factory shell crt= ingest and check ([CRTVFY]); the other mbedTLS root
 0x0005a61c  perso_csr_emit               factory shell csr= (BEGIN CERTIFICATE REQUEST, hmac=)
