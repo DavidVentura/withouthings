@@ -11,7 +11,16 @@ The other end of the evidence is the run's own references: which addresses
 inside it anything else in the image holds. Three facts follow from them, and
 each is a decision with a name:
 
-  unreachable_run    Nothing reaches the run. The closure below starts at the
+  unreachable_run    Nothing reaches the run, and fewer than three words in it
+                     were proved to be addresses: a run holding three of them
+                     is a table someone built, whatever the reference graph
+                     shows, and the WPP dispatch table is exactly that -- its
+                     handler words are function starts and no word in the image
+                     names the table. Three, not one, because a 4-byte record
+                     of two 16-bit fields reproduces a function start by
+                     accident about twice in this image: 0xc21c4 holds
+                     {0x0255, 0x0003} and FUN_00030254 is real. The closure
+                     below starts at the
                      words the code loads and at the pointers the shape test
                      already proved, and follows every word of every run it
                      reaches whatever that word's class is, so it over-states
@@ -89,6 +98,7 @@ MIN_RECORDS = 3
 # accident: the candidate columns tried are a few thousand and six independent
 # in-range ascending words is far rarer than that.
 MIN_CLIMB = 6
+MIN_POINTERS = 3
 ROUNDS = 8
 
 
@@ -295,6 +305,9 @@ def analyse(items, refs, rows, blob, manifest):
     for row in refs["pc_addresses"]:
         seeds.append(row["target"])
     live = reachable(runs, in_run, seeds, code, in_code)
+    for i, held in in_run.items():
+        if sum(1 for row in held if row["class"] == "pointer") >= MIN_POINTERS:
+            live.add(i)
 
     trusted = set(row["target"] for row in refs["pc_addresses"])
     for row in rows:
