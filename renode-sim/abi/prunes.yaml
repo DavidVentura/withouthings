@@ -1,0 +1,110 @@
+# Removing a feature from the image, as edits rather than as prose.
+#
+# abi/reach.py measures what a removal would cost by cutting edges in the
+# object; this file is the removal itself. Each edit names the address it
+# changes, the partition symbol whose body or item that address is in, the
+# bytes it expects to find there and the bytes that replace them. The address
+# is the key because the edits are applied to the stock image before
+# abi/blobify.py cuts it, which is the one coordinate system the partition is
+# expressed in; the symbol is checked against the export, so a partition that
+# moves the site is refused rather than patched at the wrong place.
+#
+# What the linker does with the result is the point: with the edges gone,
+# --gc-sections drops everything the feature owned and keeps everything it
+# shared, at function granularity and without anyone deciding which is which.
+
+meta:
+  app_base: 0x27000
+
+features:
+  - feature: wpps_tls_tunnel
+    evidence: >
+      The same feature abi/roots.yaml measures: the WPPS arm of the GATT write
+      demux, the record path inside wpp_bytes_received, the send side, the
+      factory perso commands that install the client certificate, and the three
+      commands that only exist inside the tunnel. The reach map puts it at
+      24085 bytes and says it takes all of mbedTLS and the Ed25519 verify with
+      it while SHA-1 and the Ed25519 signer stay.
+    edits:
+      - at: 0x39bc0
+        in: FUN_00093598
+        original: fff79cfb
+        new: aff30080
+        why: >
+          the WPPS branch of wpp_write_demux calls wpp_bytes_received with the
+          tunnel's context; the WPP_V2 and WPP_V3 branches call the same
+          function and stay, so this is a nop and not a return
+      - at: 0x39324
+        in: wpp_bytes_received
+        original: 40f19480
+        new: 00f094b8
+        why: >
+          `bpl.w 0x39450` is the plain path and is taken when bit 3 of ctx+0x4c
+          is clear; unconditional, the record path that feeds ptls_receive is
+          never entered
+      - at: 0x393e4
+        in: wpp_bytes_received
+        original: fff7c0fc
+        new: aff30080
+        why: >
+          the three calls into the record path itself. The branch above makes
+          them unreachable, but gc works on sections and a relocation that is
+          never executed still holds the target alive, so the edge has to go as
+          well as the path to it
+      - at: 0x39406
+        in: wpp_bytes_received
+        original: fff7affc
+        new: aff30080
+        why: the second of the three
+      - at: 0x39422
+        in: wpp_bytes_received
+        original: fff7a1fc
+        new: aff30080
+        why: the third of the three
+      - at: 0x39284
+        in: FUN_0006bf04
+        original: fff784be
+        new: 704700bf
+        why: >
+          the tail call to wpps_flush, which is what pushes a queued frame
+          through ptls_send; r0 already holds the 1 the function returns, so
+          `bx lr` is the same function without the flush
+      - at: 0x38a40
+        in: wpp_send_gate
+        original: 03d5
+        new: 03e0
+        why: >
+          the gate refuses a send while the tunnel is selected and not
+          established; taking its branch unconditionally is the gate that
+          always answers allowed, which is what the removal needs since nothing
+          establishes the tunnel any more. The "allowed" answer is a tail call
+          to 0x6be24 rather than a return value, so this is an edit and not yet
+          a replacement section.
+      - at: 0x5a806
+        in: FUN_0005a7e4
+        original: fff709ff
+        new: aff30080
+        why: the perso parser's csr= arm, which is what signs a CSR with the tunnel key
+      - at: 0xb426c
+        in: gap_000b41fc
+        original: bdab0500
+        new: "00000000"
+        why: >
+          the perso command table's rows are {const char *name, u32 id, handler}
+          and this is the handler of "crt" at 0xb4264, the row that installs the
+          certificate the tunnel authenticates with
+      - at: 0x277c0
+        in: wpp_cmd_table
+        original: 8c090000e955050078b40d00
+        new: "000000000000000000000000"
+        why: WPP_CMD_BOOTSTRAP_REBOOT 2444, gated on wpps_established
+      - at: 0x277cc
+        in: wpp_cmd_table
+        original: 8b090000c954050098b40d00
+        new: "000000000000000000000000"
+        why: WPP_CMD_BOOTSTRAP_REDIRECT 2443, gated on wpps_established
+      - at: 0x27b14
+        in: wpp_cmd_table
+        original: b20900000dd5060057480e00
+        new: "000000000000000000000000"
+        why: WPP_CMD_DEVICE_CHALLENGE 2482, which signs with the tunnel's Ed25519 key

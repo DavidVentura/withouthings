@@ -281,6 +281,11 @@ fn main() -> ExitCode {
     let mut set_time: Option<u32> = None;
     let mut package_path: Option<String> = None;
     let mut probe_only = false;
+    // A bare command by number, for asking the watch what it does with one.
+    // Removing a command from the dispatch table is only half an answer; what
+    // the phone sees is the other half, and nothing else here can send a
+    // command the scenario does not already use.
+    let mut send_commands: Vec<u16> = Vec::new();
     let mut arguments = env::args().skip(1);
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
@@ -301,8 +306,15 @@ fn main() -> ExitCode {
                 package_path = Some(arguments.next().expect("--update takes a package path"))
             }
             "--probe-only" => probe_only = true,
+            "--send" => send_commands.push(
+                arguments
+                    .next()
+                    .expect("--send takes a command number")
+                    .parse()
+                    .expect("--send takes a command number"),
+            ),
             other => {
-                eprintln!("usage: wpp-sim-client [--endpoint host:port] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--update <package>]");
+                eprintln!("usage: wpp-sim-client [--endpoint host:port] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--send <command>] [--update <package>]");
                 eprintln!("unknown argument {other}");
                 return ExitCode::FAILURE;
             }
@@ -345,6 +357,20 @@ fn main() -> ExitCode {
         }
         update::restart(&mut link).expect("the link stays up to the restart");
         println!("update pushed");
+        return ExitCode::SUCCESS;
+    }
+    if !send_commands.is_empty() {
+        for number in send_commands {
+            run(
+                &mut link,
+                &Step {
+                    label: "command by number",
+                    frame: Frame::new(Command(number), Vec::new()),
+                    answers: Answers::One,
+                },
+            )
+            .expect("the link stays up");
+        }
         return ExitCode::SUCCESS;
     }
     if probe_only {

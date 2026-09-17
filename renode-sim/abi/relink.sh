@@ -77,8 +77,11 @@ done
 # GC=1 re-cuts it with a placement that KEEPs only what the linker cannot see,
 # so --gc-sections drops what no root reaches; LAYOUT=reverse then means the
 # order the kept sections are packed in, not addresses chosen in advance.
+# PRUNE=<feature> applies abi/prunes.yaml's edits before the cut, which only
+# means anything together with GC=1: the edits make the feature unreachable and
+# --gc-sections is what removes it.
 if [ -n "${GC:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" --gc ${LAYOUT:+--layout "$LAYOUT"} ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"}
+    python3 blobify.py -o "$OUT/appl-blob.o" --gc ${LAYOUT:+--layout "$LAYOUT"} ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"}
 elif [ -n "${LAYOUT:-}" ]; then
     python3 blobify.py -o "$OUT/appl-blob.o" --layout "$LAYOUT"
 fi

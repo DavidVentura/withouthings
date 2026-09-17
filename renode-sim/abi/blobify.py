@@ -324,6 +324,62 @@ def pinned_addresses(manifest, layout):
     return pinned
 
 
+def apply_prunes(blob, items, path, wanted):
+    """Edit the image the way abi/prunes.yaml says, or refuse.
+
+    Every edit declares the bytes it expects and the partition symbol whose
+    body or item the address is in. Both are checked: the bytes catch an edit
+    written against another image, and the symbol catches a partition that has
+    moved the site under it. An edit is applied before the cut, so what the
+    linker sees is a program the feature is already unreachable in and
+    --gc-sections is the thing that removes it.
+    """
+    with open(path) as fh:
+        spec = yaml.safe_load(fh)
+    features = {f["feature"]: f for f in spec["features"]}
+    unknown = [name for name in wanted if name not in features]
+    if unknown:
+        sys.exit("%s names no feature of %s" % (", ".join(unknown), path))
+    owner = {}
+    for f in items["functions"]:
+        owner[f["start"]] = f["name"]
+    ranges = sorted((r["start"], r["end"], owner.get(r["function"]))
+                    for r in items["function_ranges"])
+    ranges += sorted((d["start"], d["end"], d["name"]) for d in items["data"])
+    ranges += sorted((g["start"], g["end"], "gap_%08x" % g["start"])
+                     for g in items["gaps"])
+    ranges.sort()
+    applied, touched = 0, set()
+    for name in wanted:
+        for edit in features[name]["edits"]:
+            at = int(str(edit["at"]), 0)
+            old = bytes.fromhex(str(edit["original"]))
+            new = bytes.fromhex(str(edit["new"]))
+            if len(old) != len(new):
+                sys.exit("prune %s at 0x%x replaces %d bytes with %d"
+                         % (name, at, len(old), len(new)))
+            found = bytes(blob[at - APP_BASE:at - APP_BASE + len(old)])
+            if found != old:
+                sys.exit("prune %s at 0x%x finds %s, not the %s it expects"
+                         % (name, at, found.hex(), old.hex()))
+            holder = [r for r in ranges if r[0] <= at < r[1]]
+            if not holder or holder[0][2] != edit["in"]:
+                sys.exit("prune %s at 0x%x is in %s, not the %s it names"
+                         % (name, at, holder[0][2] if holder else "nothing",
+                            edit["in"]))
+            blob[at - APP_BASE:at - APP_BASE + len(new)] = new
+            touched.update(range(at, at + len(new)))
+            applied += 1
+    print("  pruned %s: %d edits, %d bytes" % (", ".join(wanted), applied,
+                                               len(touched)))
+    # The passes that follow read the export, which describes the image as it
+    # was: an edited call site no longer decodes as the call the export claims,
+    # and an edited table word no longer holds the pointer the classification
+    # found. Both are answered the same way the library boundary answers them,
+    # by handing the addresses to the caller as already owned.
+    return touched
+
+
 def gc_keep_list(sections, layout, pinned, words, reach_path):
     """(section, why) for everything --gc-sections must not be allowed to drop.
 
@@ -383,6 +439,11 @@ def main():
                          " reads the root set from abi/reach.py's out/reach")
     ap.add_argument("--reach", default=os.path.join(SIM, "out", "reach", "reach.json"),
                     help="the reachability map --gc takes its roots from")
+    ap.add_argument("--prune", action="append", default=[], metavar="FEATURE",
+                    help="apply abi/prunes.yaml's edits for a feature to the"
+                         " image before cutting it, so the link sees a program"
+                         " the feature is already gone from")
+    ap.add_argument("--prunes", default=os.path.join(HERE, "prunes.yaml"))
     ap.add_argument("--keep-also", help="a file of section names to add to the"
                     " --gc KEEP list; bisecting a gc link that does not boot"
                     " over the sections it dropped is what this is for")
@@ -406,6 +467,9 @@ def main():
                  % (args.image, len(blob), APP_END - APP_BASE))
 
     items, refs = objectify.read_export(args.export)
+    pruned = set()
+    if args.prune:
+        pruned = apply_prunes(blob, items, args.prunes, args.prune)
     with open(os.path.join(args.export, "words.json")) as fh:
         classified = json.load(fh)
     words = classified["words"]
@@ -454,6 +518,7 @@ def main():
     layout = objectify.Layout(sections)
 
     owned, boundary_counts = boundary_relocations(blob, boundary, layout)
+    owned |= pruned
     counts, unrelocatable, indirect = objectify.internal_relocations(
         blob, layout, refs["calls"], owned)
     word_counts = objectify.word_relocations(blob, layout, words, owned)
