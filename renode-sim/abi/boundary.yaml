@@ -47,13 +47,14 @@ config_corrections:
     617 in xQueueGiveMutexRecursive), which also dates the kernel source.
 
 # Spans of the image the library occupies, as abi/matches.yaml brackets them
-# (first to last matched function of each run). A `bl` from inside a span is a
+# (first to last matched function of each run, with hwa10.yaml's corrections
+# applied). A `bl` from inside a span is a
 # library-internal call and is not part of the boundary. The spans understate
 # the library slightly at their edges -- prvInitialiseTaskLists below 0x72eb0,
 # SAADC_IRQHandler above 0x7e138 -- which is why a handful of kernel-global pool
 # references look like app references; see data_references.
 library_ranges:
-  - [0x27da6, 0x27e50]
+  - [0x27da0, 0x27e50]   # prvIdleTask's own entry, six bytes below where the match anchored
   - [0x51a04, 0x51afc]
   - [0x72eb0, 0x73e5c]
   - [0x7db08, 0x7e138]
@@ -560,7 +561,7 @@ lib_to_app:
     symbol: "vPortSuppressTicksAndSleep"
     library_not_app: true
     confidence: "high"
-    how: "symbols.txt; sole caller is prvIdleTask@0x27da6"
+    how: "symbols.txt; sole caller is prvIdleTask@0x27da0"
 
 # --- data references --------------------------------------------------------
 # Literal-pool words holding an address of a kernel or driver global.
@@ -575,7 +576,7 @@ lib_to_app:
 # the 79 sites that looked like an app reference is inside a library body that
 # the matches.yaml spans simply failed to bracket -- 0x72d4a..0x72e9c
 # (prvInitialiseTaskLists / prvCheckTasksWaitingTermination, below the 0x72eb0
-# span start), 0x27da2..0x27da4 (prvIdleTask), 0x519ba..0x519dc (prvHeapInit),
+# span start), 0x519ba..0x519dc (prvHeapInit),
 # 0x7e41a..0x7e4c2 (SAADC_IRQHandler, past the 0x7e138 span end). The remaining
 # words (0x20006d48, 0x20007208, 0x20017c84, 0x20024670, 0x20027185, 0x20027248)
 # are Withings globals that library code also touches, not kernel state.

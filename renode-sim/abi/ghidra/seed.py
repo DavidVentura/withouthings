@@ -70,11 +70,16 @@ def main():
                        "fields": entry["fields"] if entry else None,
                        "source": "hwa10"})
 
+    # An address a manifest entry declares it corrects is not a function start,
+    # so the generated map must not seed one there as well: two entries six
+    # bytes apart would make the body's own prologue a separate item.
+    corrected = set(fn["corrects"] & ~1 for fn in manifest["functions"]
+                    if "corrects" in fn)
     for src in ("matches.yaml", "autonames.yaml"):
         doc = load(src)
         for fn in doc.get("functions", []):
             addr = fn["address"] & ~1
-            if not in_app(addr) or addr in functions:
+            if not in_app(addr) or addr in functions or addr in corrected:
                 continue
             functions[addr] = {"name": fn["name"], "source": src.split(".")[0]}
 

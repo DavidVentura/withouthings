@@ -60,6 +60,17 @@ regions:
 
 functions:
   # --- FreeRTOS ---
+  - name: prvIdleTask
+    address: 0x27da0
+    ret: void
+    args: [[void *, pvParameters]]
+    corrects: 0x27da6
+    notes: >
+      The body match anchors a start on a `bl` target, and nothing calls the
+      idle task, so it settled on 0x27da6 and left the `push {r3-r7,lr}` at
+      0x27da0 in a gap, six bytes the relayout was free to separate from the
+      body. The entry is the xTaskCreateStatic at 0x73032, whose r0 pool word
+      (0x73070) holds 0x27da1 and whose r1 names "IDLE".
   - name: xTaskCreateStatic
     address: 0x9e3dc
     ret: void *

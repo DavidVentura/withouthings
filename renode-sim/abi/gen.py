@@ -98,12 +98,20 @@ def load_matches(path, threshold, seen_fn, seen_obj, manifest):
     with open(path) as f:
         mm = yaml.safe_load(f)
     by_name = {fn["name"]: fn["address"] & ~1 for fn in manifest["functions"]}
+    # A hand entry may correct a match, and says which address it corrects, so
+    # the correction only holds against the measurement it was made against: if
+    # abi/match.py is re-run and lands somewhere else, the refusal below fires
+    # again instead of the stale correction winning silently.
+    corrected = {fn["name"]: fn["corrects"] & ~1
+                 for fn in manifest["functions"] if "corrects" in fn}
     out = []
     for fn in mm.get("functions", []):
         if fn["score"] < threshold or not IDENT.match(fn["name"]):
             continue
         addr = fn["address"] & ~1
         if fn["name"] in by_name:
+            if corrected.get(fn["name"]) == addr:
+                continue
             if by_name[fn["name"]] != addr:
                 raise ManifestError(
                     "matches.yaml puts %s at 0x%x, hwa10.yaml at 0x%x"

@@ -151,6 +151,8 @@ class Export(object):
         self.image = open(os.path.join(SIM, "appl.bin"), "rb").read()
         with open(os.path.join(HERE, "out", "ghidra", "references.json")) as fh:
             self.references = json.load(fh)
+        with open(os.path.join(HERE, "out", "ghidra", "items.json")) as fh:
+            self.function_starts = set(f["start"] for f in json.load(fh)["functions"])
         with open(os.path.join(HERE, "autonames.yaml")) as fh:
             self.autonames = yaml.safe_load(fh)["functions"]
         with open(os.path.join(HERE, "boundary.yaml")) as fh:
@@ -405,6 +407,27 @@ def collect_roots(spec, export, image):
     return roots
 
 
+def check_entry_roots(export, roots):
+    """Refuse a root the partition does not call a function start.
+
+    Every group but the orphan tables names a place execution enters: a vector
+    word, a task entry, a dispatch row's handler. If the partition does not have
+    a function starting there, one of the two is wrong -- the idle task's entry
+    was six bytes below where the body match anchored it, so the relayout was
+    free to separate its prologue from its body -- and a gc link would cut on
+    the wrong boundary. The orphan-table group is exempt: its roots are the
+    tables themselves.
+    """
+    bad = [r for r in roots if r.group != "orphan_pointer_tables"
+           and r.addr not in export.function_starts]
+    if not bad:
+        return
+    for r in bad:
+        print("root %s/%s at 0x%08x is not a function start: %s"
+              % (r.group, r.name, r.addr, r.evidence))
+    raise SystemExit("%d entry roots are not function starts" % len(bad))
+
+
 def removal(image, roots, baseline, dropped):
     """The sections that stop being reachable when `dropped` roots are removed.
 
@@ -567,6 +590,7 @@ def main():
     with open(args.roots) as fh:
         spec = yaml.safe_load(fh)
     roots = collect_roots(spec, export, image)
+    check_entry_roots(export, roots)
     reached = [reach(image, [r.section]) for r in roots]
     group_seen = collections.defaultdict(set)
     group_roots = collections.defaultdict(set)
@@ -707,8 +731,13 @@ def main():
                                      "list": sorted(dead_detail[r])}
                                  for r in reasons},
                      "list": dead_rows},
+            # The addresses, not just the count: abi/blobify.py --gc leaves a
+            # root out of its KEEP list when the fixed points already reach it,
+            # so that the list says how much of the root set is really
+            # unreferenced rather than repeating what gc would keep anyway.
             "gc_sections": {"sections": len(vector_only),
-                            "code": gc_code, "data": gc_data},
+                            "code": gc_code, "data": gc_data,
+                            "addrs": sorted(image.addrs[i] for i in vector_only)},
             "groups": groups, "roots": rows, "features": features,
             "sanity": checks,
             "undefined_symbols": dict(image.undefined),
