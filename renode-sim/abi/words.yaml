@@ -47,168 +47,6 @@ reasons:
     could not see the slot.
 
 overrides:
-  - address: 0x271e4
-    value: 0xcaa65
-    class: pointer
-    target: 0xcaa65
-    addend: 0
-    why: names_a_string_run
-  - address: 0x271f0
-    value: 0xd7174
-    class: pointer
-    target: 0xd7174
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27268
-    value: 0xd8db4
-    class: pointer
-    target: 0xd8db4
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27328
-    value: 0xdc67e
-    class: pointer
-    target: 0xdc67e
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27394
-    value: 0xd0eae
-    class: pointer
-    target: 0xd0eae
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27558
-    value: 0xd0f79
-    class: pointer
-    target: 0xd0f79
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27564
-    value: 0xd179e
-    class: pointer
-    target: 0xd179e
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27594
-    value: 0xd1806
-    class: pointer
-    target: 0xd1806
-    addend: 0
-    why: names_a_string_run
-  - address: 0x275a0
-    value: 0xd1822
-    class: pointer
-    target: 0xd1822
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27648
-    value: 0xd5192
-    class: pointer
-    target: 0xd5192
-    addend: 0
-    why: names_a_string_run
-  - address: 0x2772c
-    value: 0xd8e4f
-    class: pointer
-    target: 0xd8e4f
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27750
-    value: 0xd956e
-    class: pointer
-    target: 0xd956e
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27a98
-    value: 0xe46f3
-    class: pointer
-    target: 0xe46f3
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27b28
-    value: 0xe4871
-    class: pointer
-    target: 0xe4871
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27b34
-    value: 0xe4889
-    class: pointer
-    target: 0xe4889
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27b64
-    value: 0xe4f55
-    class: pointer
-    target: 0xe4f55
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27ba0
-    value: 0xe622f
-    class: pointer
-    target: 0xe622f
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27bf4
-    value: 0xe38c5
-    class: pointer
-    target: 0xe38c5
-    addend: 0
-    why: names_a_string_run
-  - address: 0x27c00
-    value: 0xe38db
-    class: pointer
-    target: 0xe38db
-    addend: 0
-    why: names_a_string_run
-  - address: 0x2d020
-    value: 0xb0d24
-    class: pointer
-    target: 0xb0d24
-    addend: 0
-    why: names_a_string_run
-  - address: 0x2d984
-    value: 0xefcbb
-    class: pointer
-    target: 0xefcbb
-    addend: 0
-    why: names_a_string_run
-  - address: 0x2e518
-    value: 0xc5fd4
-    class: pointer
-    target: 0xc5fd4
-    addend: 0
-    why: names_a_string_run
-  - address: 0x2e8c8
-    value: 0xc60a2
-    class: pointer
-    target: 0xc60a2
-    addend: 0
-    why: names_a_string_run
-  - address: 0x2e8cc
-    value: 0xc60ce
-    class: pointer
-    target: 0xc60ce
-    addend: 0
-    why: names_a_string_run
-  - address: 0x2e8d0
-    value: 0xc60f9
-    class: pointer
-    target: 0xc60f9
-    addend: 0
-    why: names_a_string_run
-  - address: 0x2e8d4
-    value: 0xc6124
-    class: pointer
-    target: 0xc6124
-    addend: 0
-    why: names_a_string_run
-  - address: 0x2e8d8
-    value: 0xc614f
-    class: pointer
-    target: 0xc614f
-    addend: 0
-    why: names_a_string_run
   - address: 0x2e8e0
     value: 0xc617a
     class: pointer
@@ -227,88 +65,10 @@ overrides:
     target: 0xc61a4
     addend: 0
     why: names_a_string_run
-  - address: 0x2f248
-    value: 0xc6611
-    class: pointer
-    target: 0xc6611
-    addend: 0
-    why: names_a_string_run
-  - address: 0x2f3cc
-    value: 0xb2134
-    class: pointer
-    target: 0xb2134
-    addend: 0
-    why: names_a_string_run
-  - address: 0x2f3f4
-    value: 0xb211c
-    class: pointer
-    target: 0xb211c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x30bf0
-    value: 0xb2134
-    class: pointer
-    target: 0xb2134
-    addend: 0
-    why: names_a_string_run
-  - address: 0x30d00
-    value: 0xb211c
-    class: pointer
-    target: 0xb211c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x313a4
-    value: 0xca048
-    class: pointer
-    target: 0xca048
-    addend: 0
-    why: names_a_string_run
-  - address: 0x313d4
-    value: 0xca136
-    class: pointer
-    target: 0xca136
-    addend: 0
-    why: names_a_string_run
-  - address: 0x31fbc
-    value: 0xca4cc
-    class: pointer
-    target: 0xca4cc
-    addend: 0
-    why: names_a_string_run
-  - address: 0x32214
-    value: 0xca4f2
-    class: pointer
-    target: 0xca4f2
-    addend: 0
-    why: names_a_string_run
   - address: 0x325cc
     value: 0xca5df
     class: pointer
     target: 0xca5df
-    addend: 0
-    why: names_a_string_run
-  - address: 0x326e0
-    value: 0xca5df
-    class: pointer
-    target: 0xca5df
-    addend: 0
-    why: names_a_string_run
-  - address: 0x331c4
-    value: 0xca68c
-    class: pointer
-    target: 0xca68c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x343cc
-    value: 0xca9bd
-    class: pointer
-    target: 0xca9bd
-    addend: 0
-    why: names_a_string_run
-  - address: 0x36c34
-    value: 0xcfcb8
-    class: pointer
-    target: 0xcfcb8
     addend: 0
     why: names_a_string_run
   - address: 0x370fc
@@ -371,70 +131,10 @@ overrides:
     target: 0xb21ac
     addend: 0
     why: names_a_string_run
-  - address: 0x37ac0
-    value: 0xd01b4
-    class: pointer
-    target: 0xd01b4
-    addend: 0
-    why: names_a_string_run
-  - address: 0x3b038
-    value: 0xb2604
-    class: pointer
-    target: 0xb2604
-    addend: 0
-    why: names_a_string_run
-  - address: 0x3b0bc
-    value: 0xb2604
-    class: pointer
-    target: 0xb2604
-    addend: 0
-    why: names_a_string_run
-  - address: 0x3c934
-    value: 0xd1449
-    class: pointer
-    target: 0xd1449
-    addend: 0
-    why: names_a_string_run
-  - address: 0x46e34
-    value: 0xd5625
-    class: pointer
-    target: 0xd5625
-    addend: 0
-    why: names_a_string_run
-  - address: 0x48e30
-    value: 0xd5e26
-    class: pointer
-    target: 0xd5e26
-    addend: 0
-    why: names_a_string_run
-  - address: 0x4b6dc
-    value: 0xb2134
-    class: pointer
-    target: 0xb2134
-    addend: 0
-    why: names_a_string_run
-  - address: 0x4b734
-    value: 0xb211c
-    class: pointer
-    target: 0xb211c
-    addend: 0
-    why: names_a_string_run
   - address: 0x4c16c
     value: 0xd76f4
     class: pointer
     target: 0xd76f4
-    addend: 0
-    why: names_a_string_run
-  - address: 0x4d714
-    value: 0xd8171
-    class: pointer
-    target: 0xd8171
-    addend: 0
-    why: names_a_string_run
-  - address: 0x4dde4
-    value: 0xd8a29
-    class: pointer
-    target: 0xd8a29
     addend: 0
     why: names_a_string_run
   - address: 0x50e8c
@@ -449,64 +149,10 @@ overrides:
     target: 0xda8d8
     addend: 0
     why: names_a_string_run
-  - address: 0x55418
-    value: 0xdb39c
-    class: pointer
-    target: 0xdb39c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x57e30
-    value: 0xdc8e2
-    class: pointer
-    target: 0xdc8e2
-    addend: 0
-    why: names_a_string_run
-  - address: 0x58a80
-    value: 0xdcacd
-    class: pointer
-    target: 0xdcacd
-    addend: 0
-    why: names_a_string_run
-  - address: 0x59f30
-    value: 0xdd376
-    class: pointer
-    target: 0xdd376
-    addend: 0
-    why: names_a_string_run
-  - address: 0x59f48
-    value: 0xdd37e
-    class: pointer
-    target: 0xdd37e
-    addend: 0
-    why: names_a_string_run
   - address: 0x5a384
     value: 0xdd4ee
     class: pointer
     target: 0xdd4ee
-    addend: 0
-    why: names_a_string_run
-  - address: 0x5a398
-    value: 0xdd51a
-    class: pointer
-    target: 0xdd51a
-    addend: 0
-    why: names_a_string_run
-  - address: 0x5a7d4
-    value: 0xb27e8
-    class: pointer
-    target: 0xb27e8
-    addend: 0
-    why: names_a_string_run
-  - address: 0x5aa24
-    value: 0xdd7e0
-    class: pointer
-    target: 0xdd7e0
-    addend: 0
-    why: names_a_string_run
-  - address: 0x5af30
-    value: 0xb27e8
-    class: pointer
-    target: 0xb27e8
     addend: 0
     why: names_a_string_run
   - address: 0x5bec0
@@ -527,64 +173,16 @@ overrides:
     target: 0xda8d8
     addend: 0
     why: names_a_string_run
-  - address: 0x5c930
-    value: 0xde238
-    class: pointer
-    target: 0xde238
-    addend: 0
-    why: names_a_string_run
   - address: 0x5ce0c
     value: 0xb1ca0
     class: pointer
     target: 0xb1ca0
     addend: 0
     why: names_a_string_run
-  - address: 0x5e160
-    value: 0xde664
-    class: pointer
-    target: 0xde664
-    addend: 0
-    why: names_a_string_run
-  - address: 0x60a34
-    value: 0xdf4b1
-    class: pointer
-    target: 0xdf4b1
-    addend: 0
-    why: names_a_string_run
-  - address: 0x60a38
-    value: 0xdf4b9
-    class: pointer
-    target: 0xdf4b9
-    addend: 0
-    why: names_a_string_run
-  - address: 0x60a44
-    value: 0xdf4b5
-    class: pointer
-    target: 0xdf4b5
-    addend: 0
-    why: names_a_string_run
-  - address: 0x60a48
-    value: 0xdf4bd
-    class: pointer
-    target: 0xdf4bd
-    addend: 0
-    why: names_a_string_run
   - address: 0x60e80
     value: 0xdf939
     class: pointer
     target: 0xdf939
-    addend: 0
-    why: names_a_string_run
-  - address: 0x61394
-    value: 0xdfa1d
-    class: pointer
-    target: 0xdfa1d
-    addend: 0
-    why: names_a_string_run
-  - address: 0x61650
-    value: 0xdfa78
-    class: pointer
-    target: 0xdfa78
     addend: 0
     why: names_a_string_run
   - address: 0x62908
@@ -597,42 +195,6 @@ overrides:
     value: 0xe02ca
     class: pointer
     target: 0xe02ca
-    addend: 0
-    why: names_a_string_run
-  - address: 0x65518
-    value: 0xdfa19
-    class: pointer
-    target: 0xdfa19
-    addend: 0
-    why: names_a_string_run
-  - address: 0x658e0
-    value: 0xe1dae
-    class: pointer
-    target: 0xe1dae
-    addend: 0
-    why: names_a_string_run
-  - address: 0x664fc
-    value: 0xe2016
-    class: pointer
-    target: 0xe2016
-    addend: 0
-    why: names_a_string_run
-  - address: 0x66500
-    value: 0xe201a
-    class: pointer
-    target: 0xe201a
-    addend: 0
-    why: names_a_string_run
-  - address: 0x66a8c
-    value: 0xe2196
-    class: pointer
-    target: 0xe2196
-    addend: 0
-    why: names_a_string_run
-  - address: 0x686c8
-    value: 0xdfa19
-    class: pointer
-    target: 0xdfa19
     addend: 0
     why: names_a_string_run
   - address: 0x6953c
@@ -659,34 +221,10 @@ overrides:
     target: 0xe42fd
     addend: 0
     why: names_a_string_run
-  - address: 0x6d604
-    value: 0xe4820
-    class: pointer
-    target: 0xe4820
-    addend: 0
-    why: names_a_string_run
-  - address: 0x6e150
-    value: 0xe4eeb
-    class: pointer
-    target: 0xe4eeb
-    addend: 0
-    why: names_a_string_run
   - address: 0x6e7e0
     value: 0xe42fd
     class: pointer
     target: 0xe42fd
-    addend: 0
-    why: names_a_string_run
-  - address: 0x6f12c
-    value: 0xe5352
-    class: pointer
-    target: 0xe5352
-    addend: 0
-    why: names_a_string_run
-  - address: 0x6fb7c
-    value: 0xe5b66
-    class: pointer
-    target: 0xe5b66
     addend: 0
     why: names_a_string_run
   - address: 0x78388
@@ -695,70 +233,10 @@ overrides:
     target: 0xb6190
     addend: 0
     why: names_a_string_run
-  - address: 0x785e4
-    value: 0xb646c
-    class: pointer
-    target: 0xb646c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x7cf58
-    value: 0xb8ea8
-    class: pointer
-    target: 0xb8ea8
-    addend: 0
-    why: names_a_string_run
-  - address: 0x7d104
-    value: 0xb8f68
-    class: pointer
-    target: 0xb8f68
-    addend: 0
-    why: names_a_string_run
   - address: 0x7d10c
     value: 0xb8f08
     class: pointer
     target: 0xb8f08
-    addend: 0
-    why: names_a_string_run
-  - address: 0x7ee74
-    value: 0xe6711
-    class: pointer
-    target: 0xe6711
-    addend: 0
-    why: names_a_string_run
-  - address: 0x7fc18
-    value: 0xe6850
-    class: pointer
-    target: 0xe6850
-    addend: 0
-    why: names_a_string_run
-  - address: 0x80680
-    value: 0xe6b3c
-    class: pointer
-    target: 0xe6b3c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x8085c
-    value: 0xb2164
-    class: pointer
-    target: 0xb2164
-    addend: 0
-    why: names_a_string_run
-  - address: 0x80b38
-    value: 0xe6b3c
-    class: pointer
-    target: 0xe6b3c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x80cec
-    value: 0xb2164
-    class: pointer
-    target: 0xb2164
-    addend: 0
-    why: names_a_string_run
-  - address: 0x817d8
-    value: 0xb214c
-    class: pointer
-    target: 0xb214c
     addend: 0
     why: names_a_string_run
   - address: 0x81ba8
@@ -767,76 +245,10 @@ overrides:
     target: 0xb2164
     addend: 0
     why: names_a_string_run
-  - address: 0x820c0
-    value: 0xb2164
-    class: pointer
-    target: 0xb2164
-    addend: 0
-    why: names_a_string_run
-  - address: 0x82168
-    value: 0xb2164
-    class: pointer
-    target: 0xb2164
-    addend: 0
-    why: names_a_string_run
-  - address: 0x82b0c
-    value: 0xe74e1
-    class: pointer
-    target: 0xe74e1
-    addend: 0
-    why: names_a_string_run
-  - address: 0x83608
-    value: 0xe75e1
-    class: pointer
-    target: 0xe75e1
-    addend: 0
-    why: names_a_string_run
-  - address: 0x83858
-    value: 0xb2164
-    class: pointer
-    target: 0xb2164
-    addend: 0
-    why: names_a_string_run
-  - address: 0x839e8
-    value: 0xb211c
-    class: pointer
-    target: 0xb211c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x83b94
-    value: 0xb211c
-    class: pointer
-    target: 0xb211c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x83ecc
-    value: 0xe77fd
-    class: pointer
-    target: 0xe77fd
-    addend: 0
-    why: names_a_string_run
-  - address: 0x84778
-    value: 0xe7970
-    class: pointer
-    target: 0xe7970
-    addend: 0
-    why: names_a_string_run
-  - address: 0x847c8
-    value: 0xe7993
-    class: pointer
-    target: 0xe7993
-    addend: 0
-    why: names_a_string_run
   - address: 0x84b90
     value: 0xe7ab1
     class: pointer
     target: 0xe7ab1
-    addend: 0
-    why: names_a_string_run
-  - address: 0x8570c
-    value: 0xb2134
-    class: pointer
-    target: 0xb2134
     addend: 0
     why: names_a_string_run
   - address: 0x85710
@@ -845,304 +257,16 @@ overrides:
     target: 0xbc1b4
     addend: 0
     why: names_a_string_run
-  - address: 0x85984
-    value: 0xb214c
-    class: pointer
-    target: 0xb214c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x85d4c
-    value: 0xe7b16
-    class: pointer
-    target: 0xe7b16
-    addend: 0
-    why: names_a_string_run
-  - address: 0x861b8
-    value: 0xe7b34
-    class: pointer
-    target: 0xe7b34
-    addend: 0
-    why: names_a_string_run
-  - address: 0x866a8
-    value: 0xb214c
-    class: pointer
-    target: 0xb214c
-    addend: 0
-    why: names_a_string_run
   - address: 0x86a38
     value: 0xb211c
     class: pointer
     target: 0xb211c
     addend: 0
     why: names_a_string_run
-  - address: 0x87014
-    value: 0xb211c
-    class: pointer
-    target: 0xb211c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x87098
-    value: 0xbae5c
-    class: pointer
-    target: 0xbae5c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x875c0
-    value: 0xb2164
-    class: pointer
-    target: 0xb2164
-    addend: 0
-    why: names_a_string_run
-  - address: 0x87774
-    value: 0xb2164
-    class: pointer
-    target: 0xb2164
-    addend: 0
-    why: names_a_string_run
-  - address: 0x87820
-    value: 0xbae5c
-    class: pointer
-    target: 0xbae5c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x87d08
-    value: 0xb214c
-    class: pointer
-    target: 0xb214c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x8846c
-    value: 0xb2164
-    class: pointer
-    target: 0xb2164
-    addend: 0
-    why: names_a_string_run
-  - address: 0x88554
-    value: 0xb2164
-    class: pointer
-    target: 0xb2164
-    addend: 0
-    why: names_a_string_run
-  - address: 0x89240
-    value: 0xb214c
-    class: pointer
-    target: 0xb214c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x89244
-    value: 0xb2164
-    class: pointer
-    target: 0xb2164
-    addend: 0
-    why: names_a_string_run
-  - address: 0x89454
-    value: 0xb214c
-    class: pointer
-    target: 0xb214c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x89458
-    value: 0xb2164
-    class: pointer
-    target: 0xb2164
-    addend: 0
-    why: names_a_string_run
-  - address: 0x89718
-    value: 0xb2164
-    class: pointer
-    target: 0xb2164
-    addend: 0
-    why: names_a_string_run
   - address: 0x89bdc
     value: 0xb2104
     class: pointer
     target: 0xb2104
-    addend: 0
-    why: names_a_string_run
-  - address: 0x8a664
-    value: 0xb214c
-    class: pointer
-    target: 0xb214c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x8b744
-    value: 0xbbb24
-    class: pointer
-    target: 0xbbb24
-    addend: 0
-    why: names_a_string_run
-  - address: 0x8b74c
-    value: 0xbb788
-    class: pointer
-    target: 0xbb788
-    addend: 0
-    why: names_a_string_run
-  - address: 0x8b760
-    value: 0xbb680
-    class: pointer
-    target: 0xbb680
-    addend: 0
-    why: names_a_string_run
-  - address: 0x8b768
-    value: 0xbb944
-    class: pointer
-    target: 0xbb944
-    addend: 0
-    why: names_a_string_run
-  - address: 0x8efac
-    value: 0xe6711
-    class: pointer
-    target: 0xe6711
-    addend: 0
-    why: names_a_string_run
-  - address: 0x8efb0
-    value: 0xefc44
-    class: pointer
-    target: 0xefc44
-    addend: 0
-    why: names_a_string_run
-  - address: 0x8efb4
-    value: 0xefc4c
-    class: pointer
-    target: 0xefc4c
-    addend: 0
-    why: names_a_string_run
-  - address: 0x8efb8
-    value: 0xefc48
-    class: pointer
-    target: 0xefc48
-    addend: 0
-    why: names_a_string_run
-  - address: 0x902b0
-    value: 0xde664
-    class: pointer
-    target: 0xde664
-    addend: 0
-    why: names_a_string_run
-  - address: 0x902e4
-    value: 0xefc99
-    class: pointer
-    target: 0xefc99
-    addend: 0
-    why: names_a_string_run
-  - address: 0x911c0
-    value: 0xefdf6
-    class: pointer
-    target: 0xefdf6
-    addend: 0
-    why: names_a_string_run
-  - address: 0x91478
-    value: 0xefdf6
-    class: pointer
-    target: 0xefdf6
-    addend: 0
-    why: names_a_string_run
-  - address: 0x916c8
-    value: 0xefdf6
-    class: pointer
-    target: 0xefdf6
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb0f18
-    value: 0xc6e3d
-    class: pointer
-    target: 0xc6e3d
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb0f68
-    value: 0xc6ea2
-    class: pointer
-    target: 0xc6ea2
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb1038
-    value: 0xc70e1
-    class: pointer
-    target: 0xc70e1
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb1094
-    value: 0xc7230
-    class: pointer
-    target: 0xc7230
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb10f4
-    value: 0xc74c1
-    class: pointer
-    target: 0xc74c1
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb1140
-    value: 0xc7630
-    class: pointer
-    target: 0xc7630
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb1234
-    value: 0xc6ea2
-    class: pointer
-    target: 0xc6ea2
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb138c
-    value: 0xc7d68
-    class: pointer
-    target: 0xc7d68
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb1500
-    value: 0xc6ea2
-    class: pointer
-    target: 0xc6ea2
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb1610
-    value: 0xc848b
-    class: pointer
-    target: 0xc848b
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb168c
-    value: 0xc8788
-    class: pointer
-    target: 0xc8788
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb16f4
-    value: 0xc89aa
-    class: pointer
-    target: 0xc89aa
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb16f8
-    value: 0xc89ae
-    class: pointer
-    target: 0xc89ae
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb19c4
-    value: 0xc938a
-    class: pointer
-    target: 0xc938a
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb1a98
-    value: 0xc6ea2
-    class: pointer
-    target: 0xc6ea2
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb1aa8
-    value: 0xc94bc
-    class: pointer
-    target: 0xc94bc
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb1c90
-    value: 0xc938a
-    class: pointer
-    target: 0xc938a
     addend: 0
     why: names_a_string_run
   - address: 0xb1c94
@@ -1277,18 +401,6 @@ overrides:
     target: 0xcfe41
     addend: 0
     why: names_a_string_run
-  - address: 0xb2448
-    value: 0xcfe4b
-    class: pointer
-    target: 0xcfe4b
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb245c
-    value: 0xcfe50
-    class: pointer
-    target: 0xcfe50
-    addend: 0
-    why: names_a_string_run
   - address: 0xb2664
     value: 0xd49c2
     class: pointer
@@ -1313,12 +425,6 @@ overrides:
     target: 0xb353c
     addend: 0
     why: names_a_string_run
-  - address: 0xb3508
-    value: 0xb3524
-    class: pointer
-    target: 0xb3524
-    addend: 0
-    why: names_a_string_run
   - address: 0xb3524
     value: 0xd5422
     class: pointer
@@ -1331,22 +437,10 @@ overrides:
     target: 0xd57d7
     addend: 0
     why: names_a_string_run
-  - address: 0xb35b0
-    value: 0xd57ef
-    class: pointer
-    target: 0xd57ef
-    addend: 0
-    why: names_a_string_run
   - address: 0xb41cc
     value: 0xdd1ff
     class: pointer
     target: 0xdd1ff
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb41ec
-    value: 0xddaf7
-    class: pointer
-    target: 0xddaf7
     addend: 0
     why: names_a_string_run
   - address: 0xb4210
@@ -1385,18 +479,6 @@ overrides:
     target: 0xddb39
     addend: 0
     why: names_a_string_run
-  - address: 0xb4258
-    value: 0xddb41
-    class: pointer
-    target: 0xddb41
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4264
-    value: 0xddb45
-    class: pointer
-    target: 0xddb45
-    addend: 0
-    why: names_a_string_run
   - address: 0xb4804
     value: 0xe0d7d
     class: pointer
@@ -1409,70 +491,10 @@ overrides:
     target: 0xe0c5d
     addend: 0
     why: names_a_string_run
-  - address: 0xb4814
-    value: 0xe0d90
-    class: pointer
-    target: 0xe0d90
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4828
-    value: 0xe0d90
-    class: pointer
-    target: 0xe0d90
-    addend: 0
-    why: names_a_string_run
   - address: 0xb48e0
     value: 0xe114b
     class: pointer
     target: 0xe114b
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4910
-    value: 0xe1164
-    class: pointer
-    target: 0xe1164
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4940
-    value: 0xe117d
-    class: pointer
-    target: 0xe117d
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4970
-    value: 0xe1192
-    class: pointer
-    target: 0xe1192
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb49a0
-    value: 0xe11a9
-    class: pointer
-    target: 0xe11a9
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb49d0
-    value: 0xe11bf
-    class: pointer
-    target: 0xe11bf
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4a00
-    value: 0xe11d0
-    class: pointer
-    target: 0xe11d0
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4a30
-    value: 0xe11eb
-    class: pointer
-    target: 0xe11eb
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4a60
-    value: 0xe1208
-    class: pointer
-    target: 0xe1208
     addend: 0
     why: names_a_string_run
   - address: 0xb4b88
@@ -1499,24 +521,6 @@ overrides:
     target: 0xe5432
     addend: 0
     why: names_a_string_run
-  - address: 0xb4ca0
-    value: 0xe543a
-    class: pointer
-    target: 0xe543a
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4ca8
-    value: 0xe544a
-    class: pointer
-    target: 0xe544a
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4cb0
-    value: 0xe544e
-    class: pointer
-    target: 0xe544e
-    addend: 0
-    why: names_a_string_run
   - address: 0xb4cd8
     value: 0xe5466
     class: pointer
@@ -1527,18 +531,6 @@ overrides:
     value: 0xe547b
     class: pointer
     target: 0xe547b
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4dfc
-    value: 0xe544a
-    class: pointer
-    target: 0xe544a
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4e04
-    value: 0xe544e
-    class: pointer
-    target: 0xe544e
     addend: 0
     why: names_a_string_run
   - address: 0xb4e40
@@ -1557,12 +549,6 @@ overrides:
     value: 0xe586f
     class: pointer
     target: 0xe586f
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb4e80
-    value: 0xe589f
-    class: pointer
-    target: 0xe589f
     addend: 0
     why: names_a_string_run
   - address: 0xb4ef4
@@ -1595,40 +581,10 @@ overrides:
     target: 0xe6d6e
     addend: 0
     why: names_a_string_run
-  - address: 0xb932c
-    value: 0xbafc8
-    class: pointer
-    target: 0xbafc8
-    addend: 0
-    why: names_a_string_run
   - address: 0xb937c
     value: 0xe6d7b
     class: pointer
     target: 0xe6d7b
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb938c
-    value: 0xbafc8
-    class: pointer
-    target: 0xbafc8
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb942c
-    value: 0xbaf84
-    class: pointer
-    target: 0xbaf84
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb951c
-    value: 0xe6dbe
-    class: pointer
-    target: 0xe6dbe
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb954c
-    value: 0xe6de9
-    class: pointer
-    target: 0xe6de9
     addend: 0
     why: names_a_string_run
   - address: 0xb9660
@@ -1689,12 +645,6 @@ overrides:
     value: 0xb220c
     class: pointer
     target: 0xb220c
-    addend: 0
-    why: names_a_string_run
-  - address: 0xb9af4
-    value: 0xe70b8
-    class: pointer
-    target: 0xe70b8
     addend: 0
     why: names_a_string_run
   - address: 0xb9b44
@@ -1813,50 +763,14 @@ overrides:
     value: 0x4010e
     class: constant
     why: unit_table_six_byte_records
-  - address: 0xbe624
-    value: 0x40008
-    class: pointer
-    target: 0x40008
-    addend: 0
-    why: names_a_string_run
   - address: 0xbe6b0
     value: 0x40001
     class: constant
     why: be6b0_two_u16_fields
-  - address: 0xc1a48
-    value: 0x40008
-    class: pointer
-    target: 0x40008
-    addend: 0
-    why: names_a_string_run
-  - address: 0xc1bd0
-    value: 0x40008
-    class: pointer
-    target: 0x40008
-    addend: 0
-    why: names_a_string_run
   - address: 0xc1d40
     value: 0x40004
     class: pointer
     target: 0x40004
-    addend: 0
-    why: names_a_string_run
-  - address: 0xc27c0
-    value: 0x40008
-    class: pointer
-    target: 0x40008
-    addend: 0
-    why: names_a_string_run
-  - address: 0xc28c0
-    value: 0x40008
-    class: pointer
-    target: 0x40008
-    addend: 0
-    why: names_a_string_run
-  - address: 0xc2960
-    value: 0x40008
-    class: pointer
-    target: 0x40008
     addend: 0
     why: names_a_string_run
   - address: 0xc29a0
@@ -1911,18 +825,6 @@ overrides:
     value: 0xb5a00
     class: pointer
     target: 0xb5a00
-    addend: 0
-    why: names_a_string_run
-  - address: 0xf0cd4
-    value: 0xefc61
-    class: pointer
-    target: 0xefc61
-    addend: 0
-    why: names_a_string_run
-  - address: 0xf0cd8
-    value: 0xefc61
-    class: pointer
-    target: 0xefc61
     addend: 0
     why: names_a_string_run
   - address: 0xf105c

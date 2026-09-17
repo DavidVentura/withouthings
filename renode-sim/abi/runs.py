@@ -39,6 +39,15 @@ each is a decision with a name:
                      multiplied by before it is added to the address a pool
                      word holds, which is the same number.
 
+  declared_table    abi/hwa10.yaml names the tables whose shape is known from
+                    somewhere other than the image's own references -- the WPP
+                    and shell dispatch tables, which no literal-pool word names
+                    at all -- and gives each one a struct. A word of such a
+                    table is typed by the declaration, and the declaration is
+                    also a root for the reachability walk, because a table
+                    nothing names is exactly what that walk would otherwise
+                    call unreachable.
+
   ordered_column    Where nothing names a run often enough to space out a grid,
                     the grid is read off the run itself: a column whose every
                     entry is an address inside the app and strictly above the
@@ -220,7 +229,42 @@ def addressish(value):
             or (value & 1 and APP_BASE <= (value & ~1) < APP_END))
 
 
-def analyse(items, refs, rows, blob):
+WIDTHS = {"u8": 1, "u16": 2, "u32": 4, "i8": 1, "i16": 2, "i32": 4}
+
+
+def field_map(fields):
+    """{offset: is a 4-byte pointer} for one hwa10.yaml struct."""
+    out, at = {}, 0
+    for kind, _ in fields:
+        kind = str(kind)
+        if kind.endswith("*"):
+            width, pointer = 4, True
+        elif "[" in kind:
+            base, _, count = kind.partition("[")
+            width, pointer = WIDTHS[base] * int(count.rstrip("]")), False
+        else:
+            width, pointer = WIDTHS[kind], False
+        out[at] = pointer
+        at += width
+    return out, at
+
+
+def declared_tables(manifest):
+    """(start, stride, count, {offset: is a pointer}) for every declared table."""
+    structs = dict((s["name"], s["fields"]) for s in manifest["table_structs"])
+    out = []
+    for table in manifest["tables"]:
+        fields, size = field_map(structs[table["entry"]])
+        if size != table["stride"]:
+            raise SystemExit("abi/hwa10.yaml: %s is %d bytes but %s has a"
+                             " stride of %d" % (table["entry"], size,
+                                                table["name"], table["stride"]))
+        out.append((table["address"], table["stride"], table["count"], fields,
+                    table["name"]))
+    return out
+
+
+def analyse(items, refs, rows, blob, manifest):
     """{word address: (class, signal, note)} for the review words it decides."""
     runs = Runs(items)
     in_run = collections.defaultdict(list)
@@ -242,7 +286,8 @@ def analyse(items, refs, rows, blob):
     def word_at(addr):
         return int.from_bytes(blob[addr - APP_BASE:addr - APP_BASE + 4], "little")
 
-    seeds = []
+    declared = declared_tables(manifest)
+    seeds = [start for start, _, _, _, _ in declared]
     for row in rows:
         if row["class"] == "pointer" or row["kind"] in ("pool", "jumptable"):
             seeds.append(row["value"])
@@ -259,6 +304,19 @@ def analyse(items, refs, rows, blob):
 
     hinted = reader_strides(rows, runs)
     decided = {}
+    by_addr = dict((row["addr"], row) for row in rows)
+    for start, stride, count, fields, name in declared:
+        for at in range(start, start + stride * count, 4):
+            row = by_addr.get(at)
+            if row is None or row["class"] != "review":
+                continue
+            note = "%s at 0x%x, stride %d, field +%d" % (name, start, stride,
+                                                         (at - start) % stride)
+            if fields.get((at - start) % stride):
+                decided[at] = ("pointer", "declared_table_pointer", note)
+                trusted.add(row["value"])
+            else:
+                decided[at] = ("constant", "declared_table_integer", note)
     for _ in range(ROUNDS):
         held = collections.defaultdict(set)
         for value in trusted:

@@ -389,7 +389,7 @@ def owning_item(part, target):
     return target, 0
 
 
-def classify(items, refs, blob, contracts, overrides):
+def classify(items, refs, blob, contracts, overrides, manifest):
     outside = sorted(set(overrides) - set(w["addr"] for w in refs["words"]))
     if outside:
         sys.exit("abi/words.yaml declares %d addresses the candidate set does"
@@ -400,7 +400,7 @@ def classify(items, refs, blob, contracts, overrides):
     first = [dict(word, **dict(zip(("class", "signal", "note"),
                                   decide(word, part, contracts, overrides))))
              for word in refs["words"]]
-    from_runs = runs.analyse(items, refs, first, blob)
+    from_runs = runs.analyse(items, refs, first, blob, manifest)
     for word in first:
         klass, signal, note = (from_runs.get(word["addr"])
                                or (word["class"], word["signal"], word["note"]))
@@ -435,6 +435,7 @@ def main():
     ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"))
     ap.add_argument("--image", default=os.path.join(SIM, "appl.bin"))
     ap.add_argument("--facts", default=os.path.join(HERE, "words.yaml"))
+    ap.add_argument("--manifest", default=os.path.join(HERE, "hwa10.yaml"))
     args = ap.parse_args()
     with open(os.path.join(args.export, "items.json")) as fh:
         items = json.load(fh)
@@ -450,8 +451,10 @@ def main():
     with open(args.image, "rb") as fh:
         blob = fh.read()
     contracts, overrides = read_facts(args.facts, blob, items["functions"])
+    with open(args.manifest) as fh:
+        manifest = yaml.safe_load(fh)
     rows, buckets, review, displacements = classify(items, refs, blob, contracts,
-                                                    overrides)
+                                                    overrides, manifest)
     pointers = [r for r in rows if r["class"] == "pointer"]
     summary = {
         "candidates": len(rows),

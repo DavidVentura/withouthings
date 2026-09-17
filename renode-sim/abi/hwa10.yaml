@@ -284,6 +284,19 @@ tables:
       No literal-pool reference to the table exists in the image, so the walker
       reaches it some other way; replacing a handler word in place works
       regardless (proven by diverting the battery handler to a logging hook).
+  - name: shell_cmd_table
+    address: 0x270f8
+    entry: shell_cmd_entry
+    stride: 12
+    count: 79
+    notes: >
+      The UART shell's own dispatch table, the same three-word row as
+      wpp_cmd_table with a hashed key instead of a command id and a lowercase
+      command word for a name; it runs from 0x270f8 to the row above
+      wpp_cmd_table's head. Like that table no literal-pool word names it, so
+      the classification is told about it here rather than deriving it: without
+      the declaration the words of both tables are in a run nothing reaches and
+      their name pointers read as numbers.
   - name: i2c_device_table
     address: 0xb22c4
     entry: i2c_device
@@ -328,6 +341,13 @@ tables:
     count: 28
 
 table_structs:
+  - name: wpp_cmd_entry
+    fields: [[u32, command], [void *, handler], [const char *, name]]
+    notes: >
+      handler has the Thumb bit set and name points at the handler's source
+      name; abi/autonames.py walks the table on exactly that shape.
+  - name: shell_cmd_entry
+    fields: [[u32, key], [void *, handler], [const char *, name]]
   - name: i2c_device
     fields: [[void *, bus], [u32, addr], [u32, unknown], [void *, fn0],
              [void *, fn1], [void *, fn2], [void *, fn3]]
