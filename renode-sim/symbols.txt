@@ -65,7 +65,7 @@
 0xb2334     crown_i2c_cfg                addr = byte at +4 = 0x79; TWIM0(0x40003000)/TWIM1(0x40004000)
 
 # OLED display
-0x000370a0  oled_gpio_power_cfg
+0x00037050  oled_gpio_power_cfg
 0x000be494  oled_pin_table               P0.12/0.31/0.17/0.27, P1.12/1.14
 0x00030588  contrast_task_create
 

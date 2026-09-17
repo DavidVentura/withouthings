@@ -226,17 +226,101 @@ def report(label, counts, absorbed, left):
             % (label, counts["made"], counts["extended"], counts["case"], absorbed, len(left)))
 
 
-def disassemble_code_holes():
-    """Disassemble the undefined runs that sit between two instruction runs.
+PROLOGUE_HALFWORDS = (0xE92D, 0xED2D)
 
-    A hole with an instruction on each side is code the first pass did not
-    reach, not data: nothing else can be there, because the run above it either
-    falls through into it or branches over it, and in both cases the bytes are
-    executed. Leaving it undefined loses whatever control flow it contains --
-    this image has a `b.w` into such a hole -- and the objectification then
-    moves the surrounding function with a branch in it that no relocation
-    rewrote. Most of the 49 holes are two bytes of alignment padding and
-    disassemble to nothing useful, which costs nothing.
+
+def halfword(at):
+    return (getByte(at) & 0xFF) | ((getByte(at.add(1)) & 0xFF) << 8)
+
+
+def repair_split_instructions():
+    """Re-decode where the analysis cut a 32-bit instruction in half.
+
+    A word that looks like a function pointer but is not does it: 0xbe6b0 holds
+    0x00040001, which is a pair of 16-bit fields, and the analysis takes it for
+    an entry point and disassembles from 0x40000 -- the second halfword of the
+    `mov.w` at 0x3fffe. The export then has no instruction there, no relocation
+    is emitted for whatever the hole holds, and a moved layout keeps the
+    original displacement.
+
+    The shape is unambiguous: two undefined bytes between two instructions whose
+    halfword is a 32-bit Thumb prefix are the head of an instruction, so the
+    thing that starts on its second halfword is wrong and is cleared.
+
+    A hand-written address is not repaired but refused. symbols.txt and the
+    manifests are authored, an address in them that lands inside an instruction
+    is a transcription error, and papering over it would leave the wrong name on
+    the wrong bytes for everything downstream that joins on the address.
+    """
+    # Ghidra hands undefined bytes back one at a time, so the run is what has to
+    # be measured, not the code unit.
+    runs, run = [], None
+    for cu in listing.getCodeUnits(app_set, True):
+        start = cu.getMinAddress()
+        if listing.getInstructionAt(start) is not None or cu.isDefined():
+            if run is not None:
+                runs.append(run)
+                run = None
+            continue
+        if run is not None and run[1].equals(start):
+            run[1] = cu.getMaxAddress().add(1)
+            continue
+        run = [start, cu.getMaxAddress().add(1)]
+    if run is not None:
+        runs.append(run)
+
+    holes = []
+    for start, end in runs:
+        if end.subtract(start) != 2 or start.getOffset() % 2:
+            continue
+        if (listing.getInstructionContaining(start.subtract(1)) is None
+                or listing.getInstructionAt(end) is None):
+            continue
+        if halfword(start) & 0xF800 not in (0xE800, 0xF000, 0xF800):
+            continue
+        holes.append(start)
+    seeded = []
+    for start in holes:
+        after = listing.getInstructionAt(start.add(2))
+        if is_seeded(after.getMinAddress()):
+            seeded.append((start, after.getMinAddress(),
+                           getSymbolAt(after.getMinAddress()).getName()))
+            continue
+        if fm.getFunctionAt(after.getMinAddress()) is not None:
+            removeFunctionAt(after.getMinAddress())
+        listing.clearCodeUnits(after.getMinAddress(), after.getMaxAddress(), False)
+        disassemble(start)
+    for start, at, name in seeded:
+        println("ERROR %s is seeded at %s, which is the second halfword of the"
+                " instruction at %s; correct the address it was written down at"
+                % (name, at, start))
+    if seeded:
+        raise RuntimeError("%d seeded addresses are not instruction boundaries"
+                           % len(seeded))
+    println("split instructions repaired: %d" % (len(holes) - len(seeded)))
+
+
+def opens_with_prologue(at):
+    """Does the halfword at `at` encode a Thumb function prologue?"""
+    hw = (getByte(at) & 0xFF) | ((getByte(at.add(1)) & 0xFF) << 8)
+    return hw & 0xFE00 == 0xB400 or hw in PROLOGUE_HALFWORDS
+
+
+def disassemble_code_holes():
+    """Disassemble the undefined runs that are code the first pass did not reach.
+
+    Two shapes, and nothing else. A hole with an instruction on each side is
+    code by construction: the run above it either falls through into it or
+    branches over it, and in both cases the bytes are executed. A hole that
+    opens with a prologue and ends exactly where an instruction begins is a
+    function entry the analysis started two bytes late -- `0x37050` is
+    `push {r3,r4,r5,lr}` and Ghidra begins the function at `0x37052` -- and
+    leaving it undefined puts the entry and the body in different sections, so
+    a layout that moves the body leaves the entry behind.
+
+    Both readings are mechanical. Alignment padding is zeros or ones, which is
+    not a prologue, and a rodata run would have to both open with a `push` and
+    end on the first byte of an instruction.
     """
     runs, run, previous = [], None, None
     for cu in listing.getCodeUnits(app_set, True):
@@ -248,20 +332,37 @@ def disassemble_code_holes():
             previous = "code"
             continue
         if cu.isDefined():
+            if run is not None:
+                runs.append(run)
             run, previous = None, "data"
             continue
         if run is not None and run[1].equals(start):
             run[1] = cu.getMaxAddress().add(1)
             continue
-        run = [start, cu.getMaxAddress().add(1)] if previous == "code" else None
-    made = 0
-    for start, end in runs:
+        run = [start, cu.getMaxAddress().add(1), previous]
+    if run is not None:
+        runs.append(run)
+
+    made = entries = 0
+    for start, end, previous in runs:
+        # Both shapes need code on the far side: a run that trails off into data
+        # is data, whatever precedes it.
+        if listing.getInstructionAt(end) is None:
+            continue
+        if previous != "code":
+            if end.subtract(start) < 2 or start.getOffset() % 2:
+                continue
+            if not opens_with_prologue(start):
+                continue
+            entries += 1
         if disassemble(start):
             made += 1
-    println("code holes disassembled: %d of %d" % (made, len(runs)))
+    println("code holes disassembled: %d of %d (%d of them a function entry the"
+            " analysis started late)" % (made, len(runs), entries))
 
 
 mgr = AutoAnalysisManager.getAnalysisManager(currentProgram)
+repair_split_instructions()
 disassemble_code_holes()
 mgr.startAnalysis(monitor)
 # Cheap rounds analyse only what the round changed, which follows the new

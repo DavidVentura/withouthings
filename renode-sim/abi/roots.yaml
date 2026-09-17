@@ -149,7 +149,7 @@ sanity:
   - {name: main_task, address: 0x2e1d8}
   - {name: main_notify_wait, address: 0x2e924}
   - {name: wlog, address: 0x8f460}
-  - {name: oled_gpio_power_cfg, address: 0x370a0}
+  - {name: oled_gpio_power_cfg, address: 0x37050}
   - {name: bq25180_setup, address: 0x437a0}
   - {name: bat_charging_decision, address: 0x2fc8c}
   - {name: crown_probe, address: 0x4943c}

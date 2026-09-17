@@ -240,7 +240,13 @@ fn run_update(case: &Case) -> Option<(Renode, PathBuf)> {
         }
     }
 
-    let directory = scratch(&repository.join("renode-sim"));
+    // UPDATE_TEST_RIG points the run at a rig whose scripts were rewritten for
+    // an application image with a different layout (abi/sim_patches.py); the
+    // images and models in it are the same files.
+    let rig = std::env::var("UPDATE_TEST_RIG")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| repository.join("renode-sim"));
+    let directory = scratch(&rig);
     let package = directory.join(format!("hwa10_{}.bin", case.target_version));
     mkpkg(&repository, case, &source, &package);
     if case.appl.is_none() {

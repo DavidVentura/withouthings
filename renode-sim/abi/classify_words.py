@@ -209,15 +209,19 @@ def decide(word, part):
         return "constant", "ram", "static or stack address; RAM is not moved yet"
     if not APP_BASE <= (target if thumb else value) < APP_END:
         return "constant", "out_of_range", ""
+    if thumb and target in part.functions:
+        # Landing exactly on a function entry with bit 0 set survives the
+        # stride question: a window over two fields would have to reproduce a
+        # function's whole address, not merely land somewhere in the code, and
+        # the record tables this image fragments across several items and gaps
+        # hold their handlers exactly this way.
+        return "pointer", "thumb_function_start", part.functions[target]["name"]
     if word["kind"] in ("data", "gap") and not part.is_slot(word["addr"]):
         # The word is a window over an object whose stride is not four, so what
         # it reads is two halves of two fields, not one value the compiler put
         # there. Out of range it does not matter; in range it would relocate the
         # middle of a record.
         return "review", "not_a_word_slot", word["kind"]
-
-    if thumb and target in part.functions:
-        return "pointer", "thumb_function_start", part.functions[target]["name"]
     if thumb and part.in_code(target):
         # A case body, a label in a split function, a resume point: the Thumb
         # bit plus code is as certain as a function start, only the symbol is

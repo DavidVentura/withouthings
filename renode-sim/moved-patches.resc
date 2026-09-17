@@ -1,0 +1,37 @@
+:name: HWA10 update-run fixups
+:description: The addresses the update run hooks in the application image, and
+:  what it re-applies once the bootloader has overwritten internal flash with
+:  the bank. A layout that moves the text has them elsewhere, so this file is
+:  what abi/sim_patches.py rewrites; update-test.resc includes it after
+:  machine.resc, and the redefined imagePatches therefore applies to the image
+:  the update installed, not to the one the run started from.
+
+# The application's reset entry, which the bootloader jumps to. It is the one
+# address here that belongs to the image the update installs rather than to the
+# one the run started from, which is why it is the only one rewritten alongside
+# the fixups themselves.
+$appReset?=0x34938
+# The three application addresses the WPP pipe hooks (hwa10.repl gives it the
+# ones the image it was parsed with had).
+$wppPresent?=0x37370
+$wppPoll?=0x3739c
+$wppHvx?=0x935b4
+
+macro postUpdate
+"""
+    runMacro $imagePatches
+    sysbus.wppPipe Rehook $wppPresent $wppPoll $wppHvx
+    # main init sleeps vTaskDelay(30001) before bringing up the UI (`movw r0,
+    # #0x7531`); make that 2001 ticks so the link is usable sooner.
+    sysbus WriteDoubleWord 0x91faa 0x70D1F240
+    # 0x20000000 is where the MBR keeps the vector table it forwards SVCs and
+    # interrupts to. Launching the bootloader pointed it at the bootloader's own
+    # table and the bootloader jumps to the application without putting it back,
+    # so the first SVC -- the one that starts the FreeRTOS scheduler -- lands in
+    # the bootloader and the application never runs a task. Point it at the
+    # SoftDevice, which is what the MBR leaves behind when it starts the
+    # SoftDevice itself.
+    sysbus WriteDoubleWord 0x20000000 0x1000
+    sysbus.nvmc SnapshotProtectedRegion 0x0 0x27000
+    sysbus WriteDoubleWord 0x10001014 0xFFFFFFFF
+"""

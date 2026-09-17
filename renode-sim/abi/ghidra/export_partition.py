@@ -171,6 +171,22 @@ for instr in listing.getInstructions(app_set, True):
             jump_owner.setdefault(to, owner)
 
 
+# Where a pc-relative load reads is a literal-pool word whatever the analysis
+# made of the bytes: Ghidra disassembles 81 of them as instructions (the pool at
+# 0x2e560 holds the dblib subscriber callback and reads as code), and a word the
+# disassembly covers would otherwise never reach the candidate set, so the
+# pointer in it is never relocated and a moved layout calls into the middle of an
+# instruction.
+pool_span = set()
+for at in pool_words:
+    pool_span.update(range(at, at + 4))
+
+
+def in_pool(instr):
+    return any(instr.getMinAddress().getOffset() + k in pool_span
+               for k in range(instr.getLength()))
+
+
 def jump_table(jump):
     """The whole indexed table a computed jump reads, decoded and checked.
 
@@ -501,7 +517,7 @@ calls, ext_calls, decoded = [], [], set()
 for instr in listing.getInstructions(app_set, True):
     site = instr.getMinAddress().getOffset()
     mnem = instr.getMnemonicString().lower()
-    if not base_mnemonic(mnem).startswith("b"):
+    if not base_mnemonic(mnem).startswith("b") or in_pool(instr):
         continue
     target = branch_target(site, raw_at(site, instr.getLength()), instr.getLength())
     if target is None:
@@ -522,7 +538,7 @@ for instr in listing.getInstructions(app_set, True):
 # the one after it.
 fallthrough = []
 for instr in listing.getInstructions(app_set, True):
-    if not instr.getFlowType().isFallthrough():
+    if not instr.getFlowType().isFallthrough() or in_pool(instr):
         continue
     after = instr.getMaxAddress().add(1)
     if not in_app(after.getOffset()):
@@ -536,7 +552,7 @@ for instr in listing.getInstructions(app_set, True):
 
 for src in rm.getReferenceSourceIterator(app_set, True):
     instr = listing.getInstructionAt(src)
-    if instr is None or src.getOffset() in decoded:
+    if instr is None or src.getOffset() in decoded or in_pool(instr):
         continue
     owner = fm.getFunctionContaining(src)
     for ref in rm.getReferencesFrom(src):
@@ -578,6 +594,8 @@ def word_kind(off):
     return "gap"
 
 
+for at in pool_span:
+    instruction_bytes[at - APP_BASE] = 0
 candidates = [off for off in range(APP_BASE, APP_END - 3, 4)
               if not any(instruction_bytes[off - APP_BASE + i] for i in range(4))]
 

@@ -69,14 +69,41 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 throw new RecoverableException("the pipe is already attached");
             }
             cpu = machine.SystemBus.GetCPUs().OfType<ICPUWithHooks>().Single();
-            cpu.AddHook(evtPresentHook, OnEventPresenceCheck);
-            cpu.AddHook(evtPollHook, OnEventPoll);
-            cpu.AddHook(hvxThunk, OnHvx);
+            present = evtPresentHook;
+            poll = evtPollHook;
+            hvx0 = hvxThunk;
+            cpu.AddHook(present, OnEventPresenceCheck);
+            cpu.AddHook(poll, OnEventPoll);
+            cpu.AddHook(hvx0, OnHvx);
             listener = new TcpListener(IPAddress.Loopback, port);
             listener.Start();
             worker = new Thread(Serve) { IsBackground = true, Name = "wpp-pipe" };
             worker.Start();
             this.Log(LogLevel.Info, "WPP pipe listening on 127.0.0.1:{0}", port);
+        }
+
+        // The three hooks are addresses in the application image, so an image
+        // whose text was placed elsewhere needs them moved with it. The update
+        // run is where that happens: it starts from the stock image and only
+        // runs the new one after the bootloader has installed it, so the hooks
+        // cannot be right for both from the start.
+        public void Rehook(ulong evtPresent, ulong evtPoll, ulong hvx)
+        {
+            if(cpu == null)
+            {
+                throw new RecoverableException("the pipe is not attached yet");
+            }
+            foreach(var old in new[] { present, poll, hvx0 })
+            {
+                cpu.RemoveHooksAt(old);
+            }
+            present = evtPresent;
+            poll = evtPoll;
+            hvx0 = hvx;
+            cpu.AddHook(present, OnEventPresenceCheck);
+            cpu.AddHook(poll, OnEventPoll);
+            cpu.AddHook(hvx0, OnHvx);
+            this.Log(LogLevel.Info, "hooks moved to {0:X}, {1:X}, {2:X}", present, poll, hvx0);
         }
 
         public void Reset()
@@ -365,6 +392,9 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private static readonly byte[] PeerAddress = new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05, 0xc0 };
 
         private ICPUWithHooks cpu;
+        private ulong present;
+        private ulong poll;
+        private ulong hvx0;
         private TcpListener listener;
         private Thread worker;
         private volatile bool running = true;
