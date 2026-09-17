@@ -20,6 +20,15 @@ abi/words.yaml holds the hand-declared facts: words whose shape says nothing or
 says the wrong thing, each with the argument for what it is. They are applied
 first and the heuristics never overrule one.
 
+The use signal comes from abi/ghidra/word_uses.py, which follows every value a
+pc-relative load defines forward through the function's p-code and through the
+callees it is handed to. Only its pointer half is applied: a value that is
+branched to or dereferenced is an address, and measured against the structural
+signals it never contradicts one. Its constant half is not applied, because in
+this image 94 words the structure proves to be string and function pointers are
+only ever compared -- a table sentinel test and an integer bound test are the
+same instruction -- so "only compared" is not evidence of a number.
+
 Writes abi/out/ghidra/words.json: one row per candidate with its class, its
 target and addend, the deciding signal, and a summary with the counts per
 bucket. abi/objectify.py turns the `pointer` rows into R_ARM_ABS32.
@@ -151,6 +160,11 @@ class Partition(object):
         return lo and self.code[lo - 1][1] > value
 
 
+# The operations that can only be applied to an address. `offset`, `compare`,
+# `scaled`, `stored_value` and `returned` are recorded too, and none of them is
+# evidence either way: pointers are compared, stored and returned constantly.
+POINTER_USES = frozenset(("call", "load_base", "store_base"))
+
 STRIDES = tuple(range(4, 68, 4))
 MIN_RECORDS = 3
 
@@ -230,6 +244,7 @@ def decide(word, part, contracts, overrides):
     value, thumb = word["value"], word["thumb"]
     target = value & ~1 if thumb else value
     uses = set(word.get("uses") or ())
+    dereferenced = uses & POINTER_USES
 
     if word["addr"] in overrides:
         # Hand-declared, so no rule below is consulted at all: an override is
@@ -274,13 +289,14 @@ def decide(word, part, contracts, overrides):
         return "pointer", "interior_item", ""
     if value in part.in_body_words:
         return "pointer", "in_body_word", "a pool word inside a function body"
+    if dereferenced:
+        # The code branches to this value or reads memory through it, so it is
+        # an address whatever the bytes around it look like. This fires ahead of
+        # the code-range test on purpose: a value inside a function body that is
+        # a load base is data the disassembly over-covered, which is the one way
+        # the Thumb argument below can be wrong.
+        return "pointer", "use_pointer", ",".join(sorted(dereferenced))
     if part.in_code(value):
-        if uses & {"call", "memory"}:
-            # An even address inside a function body that the code dereferences
-            # or branches to: data the compiler left between two basic blocks
-            # and no instruction in the image reads with a literal load, so the
-            # pool-word scan did not find it.
-            return "pointer", "in_body_word", ",".join(sorted(uses))
         # This image is Thumb throughout (9 movt, none building an address, and
         # no ARM code), so an even address is not a way to name an instruction.
         # A word holding one is a number that collided with the code's range.
@@ -289,12 +305,7 @@ def decide(word, part, contracts, overrides):
         return "review", "function_start_without_thumb", part.functions[value]["name"]
 
     # What is left lands in one of the untyped runs: a record table's own row,
-    # or a number. The use of the register decides it where there is one, and
-    # only pool words have one.
-    if "call" in uses or "memory" in uses:
-        return "pointer", "register_use", ",".join(sorted(uses))
-    if uses and uses <= {"compare"}:
-        return "constant", "register_use", ",".join(sorted(uses))
+    # or a number, and nothing the code did with it settles which.
     return "review", "lands_in_untyped_run", ",".join(sorted(uses))
 
 
@@ -360,6 +371,10 @@ def main():
         items = json.load(fh)
     with open(os.path.join(args.export, "references.json")) as fh:
         refs = json.load(fh)
+    with open(os.path.join(args.export, "word_uses.json")) as fh:
+        uses = {r["addr"]: sorted(r["uses"]) for r in json.load(fh)["uses"]}
+    for word in refs["words"]:
+        word["uses"] = uses.get(word["addr"], [])
 
     with open(args.image, "rb") as fh:
         blob = fh.read()

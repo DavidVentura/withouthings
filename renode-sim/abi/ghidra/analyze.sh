@@ -54,6 +54,7 @@ start=$(date +%s)
     -postScript close_partition.py \
     -postScript classify_gaps.py \
     -postScript export_partition.py "$OUT" \
+    -postScript word_uses.py "$OUT" \
     -log "$OUT/analysis.log" -scriptlog "$OUT/script.log" 2>&1 | tee "$OUT/headless.log"
 
 # analyzeHeadless logs a failing script and carries on; a half-seeded or
