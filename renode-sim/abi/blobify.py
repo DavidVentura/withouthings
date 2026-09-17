@@ -355,7 +355,8 @@ def main():
 
     items, refs = objectify.read_export(args.export)
     with open(os.path.join(args.export, "words.json")) as fh:
-        words = json.load(fh)["words"]
+        classified = json.load(fh)
+    words = classified["words"]
     # Names the boundary owns, and the address each has to be at; the partition
     # must not hand one of them to a function of its own. The library's own
     # names are reserved at NOWHERE, because the partition gave the blob's copy
@@ -445,16 +446,19 @@ def main():
 
     if args.layout:
         pinned = pinned_addresses(manifest, layout)
-        unclassified = sorted(set(w["value"] & ~1 for w in words
-                                  if w["class"] == "review"))
+        anchors = dict((w["value"] & ~1, "review") for w in words
+                       if w["class"] == "review")
+        for d in classified["displacements"]:
+            anchors[d["site"]] = "displacement"
+            anchors[d["target"]] = "displacement"
         moves, spare, held = objectify.relayout(sections, args.layout, pinned,
-                                                unclassified)
+                                                anchors)
         print("  layout %s: %d text sections moved, %d bytes of spare flash used"
               % (args.layout, len(moves), spare - objectify.SPARE_BASE))
-        print("  %d text sections held in place because a word of unknown class"
-              " points into them (%d bytes)"
-              % (len(held), sum(s.end - s.start for s in sections
-                                if s.start in held)))
+        for why in sorted(set(held.values())):
+            kept = [s for s in sections if held.get(s.start) == why]
+            print("  %d text sections held in place by a %s (%d bytes)"
+                  % (len(kept), why, sum(s.end - s.start for s in kept)))
     unknown = set(moves) - set(s.sym for s in sections)
     if unknown:
         sys.exit("no section named %s" % ", ".join(sorted(unknown)))

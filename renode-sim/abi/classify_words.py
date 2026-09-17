@@ -20,6 +20,13 @@ abi/words.yaml holds the hand-declared facts: words whose shape says nothing or
 says the wrong thing, each with the argument for what it is. They are applied
 first and the heuristics never overrule one.
 
+One shape the plan did not list turns up in the flow: `ldr rN,[pc,#k]` followed
+by `add rN,pc`, 29 words in one compilation unit, where the word holds the
+distance from the adding instruction to its target rather than the target. Such
+a word is neither a pointer nor a number: it is stale as soon as either end
+moves alone, and since 28 of the 29 name RAM, which does not move, it pins the
+reading instruction. They are written out as `displacements` for blobify to pin.
+
 The use signal comes from abi/ghidra/word_uses.py, which follows every value a
 pc-relative load defines forward through the function's p-code and through the
 callees it is handed to. Only its pointer half is applied: a value that is
@@ -255,6 +262,12 @@ def decide(word, part, contracts, overrides):
             overrides[word["addr"]]["why"]
     if value in contracts:
         return "constant", "contract", contracts[value]
+    if word.get("pc_sites"):
+        return "constant", "pc_relative", \
+            "distance from %s to %s" % (
+                ", ".join("0x%x" % s for s in word["pc_sites"]),
+                ", ".join("0x%x" % ((value + s + 4) & 0xFFFFFFFF)
+                          for s in word["pc_sites"]))
     if RAM_BASE <= value < RAM_END:
         # RAM does not move in this step. The word is still an address, and the
         # export carries it so that a later RAM move knows where they are.
@@ -335,7 +348,7 @@ def classify(items, refs, blob, contracts, overrides):
                  " not offer, starting at 0x%x" % (len(outside), outside[0]))
     part = Partition(items, refs["words"])
     part.slots = slot_objects(items, blob, part)
-    rows, buckets, review = [], {}, {}
+    rows, buckets, review, displacements = [], {}, {}, []
     for word in refs["words"]:
         klass, signal, note = decide(word, part, contracts, overrides)
         # `thumb_*` are the only signals that read bit 0 as the Thumb bit; for
@@ -354,11 +367,14 @@ def classify(items, refs, blob, contracts, overrides):
                      "thumb_target": signal.startswith("thumb_")
                                      or (klass == "pointer" and target % 2 == 1),
                      "uses": word.get("uses") or []})
+        for site in word.get("pc_sites") or ():
+            displacements.append({"word": word["addr"], "site": site,
+                                  "target": (word["value"] + site + 4) & 0xFFFFFFFF})
         key = "%s:%s:%s" % (word["kind"], klass, signal)
         buckets[key] = buckets.get(key, 0) + 1
         if klass == "review":
             review.setdefault(signal, []).append(rows[-1])
-    return rows, buckets, review
+    return rows, buckets, review, displacements
 
 
 def main():
@@ -372,14 +388,17 @@ def main():
     with open(os.path.join(args.export, "references.json")) as fh:
         refs = json.load(fh)
     with open(os.path.join(args.export, "word_uses.json")) as fh:
-        uses = {r["addr"]: sorted(r["uses"]) for r in json.load(fh)["uses"]}
+        flow = {r["addr"]: r for r in json.load(fh)["uses"]}
     for word in refs["words"]:
-        word["uses"] = uses.get(word["addr"], [])
+        seen = flow.get(word["addr"])
+        word["uses"] = sorted(seen["uses"]) if seen else []
+        word["pc_sites"] = seen["pc_sites"] if seen else []
 
     with open(args.image, "rb") as fh:
         blob = fh.read()
     contracts, overrides = read_facts(args.facts, blob, items["functions"])
-    rows, buckets, review = classify(items, refs, blob, contracts, overrides)
+    rows, buckets, review, displacements = classify(items, refs, blob, contracts,
+                                                    overrides)
     pointers = [r for r in rows if r["class"] == "pointer"]
     summary = {
         "candidates": len(rows),
@@ -390,13 +409,15 @@ def main():
         "overrides": len(overrides),
         "buckets": buckets,
         "review_buckets": {k: len(v) for k, v in sorted(review.items())},
+        "displacements": len(displacements),
     }
     path = os.path.join(args.export, "words.json")
     with open(path, "w") as fh:
-        fh.write('{"_generated": %s,\n"summary": %s,\n"words": ['
+        fh.write('{"_generated": %s,\n"summary": %s,\n"displacements": %s,'
+                 '\n"words": ['
                  % (json.dumps("by abi/classify_words.py, do not edit: pointer"
                                " versus constant for every candidate word"),
-                    json.dumps(summary)))
+                    json.dumps(summary), json.dumps(displacements)))
         for i, row in enumerate(rows):
             fh.write("%s\n%s" % ("," if i else "", json.dumps(row)))
         fh.write("]}\n")

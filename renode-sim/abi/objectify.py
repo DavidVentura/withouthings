@@ -490,7 +490,7 @@ def residue(section):
     return section.start % 4
 
 
-def relayout(sections, mode, pinned, unclassified):
+def relayout(sections, mode, pinned, anchors):
     """Give every text section a new address, and prove none keeps its old one.
 
     Data does not move in this step, so the space the text may use is exactly
@@ -505,13 +505,16 @@ def relayout(sections, mode, pinned, unclassified):
     # constant that must not be rewritten, and there is no way to be right about
     # both while the target moves. Untyped record tables end up inside code
     # sections when the span between two code tiles is one component, which is
-    # how they come to be movable at all.
-    held = set()
+    # how they come to be movable at all. The other anchor is a pc-relative
+    # displacement, whose two ends have to keep their distance.
+    held = {}
     for s in sections:
-        if any(s.start <= v < s.end for v in unclassified):
-            held.add(s.start)
+        for v, why in anchors.items():
+            if s.start <= v < s.end:
+                held.setdefault(s.start, why)
     movable = [s for s in sections
                if s.kind == "code" and s.start not in pinned and s.start not in held]
+    held = dict(held)
     if not movable:
         raise SystemExit("no text section to move")
     free = []

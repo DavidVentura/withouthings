@@ -63,6 +63,8 @@ def regkey(name):
 
 
 arg_keys = [regkey(name) for name in ARG_REGS]
+all_regs = [regkey("r%d" % i) for i in range(13)] + [regkey("sp"), regkey("lr"),
+                                                    regkey("pc")]
 # A call clobbers the caller-saved registers, so a value still sitting in one of
 # them afterwards is not the value that was loaded; keeping it there attributed
 # a string pointer's address to whatever the next instruction did with the
@@ -97,6 +99,7 @@ MAX_ROUNDS = 40
 # followed by the same walk.
 uses = {}
 edges = {}
+pc_sites = {}
 
 
 def record(targets, name):
@@ -141,6 +144,17 @@ def analyse(fn):
     for i, instr in enumerate(instrs):
         index[instr.getMinAddress().getOffset()] = i
     pcode = [instr.getPcode() for instr in instrs]
+    # `ldr rN,[pc,#k]` followed by `add rN,pc` is the one place this image holds
+    # a displacement rather than an address: the pool word is target minus the
+    # adding instruction, so it is stale as soon as either end moves alone, and
+    # it is neither a pointer nor a plain number.
+    adds_pc = []
+    for instr in instrs:
+        raw = instr.getBytes()
+        hw = (raw[0] & 0xFF) | ((raw[1] & 0xFF) << 8)
+        adds_pc.append(all_regs[(hw & 7) | ((hw >> 4) & 8)]
+                       if instr.getLength() == 2 and hw & 0xFF78 == 0x4478
+                       else None)
 
     succ = []
     for i, instr in enumerate(instrs):
@@ -167,6 +181,16 @@ def analyse(fn):
         if cur is None:
             continue
         cur = dict(cur)
+        if adds_pc[i] is not None:
+            site = instrs[i].getMinAddress().getOffset()
+            got = cur.pop(adds_pc[i], None)
+            if got:
+                record(got, "pc_relative")
+                for t in got:
+                    pc_sites.setdefault(t, set()).add(site)
+            # Past the add the register holds the sum, so what is done with it
+            # from here on is about the target and says nothing about the word,
+            # which holds only the distance.
         for op in pcode[i]:
             code = op.getOpcode()
             ins = [op.getInput(k) for k in range(op.getNumInputs())]
@@ -281,6 +305,7 @@ for target in sorted(pool_targets):
     got = uses.get(("pool", target), {})
     rows.append({"addr": target,
                  "uses": {k: got[k] for k in sorted(got)},
+                 "pc_sites": sorted(pc_sites.get(("pool", target), ())),
                  "callees": sorted((c, i) for c, i
                                    in edges.get(("pool", target), ()))})
 
