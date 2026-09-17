@@ -439,3 +439,53 @@ for k in "$ROOT"/krn/FreeRTOS-Kernel-*; do
         done
     done
 done
+
+# ---- newlib from source -----------------------------------------------------
+# The image's libc is newlib 4.3.0.20230120 built by Withings themselves: the
+# three assert paths it carries begin
+# /home/mbouillot/dev/pro/cortex-toolchain/src/newlib-4.3.0.20230120/, so the
+# vanilla tarball is the source and the Arm prebuilt archives are only a
+# reference. Two configurations are built because one question the image answers
+# and the archives do not is whether _REENT_SMALL is on: it is not, and
+# abi/libc_check.py is the measurement (__sseek stores FILE->_offset at +0x50,
+# which only the full struct gives; reent-small puts it at +0x54).
+#
+# The compiler is the Arm 13.2.Rel1 one, whose GCC major the image's codegen
+# pins, and the multilib flags are the image's own: Cortex-M4, hard float.
+NEWLIB=newlib-4.3.0.20230120
+NEWLIB_URL=https://sourceware.org/pub/newlib/$NEWLIB.tar.gz
+NEWLIB_CC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/bin
+NEWLIB_CFLAGS="-g -Os -ffunction-sections -fdata-sections -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16 -mthumb"
+
+if [ ! -d "$ROOT/src/$NEWLIB" ]; then
+    [ -f "$ROOT/dl/$NEWLIB.tar.gz" ] || curl -L -o "$ROOT/dl/$NEWLIB.tar.gz" "$NEWLIB_URL"
+    mkdir -p "$ROOT/src" && tar xf "$ROOT/dl/$NEWLIB.tar.gz" -C "$ROOT/src"
+fi
+
+# The nano options, as the Arm toolchain's own build script sets them, minus
+# multilib (one library, the image's) and syscalls (the image has none: its
+# _malloc_r and _free_r are shims onto FreeRTOS heap_4 and there is no sbrk).
+NANO_OPTS="--target=arm-none-eabi --disable-multilib --disable-nls
+ --disable-newlib-supplied-syscalls --enable-newlib-retargetable-locking
+ --disable-newlib-fvwrite-in-streamio --disable-newlib-fseek-optimization
+ --disable-newlib-wide-orient --enable-newlib-nano-malloc
+ --disable-newlib-unbuf-stream-opt --enable-lite-exit
+ --enable-newlib-global-atexit --enable-newlib-nano-formatted-io"
+
+build_newlib() {
+    # $1 is the build name, $2... any extra configure options.
+    local name=$1; shift
+    local d=$OUT/$name
+    [ -f "$d/arm-none-eabi/newlib/libc.a" ] && return 0
+    rm -rf "$d"; mkdir -p "$d"
+    (cd "$d" && PATH=$NEWLIB_CC:$PATH "$ROOT/src/$NEWLIB/configure" \
+        --prefix="$ROOT/install/$name" $NANO_OPTS "$@" \
+        CFLAGS_FOR_TARGET="$NEWLIB_CFLAGS" > conf.log 2>&1)
+    # libgloss wants the syscalls that are disabled, so it fails and is not
+    # built; libc.a and libm.a are what this is for, and they are complete.
+    (cd "$d" && PATH=$NEWLIB_CC:$PATH make -j"$(nproc)" > make.log 2>&1) || true
+    [ -f "$d/arm-none-eabi/newlib/libc.a" ] || { echo "newlib $name did not build"; return 1; }
+    printf '%-16s %s\n' "$name" "$d/arm-none-eabi/newlib/libc.a"
+}
+build_newlib newlib-nano-big
+build_newlib newlib-nano-small --enable-newlib-reent-small --enable-newlib-reent-check-verify

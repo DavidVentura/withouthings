@@ -89,7 +89,7 @@ macros:
         holds is not read back.
 
     - name: oled_settle_delay_first
-      symbol: FUN_0003bb3c
+      symbol: shell_cmd_adxl__2
       offset: 0x5a
       width: 2
       original: 0xd5fd
@@ -99,7 +99,7 @@ macros:
         hardware settle that only burns sim wall time.
 
     - name: oled_settle_delay_second
-      symbol: FUN_0003bb3c
+      symbol: shell_cmd_adxl__2
       offset: 0x72
       width: 2
       original: 0xd5fd

@@ -25,9 +25,13 @@ features:
       commands that only exist inside the tunnel. The reach map puts it at
       24085 bytes and says it takes all of mbedTLS and the Ed25519 verify with
       it while SHA-1 and the Ed25519 signer stay.
+    # The gate is a replacement section rather than an edit: its "allowed"
+    # answer is a tail call to the sender, which abi/replacements.yaml exports
+    # so a source stub can make the same call.
+    replace: [wpp_send_gate]
     edits:
       - at: 0x39bc0
-        in: FUN_00093598
+        in: ble_gatts_evt_write_handler
         original: fff79cfb
         new: aff30080
         why: >
@@ -69,17 +73,6 @@ features:
           the tail call to wpps_flush, which is what pushes a queued frame
           through ptls_send; r0 already holds the 1 the function returns, so
           `bx lr` is the same function without the flush
-      - at: 0x38a40
-        in: wpp_send_gate
-        original: 03d5
-        new: 03e0
-        why: >
-          the gate refuses a send while the tunnel is selected and not
-          established; taking its branch unconditionally is the gate that
-          always answers allowed, which is what the removal needs since nothing
-          establishes the tunnel any more. The "allowed" answer is a tail call
-          to 0x6be24 rather than a return value, so this is an edit and not yet
-          a replacement section.
       - at: 0x5a806
         in: FUN_0005a7e4
         original: fff709ff

@@ -414,13 +414,19 @@ def is_relocatable(mnemonic, width):
                            or (mnemonic.endswith(".w") and mnemonic[1:-2] in COND_CODES))
 
 
-def internal_relocations(blob, layout, calls, skip):
+def internal_relocations(blob, layout, calls, skip, retarget=None):
     """Every internal control transfer that crosses a section, as a relocation.
 
     Sites the library boundary owns are skipped: boundary.yaml decides those,
     and its symbols resolve to the source build rather than to the blob's own
     copy.
+
+    `retarget` maps the start address of a replaced section to the symbol its
+    callers must bind to instead (abi/replacements.yaml). It is the same move
+    the boundary makes for a library call, expressed against the partition
+    rather than against a scan for branch encodings.
     """
+    retarget = retarget or {}
     counts = {R_ARM_THM_CALL: 0, R_ARM_THM_JUMP24: 0, R_ARM_THM_JUMP19: 0}
     unrelocatable, indirect = [], 0
     for row in calls:
@@ -453,12 +459,13 @@ def internal_relocations(blob, layout, calls, skip):
         # a `b.w` into a run Ghidra never disassembled still lands in Thumb
         # state, and a symbol without bit 0 makes the linker plant a veneer.
         from_section.relocs.append((src - from_section.start,
-                                    layout.label(dst, thumb=True), rtype))
+                                    retarget.get(dst) or layout.label(dst, thumb=True),
+                                    rtype))
         counts[rtype] += 1
     return counts, unrelocatable, indirect
 
 
-def word_relocations(blob, layout, words, skip):
+def word_relocations(blob, layout, words, skip, retarget=None):
     """Every word the classification calls a pointer, as an R_ARM_ABS32.
 
     The symbol names the exact target rather than the enclosing item, so the
@@ -472,6 +479,7 @@ def word_relocations(blob, layout, words, skip):
     Words the boundary already relocated are skipped: the vector table's kernel
     entries resolve to the source build, not to the blob's own copy.
     """
+    retarget = retarget or {}
     counts = {"pointer": 0, "into_code": 0, "ram": 0}
     for row in words:
         if row["class"] != "pointer" or row["addr"] in skip:
@@ -479,7 +487,8 @@ def word_relocations(blob, layout, words, skip):
         section = layout.at(row["addr"])
         if section is None or row["addr"] + 4 > section.end:
             raise SystemExit("word 0x%x is not inside one section" % row["addr"])
-        sym = layout.label(row["target"], thumb=row["thumb_target"])
+        sym = (retarget.get(row["target"])
+               or layout.label(row["target"], thumb=row["thumb_target"]))
         off = row["addr"] - APP_BASE
         blob[off:off + 4] = b"\0\0\0\0"
         section.relocs.append((row["addr"] - section.start, sym, R_ARM_ABS32))

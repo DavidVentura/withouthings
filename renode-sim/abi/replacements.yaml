@@ -1,0 +1,103 @@
+# Replacing a partition section with a definition from source.
+#
+# abi/boundary.yaml does this for the open-source library, which it finds by
+# scanning the image for branch encodings into a known address range. This file
+# is the same move expressed against the partition instead: name a section, the
+# symbol every reference into it must bind to, and the source that defines that
+# symbol. abi/blobify.py then binds every call, tail call and pointer word that
+# named the section to the symbol, leaves the symbol undefined in the object,
+# and renames the original body `orig_<symbol>` so a replacement can call it and
+# --gc-sections can drop it when nothing does.
+#
+# What blobify refuses, because the linker cannot express it: a section holding
+# more than one function, a fall-through into or out of it, a literal-pool word
+# inside it that something outside reads, a reference to an address inside it
+# that is not its entry, and an unclassified word naming it.
+#
+# `proto` is the C declaration the sources see (abi/blobify.py writes
+# out/replace.h from these, and emits the same declaration a second time under
+# `orig_<name>`), so the prototype and the evidence for it live together.
+#
+# A group is applied as a whole: `REPLACE=<group> abi/relink.sh`.
+
+meta:
+  app_base: 0x27000
+
+groups:
+  - group: wpp_send_gate
+    why: >
+      The first prune's one edit that was not a removal. abi/prunes.yaml made
+      the gate always answer "allowed" by turning its `bpl` into a `b`, because
+      the allowed answer is a tail call to the sender rather than a return value
+      and the object exported no symbol for the sender. With the sender exported
+      the gate is a four-line stub whose allowed path tail-calls it, which is
+      what the reach map's "one section swap" meant.
+    sources: [replace/wpp_send_gate.c]
+    exports:
+      - at: 0x6be24
+        as: wpp_send
+        proto: "int wpp_send(void *frame, void *len);"
+        why: >
+          The gate's allowed path is `b.w 0x6be24` with r0 and r1 as it received
+          them and r2, r3 already clobbered, so the sender takes two arguments.
+          The partition attributes 0x6be24..0x6bea6 to wpp_send_gate as a second
+          body range (the tail call is the only edge into it), so the object
+          calls the section block_0006be24 and nothing outside can name it; this
+          exports it. The body opens `push {r0,r1,r4,r5,r6,lr}` and reads a
+          three-word state block through its own pool word, storing a pointer
+          through r0 and a halfword through r1, which is what the two pointer
+          arguments are.
+    replacements:
+      - at: 0x38a30
+        symbol: wpp_send_gate
+        proto: "int wpp_send_gate(void *frame, void *len);"
+        why: >
+          `r2 = ctx->f4c | ctx->f4d; if (r2 & 8) { if (ctx->f11c != 2) return -1; }
+          tail wpp_send(r0, r1);` -- the gate refuses a send while the tunnel is
+          selected and not established. Two callers, both `bl` from the WPP send
+          path; no word names it and nothing falls into it.
+
+  - group: get_fw_version
+    why: >
+      The A/B case: a pure Withings getter with sixteen callers that the boot
+      path runs, reimplemented in C against the same trailer word. Replacing it
+      with the same value proves the mechanism changes nothing; replacing it
+      with a different one proves the log is reading the replacement.
+    sources: [replace/get_fw_version.c]
+    exports:
+      - at: 0xf1178
+        as: appl_fw_version
+        kind: data
+        proto: "extern const unsigned int appl_fw_version;"
+        why: >
+          hwa10.yaml's fw_version_trailer fixed point, the u32 the bootloader and
+          the phone read. The original body loads it through a pool word, so the
+          reimplementation has to name the same object rather than an address:
+          exporting the section is what lets it, and a layout that moved the
+          trailer would move the reference with it.
+    replacements:
+      - at: 0x36e70
+        symbol: get_fw_version
+        proto: "unsigned int get_fw_version(void);"
+        why: >
+          `ldr r3,[pc,#4]; ldr r0,[r3]; bx lr` with the pool word holding
+          0xf1178, i.e. `return appl_fw_version;`. Sixteen `bl` callers, no
+          pointer word, no fall-through, and its pool is read only by itself.
+
+  - group: get_fw_version_ab
+    why: >
+      The same replacement with a body that deliberately returns a different
+      version, so the A/B path is visible: every wlog line and every WPP reply
+      that carries the firmware version changes and nothing else does.
+    sources: [replace/get_fw_version_ab.c]
+    exports:
+      - at: 0xf1178
+        as: appl_fw_version
+        kind: data
+        proto: "extern const unsigned int appl_fw_version;"
+        why: same object as the faithful reimplementation reads.
+    replacements:
+      - at: 0x36e70
+        symbol: get_fw_version
+        proto: "unsigned int get_fw_version(void);"
+        why: same section as the faithful reimplementation replaces.

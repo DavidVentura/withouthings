@@ -249,7 +249,7 @@ def boundary_relocations(blob, boundary, layout):
     return owned, counts
 
 
-def stock_definitions(boundary, path):
+def stock_definitions(boundary, replacements, path):
     """Stand-ins for the source library, at the blob's own copy of each function.
 
     A link with these and nothing else must reproduce the image byte for byte:
@@ -270,6 +270,10 @@ def stock_definitions(boundary, path):
             defs[v["symbol"]] = v["word"]
     for e in boundary.get("startup", []):
         defs[e["symbol"]] = int(e["original"]) | 1
+    # A replacement whose definition is the original body: the same stand-in the
+    # library gets, so the identity link still reproduces the image.
+    for e in replacements.entries:
+        defs[e["symbol"]] = e["at"] | 1
 
     strtab = bytearray(b"\0")
     shstr = bytearray(b"\0")
@@ -322,6 +326,171 @@ def pinned_addresses(manifest, layout):
             sys.exit("fixed point %s at 0x%x is outside the app" % (f["name"], addr))
         pinned.add(section.start)
     return pinned
+
+class Replacements(object):
+    """abi/replacements.yaml: partition sections bound to a definition from source.
+
+    The object keeps the original bytes -- renamed `orig_<symbol>` and referenced
+    by nothing -- so the identity link still reproduces the image from them and
+    --gc-sections drops them from a link that does not. What changes is where
+    every reference points: a call, a tail call or a pointer word that named the
+    section now names an undefined `<symbol>`, which the source build defines and
+    abi/blobify.py's stand-in object binds back to the original address.
+    """
+
+    def __init__(self, path, wanted):
+        spec = yaml.safe_load(open(path))
+        groups = {g["group"]: g for g in spec["groups"]}
+        unknown = [name for name in wanted if name not in groups]
+        if unknown:
+            sys.exit("%s names no group of %s" % (", ".join(unknown), path))
+        self.entries, self.exports, self.sources = [], [], []
+        for name in wanted:
+            group = groups[name]
+            self.sources += group.get("sources", [])
+            for e in group.get("exports", []):
+                self.exports.append(e)
+            for e in group["replacements"]:
+                e = dict(e, group=name)
+                e["at"] = int(str(e["at"]), 0)
+                self.entries.append(e)
+        at_once = {}
+        for e in self.entries:
+            if at_once.setdefault(e["at"], e["symbol"]) != e["symbol"]:
+                sys.exit("0x%x is replaced twice, by %s and by %s"
+                         % (e["at"], at_once[e["at"]], e["symbol"]))
+        seen = {}
+        for e in self.exports:
+            e["at"] = int(str(e["at"]), 0)
+            if seen.setdefault(e["as"], e["at"]) != e["at"]:
+                sys.exit("%s is exported from two addresses" % e["as"])
+        self.exports = list({e["as"]: e for e in self.exports}.values())
+        self.by_start = {}
+
+    def symbols(self):
+        return [e["symbol"] for e in self.entries]
+
+    def bind(self, layout, refs, reads, words):
+        """Check each replacement against the partition, then rename and retarget.
+
+        Everything refused here is a reference the linker has no way to express
+        against a symbol that is not the section's own start: a second function
+        in the same bytes, a fall-through, a pool word read from outside, an
+        entry into the middle. Each is a fact about the image, so it is refused
+        rather than worked around.
+        """
+        retarget = {}
+        for e in self.entries:
+            at, symbol = e["at"], e["symbol"]
+            section = layout.at(at)
+            if section is None:
+                sys.exit("replacement %s: 0x%x is outside the app" % (symbol, at))
+            if section.start != at:
+                sys.exit("replacement %s: 0x%x is inside the section %s at 0x%x,"
+                         " not its start" % (symbol, at, section.sym, section.start))
+            if section.kind != "code":
+                sys.exit("replacement %s: 0x%x is a %s section"
+                         % (symbol, at, section.kind))
+            if len(section.functions) > 1:
+                sys.exit("replacement %s: the section at 0x%x holds %d functions"
+                         " (%s); a replacement is one definition"
+                         % (symbol, at, len(section.functions),
+                            ", ".join("0x%x" % f for f in section.functions)))
+            if section.labels:
+                sys.exit("replacement %s: the section at 0x%x carries the interior"
+                         " symbols %s, so something names bytes inside the body"
+                         % (symbol, at, ", ".join(sorted(section.labels.values()))))
+            inside = lambda a: section.start <= a < section.end
+            for row in refs["fallthrough"]:
+                if inside(row["to"]) and not inside(row["from"]):
+                    sys.exit("replacement %s: 0x%x falls through into 0x%x, and a"
+                             " replacement cannot be fallen into"
+                             % (symbol, row["from"], row["to"]))
+                if inside(row["from"]) and not inside(row["to"]):
+                    sys.exit("replacement %s: 0x%x falls through out of the body"
+                             " into 0x%x, so the body is not a whole function"
+                             % (symbol, row["from"], row["to"]))
+            for site, target in reads:
+                if inside(target) and not inside(site):
+                    sys.exit("replacement %s: 0x%x reads the word 0x%x inside the"
+                             " body, which goes away with it"
+                             % (symbol, site, target))
+            for row in refs["calls"]:
+                if row["external"] or not inside(row["to"]) or inside(row["from"]):
+                    continue
+                if row["to"] != at:
+                    sys.exit("replacement %s: 0x%x enters the body at 0x%x, which"
+                             " is not its entry point" % (symbol, row["from"], row["to"]))
+            for word in words:
+                target = word.get("target")
+                if target is None or not inside(target):
+                    continue
+                if word["class"] == "review":
+                    sys.exit("replacement %s: the word 0x%x is still unclassified"
+                             " and may name 0x%x" % (symbol, word["addr"], target))
+                if word["class"] != "pointer":
+                    continue
+                if target != at or not word["thumb_target"]:
+                    sys.exit("replacement %s: the word 0x%x names 0x%x%s, not the"
+                             " entry point" % (symbol, word["addr"], target,
+                                               "" if word["thumb_target"] else " as data"))
+            if section.sym == symbol:
+                sys.exit("replacement %s: the partition still holds the name, so"
+                         " the reservation did not take" % symbol)
+            section.sym = "orig_" + symbol
+            section.name = ".text." + section.sym
+            retarget[at] = symbol
+            self.by_start[section.start] = e
+        return retarget
+
+    def header(self, path):
+        """out/replace.h: what the sources may call, and nothing else.
+
+        Each declaration is emitted twice for a replacement, once under the
+        symbol the call sites now bind to and once under `orig_<symbol>`, which
+        is the original body the object still carries.
+        """
+        lines = ["/* Generated by abi/blobify.py from abi/replacements.yaml --"
+                 " do not edit. */", "#ifndef REPLACE_H", "#define REPLACE_H", ""]
+        for e in self.exports:
+            lines.append("/* 0x%x: %s */" % (e["at"], " ".join(str(e["why"]).split())))
+            proto = e["proto"]
+            lines.append(proto if proto.startswith("extern") else "extern " + proto)
+        for e in self.entries:
+            proto, symbol = e["proto"], e["symbol"]
+            marker = " %s(" % symbol
+            if proto.count(marker) != 1:
+                sys.exit("replacement %s: its proto %r does not name it exactly once"
+                         % (symbol, proto))
+            lines.append("/* 0x%x: %s */" % (e["at"], " ".join(str(e["why"]).split())))
+            lines.append("extern " + proto)
+            lines.append("extern " + proto.replace(marker, " orig_%s(" % symbol))
+        lines += ["", "#endif", ""]
+        with open(path, "w") as fh:
+            fh.write("\n".join(lines))
+        # What abi/relink.sh has to compile and link: written out rather than
+        # re-parsed there, so the group selection is decided in one place.
+        with open(os.path.splitext(path)[0] + "-sources.txt", "w") as fh:
+            fh.write("".join(src + "\n" for src in self.sources))
+
+
+
+def prune_replacements(path, wanted):
+    """The replacement groups abi/prunes.yaml's features ask for.
+
+    A removal that ends in a stub is one edit fewer: the tunnel prune used to
+    turn the send gate's `bpl` into a `b` because the object exported no symbol
+    for the sender the gate tail-calls, and a replacement section is what that
+    edit was standing in for.
+    """
+    spec = yaml.safe_load(open(path))
+    features = {f["feature"]: f for f in spec["features"]}
+    groups = []
+    for name in wanted:
+        for group in features[name].get("replace", []):
+            if group not in groups:
+                groups.append(group)
+    return groups
 
 
 def apply_prunes(blob, items, path, wanted):
@@ -380,7 +549,7 @@ def apply_prunes(blob, items, path, wanted):
     return touched
 
 
-def gc_keep_list(sections, layout, pinned, words, reach_path):
+def gc_keep_list(sections, layout, pinned, words, reach_path, replaced=()):
     """(section, why) for everything --gc-sections must not be allowed to drop.
 
     Three kinds, and only three. The fixed points are a contract with the MBR,
@@ -402,10 +571,15 @@ def gc_keep_list(sections, layout, pinned, words, reach_path):
     keep, seen = [], set()
     already = set(reach["gc_sections"]["addrs"])
 
+    replaced = set(replaced)
+
     def add(addr, why, redundant_if_reached=True):
         section = layout.at(addr)
         if section is None or section.start in seen:
             return
+        if section.start in replaced:
+            sys.exit("the replaced body at 0x%x would be KEEPed (%s), so nothing"
+                     " would be dropped" % (section.start, why))
         if redundant_if_reached and section.start in already:
             return
         seen.add(section.start)
@@ -444,6 +618,12 @@ def main():
                          " image before cutting it, so the link sees a program"
                          " the feature is already gone from")
     ap.add_argument("--prunes", default=os.path.join(HERE, "prunes.yaml"))
+    ap.add_argument("--replace", action="append", default=[], metavar="GROUP",
+                    help="bind every reference into the sections abi/"
+                         "replacements.yaml's group names to the symbol its"
+                         " source defines, and rename the original orig_<symbol>")
+    ap.add_argument("--replacements", default=os.path.join(HERE, "replacements.yaml"))
+    ap.add_argument("--replace-header", default=os.path.join(SIM, "out", "replace.h"))
     ap.add_argument("--keep-also", help="a file of section names to add to the"
                     " --gc KEEP list; bisecting a gc link that does not boot"
                     " over the sections it dropped is what this is for")
@@ -459,6 +639,10 @@ def main():
         name, _, where = spec.partition("=")
         moves[name] = int(where, 0)
 
+    replacements = Replacements(
+        args.replacements,
+        args.replace + [g for g in prune_replacements(args.prunes, args.prune)
+                        if g not in args.replace])
     boundary = yaml.safe_load(open(os.path.join(HERE, "boundary.yaml")))
     manifest = yaml.safe_load(open(os.path.join(HERE, "hwa10.yaml")))
     blob = bytearray(open(args.image, "rb").read())
@@ -492,6 +676,13 @@ def main():
             reserved[e["symbol"]] = NOWHERE
     for v in boundary["data_references"]["vector_table"]:
         reserved[v["symbol"]] = NOWHERE if v.get("relocate") else v["word"] & ~1
+    # A replacement's symbol has to be undefined in the object for the same
+    # reason a boundary symbol has: the partition already calls the body by that
+    # name, and a local definition would swallow the relocation.
+    for e in replacements.entries:
+        reserved[e["symbol"]] = NOWHERE
+    for e in replacements.exports:
+        reserved[e["as"]] = e["at"]
     # `adr rN,#imm` is the other pc-relative reference the image holds and the
     # only one with no relocation at all: 21 of the 179 in this image name a
     # data item outside the function's section, so unless the two ends are one
@@ -517,11 +708,12 @@ def main():
         named)
     layout = objectify.Layout(sections)
 
+    retarget = replacements.bind(layout, refs, reads, words)
     owned, boundary_counts = boundary_relocations(blob, boundary, layout)
     owned |= pruned
     counts, unrelocatable, indirect = objectify.internal_relocations(
-        blob, layout, refs["calls"], owned)
-    word_counts = objectify.word_relocations(blob, layout, words, owned)
+        blob, layout, refs["calls"], owned, retarget)
+    word_counts = objectify.word_relocations(blob, layout, words, owned, retarget)
     if unrelocatable:
         for row in unrelocatable[:20]:
             print("0x%x: %s (%d bytes) to 0x%x leaves its section and cannot be"
@@ -557,6 +749,11 @@ def main():
     for v in boundary["data_references"]["vector_table"]:
         if not v.get("relocate"):
             export(v["symbol"], v["word"] & ~1, STT_FUNC)
+    for e in replacements.exports:
+        export(e["as"], e["at"], STT_OBJECT if e.get("kind") == "data" else STT_FUNC)
+    for e in replacements.entries:
+        export("orig_" + e["symbol"], e["at"], STT_FUNC)
+    replacements.header(args.replace_header)
     export("appl_vector_table", APP_BASE, STT_NOTYPE)
     export("appl_blob_start", APP_BASE, STT_NOTYPE)
     symbols.globalise("appl_blob_end", APP_END, SHN_ABS, STT_NOTYPE)
@@ -601,7 +798,8 @@ def main():
     obj = "*" + os.path.basename(args.o)
     if args.gc:
         pinned = pinned_addresses(manifest, layout)
-        keep = gc_keep_list(sections, layout, pinned, words, args.reach)
+        keep = gc_keep_list(sections, layout, pinned, words, args.reach,
+                            replacements.by_start)
         if args.keep_also:
             by_name = {s.name: s for s in sections}
             listed = set(s.name for s, _ in keep)
@@ -624,7 +822,7 @@ def main():
     with open(os.path.splitext(args.place)[0] + "-moves.json", "w") as fh:
         json.dump([{"section": s.sym, "old": s.start, "end": s.end,
                     "new": moves[s.sym]} for s in sections if s.sym in moves], fh)
-    stock = stock_definitions(boundary, args.stock)
+    stock = stock_definitions(boundary, replacements, args.stock)
 
     for s in slivers:
         print("0x%x..0x%x belongs to no item of the partition" % (s.start, s.end),
@@ -650,6 +848,12 @@ def main():
     print("  words: %d R_ARM_ABS32 (%d into code, %d RAM pointers left as"
           " constants because RAM does not move yet)"
           % (word_counts["pointer"], word_counts["into_code"], word_counts["ram"]))
+    if replacements.entries:
+        print("  replaced %s: %d sections (%d bytes) renamed orig_* and left"
+              " referenced by nothing"
+              % (", ".join(sorted(set(e["group"] for e in replacements.entries))),
+                 len(replacements.by_start),
+                 sum(layout.at(a).end - a for a in replacements.by_start)))
     print("  %s, %s (%d stand-in definitions)"
           % (args.place, args.stock, stock))
 

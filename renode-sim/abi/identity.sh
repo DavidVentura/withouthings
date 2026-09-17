@@ -2,6 +2,10 @@
 # Prove the objectified app links back to the stock image byte for byte.
 #
 #   abi/identity.sh
+#   REPLACE_ARGS="--replace <group>" abi/identity.sh
+#
+# A replacement is byte-identical too: its stand-in definition is the original
+# body's own address, so the call sites relocate back onto the bytes they held.
 #
 # abi/blobify.py cuts the image into one section per function and per data item
 # and turns every internal branch that leaves a section into a relocation; this
@@ -17,7 +21,7 @@ GCC=$ROOT/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi
 OUT=../out/relink
 mkdir -p "$OUT"
 
-python3 blobify.py -o "$OUT/appl-blob.o"
+python3 blobify.py -o "$OUT/appl-blob.o" ${REPLACE_ARGS:-}
 "$GCC-ld" -L ../out -T identity.ld --emit-relocs -e 0 \
     -o "$OUT/identity.elf" "$OUT/appl-blob.o" "$OUT/stock-defs.o"
 "$GCC-objcopy" -O binary --only-section=.blob "$OUT/identity.elf" "$OUT/identity.bin"

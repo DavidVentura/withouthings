@@ -68,10 +68,17 @@ for s in "$PORT/GCC/nrf52/port.c" "$PORT/CMSIS/nrf52/port_cmsis.c" \
     objs="$objs $o"
 done
 
+# REPLACE=<group>[,<group>] binds every reference into the sections
+# abi/replacements.yaml's group names to the symbol its source defines; a prune
+# whose feature names a group turns it on by itself, so the argument is built
+# here and handed to every blobify run including the identity one.
+REPLACE_ARGS=""
+for g in $(echo "${REPLACE:-}" | tr , ' '); do REPLACE_ARGS="$REPLACE_ARGS --replace $g"; done
+
 # The objectified blob must link back to the stock image before it is worth
 # linking against anything else; this writes $OUT/appl-blob.o and the two
 # generated fragments the real link then reuses.
-./identity.sh
+REPLACE_ARGS="$REPLACE_ARGS" ./identity.sh
 # LAYOUT=shift|reverse re-cuts the same object with every text section moved;
 # the identity link above still ran first, so the cutting is proven either way.
 # GC=1 re-cuts it with a placement that KEEPs only what the linker cannot see,
@@ -81,10 +88,21 @@ done
 # means anything together with GC=1: the edits make the feature unreachable and
 # --gc-sections is what removes it.
 if [ -n "${GC:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" --gc ${LAYOUT:+--layout "$LAYOUT"} ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"}
-elif [ -n "${LAYOUT:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" --layout "$LAYOUT"
+    python3 blobify.py -o "$OUT/appl-blob.o" --gc ${LAYOUT:+--layout "$LAYOUT"} ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS
+elif [ -n "${LAYOUT:-}" ] || [ -n "$REPLACE_ARGS" ] || [ -n "${PRUNE:-}" ]; then
+    python3 blobify.py -o "$OUT/appl-blob.o" ${LAYOUT:+--layout "$LAYOUT"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS
 fi
+
+# The replacement sources, compiled against the same generated header the rest
+# of the new code uses (out/hwa10.h) plus out/replace.h, which blobify writes
+# from replacements.yaml so the prototype and the evidence for it live together.
+python3 gen.py --out ../out > /dev/null
+while read -r src; do
+    [ -n "$src" ] || continue
+    o="$OUT/replace_$(basename "$src" .c).o"
+    "$GCC-gcc" $ARCH $COMMON -I../out -c "$src" -o "$o"
+    objs="$objs $o"
+done < ../out/replace-sources.txt
 # The map and the list of what gc removed are the inputs abi/stale_scan.py needs
 # to check a gc link: where each surviving section ended up, and which ranges
 # are gone, so a word still holding one of those addresses can be found.
