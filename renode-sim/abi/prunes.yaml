@@ -2,12 +2,14 @@
 #
 # abi/reach.py measures what a removal would cost by cutting edges in the
 # object; this file is the removal itself. Each edit names the address it
-# changes, the partition symbol whose body or item that address is in, the
-# bytes it expects to find there and the bytes that replace them. The address
-# is the key because the edits are applied to the stock image before
-# abi/blobify.py cuts it, which is the one coordinate system the partition is
-# expressed in; the symbol is checked against the export, so a partition that
-# moves the site is refused rather than patched at the wrong place.
+# changes, the bytes it expects to find there and the bytes that replace them.
+# The address is the key because the edits are applied to the stock image
+# before abi/blobify.py cuts it, which is the one coordinate system the
+# partition is expressed in, and because it is the one coordinate a
+# re-analysis does not rename under the file. The bytes are what catches an
+# edit written against another image. An edit may also carry `in:`, the
+# partition symbol whose body or item the address lands in, which is then
+# checked and is informational.
 #
 # What the linker does with the result is the point: with the edges gone,
 # --gc-sections drops everything the feature owned and keeps everything it
@@ -31,7 +33,6 @@ features:
     replace: [wpp_send_gate]
     edits:
       - at: 0x39bc0
-        in: ble_gatts_evt_write_handler
         original: fff79cfb
         new: aff30080
         why: >
@@ -39,7 +40,6 @@ features:
           tunnel's context; the WPP_V2 and WPP_V3 branches call the same
           function and stay, so this is a nop and not a return
       - at: 0x39324
-        in: wpp_bytes_received
         original: 40f19480
         new: 00f094b8
         why: >
@@ -47,7 +47,6 @@ features:
           is clear; unconditional, the record path that feeds ptls_receive is
           never entered
       - at: 0x393e4
-        in: wpp_bytes_received
         original: fff7c0fc
         new: aff30080
         why: >
@@ -56,17 +55,14 @@ features:
           never executed still holds the target alive, so the edge has to go as
           well as the path to it
       - at: 0x39406
-        in: wpp_bytes_received
         original: fff7affc
         new: aff30080
         why: the second of the three
       - at: 0x39422
-        in: wpp_bytes_received
         original: fff7a1fc
         new: aff30080
         why: the third of the three
       - at: 0x39284
-        in: FUN_0006bf04
         original: fff784be
         new: 704700bf
         why: >
@@ -74,12 +70,10 @@ features:
           through ptls_send; r0 already holds the 1 the function returns, so
           `bx lr` is the same function without the flush
       - at: 0x5a806
-        in: FUN_0005a7e4
         original: fff709ff
         new: aff30080
         why: the perso parser's csr= arm, which is what signs a CSR with the tunnel key
       - at: 0xb426c
-        in: gap_000b41fc
         original: bdab0500
         new: "00000000"
         why: >
@@ -87,17 +81,14 @@ features:
           and this is the handler of "crt" at 0xb4264, the row that installs the
           certificate the tunnel authenticates with
       - at: 0x277c0
-        in: wpp_cmd_table
         original: 8c090000e955050078b40d00
         new: "000000000000000000000000"
         why: WPP_CMD_BOOTSTRAP_REBOOT 2444, gated on wpps_established
       - at: 0x277cc
-        in: wpp_cmd_table
         original: 8b090000c954050098b40d00
         new: "000000000000000000000000"
         why: WPP_CMD_BOOTSTRAP_REDIRECT 2443, gated on wpps_established
       - at: 0x27b14
-        in: wpp_cmd_table
         original: b20900000dd5060057480e00
         new: "000000000000000000000000"
         why: WPP_CMD_DEVICE_CHALLENGE 2482, which signs with the tunnel's Ed25519 key

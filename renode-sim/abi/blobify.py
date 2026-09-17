@@ -49,6 +49,11 @@ STB_LOCAL, STB_GLOBAL = 0, 1
 SHN_ABS = 0xFFF1
 
 
+def address_alias(addr):
+    """The name the object gives an original image address, whatever it is called."""
+    return "a_%08x" % addr
+
+
 def decode_branch(data, off):
     """-> ("bl"|"b.w", target), or None if these four bytes are neither."""
     hi, lo = struct.unpack_from("<HH", data, off)
@@ -437,6 +442,9 @@ class Replacements(object):
             if section.sym == symbol:
                 sys.exit("replacement %s: the partition still holds the name, so"
                          " the reservation did not take" % symbol)
+            if "name" in e and e["name"] != section.sym:
+                sys.exit("replacement %s: 0x%x is called %s in the entry and %s"
+                         " in the partition" % (symbol, at, e["name"], section.sym))
             section.sym = "orig_" + symbol
             section.name = ".text." + section.sym
             retarget[at] = symbol
@@ -496,10 +504,12 @@ def prune_replacements(path, wanted):
 def apply_prunes(blob, items, path, wanted):
     """Edit the image the way abi/prunes.yaml says, or refuse.
 
-    Every edit declares the bytes it expects and the partition symbol whose
-    body or item the address is in. Both are checked: the bytes catch an edit
-    written against another image, and the symbol catches a partition that has
-    moved the site under it. An edit is applied before the cut, so what the
+    Every edit declares the address it changes and the bytes it expects to find
+    there, and the address is the key: it is the coordinate the stock image is
+    expressed in, and the one nothing renames. An edit may also name the
+    partition symbol whose body or item it lands in, which is then checked and
+    is informational; the bytes are the check that catches an edit written
+    against another image. An edit is applied before the cut, so what the
     linker sees is a program the feature is already unreachable in and
     --gc-sections is the thing that removes it.
     """
@@ -531,11 +541,12 @@ def apply_prunes(blob, items, path, wanted):
             if found != old:
                 sys.exit("prune %s at 0x%x finds %s, not the %s it expects"
                          % (name, at, found.hex(), old.hex()))
-            holder = [r for r in ranges if r[0] <= at < r[1]]
-            if not holder or holder[0][2] != edit["in"]:
-                sys.exit("prune %s at 0x%x is in %s, not the %s it names"
-                         % (name, at, holder[0][2] if holder else "nothing",
-                            edit["in"]))
+            if "in" in edit:
+                holder = [r for r in ranges if r[0] <= at < r[1]]
+                if not holder or holder[0][2] != edit["in"]:
+                    sys.exit("prune %s at 0x%x is in %s, not the %s it names"
+                             % (name, at, holder[0][2] if holder else "nothing",
+                                edit["in"]))
             blob[at - APP_BASE:at - APP_BASE + len(new)] = new
             touched.update(range(at, at + len(new)))
             applied += 1
@@ -733,6 +744,21 @@ def main():
             # plant a veneer.
             symbols.add(label, (addr - s.start) | (1 if is_func else 0), s.index + 1,
                         STB_LOCAL, STT_FUNC if is_func else STT_OBJECT)
+    # The name a body carries is whatever the analysis last called it, so a file
+    # that has to point at a body cannot key on it. The original address is the
+    # one coordinate nothing renames, and this is it as a symbol: sim.yaml,
+    # prunes.yaml and replacements.yaml resolve through these, so a link that
+    # moved the body still answers where it went.
+    for s in sections:
+        styp = STT_FUNC if s.kind == "code" else STT_OBJECT
+        symbols.add(address_alias(s.start), 1 if styp == STT_FUNC else 0,
+                    s.index + 1, STB_LOCAL, styp)
+        for addr in s.functions:
+            symbols.add(address_alias(addr), (addr - s.start) | 1, s.index + 1,
+                        STB_LOCAL, STT_FUNC)
+        for (addr, is_func), _ in sorted(s.labels.items()):
+            symbols.add(address_alias(addr), (addr - s.start) | (1 if is_func else 0),
+                        s.index + 1, STB_LOCAL, STT_FUNC if is_func else STT_OBJECT)
 
     def export(name, addr, styp):
         section = layout.at(addr)

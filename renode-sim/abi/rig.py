@@ -8,9 +8,11 @@
 The sim reaches into the running image at a handful of addresses: instructions
 it rewrites before the run, and instructions it hooks. Written as numbers those
 addresses are only right for the layout they were read off, so sim.yaml names
-each one as a symbol plus an offset and this resolves them against whatever is
-about to run: the partition export when the image is the stock flash.bin, which
-has no ELF, and the linked ELF for a relink or a moved layout.
+each one as its original address plus an offset and this resolves them against
+whatever is about to run: the partition export when the image is the stock
+flash.bin, which has no ELF and where every original address is still itself,
+and the linked ELF for a relink or a moved layout, where abi/blobify.py's
+`a_<original address>` alias says where the body went.
 
 Every entry declares the bytes it expects to find. They are checked against the
 image itself, so a symbol that resolved to the wrong place, a patch site that
@@ -26,6 +28,8 @@ import sys
 import textwrap
 
 import yaml
+
+import blobify
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIM = os.path.dirname(HERE)
@@ -63,42 +67,63 @@ def elf_symbols(path):
 
 
 def partition_symbols(export):
-    """name -> address for a run with no ELF: the partition's own function names.
+    """The address-keyed table for a run with no ELF, plus the names for the report.
 
-    The stock image is what the partition was taken from, so its names are at
-    their original addresses; a name the export hands to two functions is
-    refused rather than picked between.
+    The stock image is what the partition was taken from, so every original
+    address is still itself; what the export adds is the check that the address
+    is the start of something the partition cut, and the name to show when an
+    entry carries one.
     """
     with open(os.path.join(export, "items.json")) as fh:
         items = json.load(fh)
-    table, repeated = {}, set()
+    starts = {}
     for f in items["functions"]:
-        if table.setdefault(f["name"], f["start"]) != f["start"]:
-            repeated.add(f["name"])
-    return {name: {start} for name, start in table.items()
-            if name not in repeated}
+        starts.setdefault(f["start"], f["name"])
+    for d in items["data"]:
+        starts.setdefault(d["start"], d["name"])
+    return {blobify.address_alias(addr): {addr} for addr in starts}, starts
 
 
-def resolve(entry, symbols, image, meta):
+def check_name(what, address, given, names):
+    """A `symbol:` is the partition's name for the address, and only informational.
+
+    The address is the key because it is the one thing no renaming moves; an
+    entry may still carry the name, and then it has to be the name the export
+    gives that address, so a file written against a different cut is refused
+    rather than applied to whatever the address now holds.
+    """
+    if given is None:
+        return
+    found = names.get(address)
+    if found != given:
+        sys.exit("%s names 0x%x as %s, which the partition calls %s"
+                 % (what, address, given, found or "nothing"))
+
+
+def resolve(entry, symbols, names, image, meta):
     """The address one sim.yaml entry resolves to, or exit with what is wrong."""
     width = entry["width"]
     if width not in WRITE:
         sys.exit("%s asks for %d bytes; the bus writes 1, 2 or 4"
                  % (entry["name"], width))
     if "absolute" in entry:
-        if "symbol" in entry:
-            sys.exit("%s is both absolute and symbolic" % entry["name"])
+        if "address" in entry:
+            sys.exit("%s is both absolute and address-keyed" % entry["name"])
         address = entry["absolute"]
         if meta["app_base"] <= address < meta["app_end"]:
             sys.exit("%s is absolute but 0x%x is inside the app, where a layout"
                      " moves it" % (entry["name"], address))
     else:
-        found_at = symbols.get(entry["symbol"], set())
+        original = int(str(entry["address"]), 0)
+        check_name(entry["name"], original, entry.get("symbol"), names)
+        alias = blobify.address_alias(original)
+        found_at = symbols.get(alias, set())
         if len(found_at) != 1:
-            sys.exit("%s names %s, which the symbol table defines %s"
-                     % (entry["name"], entry["symbol"],
+            sys.exit("%s names 0x%x, which the symbol table defines %s as %s"
+                     % (entry["name"], original,
                         "not at all" if not found_at else
-                        "at " + ", ".join("0x%x" % v for v in sorted(found_at))))
+                        "at " + ", ".join("0x%x" % v for v in sorted(found_at)),
+                        alias))
         address = next(iter(found_at)) + entry["offset"]
     if address + width > len(image):
         sys.exit("%s resolves to 0x%x, past the end of the image"
@@ -129,8 +154,9 @@ def main():
 
     spec = yaml.safe_load(open(os.path.join(HERE, "sim.yaml")))
     meta = spec["meta"]
-    symbols = (partition_symbols(args.export) if args.symbols == "partition"
-               else elf_symbols(args.symbols))
+    symbols, names = partition_symbols(args.export)
+    if args.symbols != "partition":
+        symbols = elf_symbols(args.symbols)
     image = open(args.image, "rb").read()
 
     os.makedirs(args.out, exist_ok=True)
@@ -147,7 +173,7 @@ def main():
         for macro, entries in spec["macros"].items():
             fh.write("\nmacro %s\n\"\"\"\n" % macro)
             for entry in entries:
-                address = resolve(entry, symbols, image, meta)
+                address = resolve(entry, symbols, names, image, meta)
                 resolved += 1
                 fh.write(commented(entry["why"], "    "))
                 fh.write("    sysbus %s 0x%x 0x%X\n"
@@ -158,7 +184,7 @@ def main():
     with open(hooks, "w") as fh:
         fh.write(head)
         for entry in spec["hooks"]:
-            address = resolve(entry, symbols, image, meta)
+            address = resolve(entry, symbols, names, image, meta)
             resolved += 1
             fh.write("\n" + commented(entry["why"], ""))
             fh.write("$%s=0x%x\n" % (entry["name"], address))

@@ -14,6 +14,11 @@
 # inside it that something outside reads, a reference to an address inside it
 # that is not its entry, and an unclassified word naming it.
 #
+# `at` is the address the section has in the stock image, and it is the key:
+# the name the analysis gives a body changes whenever the analysis grows, and
+# the address does not. An entry may also carry `name`, the partition's name
+# for that address, which is then checked and is informational.
+#
 # `proto` is the C declaration the sources see (abi/blobify.py writes
 # out/replace.h from these, and emits the same declaration a second time under
 # `orig_<name>`), so the prototype and the evidence for it live together.

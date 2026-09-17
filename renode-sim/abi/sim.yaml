@@ -5,10 +5,14 @@
 # layout -- checks that the bytes there are the ones the entry expects, and
 # writes out/rig/{patches,hooks}.resc for the scripts to include.
 #
-# `symbol` is a name the partition or the boundary gives; the partition names
-# every function, so an address inside code always has one. `absolute` is for
-# the addresses that belong to the MBR, the SoftDevice or the bootloader, none
-# of which this work relinks or moves.
+# `address` is the address the site has in the stock image, which is the one
+# coordinate no re-analysis moves: abi/blobify.py gives every body a symbol
+# named after it, so a moved layout answers where that address went while the
+# name the analysis currently prints changes under nobody. An entry may also
+# carry `symbol`, and then it must be the name the export gives that address,
+# but it is informational. `absolute` is for the addresses that belong to the
+# MBR, the SoftDevice or the bootloader, none of which this work relinks or
+# moves.
 #
 # `original` is the little-endian value of `width` bytes at the resolved
 # address; a mismatch is refused rather than repaired, because a patch applied
@@ -23,7 +27,7 @@ macros:
 
   imagePatches:
     - name: sd_mbr_command_thunk
-      symbol: svc_24_wrapper
+      address: 0x9301e
       offset: 0
       width: 2
       original: 0xdf18
@@ -51,7 +55,7 @@ macros:
       why: The second site of the same encoding, in the MBR.
 
     - name: battery_sem_give_guard
-      symbol: battery_sem_give
+      address: 0x3060c
       offset: 0x8
       width: 2
       original: 0x4619
@@ -65,7 +69,7 @@ macros:
         of an early return when the handle is NULL.
 
     - name: battery_sem_give_return
-      symbol: battery_sem_give
+      address: 0x3060c
       offset: 0xe
       width: 2
       original: 0xbf00
@@ -75,7 +79,7 @@ macros:
         follows the function and travels in its section.
 
     - name: crown_delta_scratch
-      symbol: FUN_0002ee48
+      address: 0x2ee48
       offset: 0x1c
       width: 2
       original: 0x4621
@@ -89,7 +93,7 @@ macros:
         holds is not read back.
 
     - name: oled_settle_delay_first
-      symbol: shell_cmd_adxl__2
+      address: 0x3bb3c
       offset: 0x5a
       width: 2
       original: 0xd5fd
@@ -99,7 +103,7 @@ macros:
         hardware settle that only burns sim wall time.
 
     - name: oled_settle_delay_second
-      symbol: shell_cmd_adxl__2
+      address: 0x3bb3c
       offset: 0x72
       width: 2
       original: 0xd5fd
@@ -108,7 +112,7 @@ macros:
 
   fastStartup:
     - name: main_init_delay
-      symbol: main_init_delay
+      address: 0x91f92
       offset: 0x18
       width: 4
       original: 0x5031f247
@@ -122,7 +126,7 @@ macros:
 # to hand to a peripheral.
 hooks:
   - name: hook_restart_to_update
-    symbol: WPP_CMD_RESTART_TO_UPDATE
+    address: 0x6ca44
     offset: 0
     width: 4
     original: 0x4c11b510
@@ -139,7 +143,7 @@ hooks:
       bootloader, which this work neither relinks nor moves.
 
   - name: hook_app_reset
-    symbol: Reset_Handler
+    address: 0x34938
     offset: 0
     width: 4
     original: 0xf04fb530
@@ -149,7 +153,7 @@ hooks:
       there.
 
   - name: hook_ble_evt_present
-    symbol: ble_evt_poll
+    address: 0x37364
     offset: 0xc
     width: 4
     original: 0xd0032805
@@ -158,7 +162,7 @@ hooks:
       event is waiting.
 
   - name: hook_ble_evt_poll
-    symbol: FUN_00037388
+    address: 0x37388
     offset: 0x14
     width: 4
     original: 0x4628b948
@@ -167,7 +171,7 @@ hooks:
       synthesised event into the buffer the application passed.
 
   - name: hook_hvx_thunk
-    symbol: svc_174_wrapper
+    address: 0x935b4
     offset: 0
     width: 2
     original: 0xdfae
