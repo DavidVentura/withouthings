@@ -52,6 +52,7 @@ start=$(date +%s)
     -scriptPath "$HERE" \
     -preScript seed_symbols.py "$OUT/seed.json" \
     -postScript close_partition.py \
+    -postScript undisassemble_text.py \
     -postScript classify_gaps.py \
     -postScript export_partition.py "$OUT" \
     -postScript word_uses.py "$OUT" \

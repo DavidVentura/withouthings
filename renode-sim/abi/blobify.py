@@ -376,7 +376,13 @@ def main():
             reserved[e["symbol"]] = NOWHERE
     for v in boundary["data_references"]["vector_table"]:
         reserved[v["symbol"]] = NOWHERE if v.get("relocate") else v["word"] & ~1
-    reads = [(r["site"], r["target"]) for r in refs["pool_reads"]]
+    # `adr rN,#imm` is the other pc-relative reference the image holds and the
+    # only one with no relocation at all: 21 of the 179 in this image name a
+    # data item outside the function's section, so unless the two ends are one
+    # section the instruction computes a stale address as soon as the code
+    # moves. They bind exactly like a literal pool's word does.
+    reads = [(r["site"], r["target"])
+             for r in refs["pool_reads"] + refs["pc_addresses"]]
     bits = bytes.fromhex(items["instruction_bytes"]["bits"])
     covered = bytes((bits[i >> 3] >> (i & 7)) & 1 for i in range(len(blob)))
     strings = objectify.string_runs(blob, covered)

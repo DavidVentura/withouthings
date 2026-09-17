@@ -105,6 +105,29 @@ for (s0, e0, f0), (s1, e1, f1) in zip(fn_ranges, fn_ranges[1:]):
 # wrong function lands in a section a pc-relative load cannot reach from.
 
 
+def adr_target(addr, raw, length):
+    """The address an `adr` forms at `addr`, or None.
+
+    `add rN,pc,#imm` names an address without a literal pool, so nothing about
+    it reaches the candidate word set, and a table only ever named this way
+    looks to the classification like a table nothing names. The image has 1350
+    of them.
+    """
+    base = (addr + 4) & ~3
+    hw1 = raw[0] | (raw[1] << 8)
+    if length == 2:
+        if hw1 & 0xF800 == 0xA000:                      # ADR T1
+            return base + (hw1 & 0xFF) * 4
+        return None
+    hw2 = raw[2] | (raw[3] << 8)
+    imm = ((hw1 >> 10) & 1) << 11 | ((hw2 >> 4) & 0x700) | (hw2 & 0xFF)
+    if hw1 & 0xFBFF == 0xF20F:                          # ADR T3, addw rN,pc,#imm
+        return base + imm
+    if hw1 & 0xFBFF == 0xF2AF:                          # ADR T2, subw rN,pc,#imm
+        return base - imm
+    return None
+
+
 def literal_target(addr, raw, length):
     """The address a pc-relative word load at `addr` reads, or None.
 
@@ -140,12 +163,17 @@ def raw_at(addr, n):
 
 
 pool_words, pool_owner, jump_owner = set(), {}, {}
-pool_reads, computed_jumps = [], []
+pool_reads, computed_jumps, pc_addresses = [], [], []
 for instr in listing.getInstructions(app_set, True):
     fn = fm.getFunctionContaining(instr.getMinAddress())
     owner = fn.getEntryPoint().getOffset() if fn is not None else None
     site = instr.getMinAddress().getOffset()
     mnem = instr.getMnemonicString().lower()
+    formed = adr_target(site, raw_at(site, instr.getLength()), instr.getLength())
+    if formed is not None and in_app(formed):
+        pc_addresses.append({"site": site, "target": formed,
+                             "function": owner or 0, "mnemonic": mnem,
+                             "width": instr.getLength()})
     if mnem.startswith(("ldr", "vldr")):
         found = literal_target(site, raw_at(site, instr.getLength()),
                                instr.getLength())
@@ -721,6 +749,7 @@ emit(os.path.join(out_dir, "references.json"),
      [("counts", dict(counts, calls=len(calls), external_calls=len(ext_calls),
                       pool_words=len(pool_words), candidates=len(candidates),
                       pool_reads=len(pool_reads),
+                      pc_addresses=len(pc_addresses),
                       fallthrough=len(fallthrough), jump_tables=len(tables), unclaimed_jumps=len(unclaimed_jumps),
                       unresolved=len(unresolved))),
       ("calls", rows(calls, ["from", "to", "kind", "mnemonic", "width", "function",
@@ -730,6 +759,7 @@ emit(os.path.join(out_dir, "references.json"),
       ("words", rows(words, ["addr", "value", "kind", "class", "item", "offset", "thumb", "resolved", "readers", "uses"])),
       ("fallthrough", rows(fallthrough, ["from", "to"])),
       ("pool_reads", rows(pool_reads, ["site", "target", "function", "mnemonic", "width", "use"])),
+      ("pc_addresses", rows(pc_addresses, ["site", "target", "function", "mnemonic", "width"])),
       ("jump_tables", rows(tables, ["site", "function", "mnemonic", "start", "end",
                                     "stride", "absolute", "entries"])),
       ("unclaimed_jumps", rows(unclaimed_jumps, ["site", "function", "mnemonic",

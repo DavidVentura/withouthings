@@ -12,6 +12,14 @@
 # used as a branch target or as a load/store base is a pointer; a value only
 # compared or multiplied is a number.
 #
+# Alongside the use names the walk records the shape of the access: the constant
+# displacement from the loaded address at which the code dereferences it, with
+# the width of that load or store (`field+8:4`), and the constant an index is
+# multiplied by before being added to it (`stride:12`). For a pool word that
+# names a record table that is the table's layout, read off the reader's own
+# address arithmetic, which is what abi/runs.py needs where a table has too few
+# references to space out a grid.
+#
 # A value handed to a callee is the common case and says nothing on its own, so
 # the same data flow is run once more with each function's four argument
 # registers as its seeds: that gives every parameter the same use summary, and a
@@ -172,6 +180,11 @@ def analyse(fn):
     state = [None] * len(instrs)
     state[0] = dict((key, frozenset([("param", entry, a)]))
                     for a, key in enumerate(arg_keys))
+    # Displacement from the address the taint started at, per varnode, and the
+    # constant a varnode's value has been multiplied by; None where the walk
+    # lost track. These are not merged at a join: a field offset is only
+    # believed where one path produced it.
+    disp, scale = {}, {}
     work = [0]
     rounds = 0
     while work and rounds < MAX_ROUNDS * len(instrs):
@@ -205,6 +218,12 @@ def analyse(fn):
                     if k == base:
                         record(got, "load_base" if code == PcodeOp.LOAD
                                else "store_base")
+                        at = disp.get(vnkey(ins[base]))
+                        if at is not None:
+                            width = (op.getOutput().getSize()
+                                     if code == PcodeOp.LOAD
+                                     else ins[2].getSize())
+                            record(got, "field%+d:%d" % (at, width))
                     elif k == 2:
                         record(got, "stored_value")
             elif code in BRANCH:
@@ -247,6 +266,14 @@ def analyse(fn):
             if out is None:
                 continue
             key = vnkey(out)
+            if code == PcodeOp.INT_MULT and any(v.isConstant() for v in ins):
+                scale[key] = [v.getOffset() for v in ins if v.isConstant()][0]
+            elif code == PcodeOp.INT_LEFT and ins[1].isConstant():
+                scale[key] = 1 << ins[1].getOffset()
+            elif code in COPY_OPS and ins[0:1] and vnkey(ins[0]) in scale:
+                scale[key] = scale[vnkey(ins[0])]
+            elif key in scale:
+                del scale[key]
             seed = seeded(op)
             if seed is not None:
                 cur[key] = frozenset([("pool", seed)])
@@ -257,8 +284,27 @@ def analyse(fn):
                     carried |= got
             if carried:
                 cur[key] = frozenset(carried)
+                here = disp.get(vnkey(ins[tainted[0][0]]))
+                if code in COPY_OPS:
+                    disp[key] = here
+                elif code in (PcodeOp.INT_ADD, PcodeOp.INT_SUB):
+                    other = ins[1 - tainted[0][0]] if len(ins) == 2 else None
+                    sign = -1 if code == PcodeOp.INT_SUB else 1
+                    if other is not None and other.isConstant() and here is not None:
+                        disp[key] = here + sign * other.getOffset()
+                    elif other is not None and vnkey(other) in scale:
+                        # base + index * stride: the index's own multiplier is
+                        # the stride, and this record is the one at index zero.
+                        for _, got in tainted:
+                            record(got, "stride:%d" % scale[vnkey(other)])
+                        disp[key] = here
+                    else:
+                        disp[key] = None
+                else:
+                    disp[key] = None
             elif key in cur:
                 del cur[key]
+                disp.pop(key, None)
 
         for j in succ[i]:
             merged = cur if state[j] is None else None

@@ -16,6 +16,11 @@ The signals, strongest first, are below in DECISIONS; every word records the one
 that decided it, and what none of them decides goes on the review list rather
 than being guessed at.
 
+What the per-word shape cannot decide is taken up by abi/runs.py, which decides
+the untyped runs from their own references: a run nothing can reach, a run some
+address inside it names at a byte boundary, and the record grid the aligned
+references mark out. Its signals are recorded like any other.
+
 abi/words.yaml holds the hand-declared facts: words whose shape says nothing or
 says the wrong thing, each with the argument for what it is. They are applied
 first and the heuristics never overrule one.
@@ -47,6 +52,8 @@ import os
 import sys
 
 import yaml
+
+import runs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIM = os.path.dirname(HERE)
@@ -121,14 +128,18 @@ class Partition(object):
         self.starts = {}
         for d in items["data"]:
             self.starts[d["start"]] = d.get("name") or "data"
-        for d in items["inline"]:
-            self.starts.setdefault(d["start"], d["kind"])
         for r in items["array_rows"]:
             self.starts.setdefault(r["start"], "array_row")
         self.code = sorted((r["start"], r["end"], r["function"])
                            for r in items["function_ranges"])
-        self.items = sorted((d["start"], d["end"]) for d in
-                            items["data"] + items["inline"])
+        # Literal pools and jump tables are deliberately not objects here. A
+        # pool word is a slot private to one function, reached only by that
+        # function's pc-relative loads, so nothing in the image names it and a
+        # value that happens to equal one is a coincidence. Ten words of a
+        # u16-pair table read as pointers to `contrast_task_create`'s pool
+        # because 0x000305c8 is {0x05c8, 0x0003}, and relocating them corrupted
+        # the table as soon as that function moved.
+        self.items = sorted((d["start"], d["end"]) for d in items["data"])
         self.gaps = sorted((g["start"], g["end"]) for g in items["gaps"])
         self.slots = None
         # A word inside a function body that an instruction reads is data the
@@ -349,8 +360,13 @@ def classify(items, refs, blob, contracts, overrides):
     part = Partition(items, refs["words"])
     part.slots = slot_objects(items, blob, part)
     rows, buckets, review, displacements = [], {}, {}, []
-    for word in refs["words"]:
-        klass, signal, note = decide(word, part, contracts, overrides)
+    first = [dict(word, **dict(zip(("class", "signal", "note"),
+                                  decide(word, part, contracts, overrides))))
+             for word in refs["words"]]
+    from_runs = runs.analyse(items, refs, first, blob)
+    for word in first:
+        klass, signal, note = (from_runs.get(word["addr"])
+                               or (word["class"], word["signal"], word["note"]))
         # `thumb_*` are the only signals that read bit 0 as the Thumb bit; for
         # every other one the value is the address, odd or not.
         target = (overrides[word["addr"]]["target"] if signal == "override"
