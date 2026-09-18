@@ -8237,6 +8237,20 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x273e8: command ''step_motor'', run slot (+4)'
+- address: 0x7eefc
+  name: vibrator_pwm_finished
+  kind: function
+  class: trace
+  module: vib
+  evidence: the same nrfx PWM callback shape as the step motors' thunks -- event
+    type against 3 -- but instead of stepping a motor it clears 0x20021b70, gives
+    0x4ebf0 the handle 0x100 and, if that woke a task, sets PENDSVSET in SCB->ICSR
+    at 0xe000ed04 with the dsb and isb a yield from an interrupt needs (0x7ef18..0x7ef28).
+    It sits immediately before 0x7ef38, which the map already holds as a vibrator
+    body. 2 calls in the workout run, at the moment its own step count crossed the
+    daily goal and the log printed '[SCREEN_GOAL] Screen Goal Reached', and 4 in
+    the ecg run around the measurement's start and end; none in the three scenarios
+    that give the wearer nothing to feel
 - address: 0x7ef38
   name: vib_ignore_vib_request_current_vib__2
   kind: function
@@ -14174,8 +14188,8 @@ symbols:
   evidence: '`return opcode < 0x4000` over the whole 16-bit word, which is the channel
     field wpp/src/frame.rs masks with 0xC000: 0x0000 is MasterRequest and every
     other channel is above it. Its address is taken and never called, which is what
-    leaves it with no caller. 64, 48, 12 and 16 calls in the workout, hr, sleep
-    and misc runs, which is the frames each exchanged and not a role'
+    leaves it with no caller. 64, 48, 12, 16 and 42 calls across the five scenarios,
+    which is the frames each exchanged and not a role'
 - address: 0x9d462
   name: wpp_opcode_is_watch_originated
   kind: function
@@ -14855,8 +14869,10 @@ symbols:
     (0xa148a..0xa14d4). Reached only from the split body at 0xa1420, which sensors_sync_push_accel
     reaches through 0xa446c, so it is a stage of the wrist-activity chain and the
     motion run is what separates it from the still ones. 466 calls in the workout
-    run against 9 in each of the hr, sleep and ecg runs, and one for one with motion_energy_step
-    in every one of the four'
+    run against 9 in each of the hr, sleep and misc runs and 14 in the ecg one:
+    it runs at the rate the wrist moves and at nothing else. In the four runs that
+    are not the ECG one it is one for one with motion_energy_step; in the ECG run
+    that body runs 137 times to its 14, so the two share an input and not a gate'
 - address: 0xa17f8
   name: fft_complex_transform
   kind: function
@@ -15228,8 +15244,8 @@ symbols:
   class: trace
   module: hands
   evidence: the same twelve bytes as step_motor_pwm_finished_0 with the constant
-    2. 150 calls in the workout run, 90 in each of the hr and sleep runs, against
-    401 and 230 of step_motor_play_step
+    2. 150, 90, 90, 30 and 30 calls across the five scenarios, against 401, 230,
+    230, 108 and 139 of step_motor_play_step
 - address: 0xa4f88
   name: step_motor_pwm_finished_0
   kind: function
@@ -15240,17 +15256,18 @@ symbols:
     index the handler shifts into 0x20021b5c and indexes its tables by. The address
     is only ever written into the nrfx PWM instance's handler slot, which is why
     no static caller reaches it; step_motor_pwm_handler's own entry already names
-    this address as one of its three thunks. 45 calls in the workout run, 23 in
-    each of the hr, sleep and ecg runs, against 401 and 230 of step_motor_play_step;
-    the three thunks' counts sum to the moves their motors were asked for
+    this address as one of its three thunks. 45, 23, 23 and 23 calls in the workout,
+    hr, sleep and misc runs and none in the ecg one, against 401, 230, 230 and 108
+    of step_motor_play_step; the three thunks' counts sum to the moves their motors
+    were asked for
 - address: 0xa4f94
   name: step_motor_pwm_finished_1
   kind: function
   class: trace
   module: hands
   evidence: the same twelve bytes as step_motor_pwm_finished_0 with the constant
-    1. 206 calls in the workout run, 117 in each of the hr and sleep runs, against
-    401 and 230 of step_motor_play_step
+    1. 206, 117, 117, 55 and 109 calls across the five scenarios, against 401, 230,
+    230, 108 and 139 of step_motor_play_step
 - address: 0xa5002
   name: vib_ignore_vib_request_current_vib__3
   kind: function

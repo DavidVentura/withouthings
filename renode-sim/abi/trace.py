@@ -55,9 +55,10 @@ ROWS = [
     # --- the three step motors' nrfx PWM callbacks ---------------------------
     dict(address=0xA4F88, name="step_motor_pwm_finished_0", kind="function",
          module="hands", calls=[0x7E8F8], settled=True,
-         rate="45 calls in the workout run, 23 in each of the hr, sleep and ecg"
-              " runs, against 401 and 230 of step_motor_play_step; the three"
-              " thunks' counts sum to the moves their motors were asked for",
+         rate="45, 23, 23 and 23 calls in the workout, hr, sleep and misc runs"
+              " and none in the ecg one, against 401, 230, 230 and 108 of"
+              " step_motor_play_step; the three thunks' counts sum to the"
+              " moves their motors were asked for",
          evidence="twelve bytes that compare the nrfx PWM event type against 3"
                   " (NRFX_PWM_EVT_FINISHED) and tail-call step_motor_pwm_handler"
                   " with the constant 0, which is the motor index the handler"
@@ -68,14 +69,14 @@ ROWS = [
                   " address as one of its three thunks"),
     dict(address=0xA4F94, name="step_motor_pwm_finished_1", kind="function",
          module="hands", calls=[0x7E8F8], settled=True,
-         rate="206 calls in the workout run, 117 in each of the hr and sleep"
-              " runs, against 401 and 230 of step_motor_play_step",
+         rate="206, 117, 117, 55 and 109 calls across the five scenarios,"
+              " against 401, 230, 230, 108 and 139 of step_motor_play_step",
          evidence="the same twelve bytes as step_motor_pwm_finished_0 with the"
                   " constant 1"),
     dict(address=0xA4F7C, name="step_motor_pwm_finished_2", kind="function",
          module="hands", calls=[0x7E8F8], settled=True,
-         rate="150 calls in the workout run, 90 in each of the hr and sleep"
-              " runs, against 401 and 230 of step_motor_play_step",
+         rate="150, 90, 90, 30 and 30 calls across the five scenarios, against"
+              " 401, 230, 230, 108 and 139 of step_motor_play_step",
          evidence="the same twelve bytes as step_motor_pwm_finished_0 with the"
                   " constant 2"),
 
@@ -97,8 +98,11 @@ ROWS = [
     dict(address=0xA1466, name="acc_iir4_i16_step", kind="function",
          module="sensors_sync", settled=True,
          rate="466 calls in the workout run against 9 in each of the hr, sleep"
-              " and ecg runs, and one for one with motion_energy_step in every"
-              " one of the four",
+              " and misc runs and 14 in the ecg one: it runs at the rate the"
+              " wrist moves and at nothing else. In the four runs that are not"
+              " the ECG one it is one for one with motion_energy_step; in the"
+              " ECG run that body runs 137 times to its 14, so the two share"
+              " an input and not a gate",
          evidence="a fourth-order direct-form-I fixed-point filter step: it"
                   " shifts the two int16 delay lines its arguments point at"
                   " back one place and writes the new input at +8"
@@ -111,11 +115,27 @@ ROWS = [
                   " 0xa446c, so it is a stage of the wrist-activity chain and"
                   " the motion run is what separates it from the still ones"),
 
+    # --- the vibrator's own PWM callback -------------------------------------
+    dict(address=0x7EEFC, name="vibrator_pwm_finished", kind="function",
+         module="vib", calls=[0x4EBF0], reads=[0x20021B70],
+         rate="2 calls in the workout run, at the moment its own step count"
+              " crossed the daily goal and the log printed '[SCREEN_GOAL]"
+              " Screen Goal Reached', and 4 in the ecg run around the"
+              " measurement's start and end; none in the three scenarios that"
+              " give the wearer nothing to feel",
+         evidence="the same nrfx PWM callback shape as the step motors'"
+                  " thunks -- event type against 3 -- but instead of stepping a"
+                  " motor it clears 0x20021b70, gives 0x4ebf0 the handle 0x100"
+                  " and, if that woke a task, sets PENDSVSET in SCB->ICSR at"
+                  " 0xe000ed04 with the dsb and isb a yield from an interrupt"
+                  " needs (0x7ef18..0x7ef28). It sits immediately before"
+                  " 0x7ef38, which the map already holds as a vibrator body"),
+
     # --- the WPP channel predicates ------------------------------------------
     dict(address=0x9D456, name="wpp_opcode_is_master_request", kind="function",
          module="wpp",
-         rate="64, 48, 12 and 16 calls in the workout, hr, sleep and misc runs,"
-              " which is the frames each exchanged and not a role",
+         rate="64, 48, 12, 16 and 42 calls across the five scenarios, which is"
+              " the frames each exchanged and not a role",
          evidence="`return opcode < 0x4000` over the whole 16-bit word, which"
                   " is the channel field wpp/src/frame.rs masks with 0xC000:"
                   " 0x0000 is MasterRequest and every other channel is above"
@@ -145,7 +165,7 @@ ROWS = [
 # the measurement and it survives the refusal: a later run that starts the
 # feature these belong to compares against it.
 REFUSED = [
-    (0x68400, "76993, 66423, 66416 and 12656 calls across the four non-ECG"
+    (0x68400, "76993, 66423, 66416, 12656 and 61967 calls across the five"
               " scenarios: the most-called body in every one of them, a five"
               " argument wrapper around 0x9ce4a. A rate that is the same in"
               " every scenario names nothing"),
@@ -153,16 +173,16 @@ REFUSED = [
               " workout: a two-instruction load of one word of 0x20021920,"
               " with forty-six static callers the relocation lift does not see"
               " because the calls stay inside one section"),
-    (0x936B2, "967, 863, 914 and 254 calls: a two-instruction tail call into"
+    (0x936B2, "967, 863, 914, 254 and 769 calls: a two-instruction tail call into"
               " 0x39ea4 with a zero second argument, which is a default"
               " argument wrapper and not a stage"),
-    (0x977C6, "138 calls in each of the workout, hr and sleep runs and 207 in"
-              " the misc one, which is a rate tied to nothing the scenarios"
-              " varied"),
-    (0x520F0, "48, 39, 63 and 2 calls against 475 and 385 of"
+    (0x977C6, "138 calls in each of the workout, hr and sleep runs, 207 in"
+              " the misc one and none in the ecg one, which is a rate tied to"
+              " nothing the scenarios varied"),
+    (0x520F0, "48, 39, 63, 2 and 2 calls against 475 and 385 of"
               " algo_dispatch_sample: about a tenth of the sample rate in"
-              " three scenarios and almost nothing in the fourth, which is a"
-              " periodic task and not an algorithm stage"),
+              " three scenarios and almost nothing in the other two, which is"
+              " a periodic task and not an algorithm stage"),
     (0x6C204, "32 calls in the ecg run only, one per live frame, over a body"
               " that masks fourteen bits off its third argument and compares"
               " the result against 0x13d, 0x13e, 0x140 and 0x968 -- the"
