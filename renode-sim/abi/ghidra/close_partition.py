@@ -534,9 +534,82 @@ def remove_declared_data_functions(targets):
             % (len(removed), sum(e - s for s, e in removed)))
 
 
+def split_named_prologues():
+    """Cut a function in two where a word names a prologue inside its body.
+
+    The closing rounds only ever see code with no owner, so a function entry
+    the first analysis swallowed into the function above is never re-examined:
+    Ghidra extended the previous body over it and the run is not an orphan.
+    The bytes say otherwise on the same two grounds claim_head decides an
+    orphan head by, and both have to hold at once. The instruction above it
+    does not fall into it (an unconditional branch, a `bx lr`, a `pop {..,pc}`
+    or a literal pool), so the only way in is a reference; and it opens with a
+    push, which is a function prologue and not something a compiler emits in
+    the middle of a body. The reference itself is the third: a 4-aligned word
+    outside the disassembly holding the address with bit 0 set, which is how
+    this image spells a Thumb function pointer.
+
+    Three conditions is not one too many. A word that is an instruction
+    boundary below a branch and nothing else is far commoner than a function
+    pointer here -- 91 words in the image satisfy that much, and they are the
+    low halfword of a float, `0x3ffff`, `0xa7525` -- so the prologue is what
+    separates the class from the coincidences.
+    """
+    raw = getBytes(space.getAddress(APP_BASE), APP_END - APP_BASE)
+    targets = {}
+    for at in range(0, len(raw) - 3, 4):
+        value = ((raw[at] & 0xFF) | ((raw[at + 1] & 0xFF) << 8)
+                 | ((raw[at + 2] & 0xFF) << 16) | ((raw[at + 3] & 0xFF) << 24))
+        if not value & 1 or not APP_BASE <= value - 1 < APP_END:
+            continue
+        word = space.getAddress(APP_BASE + at)
+        if listing.getInstructionContaining(word) is not None:
+            continue
+        targets.setdefault(value - 1, []).append(APP_BASE + at)
+
+    split = []
+    for target, named_by in sorted(targets.items()):
+        at = space.getAddress(target)
+        if listing.getInstructionAt(at) is None or not opens_with_prologue(at):
+            continue
+        owner = fm.getFunctionContaining(at)
+        if owner is None or owner.getEntryPoint().equals(at):
+            continue
+        before = listing.getInstructionBefore(at)
+        if (before is not None and before.getMaxAddress().add(1).equals(at)
+                and before.hasFallthrough()):
+            continue
+        body = AddressSet(owner.getBody())
+        tail = body.getRangeContaining(at)
+        if owner.getEntryPoint().compareTo(tail.getMaxAddress()) <= 0 \
+                and owner.getEntryPoint().compareTo(at) >= 0:
+            # The owner's own entry is in the tail: the body was assembled
+            # backwards, and what to do with the head is a different argument
+            # from this one.
+            println("left 0x%x: the function at 0x%x has its entry inside the"
+                    " range the split would take" % (target, owner.getEntryPoint().getOffset()))
+            continue
+        body.delete(AddressSet(at, tail.getMaxAddress()))
+        owner.setBody(body)
+        if createFunction(at, None) is None:
+            raise RuntimeError("0x%x opens with a prologue below %s but no"
+                               " function could be made there" % (target, before))
+        split.append((target, owner.getEntryPoint().getOffset(), named_by,
+                      before.toString() if before is not None else "a pool"))
+    for target, owner, named_by, below in split:
+        println("split 0x%x out of the function at 0x%x: a prologue below `%s`,"
+                " named by %s" % (target, owner, below,
+                                  ", ".join("0x%x" % w for w in named_by)))
+    println("functions split out of a body a word names: %d" % len(split))
+
+
 remove_string_functions()
 remove_data_named_functions()
 remove_declared_data_functions(declared_data_pointers(getScriptArgs()[0]))
+# After the removals, so that taking the named prologue out of a body cannot
+# leave the rest of that body looking like data no odd word names.
+split_named_prologues()
+mgr.startAnalysis(monitor)
 
 # Last, because every full pass puts some of them back: the switch analyser
 # promotes a case target to a function of its own, which closing rounds never
