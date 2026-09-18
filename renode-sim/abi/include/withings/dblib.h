@@ -695,4 +695,26 @@ extern int dblib_get_first(unsigned short ie, void *buf, unsigned short len);
    */
 extern int dblib_count(unsigned short ie);
 
+/* One item of the "[DEBUG_DUMP] DbLib RAM" stream: the id the dump is
+   resumed from, the byte length of the record, and the two accessors.
+   debug_dump_dblib_ram__2 matches +0 against the id it was asked for, takes
+   the record length from +2, and calls +4 with the destination four bytes
+   past the record header it writes out of +0. Nothing in that walk reads +8;
+   the column is named by the one row whose function says what it is,
+   notification_enabled_get_num_elem beside notification_enabled_fetch.
+   */
+struct debug_dump_ram_item {
+    unsigned short id;
+    unsigned short size;
+    int (*fetch)(void *dest);
+    int (*count)(void);
+};
+
+/* tables */
+/* the six RAM-backed items the debug dump streams, in the order it walks
+   them. Bounds are the pair (0x27cec, 0x27d34) debug_dump_dblib_ram__2 loads
+   and the stride is its own `adds r3, #0xc`.
+   */
+extern struct debug_dump_ram_item debug_dump_ram_items[6];
+
 #endif
