@@ -22,6 +22,7 @@ All the main sensors are modelled
 | TMP117 skin temperature | TWI0 0x48 |
 | ADS1115-class heat-flux ADC | TWI0 0x49 |
 | APDS-9306 ambient light | TWI0 0x52 |
+| MS5849 barometer | TWI0 0x77 |
 | battery sense | SAADC AIN0 |
 
 There are some hacks to patch over Renode, i'd like to upstream them at some point.

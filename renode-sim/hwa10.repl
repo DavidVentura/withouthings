@@ -163,6 +163,13 @@ apds9306: Sensors.APDS9306 @ twi0 0x52
     preinit:
         include @NrfApds9306.cs
 
+// Row 5 of the firmware's I2C device table. Row 6 at 0x76 is an MS5837, which
+// the altimeter takes instead above hardware revision 0x6f; this watch is below
+// it, so only the MS5849 is fitted.
+ms5849: Sensors.MS5849 @ twi0 0x77
+    preinit:
+        include @NrfMs58xx.cs
+
 timer0: Timers.NRF52840_Timer @ sysbus 0x40008000
     numberOfEvents: 4
     -> nvic@8
