@@ -3,5 +3,5 @@
 # every member carries the source path in its DWARF, so the same archive
 # built from a differently named tree is a different number of bytes with
 # identical text. abi/refbuild.sh --check reports the tree against this.
-newlib-nano-ll       libc.a   138129
-newlib-nano-ll       libm.a   83648
+newlib-nano-ll       libc.a   138085
+newlib-nano-ll       libm.a   83264

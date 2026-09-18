@@ -69,7 +69,7 @@ functions:
   - name: __ieee754_exp
     address: 0x2ad58
     class: libm
-    evidence: "newlib libm (toolchain), score 0.94 over 231 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 227 insns, direct"
   - name: __ieee754_log
     address: 0x2b040
     class: libm
@@ -4090,7 +4090,7 @@ functions:
   - name: __ieee754_sqrt
     address: 0x8cd6c
     class: libm
-    evidence: "newlib libm (toolchain), score 0.97 over 158 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 157 insns, direct"
   - name: round
     address: 0x8cf10
     class: libm
@@ -4106,11 +4106,11 @@ functions:
   - name: __ieee754_expf
     address: 0x8cfe4
     class: libm
-    evidence: "newlib libm (toolchain), score 0.78 over 106 insns, propagated from expf"
+    evidence: "newlib libm (toolchain), score 0.99 over 102 insns, direct"
   - name: __ieee754_powf
     address: 0x8d170
     class: libm
-    evidence: "newlib libm (toolchain), score 0.66 over 386 insns, propagated from powf"
+    evidence: "newlib libm (toolchain), score 0.75 over 381 insns, propagated from powf"
   - name: scalbnf
     address: 0x8d6f8
     class: libc

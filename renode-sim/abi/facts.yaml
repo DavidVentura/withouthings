@@ -34,8 +34,8 @@ regions:
 
     '
 - name: LIBRARY_RAM
-  start: 537083904
-  size: 24576
+  start: 537047040
+  size: 57344
   kind: ram
   notes: 'The app''s initial MSP is 0x20040000 (top of the 256 KB SRAM) and the
     main stack grows down from there. After 600 s of virtual time that included
@@ -43,10 +43,12 @@ regions:
     the algorithm manager running, a dump of 0x20026000..0x20040000 was non-zero
     only in 0x20026000..0x2002ae00 (statics and the FreeRTOS heap) and 0x2003f000..0x20040000
     (the main stack''s low-water mark). The 0x14200 bytes between them were never
-    written. 0x20034000 sits in the middle of that hole, 0x9200 above the highest
-    used static and 0xb000 below the deepest the stack reached, and 0x2003a000 is
-    still 0x5000 below it; the source heap_4 brings its own 16 KB ucHeap, which
-    is what the size holds. Cross-checked by snapshotting this exact range at reset
+    written. The window is 0x2002b000..0x20039000: it starts 0x200 above the
+    highest used static and ends 0x6000 below the deepest the stack reached, so
+    both guard bands are kept. It holds 0xe000 because the source heap_4 brings
+    its own ucHeap and the image''s heap is 35000 bytes, not the 16 KB the window
+    was first cut for; a 0x6000 window at 0x20034000 overflowed by 10768 bytes
+    the moment configTOTAL_HEAP_SIZE was measured off pvPortMalloc. Cross-checked by snapshotting this exact range at reset
     with the NVMC model''s SnapshotProtectedRegion (it works on any sysbus range,
     not just flash) and verifying it at the end of the run: zero words differed.
 

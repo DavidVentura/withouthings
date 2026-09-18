@@ -16,7 +16,7 @@ OUT=../out/relink
 mkdir -p "$OUT"
 
 ARCH="-mcpu=cortex-m4 -mthumb -mabi=aapcs -mfpu=fpv4-sp-d16 -mfloat-abi=hard"
-COMMON="-Os -ffunction-sections -fdata-sections -fno-strict-aliasing -fno-builtin
+COMMON="-Os -ffunction-sections -fdata-sections -fno-builtin
  -fshort-enums -std=gnu99 -g3 -w -fcommon -DNRF52840_XXAA -DFLOAT_ABI_HARD -DS140
  -DSOFTDEVICE_PRESENT -DNRF_SD_BLE_API_VERSION=7 -DFREERTOS -DSWI_DISABLE0"
 
@@ -73,7 +73,7 @@ fi
 # compiles the `app` reference the same way, so the object the body verdicts
 # were measured on is the object linked here.
 NRFX_INC="-I$NRFX -I$NRFX/hal -I$NRFX/drivers -I$NRFX/drivers/include -I$NRFX/soc"
-"$GCC-gcc" $ARCH -Os -ffunction-sections -fdata-sections -fno-strict-aliasing \
+"$GCC-gcc" $ARCH -Os -ffunction-sections -fdata-sections \
     -fshort-enums -std=gnu99 -g3 -w -DNRF52840_XXAA -DFLOAT_ABI_HARD -DS140 \
     -DSOFTDEVICE_PRESENT -DNRF_SD_BLE_API_VERSION=7 -DFREERTOS -DSWI_DISABLE0 \
     -Iconfig-relink $NRFX_INC $INC -DNRFX_SAADC_ENABLED=1 \

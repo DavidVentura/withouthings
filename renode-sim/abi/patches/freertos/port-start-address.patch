@@ -1,0 +1,28 @@
+The task's entry point goes onto the stack with its Thumb bit cleared.
+
+The SDK's nRF52 CMSIS port stores pxCode into the PC slot as it is; the kernel's
+own Cortex-M4F port masks it with portSTART_ADDRESS_MASK first, because the
+exception return takes the Thumb state from the stacked xPSR and a set bit 0 in
+the stacked PC is a fault on some cores. The image does the mask: at 0x73e22
+pxPortInitialiseStack has a `bic r1, r1, #1` between the xPSR store and the PC
+store, and with it the body reproduces byte for byte.
+
+--- a/CMSIS/nrf52/port_cmsis.c
++++ b/CMSIS/nrf52/port_cmsis.c
+@@ -59,6 +59,7 @@
+ /* Constants required to set up the initial stack. */
+ #define portINITIAL_XPSR                    (((xPSR_Type){.b.T = 1}).w)
+ #define portINITIAL_EXEC_RETURN             ( 0xfffffffd )
++#define portSTART_ADDRESS_MASK              ( ( StackType_t ) 0xfffffffeUL )
+ 
+ /* Let the user override the pre-loading of the initial LR with the address of
+ prvTaskExitError() in case is messes up unwinding of the stack in the
+@@ -131,7 +132,7 @@
+ 
+     *pxTopOfStack = portINITIAL_XPSR;   /* xPSR */
+     pxTopOfStack--;
+-    *pxTopOfStack = ( StackType_t ) pxCode; /* PC */
++    *pxTopOfStack = ( ( StackType_t ) pxCode ) & portSTART_ADDRESS_MASK; /* PC */
+     pxTopOfStack--;
+     *pxTopOfStack = ( StackType_t ) portTASK_RETURN_ADDRESS;    /* LR */
+ 

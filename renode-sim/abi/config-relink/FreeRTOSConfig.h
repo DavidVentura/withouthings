@@ -4,8 +4,15 @@
    pxTaskTag at 0x54). */
 #define configUSE_TRACE_FACILITY      1
 #define configUSE_APPLICATION_TASK_TAG 1
-#define configMAX_TASK_NAME_LEN       12
+#define configMAX_TASK_NAME_LEN       10
 #define configRECORD_STACK_HIGH_ADDRESS 1
+/* The LR a task starts with is not the port's own prvTaskExitError. The image's
+   pxPortInitialiseStack (0x73e10) loads 0x97f25 into the LR slot, and 0x97f24 is
+   a bare `udf #0`: a task that returns traps. With the address of
+   prvTaskExitError no longer taken, GCC inlines it into its one caller, which is
+   what xPortStartScheduler (0x740b6) shows. */
+void vTaskReturnTrap( void );
+#define configTASK_RETURN_ADDRESS     vTaskReturnTrap
 /* 0, which leaves configASSERT undefined. Nine kernel bodies that otherwise
    reproduce stop doing so under the logging flavour and ten under the empty
    one, and xTaskCreateStatic has no configASSERT_DEFINED store. The logger the
@@ -42,7 +49,7 @@
 #define configMAX_PRIORITIES ( 5 )
 #endif
 #define configMINIMAL_STACK_SIZE                ( 60 )
-#define configTOTAL_HEAP_SIZE                   ( 16384 )
+#define configTOTAL_HEAP_SIZE                   ( 35000 )
 #ifndef configMAX_TASK_NAME_LEN
 #define configMAX_TASK_NAME_LEN ( 16 )
 #endif

@@ -36,6 +36,13 @@
 #     image's own assert paths rule out, so 13.2 is the one.
 #     The SDK 17.1.0 armgcc makefiles name GCC 9 and every body in the image
 #     disagrees with it.
+#     "Withings built their own GCC" was the standing explanation for the bodies
+#     that still differ, and it is wrong. A vanilla GCC 13.2.0 was built from the
+#     FSF tarball over this toolchain's own assembler, linker and headers (so the
+#     compiler proper is the only thing that changes) and measured over all 86
+#     bodies: its output is byte for byte what 13.2.Rel1's is, verdict for
+#     verdict. GCC_PREFIX=<prefix> re-runs that measurement. Whatever is left is
+#     not the compiler's build.
 #     https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
 #
 # The config is abi/config-relink/FreeRTOSConfig.h; every value in it that is not
@@ -46,7 +53,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=${ROOT:-$HOME/ref-build}
 SDK=$ROOT/sdk/nRF5_SDK_17.1.0_ddde560
 TC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
-GCC=$TC/bin/arm-none-eabi
+GCC=${GCC_PREFIX:-$TC/bin/arm-none-eabi}
 OUT=$ROOT/build
 CFG=$ROOT/cfg
 
@@ -217,7 +224,12 @@ DEFS="-DNRF52840_XXAA -DBOARD_PCA10056 -DFLOAT_ABI_HARD -DCONFIG_GPIO_AS_PINRESE
  -DAPP_FIFO_ENABLED=1 -DNRF_LOG_ENABLED=0"
 
 ARCH="-mcpu=cortex-m4 -mthumb -mabi=aapcs -mfpu=fpv4-sp-d16 -mfloat-abi=hard"
-COMMON="-ffunction-sections -fdata-sections -fno-strict-aliasing -fno-builtin
+# No -fno-strict-aliasing: the image's own code is the measurement. With strict
+# aliasing off GCC has to reload a field it just stored through another pointer,
+# and seven bodies carry that reload where the image does not -- uxListRemove
+# (0x9e55a) is the clearest, keeping pxNext and pxPrevious in the registers the
+# ldrd loaded them into across both list stores. Turning it on settles all seven.
+COMMON="-ffunction-sections -fdata-sections -fno-builtin
  -fshort-enums -std=gnu99 -g3 -w"
 build_variant() {
     local name="$1"; shift
@@ -270,7 +282,13 @@ build_variant() {
 NEWLIB=newlib-4.3.0.20230120
 NEWLIB_URL=https://sourceware.org/pub/newlib/$NEWLIB.tar.gz
 NEWLIB_CC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/bin
-NEWLIB_CFLAGS="-g -Os -ffunction-sections -fdata-sections -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16 -mthumb"
+# No -fdata-sections, which Arm's own newlib build does pass. The image's libm
+# is the measurement: __ieee754_sqrt (0x8cd6c) reads `one` and `tiny` as one
+# object at base and base+8, which only holds while the two sit in a shared
+# .rodata; with -fdata-sections each gets a section of its own, the body needs a
+# second pool word and r11 with it, and the register save mask changes. All four
+# libm bodies that differed -- sqrt, exp, expf and powf -- settle without it.
+NEWLIB_CFLAGS="-g -Os -ffunction-sections -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16 -mthumb"
 
 if [ ! -d "$ROOT/src/$NEWLIB" ]; then
     [ -f "$ROOT/dl/$NEWLIB.tar.gz" ] || curl -L -o "$ROOT/dl/$NEWLIB.tar.gz" "$NEWLIB_URL"
@@ -372,8 +390,22 @@ NEWLIB_SRC=$ROOT/src/$NEWLIB
 # is a source or compiler change and not a stale build directory. `--check`
 # stops at this report; the builds it passes through are no-ops on a tree that
 # is already populated.
-check_newlib
-if [ "${1:-}" = --check ]; then exit 0; fi
+# ONLY= skips the builds, so it would also report archives this run never had a
+# chance to rebuild; the check belongs to a run that builds them.
+# --check is the gate; a plain run reports and carries on, because the archives
+# are one measurement among several and the app build is the rest of them. ONLY=
+# skips the newlib builds, so it would report archives the run never had a chance
+# to rebuild, and reports nothing. libc.a's code bytes also move with $ROOT:
+# three assert paths are __FILE__ strings in .rodata, so the same source built
+# under a longer directory name is a larger archive by exactly the extra
+# characters, and the recorded number is the one $HOME/ref-build gives.
+if [ "${1:-}" = --check ]; then
+    check_newlib
+    exit $?
+fi
+if [ -z "${ONLY:-}" ]; then
+    check_newlib || true
+fi
 
 
 # ---- libm as a matchable ELF ------------------------------------------------
@@ -393,8 +425,12 @@ fi
 # evidence for each; abi/config-relink/nrfx_glue.h the two glue macros. The
 # `app` build below compiles the driver out of this tree and abi/body_check.py
 # checks the result against the image, which is what pins all three.
+# Re-staged every run, the way abi/stage.sh re-stages the kernel: a tree built
+# once and kept is a tree whose patches nobody re-applies, and an edit to
+# abi/patches/nrfx/ would then be measured against the tree from before it.
 SAADC_SRC=$ROOT/nrfx/nrfx-2.1.0-withings
-if [ -d "$ROOT/nrfx/nrfx-2.1.0" ] && [ ! -d "$SAADC_SRC" ]; then
+if [ -d "$ROOT/nrfx/nrfx-2.1.0" ]; then
+    rm -rf "$SAADC_SRC"
     cp -r "$ROOT/nrfx/nrfx-2.1.0" "$SAADC_SRC"
     for p in "$HERE"/patches/nrfx/*.patch; do
         (cd "$SAADC_SRC" && patch -p1 -s < "$p")
@@ -415,17 +451,20 @@ fi
 # REF_ASSERT=0 leaves configASSERT undefined. It is not a guess: the logging
 # flavour (3) costs nine of the kernel bodies that otherwise reproduce, and the
 # empty one (2) costs ten.
+# APP_NAME/APP_EXTRA exist so a hypothesis about the image's compiler settings is
+# a build directory of its own, measured beside `app` rather than replacing it.
+APP_NAME=${APP_NAME:-app}
 SKIP_SRC="modules/nrfx/drivers/src/nrfx_saadc.c"
-build_variant app -Os -fcommon -DREF_ASSERT=0 -DconfigUSE_TIMERS=0
-if want app; then
+build_variant "$APP_NAME" -Os -fcommon -DREF_ASSERT=0 -DconfigUSE_TIMERS=0 ${APP_EXTRA:-}
+if want "$APP_NAME"; then
     SAADC_INC="-I$SAADC_SRC -I$SAADC_SRC/hal -I$SAADC_SRC/drivers -I$SAADC_SRC/drivers/include -I$SAADC_SRC/soc"
     # -fno-builtin is deliberately not passed: the image's channels_config calls
     # memset for the pselp/pseln reset, which only the builtin emits.
-    "$GCC-gcc" $ARCH -ffunction-sections -fdata-sections -fno-strict-aliasing \
+    "$GCC-gcc" $ARCH -ffunction-sections -fdata-sections \
         -fshort-enums -std=gnu99 -g3 -w -Os $DEFS -I"$HERE/config-relink" \
-        $SAADC_INC $INC \
-        -c "$SAADC_SRC/drivers/src/nrfx_saadc.c" -o "$OUT/app/nrfx_saadc.o" 2>>"$OUT/app/err.log"
-    "$GCC-ld" -r -o "$OUT/app/merged.elf" "$OUT/app/ref.elf" "$OUT/app/nrfx_saadc.o"
-    mv "$OUT/app/merged.elf" "$OUT/app/ref.elf"
+        $SAADC_INC $INC ${APP_EXTRA:-} \
+        -c "$SAADC_SRC/drivers/src/nrfx_saadc.c" -o "$OUT/$APP_NAME/nrfx_saadc.o" 2>>"$OUT/$APP_NAME/err.log"
+    "$GCC-ld" -r -o "$OUT/$APP_NAME/merged.elf" "$OUT/$APP_NAME/ref.elf" "$OUT/$APP_NAME/nrfx_saadc.o"
+    mv "$OUT/$APP_NAME/merged.elf" "$OUT/$APP_NAME/ref.elf"
 fi
 SKIP_SRC=

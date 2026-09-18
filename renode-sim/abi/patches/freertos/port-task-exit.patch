@@ -1,0 +1,22 @@
+The scheduler's tail calls vTaskSwitchContext before the task-exit error.
+
+The kernel's own Cortex-M4F port ends xPortStartScheduler with a call to
+vTaskSwitchContext and then prvTaskExitError, so that link-time optimisation
+cannot drop either symbol; the SDK's nRF52 CMSIS port kept only the second.
+The image has both, at 0x740b2 (vTaskSwitchContext@0x7333c) and inline
+immediately after it: the ulDummy slot is written at 0x740b6 and the
+load-compare spin is at 0x740c8.
+
+--- a/CMSIS/nrf52/port_cmsis.c
++++ b/CMSIS/nrf52/port_cmsis.c
+@@ -258,7 +258,9 @@
+     /* Should never get here as the tasks will now be executing!  Call the task
+     exit error function to prevent compiler warnings about a static function
+     not being called in the case that the application writer overrides this
+-    functionality by defining configTASK_RETURN_ADDRESS. */
++    functionality by defining configTASK_RETURN_ADDRESS. Call
++    vTaskSwitchContext() so link time optimisation does not remove the symbol. */
++    vTaskSwitchContext();
+     prvTaskExitError();
+ 
+     /* Should not get here! */
