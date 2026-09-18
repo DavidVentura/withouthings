@@ -7141,7 +7141,7 @@ symbols:
   name: vTaskDelete
   kind: function
   class: match
-  evidence: app, score 0.96 over 49 insns, direct
+  evidence: app, score 1.00 over 49 insns, direct
 - address: 0x72fa4
   name: eTaskGetState
   kind: function
@@ -7213,6 +7213,11 @@ symbols:
   kind: function
   class: match
   evidence: app, score 1.00 over 33 insns, direct
+- address: 0x734c4
+  name: vTaskMissedYield
+  kind: function
+  class: match
+  evidence: app+graph, score 1.00 over 4 insns, propagated from prvUnlockQueue
 - address: 0x734d0
   name: eTaskConfirmSleepModeStatus
   kind: function
@@ -7875,7 +7880,7 @@ symbols:
   name: nrfx_saadc_channels_config
   kind: function
   class: match
-  evidence: app, score 0.90 over 88 insns, direct
+  evidence: app, score 1.00 over 92 insns, direct
 - address: 0x7de34
   name: nrfx_saadc_simple_mode_set
   aliases:
@@ -14055,7 +14060,7 @@ symbols:
   name: prvUnlockQueue
   kind: function
   class: match
-  evidence: app+graph, score 0.62 over 45 insns, propagated from xQueueGenericSend
+  evidence: app, score 1.00 over 46 insns, direct
 - address: 0x9e6e8
   name: xQueueGenericReset
   kind: function

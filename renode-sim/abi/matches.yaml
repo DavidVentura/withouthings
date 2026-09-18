@@ -25,7 +25,7 @@ meta:
   # is a fact about one body and one build, so adding references can add
   # candidates but cannot unsettle one. token_only entries are carried by
   # the alignment score alone and are not settled.
-  verdicts: {exact: 20, masked: 97, token_only: 5}
+  verdicts: {exact: 20, masked: 101, token_only: 2}
   ties: 0
   # Two recipes, because the image has two builds in it, and the hunt
   # that found them is over: FreeRTOS and nrfx across four kernel
@@ -257,10 +257,9 @@ functions:
   - name: vTaskDelete
     address: 0x72f10
     variant: app
-    verdict: token_only
+    verdict: masked
     masked_bytes: 52
-    divergence: "6 of 148 bytes differ outside the 52 a relocation owns, first at +0x48"
-    score: 0.959
+    score: 1.000
     insns: 49
     how: direct
     links: [vPortEnterCritical@0x73e3c, uxListRemove@0x9e55a, uxListRemove@0x9e55a, vListInsertEnd@0x9e516, vPortExitCritical@0x73e5c, prvDeleteTCB@0x9e32c, prvResetNextTaskUnblockTime@0x72eec]
@@ -421,6 +420,17 @@ functions:
     links: [vPortEnterCritical@0x73e3c, vTaskInternalSetTimeOutState@0x7345c, vPortExitCritical@0x73e5c]
     header: external/freertos/source/include/task.h
     proto: "BaseType_t xTaskCheckForTimeOut( TimeOut_t * const pxTimeOut, TickType_t * const pxTicksToWait );"
+  - name: vTaskMissedYield
+    address: 0x734c4
+    variant: app+graph
+    verdict: masked
+    masked_bytes: 4
+    score: 1.000
+    insns: 4
+    how: propagated from prvUnlockQueue
+    links: []
+    header: external/freertos/source/include/task.h
+    proto: "void vTaskMissedYield( void );"
   - name: eTaskConfirmSleepModeStatus
     address: 0x734d0
     variant: app
@@ -697,11 +707,10 @@ functions:
   - name: nrfx_saadc_channels_config
     address: 0x7dd10
     variant: app
-    verdict: token_only
+    verdict: masked
     masked_bytes: 12
-    divergence: "73 of 280 bytes differ outside the 12 a relocation owns, first at +0x4"
-    score: 0.898
-    insns: 88
+    score: 1.000
+    insns: 92
     how: direct
     links: [saadc_busy_check@0x7db08]
     header: modules/nrfx/drivers/include/nrfx_saadc_v2.h
@@ -1037,14 +1046,13 @@ functions:
     links: []
   - name: prvUnlockQueue
     address: 0x9e66c
-    variant: app+graph
-    verdict: token_only
+    variant: app
+    verdict: masked
     masked_bytes: 36
-    divergence: "70 of 122 bytes differ outside the 36 a relocation owns, first at +0x14"
-    score: 0.622
-    insns: 45
-    how: propagated from xQueueGenericSend
-    links: [vPortEnterCritical@0x73e3c, vPortExitCritical@0x73e5c]
+    score: 1.000
+    insns: 46
+    how: direct
+    links: [vPortEnterCritical@0x73e3c, vPortExitCritical@0x73e5c, vPortEnterCritical@0x73e3c, vPortExitCritical@0x73e5c, prvNotifyQueueSetContainer@0x9e5f6, vTaskMissedYield@0x734c4, xTaskRemoveFromEventList@0x733ec, xTaskRemoveFromEventList@0x733ec, vTaskMissedYield@0x734c4]
   - name: xQueueGenericReset
     address: 0x9e6e8
     variant: app
@@ -1266,7 +1274,7 @@ library_ranges:  # spans of the image the matches bracket
   - {start: 0x2a7e0, end: 0x2b040, matched: 9}
   - {start: 0x2bdf8, end: 0x2c9a8, matched: 4}
   - {start: 0x519b8, end: 0x51afc, matched: 3}
-  - {start: 0x72d40, end: 0x74034, matched: 40}
+  - {start: 0x72d40, end: 0x74034, matched: 41}
   - {start: 0x7db08, end: 0x7e16c, matched: 13}
   - {start: 0x8c8fc, end: 0x8d6f8, matched: 12}
   - {start: 0x8f42c, end: 0x8f42c, matched: 1}
@@ -1306,7 +1314,6 @@ unmatched_image:  # call targets inside those spans with no symbol
   - 0x732e8
   - 0x734b4
   - 0x734b8
-  - 0x734c4
   - 0x73580
   - 0x73648
   - 0x73936
