@@ -47,6 +47,7 @@ bucket. abi/objectify.py turns the `pointer` rows into R_ARM_ABS32.
 """
 
 import argparse
+import collections
 import json
 import os
 import sys
@@ -83,6 +84,20 @@ def read_facts(path, blob, functions):
         if entry["why"] not in reasons:
             sys.exit("abi/words.yaml gives 0x%x the reason %s, which it does not"
                      " state" % (addr, entry["why"]))
+        # A reason named after a run is a measurement, not an argument, so the
+        # run and the site that produced it travel with the entry and
+        # abi/observe_words.py --apply is what writes them.
+        observed = entry.get("observed")
+        if entry["why"].startswith("observed_"):
+            if not observed or not all(k in observed for k in
+                                       ("signal", "run", "evidence")):
+                sys.exit("abi/words.yaml gives 0x%x the observed reason %s"
+                         " without the signal, the run and the evidence"
+                         % (addr, entry["why"]))
+        elif observed is not None:
+            sys.exit("abi/words.yaml gives 0x%x an observation under the reason"
+                     " %s, which is not one a run decided"
+                     % (addr, entry["why"]))
         if entry["class"] == "pointer":
             target = entry["target"]
             if not isinstance(target, int):
@@ -149,6 +164,7 @@ class Partition(object):
         self.covered = bytes((bits[i >> 3] >> (i & 7)) & 1
                              for i in range(len(blob)))
         self.slots = None
+        self.copy_sources = None
         # A word inside a function body that an instruction reads is data the
         # compiler put between two basic blocks; something pointing at it is a
         # pointer, not a stray constant that happens to land in code.
@@ -284,6 +300,67 @@ def slot_objects(items, blob, part):
     return slots
 
 
+COPY_WINDOW = 16
+
+
+def copy_initialisers(items, refs, blob, part):
+    """Pool words that are the flash source of a RAM initialiser image.
+
+    A compiler emits `memcpy(&__data_start__, &__data_load__, &__data_end__ -
+    &__data_start__)` as three pool words next to each other: two RAM addresses
+    whose difference is the length, and one flash address that is the image. The
+    flash word is invisible to every other signal here -- the bytes it names are
+    an untyped gap, the value is even, and nothing else in the image names the
+    run -- so the copy is the only thing that says it is an address at all, and
+    a copy the linker does not relocate reads the wrong bytes as soon as the run
+    moves.
+
+    The shape is all four of: the reading function calls memcpy or memmove; the
+    word is 4-aligned and lands in the image; two more of that function's pool
+    words within COPY_WINDOW bytes hold RAM addresses; and no instruction covers
+    the run the difference measures out from the value. A copy loop the compiler
+    wrote out by hand would qualify too, but the export carries no disassembly
+    to recognise one by, and the image's copies all call memcpy.
+
+    A function whose pool holds more than two RAM addresses offers more than one
+    difference and so names no one length; that is refused rather than guessed
+    at, because the length is half of what the entry claims.
+    """
+    names = {f["start"]: f["name"] for f in items["functions"]}
+    copiers = set(a for a, n in names.items() if n in ("memcpy", "memmove"))
+    callers = set(c["function"] for c in refs["calls"] if c["to"] in copiers)
+    pools = collections.defaultdict(set)
+    for r in refs["pool_reads"]:
+        pools[r["function"]].add(r["target"])
+
+    def held(addr):
+        return int.from_bytes(blob[addr - APP_BASE:addr - APP_BASE + 4], "little")
+
+    found = {}
+    for fn in sorted(callers & set(pools)):
+        near_all = sorted(pools[fn])
+        for word in near_all:
+            value = held(word)
+            if value % 4 or not APP_BASE <= value < APP_END:
+                continue
+            ram = [held(q) for q in near_all if abs(q - word) <= COPY_WINDOW
+                   and RAM_BASE <= held(q) < RAM_END and held(q) % 4 == 0]
+            spans = set()
+            for i, lo in enumerate(ram):
+                for hi in ram[i + 1:]:
+                    length = abs(hi - lo)
+                    if not length or length % 4 or value + length > APP_END:
+                        continue
+                    if any(part.covered[k] for k in
+                           range(value - APP_BASE, value + length - APP_BASE)):
+                        continue
+                    spans.add((min(lo, hi), length))
+            if len(spans) == 1:
+                (dest, length), = spans
+                found[word] = (names[fn], dest, length)
+    return found
+
+
 def decide(word, part, contracts, overrides):
     """(class, signal, note) for one candidate word.
 
@@ -357,6 +434,10 @@ def decide(word, part, contracts, overrides):
         # a load base is data the disassembly over-covered, which is the one way
         # the Thumb argument below can be wrong.
         return "pointer", "use_pointer", ",".join(sorted(dereferenced))
+    if word["addr"] in part.copy_sources:
+        name, dest, length = part.copy_sources[word["addr"]]
+        return "pointer", "ram_initialiser_source", \
+            "%s copies %d bytes from here to 0x%x" % (name, length, dest)
     if part.in_code(value):
         # This image is Thumb throughout (9 movt, none building an address, and
         # no ARM code), so an even address is not a way to name an instruction.
@@ -396,6 +477,7 @@ def classify(items, refs, blob, contracts, overrides, manifest):
                  " not offer, starting at 0x%x" % (len(outside), outside[0]))
     part = Partition(items, refs["words"], blob)
     part.slots = slot_objects(items, blob, part)
+    part.copy_sources = copy_initialisers(items, refs, blob, part)
     rows, buckets, review, displacements = [], {}, {}, []
     first = [dict(word, **dict(zip(("class", "signal", "note"),
                                   decide(word, part, contracts, overrides))))

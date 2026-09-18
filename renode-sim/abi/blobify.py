@@ -238,7 +238,7 @@ def emit_data(directory, sources, delegated, blob, section_names, forced,
     for s in sorted(delegated, key=lambda s: s.start):
         s.object = DATA_OBJECT
         publish = list(forced.get(id(s), ()))
-        by_name = dict((name, off) for off, name in publish)
+        by_name = dict((name, (off, is_func)) for off, name, is_func in publish)
         names = []
         for off, name, is_func in section_names(s):
             exported = name in by_name or any(other != id(s) for other
@@ -248,8 +248,8 @@ def emit_data(directory, sources, delegated, blob, section_names, forced,
                          " the library" % (s.sym, name))
             names.append((off, name, exported, is_func))
             by_name.pop(name, None)
-        for name, off in sorted(by_name.items()):
-            names.append((off, name, True, False))
+        for name, (off, is_func) in sorted(by_name.items()):
+            names.append((off, name, True, is_func))
         body = bytes(blob[s.start - APP_BASE:s.end - APP_BASE])
         words = dict((off, sym) for off, sym, t in s.relocs if t == R_ARM_ABS32)
         if s.start in tables:
@@ -466,8 +466,13 @@ class ReferenceIndex(object):
             if not row["external"]:
                 self.called_by[row["to"]].append(row["from"])
         for word in words:
-            if word.get("target") is not None:
-                self.named_by[word["target"]].append(word)
+            # An unclassified word has no target: the value is the address it
+            # would name if it turned out to be one, and that is exactly what
+            # the refusal below asks about, so index it under the value.
+            at = (word["value"] & ~1 if word["class"] == "review"
+                  else word.get("target"))
+            if at is not None:
+                self.named_by[at].append(word)
 
 
 class Replacements(object):
@@ -724,7 +729,31 @@ def apply_prunes(blob, items, path, wanted):
     return touched
 
 
-def gc_keep_list(sections, layout, pinned, words, reach_path, replaced=()):
+def gc_reachable(sections, section_names, start):
+    """The section starts --gc-sections keeps when it enters the object at `start`.
+
+    One node per section and one edge per relocation, which is the same graph
+    abi/reach.py builds out of the written object, but taken from the sections
+    in hand so that the replacements and prunes this run applied are in it.
+    A relocation against a name no section defines -- what a replaced body's
+    callers now hold -- is an edge out of the object and not an edge at all.
+    """
+    owner = {}
+    for s in sections:
+        for _, name, _ in section_names(s):
+            owner.setdefault(name, s)
+    seen, stack = set([start.start]), [start]
+    while stack:
+        for _, sym, _ in stack.pop().relocs:
+            target = owner.get(sym)
+            if target is not None and target.start not in seen:
+                seen.add(target.start)
+                stack.append(target)
+    return seen
+
+
+def gc_keep_list(sections, layout, pinned, words, reach_path, section_names,
+                 replaced=()):
     """(section, why) for everything --gc-sections must not be allowed to drop.
 
     Three kinds, and only three. The fixed points are a contract with the MBR,
@@ -738,13 +767,17 @@ def gc_keep_list(sections, layout, pinned, words, reach_path, replaced=()):
 
     A root the object already reaches is not listed: gc keeps it either way, and
     listing it would hide how much of the root set is really unreferenced.
+    "Already reaches" is read off the object being built and not off the reach
+    map, because a replacement or a prune is a different program: the reach map
+    is the stock graph, in which a section whose only keeper is a body the link
+    replaces still looks reached.
     """
     if not os.path.exists(reach_path):
         sys.exit("%s does not exist; run abi/reach.py first" % reach_path)
     with open(reach_path) as fh:
         reach = json.load(fh)
     keep, seen = [], set()
-    already = set(reach["gc_sections"]["addrs"])
+    already = gc_reachable(sections, section_names, layout.at(APP_BASE))
 
     replaced = set(replaced)
 
@@ -1007,11 +1040,12 @@ def main():
             sys.exit("cannot export %s: 0x%x is outside the app" % (name, addr))
         if id(section) in delegated_set:
             # The definition is in datagen's file, so this object only declares
-            # the name and the fragment there publishes it.
-            if styp == STT_FUNC:
-                sys.exit("cannot export %s: 0x%x is in the data section %s"
-                         % (name, addr, section.sym))
-            forced.setdefault(id(section), []).append((addr - section.start, name))
+            # the name and the fragment there publishes it. A function name can
+            # land here: a body range no function entry point opens is a data
+            # component, and the send gate's tail-call target is one, so the
+            # Thumb bit travels with the name rather than the section's kind.
+            forced.setdefault(id(section), []).append(
+                (addr - section.start, name, styp == STT_FUNC))
             symbols.undefined(name)
             return
         thumb = 1 if styp == STT_FUNC else 0
@@ -1095,7 +1129,7 @@ def main():
     if args.gc:
         pinned = pinned_addresses(manifest, layout)
         keep = gc_keep_list(sections, layout, pinned, words, args.reach,
-                            replacements.by_start)
+                            section_names, replacements.by_start)
         if args.keep_also:
             by_name = {s.name: s for s in sections}
             listed = set(s.name for s, _ in keep)

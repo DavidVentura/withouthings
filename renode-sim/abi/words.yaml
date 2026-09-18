@@ -46,16 +46,13 @@ reasons:
     table of them mixed with counts and flags, which is why the stride test
     could not see the slot.
 
-  ram_initialiser_source: >
-    The word is the flash source of a RAM initialiser: the function that reads
-    it reads two more pool words that are the destination's first and last
-    address, computes the length from them, and tail-calls memcpy. 0x36e40 is
-    read by 0x36e30 in the function at 0x36e1c, whose other two pool words are
-    0x200066a8 and 0x2000798c, and 0x2000798c - 0x200066a8 = 4836 is exactly
-    the distance from 0xefe58 to the end of the run the assert format string
-    opens. The shape test could not see it because the bytes at 0xefe58 are an
-    untyped gap and the value is even, and nothing else in the image names the
-    run, so the copy reads 4836 bytes that no relocation holds.
+  observed_address: >
+    The runs dereferenced it. A hook on every instruction that loads this word
+    recorded the instruction count of the first load, and a watchpoint on the
+    address it holds recorded the first read of those bytes; the read came after
+    the load, so the value reached memory as an address. A word in a run shares
+    its load sites with the run's base, so what this proves for a table column
+    is that the column is read through, which is what makes it a pointer field.
 
 overrides:
   - address: 0x2e8e0
@@ -844,9 +841,118 @@ overrides:
     target: 0x8090c
     addend: 0
     why: names_a_string_run
-  - address: 0x36e40
-    value: 0xefe58
+
+# --- observed at runtime by abi/observe_words.py; regenerate, do not edit ---
+# One entry per word a run decided; abi/observe_words.py --apply
+# rewrites everything below this line.
+
+  - address: 0x395cc
+    value: 0x000d0b6e
     class: pointer
-    target: 0xefe58
+    target: 0xd0b6e
     addend: 0
-    why: ram_initialiser_source
+    why: observed_address
+    observed:
+      signal: lands_in_untyped_run
+      run: crown
+      evidence: 0xd0b6e read after a load
+  - address: 0x82614
+    value: 0x000e6b5e
+    class: pointer
+    target: 0xe6b5e
+    addend: 0
+    why: observed_address
+    observed:
+      signal: lands_in_untyped_run
+      run: crown
+      evidence: 0xe6b5e read after a load
+  - address: 0xb23dc
+    value: 0x00080001
+    class: pointer
+    target: 0x80001
+    addend: 0
+    why: observed_address
+    observed:
+      signal: not_a_word_slot
+      run: crown
+      evidence: 0x80000 exec after a load
+  - address: 0xb2590
+    value: 0x00080000
+    class: pointer
+    target: 0x80000
+    addend: 0
+    why: observed_address
+    observed:
+      signal: not_a_word_slot
+      run: crown
+      evidence: 0x80000 exec after a load
+  - address: 0xbc2b4
+    value: 0x000bc2bc
+    class: pointer
+    target: 0xbc2bc
+    addend: 0
+    why: observed_address
+    observed:
+      signal: not_a_word_slot
+      run: crown
+      evidence: 0xbc2bc read after a load
+  - address: 0xbc2d0
+    value: 0x000bc2d8
+    class: pointer
+    target: 0xbc2d8
+    addend: 0
+    why: observed_address
+    observed:
+      signal: lands_in_untyped_run
+      run: crown
+      evidence: 0xbc2d8 read after a load
+  - address: 0xbc6f8
+    value: 0x000bc700
+    class: pointer
+    target: 0xbc700
+    addend: 0
+    why: observed_address
+    observed:
+      signal: lands_in_untyped_run
+      run: crown
+      evidence: 0xbc700 read after a load
+  - address: 0xbc8f0
+    value: 0x000bc8f8
+    class: pointer
+    target: 0xbc8f8
+    addend: 0
+    why: observed_address
+    observed:
+      signal: lands_in_untyped_run
+      run: crown
+      evidence: 0xbc8f8 read after a load
+  - address: 0xbc9b4
+    value: 0x000bc9bc
+    class: pointer
+    target: 0xbc9bc
+    addend: 0
+    why: observed_address
+    observed:
+      signal: lands_in_untyped_run
+      run: crown
+      evidence: 0xbc9bc read after a load
+  - address: 0xbca24
+    value: 0x000bca2c
+    class: pointer
+    target: 0xbca2c
+    addend: 0
+    why: observed_address
+    observed:
+      signal: lands_in_untyped_run
+      run: crown
+      evidence: 0xbca2c read after a load
+  - address: 0xe408c
+    value: 0x000a746e
+    class: pointer
+    target: 0xa746e
+    addend: 0
+    why: observed_address
+    observed:
+      signal: not_a_word_slot
+      run: update
+      evidence: 0xa746e exec after a load
