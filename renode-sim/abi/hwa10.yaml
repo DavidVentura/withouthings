@@ -3488,6 +3488,30 @@ globals:
     address: 0x2001fff4
     type: struct hr_screen_data
 
+  - name: font_glyph_pool
+    address: 0xcadaa
+    type: u8[20058]
+    notes: >
+      one run holding every font's glyph bytes and every kerning range's
+      deltas: font_table rows 2 to 5 point their bits at 0xcadda, 0xcd021,
+      0xcd3a2 and 0xcdb10 and font_kern_table's rows point at 0xcadaa..0xcadde,
+      all of them byte offsets and most of them odd. Declared as one byte array
+      because that is what the run is -- left as a gap the analysis splits it
+      at each of those pointers and the pieces lose the unaligned reference
+      that proves the whole thing is byte indexed.
+  - name: anim_frame_bits
+    address: 0xe8354
+    type: u8[4090]
+    notes: >
+      the frame bitmaps of the three animations described at 0xbbd80, 0xbbe38
+      and 0xbbe74, whose descriptors are {u32 frames, u16 width, u16 height,
+      const u8 *bits, ..., u32 bytes, const u32 *frame_ms} followed by their
+      own frames-long duration array. The first descriptor says 16 frames of 22
+      by 20, which is 3 bytes a row and 60 bytes a frame, and 60 is exactly the
+      period of the run: the mask at 0xe8354 repeats at 0xe8390. Declared as
+      bytes because 0xbbe40 holds 0xe8de6, an odd address inside the run, so it
+      is indexed by the byte and a word window over it reads two halves of two
+      rows.
   - name: rre_asset_bodies_a
     address: 0xc3bfb
     type: u8[9124]
@@ -3615,6 +3639,18 @@ typedefs:
       struct sensors_sync_slot.
 
 structs:
+  - name: wui_view
+    fields: [[const void *, vtable], [const char *, name], [u32, timeout_ms],
+             [u32, reserved], [u32, flags]]
+    notes: >
+      the head of a WUI view descriptor, which is all of it that is fixed: the
+      fifteen views wui_view_table names agree on these five words and then
+      differ, some 24 bytes long and some 32, so the whole descriptor is not a
+      table and is not declared as one. vtable is what wui_push_now calls
+      through (+4 on entering, +0x10 on being covered), name is the string the
+      "[WUI] %s %s" and "[WUI] Can't push %s cause %s is active" lines print,
+      timeout_ms is 6000 in eleven of them and 60000, 21000 and 15000 in the
+      rest, reserved is zero in all fifteen and flags is 0x14 in all fifteen.
   - name: nrf_nvic_state
     fields: [[u32, __irq_masks_0], [u32, __irq_masks_1], [u32, __cr_flag]]
   - name: crown_ctx
@@ -4978,6 +5014,74 @@ tables:
       Which algorithm scores it is not settled: the descriptor that holds the
       four roots also holds 0.025, 0.5, 1.0 and 1.0 as floats and a RAM
       pointer, and it is only ever addressed after the startup copy.
+  - name: font_table
+    address: 0xb2064
+    entry: font
+    stride: 20
+    count: 6
+    notes: >
+      the six fonts, named by twenty-two literal pool words that load a row
+      each and by nothing that names the head. The count is the shape's own:
+      the seventh row would have type 58480 and a first character of zero. The
+      rows are checked against each other through their offset tables, which
+      are consecutive -- row 2 covers 0x20..0xff so its table is 225 u16s at
+      0xbe00e and ends exactly on row 3's 0xbe1d0, row 3 covers 0x27..0x68 so
+      its 67 entries end on row 4's 0xbe256, row 4's 32 end on row 5's 0xbe296
+      and row 5's 225 end at 0xbe458, which is where ble_conn_params_table
+      begins. Rows 0 and 1 carry their bitmaps immediately after their own
+      offset table instead (0xbdba4 plus 182 is 0xbdc5a), which is the same
+      arithmetic from the other side. type is the number "unsupported font type
+      (%i)" at 0xcad90 prints.
+  - name: font_kern_table
+    address: 0xb1f98
+    entry: font_kern_range
+    stride: 12
+    count: 17
+    notes: >
+      the kerning lists font_kern_index points into: a run of character ranges
+      each with a signed per-character delta array, with an all-zero row ending
+      each list. The layout is proved by the arrays' own lengths -- the row
+      {0x61, 0x6f} points at 0xcadc0 and the fifteen bytes there run out
+      exactly where the row {0x25, 0x39}'s twenty-one bytes at 0xcadab begin,
+      and that row's in turn end on 0xcadc0. The table stops at 0xb2064, where
+      font_table starts.
+  - name: font_kern_index
+    address: 0xb1ef0
+    entry: font_kern_ptr
+    stride: 4
+    count: 42
+    notes: >
+      one pointer per character from 0x30 to 0x59, which is the pair of bounds
+      the two words above the table hold (0xb1ee8 is 0x30 and 0xb1eec is 0x59),
+      and 0x59 - 0x30 + 1 is 42, which lands the last slot exactly on
+      font_kern_table's head. Thirty-three of the slots are NULL and the nine
+      that are not all name a font_kern_table row. Half of it was already typed
+      as ten pointers and the other half was the untyped run 0xb1f18, which is
+      what split one object into two.
+  - name: wui_view_table
+    address: 0xba070
+    entry: wui_view_entry
+    stride: 8
+    count: 16
+    notes: >
+      the WUI view registry, {id, descriptor} by id, with a zero row last. Both
+      the address and the count are the two words at 0xba068, which hold
+      0xba070 and 16; the fifteen live rows point at the view descriptors in
+      0xb9238..0xb9e68 that wui_push takes as its second argument.
+  - name: ppg_mode_table
+    address: 0xb4b60
+    entry: ppg_mode
+    stride: 16
+    count: 10
+    notes: >
+      the ten MAX86173 measurement configurations by name --
+      MULTIPPG_LONG_MEASURE__ACC, MULTIPPG__ACC, MULTIPPG_MONO_LONG_MEASURE__
+      ACC, MULTIPPG_MONO__ACC, PPG_IR940_NORTH__ACC, PPG_IR__ACC,
+      MULTIPPG_GREEN_LONG_MEASURE__ACC, SINGLEPPG_GREEN_MEASURE_ECG__ACC,
+      SINGLEPPG_GREEN__ACC and MULTIPPG_GREEN__ACC. It sits in the zeros above
+      algo_table and the eleventh row is not one: its name pointer lands on a
+      lone "e". index is a permutation of 0..9 and is what the rest of the
+      image indexes the set by, since the rows are not stored in that order.
 table_structs:
   - name: fwblk_table
     fields: [[u32, payload_offset], [u32, len], [void *, body]]
@@ -5061,6 +5165,39 @@ table_structs:
       same tree and a negative one is the leaf's own value. Both children are
       strictly greater than the node's own index in all 77 rows, so each tree
       is stored in topological order and its last node is a pure leaf pair.
+  - name: font
+    fields: [[u16, type], [u16, height], [u16, advance], [u8, first],
+             [u8, last], [const u8 *, bits], [const u16 *, offsets],
+             [u32, flags]]
+    notes: >
+      offsets holds last - first + 2 halfwords, one per character plus the end,
+      and bits is the packed glyph rows they index. Which of the two pointers
+      is which is settled by the distances: every row's offsets pointer plus
+      two times its character count is either the next row's offsets pointer or
+      its own bits pointer. height is below advance in all six rows.
+  - name: font_kern_range
+    fields: [[u32, first], [u32, last], [const i8 *, kern]]
+    notes: >
+      kern holds last - first + 1 signed bytes, one per character in the range,
+      and the ranges' arrays abut inside 0xcadaa..0xcadde. An all-zero row ends
+      a list rather than describing a range.
+  - name: font_kern_ptr
+    fields: [[const struct font_kern_range *, ranges]]
+    notes: >
+      NULL, or the first font_kern_range of the list for this character.
+  - name: wui_view_entry
+    fields: [[u32, id], [const struct wui_view *, view]]
+    notes: >
+      view is the descriptor wui_push takes as its second argument; the
+      descriptors are variable length, so they are not a table and are not
+      declared here. The last row is {0, NULL}.
+  - name: ppg_mode
+    fields: [[u8, group], [u8, kind], [u16, pad], [const char *, suffix],
+             [const char *, name], [u32, index]]
+    notes: >
+      kind is 2 in all ten rows and group is 0, 1 or 2; suffix is the empty
+      string at 0xe15d5 in all ten, which is why it reads as a number rather
+      than as a string.
 fixed_points:
   # Sections whose address is part of a contract with something outside the app,
   # so no layout may move them. Everything else in the image is free to go
