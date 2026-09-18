@@ -585,16 +585,154 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x2f05c (shell_cmd_hwa10) calls 0x32960; 176 bytes
+- address: 0x33368
+  name: vasistas_send_duration
+  kind: function
+  class: vasistas
+  module: VASISTAS
+  evidence: WamVasistasDuration of its halfword argument; every builder calls it
+    straight after vasistas_send_head
+- address: 0x33388
+  name: vasistas_send_awake
+  kind: function
+  class: vasistas
+  module: VASISTAS
+  evidence: 'WamVasistasAwake: steps from bits 55..63, distance from 75..90, ascent
+    from 160..173 and descent from 96..109, that last one only when the byte at
+    +5 of 0x20006448 is zero'
+- address: 0x333d4
+  name: vasistas_send_met_cal
+  kind: function
+  class: vasistas
+  module: VASISTAS
+  evidence: calories from bits 128..140 and met from 141..152, sent as WamVasistasMetCal
+    or WamVasistasMetCalEarned depending on the user's own two checks at 0x333da
+    and 0x33404
+- address: 0x33458
+  name: vasistas_send_acti_reco
+  kind: function
+  class: vasistas
+  module: VASISTAS
+  evidence: VasistasActiRecoV1V2 from bits 96..109 and 110..122, sent only when
+    the byte at +5 of 0x20006448 is not zero, which is the same byte that decides
+    whether 96..109 is descent
+- address: 0x33494
+  name: vasistas_send_head
+  kind: function
+  class: vasistas
+  module: VASISTAS
+  evidence: WamVasistasHead of a timestamp already made relative to the session
+    base at 0x3354a, or of zero when the second argument equals it
 - address: 0x334bc
   name: WPP_CMD_WAM_VASISTAS_GET__2__1
   kind: function
   class: helper
   evidence: only 0x33c3c (WPP_CMD_WAM_VASISTAS_GET__2) calls 0x334bc; 110 bytes
 - address: 0x33534
-  name: vas_type_not_recognize
+  name: vasistas_send_record
   kind: function
-  class: logline
-  evidence: the only line 0x33534 logs, wlog('Vas type not recognize') at 0x33a48
+  class: vasistas
+  module: VASISTAS
+  evidence: masks the record's six-bit type and dispatches it through the tbh at
+    0x33556; the default arm logs "Vas type not recognize" at 0x33a46
+- address: 0x33556
+  name: vasistas_wpp_object_table
+  kind: data
+  class: vasistas
+  module: VASISTAS
+  evidence: 38 halfword offsets off 0x33556, one reply builder per record type;
+    this is the map from a flash type to the wire objects it is sent as
+- address: 0x335a2
+  name: vasistas_send_activity_none
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: the head and the duration and nothing else, which is the whole of an
+    eight-byte type 0 record
+- address: 0x335d4
+  name: vasistas_send_run
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: the activity set with WamVasistasRun for the level in bits 64..68; type
+    1 differs only in sending WamVasistasWalk
+- address: 0x33634
+  name: vasistas_send_sleep_short
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: head, duration and WamVasistasSleep of bits 64..68, the three the 12-byte
+    type 37 record can carry
+- address: 0x3366a
+  name: vasistas_send_sleep
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: the activity set with WamVasistasSleep and no acti-reco
+- address: 0x336b4
+  name: vasistas_send_swim
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: takes the head and the duration from the word at +8, then Version and
+    VasistasSwimType from the two nibbles of +0xc and VasistasSwimV1 from +0xd and
+    +0xf
+- address: 0x3371e
+  name: vasistas_send_heartrate
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: VasistasHeartrate from bits 55..62, +8 and +0xc with the duration at
+    +0xe, then VasistasFlags from the low four bits of +0xf against a constant supported
+    mask of 0xf, the fourth of them inverted (the `pl` arm at 0x33798)
+- address: 0x337b0
+  name: vasistas_send_activity_event
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: ActivitySubcategory, ActivityLap or ActivityPause by the event code
+    in bits 55..62, keeping the previous event's timestamp in 0x20017c50 and 0x20017c4c
+    so the next one carries a duration
+- address: 0x338ee
+  name: vasistas_send_spo2
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: the duration from bits 82..89, then VasistasSpo2 from 64..73, 74..81
+    and 55..62
+- address: 0x33936
+  name: vasistas_send_ahi
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: VasistasAhi straight out of the word at +8
+- address: 0x3395c
+  name: vasistas_send_cbt
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: 'VasistasCbt: algo from bits 55..57, attrib from 58..61 and a signed
+    20-bit temperature from 64..83 (the sbfx at 0x3399e); an attrib of 5 sends the
+    duration as zero and anything past 90 seconds is clamped to 60'
+- address: 0x339ac
+  name: vasistas_send_hrv
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: the duration from +0xd, then VasistasHrv from +7, +8, +0xa and +0xc
+- address: 0x339e6
+  name: vasistas_send_rr
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: the duration from +0xa and VasistasRr from +8
+- address: 0x33a0a
+  name: vasistas_send_dbt
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: the duration from the halfword at +8 and VasistasDbt's nine bytes from
+    +0xa to +0x12
 - address: 0x33aa8
   name: WPP_CMD_WAM_VASISTAS_GET__1
   kind: function
@@ -5719,6 +5857,90 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x2746c: command ''vasistas'', run slot (+4)'
+- address: 0x65eb8
+  name: shell_fake2_case_table
+  kind: data
+  class: vasistas
+  module: VASISTAS
+  evidence: 38 absolute targets, one per record type; a type with no packing points
+    at the usage line at 0x65d56
+- address: 0x65f56
+  name: shell_fake2_store
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: 'every packer falls through to it: vasistas_bank_for_record for the
+    record just built and then vasistas_store, with 0xff meaning the type has no
+    bank'
+- address: 0x65f6e
+  name: shell_fake2_pack_activity
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: 'the 28-byte activity packing: steps at bits 55..63, level at 64..68,
+    distance at 75..90, descent at 96..109, reco_v2 at 110..122, calories at 128..140,
+    met at 141..152 and the merged bit at 174; types 2, 8, 26 and 37 share it and
+    37 stops after bit 74 (the cmp against 0x25 at 0x65fb8)'
+- address: 0x6604c
+  name: shell_fake2_pack_swim
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: a whole word of duration at +8 then the 16-bit mvt at the unaligned
+    +0xd and laps at +0xf, which is the packing the swim builder at 0x336b4 reads
+    back
+- address: 0x6607a
+  name: shell_fake2_pack_bkp
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: 'the type vasistas_write_bkp writes: an 18-bit field at 64, a 4-bit
+    one at 82, 10-bit ones at 86, 96 and 106 (that one packed in two pieces at 0x660e6
+    and 0x660fa) and two bits at 116 and 117; no reply builder reads it'
+- address: 0x6613a
+  name: shell_fake2_pack_heartrate
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: heartrate at bits 55..62, quality at +8, temperature at +0xc, duration
+    at +0xe and four flag bits in +0xf, which is what the builder at 0x3371e sends
+    as VasistasHeartrate and VasistasFlags; type 14 shares the case and the builder
+- address: 0x6620c
+  name: shell_fake2_pack_activity_event
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: an 8-bit event at bits 55..62 and a signed 16-bit subcategory at +8;
+    the builder at 0x337b0 matches the event shifted left by 7 against 0x80..0x280
+- address: 0x66236
+  name: shell_fake2_pack_unknown_16
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: one four-bit field at bits 55..58 in a 32-byte record; the reply builder's
+    table has no row for type 16, so nothing names it
+- address: 0x66250
+  name: shell_fake2_pack_spo2
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: spo2 at bits 64..73, error at 55..62 and quality at 74..81, the three
+    fields the builder at 0x338ee sends as VasistasSpo2
+- address: 0x66296
+  name: shell_fake2_pack_unknown_19
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: 'the only case that takes no argument: it writes 34 into the header''s
+    own size field (the bic/orr pair at 0x66296) and copies 34 constant bytes to
+    +8, which is why type 19''s size is the header''s plus eight'
+- address: 0x662c8
+  name: shell_fake2_pack_ahi
+  kind: label
+  class: vasistas
+  module: VASISTAS
+  evidence: two halfwords at +8 and +0xa, the word the builder at 0x33936 hands
+    to VasistasAhi as ahi and bd_proba
 - address: 0x66524
   name: vasistas_record_size
   kind: function
@@ -5728,6 +5950,14 @@ symbols:
     giving the record''s whole byte count; types 0xf and 0x13 add the header (0x10
     and 8) to the length the record carries. The refusal above 0x3e is "[VASISTAS]
     Error: unknown vasistas size"'
+- address: 0x66534
+  name: vasistas_record_size_table
+  kind: data
+  class: vasistas
+  module: VASISTAS
+  evidence: '63 byte offsets off 0x66534: the fixed sizes 8, 12, 16, 20, 24, 28
+    and 32, the two variable arms that add 8 and 16 to the header''s own size field,
+    and zero for a type that is not storable'
 - address: 0x665b4
   name: vasistas_append
   kind: function

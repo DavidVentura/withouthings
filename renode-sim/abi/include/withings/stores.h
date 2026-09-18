@@ -342,6 +342,240 @@ struct vasistas_header {
                                        fields begin */
 };
 
+/* The six-bit type selects the payload, and nothing in the record says which
+   union arm is live beyond that field: every reader switches on it. Three
+   tables agree on the namespace and are the evidence for the arms below --
+   vasistas_record_size's tbb at 0x66534 gives the byte count, the shell's
+   `vasistas fake2` encoder jump table at 0x65eb8 gives the field packing, and
+   the WPP reply builder's tbh at 0x33556 gives the wire objects a type is
+   sent as. A type the size table gives 0 is not storable at all. */
+enum vasistas_type {
+    VASISTAS_TYPE_ACTIVITY_NONE = 0,   /* 8, no payload: head and duration */
+    VASISTAS_TYPE_WALK = 1,            /* 28, WamVasistasWalk */
+    VASISTAS_TYPE_RUN = 2,             /* 28, WamVasistasRun */
+    VASISTAS_TYPE_SLEEP = 8,           /* 28, WamVasistasSleep */
+    VASISTAS_TYPE_SWIM = 9,            /* 16, VasistasSwimV1 */
+    VASISTAS_TYPE_BKP = 10,            /* 16, vasistas_write_bkp's own */
+    VASISTAS_TYPE_HEARTRATE = 12,      /* 16, VasistasHeartrate */
+    VASISTAS_TYPE_ACTIVITY_EVENT = 13, /* 12, ActivityLap/Pause/Subcategory */
+    VASISTAS_TYPE_HEARTRATE_ALT = 14,  /* 16, the same emitter as 12 */
+    VASISTAS_TYPE_UNKNOWN_15 = 15,     /* header size + 16, no emitter */
+    VASISTAS_TYPE_UNKNOWN_16 = 16,     /* 32, no emitter */
+    VASISTAS_TYPE_SPO2 = 18,           /* 12, VasistasSpo2 */
+    VASISTAS_TYPE_UNKNOWN_19 = 19,     /* header size + 8, no emitter */
+    VASISTAS_TYPE_AHI = 20,            /* 12, VasistasAhi */
+    VASISTAS_TYPE_UNKNOWN_21 = 21,     /* 24, no emitter */
+    VASISTAS_TYPE_CBT = 22,            /* 12, VasistasCbt */
+    VASISTAS_TYPE_HRV = 23,            /* 16, VasistasHrv */
+    VASISTAS_TYPE_RR = 24,             /* 12, VasistasRr */
+    VASISTAS_TYPE_UNKNOWN_26 = 26,     /* 28, activity-shaped, no emitter */
+    VASISTAS_TYPE_DBT = 27,            /* 20, VasistasDbt */
+    VASISTAS_TYPE_SLEEP_SHORT = 37,    /* 12, WamVasistasSleep */
+    VASISTAS_TYPE_MARKER = 62          /* 8, below the reply builder's table */
+};
+
+/* Every payload is bit-packed from bit 55 of the record, which is where the
+   header's own fields stop, so a type struct repeats the header's bits rather
+   than nesting it: a field that starts mid-byte cannot be expressed as a
+   member after an eight-byte prefix. */
+#define VASISTAS_HEADER_BITS \
+    unsigned int timestamp;         /* +0, unix seconds */ \
+    unsigned int type : 6;          /* bit 32 */ \
+    unsigned int prev_size : 8;     /* bits 38..45 */ \
+    unsigned int size : 8;          /* bits 46..53 */ \
+    unsigned int size_valid : 1     /* bit 54 */
+
+/* 28 bytes, the activity record types 1, 2, 8 and 26; 12-byte type 37 is the
+   same packing truncated after `unknown_69`. Encoder cases 0x65f6e and
+   0x65fb0; sent as WamVasistasHead, WamVasistasDuration, WamVasistasMetCal
+   (or MetCalEarned), WamVasistasAwake, WamVasistasWalk/Run/Sleep and
+   VasistasActiRecoV1V2 by the builders at 0x334bc, 0x335d4, 0x3366a and
+   0x33634. */
+struct vasistas_activity {
+    VASISTAS_HEADER_BITS;
+    unsigned int steps : 9;         /* 55..63,  WamVasistasAwake.steps */
+    unsigned int level : 5;         /* 64..68,  WamVasistasWalk/Run/Sleep */
+    unsigned int unknown_69 : 6;    /* 69..74,  encoder only, no reader */
+    unsigned int distance : 16;     /* 75..90,  WamVasistasAwake.distance */
+    unsigned int : 5;
+    /* Two readers take bits 96..109 under complementary conditions: the awake
+       emitter reads it as descent when the byte at *(0x20006448 + 5) is zero
+       (0x333ae) and the acti-reco emitter reads it as reco_v1 when it is not
+       (0x33460), so the name depends on that configuration byte. */
+    unsigned int descent : 14;      /* 96..109, or VasistasActiRecoV1V2.v1 */
+    unsigned int reco_v2 : 13;      /* 110..122, VasistasActiRecoV1V2.v2 */
+    unsigned int : 5;
+    unsigned int calories : 13;     /* 128..140, WamVasistasMetCal.calories */
+    unsigned int met : 12;          /* 141..152, WamVasistasMetCal.met */
+    unsigned int : 7;
+    unsigned int ascent : 14;       /* 160..173, WamVasistasAwake.ascent */
+    unsigned int merged : 1;        /* 174, read by vasistas_bank_for_record
+                                       at 0x66bf4 beside steps and level */
+    unsigned int : 17;
+    unsigned int : 32;
+};
+
+/* 16 bytes, type 9. Encoder case 0x6604c; sent as Version, VasistasSwimType
+   and VasistasSwimV1 by the builder at 0x336b4, whose head and duration both
+   come from `duration`. */
+struct vasistas_swim {
+    VASISTAS_HEADER_BITS;
+    unsigned int : 9;
+    unsigned int duration;          /* 64..95 */
+    unsigned int version : 4;       /* 96..99,  Version.value */
+    unsigned int swim_type : 4;     /* 100..103, VasistasSwimType.value */
+    unsigned int mvt : 16;          /* 104..119, VasistasSwimV1.mvt */
+    unsigned int laps : 8;          /* 120..127, VasistasSwimV1.laps */
+};
+
+/* 16 bytes, type 10, the record vasistas_write_bkp (0x65c48) builds and
+   vasistas_read_last_bkp reads. Encoder case 0x6607a; the reply builder's
+   table has no row for it, so no wire object names these fields. */
+struct vasistas_bkp {
+    VASISTAS_HEADER_BITS;
+    unsigned int : 9;
+    unsigned int unknown_64 : 18;   /* 64..81 */
+    unsigned int unknown_82 : 4;    /* 82..85 */
+    unsigned int unknown_86 : 10;   /* 86..95 */
+    unsigned int unknown_96 : 10;   /* 96..105 */
+    unsigned int unknown_106 : 10;  /* 106..115, packed in two pieces at
+                                       0x660e6 and 0x660fa */
+    unsigned int unknown_116 : 1;   /* 116 */
+    unsigned int unknown_117 : 1;   /* 117 */
+    unsigned int : 10;
+};
+
+/* 16 bytes, types 12 and 14. Encoder case 0x6613a; sent as VasistasHeartrate
+   and VasistasFlags by the builder at 0x3371e, which takes the head and the
+   duration from `duration`. */
+struct vasistas_heartrate {
+    VASISTAS_HEADER_BITS;
+    unsigned int heartrate : 8;     /* 55..62, VasistasHeartrate.heartrate */
+    unsigned int unknown_63 : 1;    /* 63, encoder only, no reader */
+    unsigned int quality : 8;       /* 64..71, VasistasHeartrate.quality */
+    unsigned int unknown_72 : 16;   /* 72..87, encoder only, no reader */
+    unsigned int : 8;
+    unsigned int temperature : 16;  /* 96..111, VasistasHeartrate.temperature */
+    unsigned int duration : 8;      /* 112..119 */
+    /* VasistasFlags.enabled_flags, one bit each, against a constant
+       supported_flags of 0xf; flag_8 is inverted (0x33798 takes the `pl`
+       arm, so the wire bit is set when the stored bit is clear). */
+    unsigned int flag_1 : 1;        /* 120 */
+    unsigned int flag_2 : 1;        /* 121 */
+    unsigned int flag_4 : 1;        /* 122 */
+    unsigned int flag_8 : 1;        /* 123 */
+    unsigned int : 4;
+};
+
+/* 12 bytes, type 13. Encoder case 0x6620c; the builder at 0x337b0 matches
+   `event` against 1..5 and sends ActivitySubcategory, ActivityLap or
+   ActivityPause, keeping the event's timestamp in the globals at 0x20017c50
+   and 0x20017c4c so the next event can carry a duration. */
+struct vasistas_activity_event {
+    VASISTAS_HEADER_BITS;
+    unsigned int event : 8;         /* 55..62, 1 start, 2 lap, 3 and 4 pause
+                                       or resume, 5 stop */
+    unsigned int : 1;
+    signed int subcategory : 16;    /* 64..79, ActivitySubcategory.value;
+                                       the reader is an ldrsh at 0x33832 */
+    unsigned int : 16;
+};
+
+/* 12 bytes, type 18. Encoder case 0x66250; sent as VasistasSpo2 by the
+   builder at 0x338ee. */
+struct vasistas_spo2 {
+    VASISTAS_HEADER_BITS;
+    unsigned int error : 8;         /* 55..62, VasistasSpo2.error */
+    unsigned int : 1;
+    unsigned int spo2 : 10;         /* 64..73, VasistasSpo2.spo2 */
+    unsigned int quality : 8;       /* 74..81, VasistasSpo2.quality */
+    unsigned int duration : 8;      /* 82..89 */
+    unsigned int : 6;
+};
+
+/* 12 bytes, type 20. Encoder case 0x662c8; sent as VasistasAhi by the builder
+   at 0x33936, which copies the whole word at +8 into the object. */
+struct vasistas_ahi {
+    VASISTAS_HEADER_BITS;
+    unsigned int : 9;
+    signed short ahi;               /* +8,  VasistasAhi.ahi */
+    signed short bd_proba;          /* +10, VasistasAhi.bd_proba */
+};
+
+/* 12 bytes, type 22. No fake2 encoder; the fields are the builder at 0x3395c,
+   which also refuses to give a duration when attrib is 5. */
+struct vasistas_cbt {
+    VASISTAS_HEADER_BITS;
+    unsigned int algo : 3;          /* 55..57, VasistasCbt.algo */
+    unsigned int attrib : 4;        /* 58..61, VasistasCbt.attrib */
+    unsigned int : 2;
+    signed int temperature : 20;    /* 64..83, VasistasCbt.temperature; the
+                                       reader is an sbfx at 0x3399e */
+    unsigned int : 12;
+};
+
+/* 16 bytes, type 23. No fake2 encoder; the fields are the builder at 0x339ac,
+   which takes the head and the duration from `duration`. */
+struct vasistas_hrv {
+    VASISTAS_HEADER_BITS;
+    unsigned int : 1;
+    unsigned int hr : 8;            /* 56..63, VasistasHrv.hr */
+    unsigned short sdnn;            /* +8,  VasistasHrv.sdnn */
+    unsigned short rmssd;           /* +10, VasistasHrv.rmssd */
+    unsigned char quality;          /* +12, VasistasHrv.quality */
+    unsigned char duration;         /* +13 */
+    unsigned char pad[2];
+};
+
+/* 12 bytes, type 24. No fake2 encoder; the fields are the builder at 0x339e6,
+   which takes the head and the duration from `duration`. */
+struct vasistas_rr {
+    VASISTAS_HEADER_BITS;
+    unsigned int : 9;
+    unsigned short rr;              /* +8, VasistasRr.rr */
+    unsigned char duration;         /* +10 */
+    unsigned char pad;
+};
+
+/* 20 bytes, type 27. No fake2 encoder; the fields are the builder at 0x33a0a,
+   which takes the head and the duration from `duration`. */
+struct vasistas_dbt {
+    VASISTAS_HEADER_BITS;
+    unsigned int : 9;
+    unsigned short duration;        /* +8 */
+    unsigned char hr_max_avg;       /* +10 */
+    unsigned char hr_min_avg;       /* +11 */
+    unsigned char in_period_ds;     /* +12 */
+    unsigned char ex_period_ds;     /* +13 */
+    unsigned char in_period_target_s; /* +14 */
+    unsigned char ex_period_target_s; /* +15 */
+    unsigned char duration_target;  /* +16 */
+    unsigned char is_from_ecg;      /* +17 */
+    unsigned char hr_quality;       /* +18 */
+    unsigned char pad;
+};
+
+/* Types 15, 16, 19, 21 and 26 are storable (the size table gives them 32, 24,
+   28 and two variable lengths) but no reply builder row reads them and only
+   16 and 19 have a fake2 case, so their payloads stay undeclared: type 16
+   carries a four-bit field at bits 55..58 (0x66236) and type 19 is a fixed
+   34-byte blob copied from 0x3f4e4 behind a size the encoder writes itself
+   (0x66296). */
+union vasistas_record {
+    struct vasistas_header header;
+    struct vasistas_activity activity;
+    struct vasistas_swim swim;
+    struct vasistas_bkp bkp;
+    struct vasistas_heartrate heartrate;
+    struct vasistas_activity_event activity_event;
+    struct vasistas_spo2 spo2;
+    struct vasistas_ahi ahi;
+    struct vasistas_cbt cbt;
+    struct vasistas_hrv hrv;
+    struct vasistas_rr rr;
+    struct vasistas_dbt dbt;
+};
+
 /* one bank: the WFTL type it lives in, the ring length, and where the writer
    and the oldest record are. vasistas_bank_reset (0x65864) keeps the first
    and the last field and zeroes the rest, which is what says those two are
