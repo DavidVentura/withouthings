@@ -242,12 +242,16 @@ def addressish(value):
 WIDTHS = {"u8": 1, "u16": 2, "u32": 4, "i8": 1, "i16": 2, "i32": 4}
 
 
-def field_map(fields):
-    """{offset: is a 4-byte pointer} for one hwa10.yaml struct."""
+def field_map(fields, typedefs=()):
+    """{offset: is a 4-byte pointer} for one hwa10.yaml struct.
+
+    A field whose type is one of the manifest's typedefs is a function pointer,
+    which is a pointer word like any other.
+    """
     out, at = {}, 0
     for kind, _ in fields:
         kind = str(kind)
-        if kind.endswith("*"):
+        if kind.endswith("*") or kind in typedefs:
             width, pointer = 4, True
         elif "[" in kind:
             base, _, count = kind.partition("[")
@@ -262,9 +266,10 @@ def field_map(fields):
 def declared_tables(manifest):
     """(start, stride, count, {offset: is a pointer}) for every declared table."""
     structs = dict((s["name"], s["fields"]) for s in manifest["table_structs"])
+    typedefs = {t["name"] for t in manifest.get("typedefs", [])}
     out = []
     for table in manifest["tables"]:
-        fields, size = field_map(structs[table["entry"]])
+        fields, size = field_map(structs[table["entry"]], typedefs)
         if size != table["stride"]:
             raise SystemExit("abi/hwa10.yaml: %s is %d bytes but %s has a"
                              " stride of %d" % (table["entry"], size,

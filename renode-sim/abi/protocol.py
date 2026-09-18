@@ -91,6 +91,11 @@ WRITE_BODY = re.compile(r"fn write\(&self, _?w: &mut Writer\) \{(\}|.*?\n    \})
 PARSE_BODY = re.compile(r"fn parse\(.*?\) -> Result<Self, ParseError> \{(.*?)\n    \}", re.S)
 W_CALL = re.compile(r"\bw\.(\w+)\(")
 R_CALL = re.compile(r"\br\.(\w+)\(")
+# The struct field each wire field comes from: `w.u32(self.uid)` and
+# `w.array_u32(&self.user_id)` are the crate's own names for the two sides of
+# the same position, which is what names the recovered in-memory field.
+W_FIELD = re.compile(r"\bw\.(\w+)\(\s*&?(?:self\.(?:r#)?(\w+)|[^)]*)")
+R_FIELD = re.compile(r"(?:(\w+):\s*)?\br\.(\w+)\(")
 
 
 def crate_objects():
@@ -111,6 +116,12 @@ def crate_objects():
         p = PARSE_BODY.search(body)
         rec["crate_parse"] = [CRATE_WIDTH[k] for k in R_CALL.findall(p.group(1))
                               if k in CRATE_WIDTH] if p else None
+        wnames = [n for k, n in W_FIELD.findall(w.group(1))
+                  if k in CRATE_WIDTH] if w else []
+        rnames = [n for n, k in R_FIELD.findall(p.group(1))
+                  if k in CRATE_WIDTH] if p else []
+        rec["crate_field_names"] = wnames if any(wnames) else rnames
+        rec["crate_parse_names"] = rnames
         out[int(c.group(1))] = rec
     return out
 
@@ -165,6 +176,287 @@ def image_fields(body, fn, table, skip_header):
         fields.append({"at": "0x%x" % addr, "type": kind,
                        "repeated": body.in_loop(fn, addr)})
     return fields
+
+
+# ---------------------------------------------------------------- in-memory
+# The codecs' own calling convention, read off the bodies. An encoder opens
+# `mov r4, r1; mov r5, r0`, writes its type and length through r4 and then loads
+# every field from r5, so r0 is the object and r1 the cursor. A parser opens
+# `mov r4, r2; mov r5/r6, r0; mov r_, r1` and compares r1 against the type's
+# fixed data size before handing r0 to a getter, so r0 is the cursor, r1 the
+# wire length and r2 the object. The scalar getters take (out, cursor) and the
+# string and array getters take (cursor, out, max), which is the only place the
+# two families differ.
+ENC_ARGS = {"obj": "r0", "cur": "r1"}
+GETTER_CURSOR_IN_R1 = ("u8", "u16", "u32")
+
+LOAD_OPS = {"ldrb": (1, False), "ldrb.w": (1, False), "ldrsb.w": (1, True),
+            "ldrh": (2, False), "ldrh.w": (2, False), "ldrsh.w": (2, True),
+            "ldr": (4, False), "ldr.w": (4, False)}
+MOV_OPS = ("mov", "mov.w", "uxtb", "uxth", "sxtb", "sxth")
+_LOAD = re.compile(r"^(r\d+), \[(r\d+)(?:, #(0x[0-9a-f]+|\d+))?\]$")
+_ADDI = re.compile(r"^(r\d+), (r\d+), #(0x[0-9a-f]+|\d+)$")
+_ADDR = re.compile(r"^(r\d+), (r\d+), (r\d+)$")
+_MOVR = re.compile(r"^(r\d+), (r\d+)$")
+_MOVI = re.compile(r"^(r\d+), #(0x[0-9a-f]+|\d+)$")
+# `ldrh r1, [r6], #2` -- a codec that walks its own struct with a post-indexed
+# load reads the field at the base and leaves the base one field further on.
+_LOADPI = re.compile(r"^(r\d+), \[(r\d+)\], #(0x[0-9a-f]+|\d+)$")
+
+
+def _walk_regs(insns, init):
+    """(address, registers) at every call the body makes.
+
+    A tiny abstract interpreter over the only instructions these bodies use:
+    the codecs are straight-line movs, immediate loads and immediate-offset
+    loads off one base, so a register is either a copy of an argument, a
+    constant offset from one, a field loaded from one, or unknown.
+    """
+    regs = dict(init)
+    for _, addr, mnem, ops in insns:
+        if mnem in ("bl", "bl.w", "b.w", "b"):
+            yield addr, dict(regs)
+            if mnem in ("bl", "bl.w"):
+                for r in ("r0", "r1", "r2", "r3", "r12"):
+                    regs.pop(r, None)
+            continue
+        if mnem in ("push", "pop", "pop.w", "cmp", "cbz", "cbnz", "bx", "it", "nop"):
+            continue
+        m = _MOVR.match(ops)
+        if m and mnem in MOV_OPS:
+            d, src = m.groups()
+            regs[d] = regs[src] if src in regs else None
+            continue
+        m = _MOVI.match(ops)
+        if m and mnem.startswith("mov"):
+            regs[m.group(1)] = ("imm", int(m.group(2), 0))
+            continue
+        m = _LOAD.match(ops)
+        if m and mnem in LOAD_OPS:
+            d, base, off = m.groups()
+            b = regs.get(base)
+            width, signed = LOAD_OPS[mnem]
+            regs[d] = (("field", b[1], b[2] + (int(off, 0) if off else 0), width, signed)
+                       if b and b[0] == "ptr" else None)
+            continue
+        m = _LOADPI.match(ops)
+        if m and mnem in LOAD_OPS:
+            d, base, step = m.groups()
+            b = regs.get(base)
+            width, signed = LOAD_OPS[mnem]
+            regs[d] = ("field", b[1], b[2], width, signed) if b and b[0] == "ptr" else None
+            if b and b[0] == "ptr":
+                regs[base] = ("ptr", b[1], b[2] + int(step, 0))
+            continue
+        m = _ADDI.match(ops) or _ADDR.match(ops)
+        if m and mnem in ("adds", "add", "add.w"):
+            d, base, third = m.groups()
+            b, step = regs.get(base), None
+            if third.startswith("r"):
+                t = regs.get(third)
+                step = t[1] if t and t[0] == "imm" else None
+            else:
+                step = int(third, 0)
+            regs[d] = (("ptr", b[1], b[2] + step)
+                       if b and b[0] == "ptr" and step is not None else None)
+            continue
+        m = re.match(r"^(r\d+)[,\s]", ops)
+        if m:
+            regs[m.group(1)] = None
+    return
+
+
+WIDTH = {"u8": 1, "u16": 2, "u32": 4}
+
+
+def _slot(kind, value, count, side):
+    """(offset, C width, element count, signed) the codec argument names, or None.
+
+    A scalar moves one field of the primitive's width; a string is the 0x41
+    bytes wpp_put_string's 0x40 clamp plus its length byte occupy; an array is
+    the primitive's element repeated the literal count the call carries, which
+    is the writer's r2 and the getter's maximum. Only the encoder can say a
+    field is signed, because only it loads it: `ldrsh` against `ldrh` is the
+    whole of the evidence, and a parser stores through a pointer either way.
+    """
+    if kind in WIDTH:
+        if side == "encode":
+            if not value or value[0] != "field":
+                return None
+            return value[2], value[3], 1, value[4]
+        if not value or value[0] != "ptr":
+            return None
+        return value[2], WIDTH[kind], 1, False
+    if not value or value[0] != "ptr":
+        return None
+    if kind == "string":
+        return value[2], 1, 0x41, False
+    if not count or count[0] != "imm":
+        return None
+    return value[2], {"array_u8": 1, "array_u32": 4}[kind], count[1], False
+
+
+def codec_layout(body, ops_at, fn, side):
+    """The in-memory slots a codec body touches, in wire order.
+
+    Wire order is what the conformance check already matched against the
+    crate, so the n-th slot here is the n-th crate field.
+    """
+    insns = body.insns.get(fn, ())
+    table = WRITERS if side == "encode" else READERS
+    init = ({"r0": ("ptr", "obj", 0), "r1": ("ptr", "cur", 0)} if side == "encode"
+            else {"r0": ("ptr", "cur", 0), "r2": ("ptr", "obj", 0)})
+    out, header = [], 0
+    for addr, regs in _walk_regs(insns, init):
+        kind = table.get(_call_target_at(ops_at, addr))
+        if kind is None:
+            continue
+        if side == "encode":
+            if header < 2:            # the type and the length are literals
+                header += 1
+                continue
+            cursor, value, count = regs.get("r0"), regs.get("r1"), regs.get("r2")
+        elif kind in GETTER_CURSOR_IN_R1:
+            cursor, value, count = regs.get("r1"), regs.get("r0"), None
+        else:
+            cursor, value, count = regs.get("r0"), regs.get("r1"), regs.get("r2")
+        slot = _slot(kind, value, count, side)
+        rec = {"at": "0x%x" % addr, "wire": kind,
+               "repeated": body.in_loop(fn, addr)}
+        if cursor != ("ptr", "cur", 0) or slot is None:
+            rec["computed"] = True
+        else:
+            off, width, n, signed = slot
+            rec.update(offset=off, width=width, count=n, signed=signed)
+        out.append(rec)
+    return out
+
+
+def _call_target_at(ops_at, addr):
+    ops = ops_at.get(addr)
+    return A._call_target(ops) if ops else None
+
+
+SCALAR_NAME = {(1, False): "u8", (1, True): "i8", (2, False): "u16",
+               (2, True): "i16", (4, False): "u32", (4, True): "i32"}
+
+
+def struct_fields(slots, names):
+    """(fields, complaints) for one side's slots: C fields with padding filled in."""
+    fields, why, end = [], [], 0
+    for i, s in enumerate(slots):
+        name = names[i] if i < len(names) and names[i] else "field_%d" % i
+        if s.get("computed") or "offset" not in s:
+            why.append("%s (%s at %s) is computed, not copied from the struct"
+                       % (name, s["wire"], s["at"]))
+            continue
+        off, width, n = s["offset"], s["width"], s["count"]
+        if off < end:
+            why.append("%s at +0x%x overlaps the field before it" % (name, off))
+            continue
+        if off > end:
+            fields.append(["u8[0x%x]" % (off - end), "pad_%x" % end])
+        base = SCALAR_NAME[(width, s["signed"])]
+        fields.append([base if n == 1 else "%s[0x%x]" % (base, n), name])
+        end = off + width * n
+    return fields, why, end
+
+
+def recover_structs(body, ops_at, rows):
+    """Per type id, the in-memory struct both codecs agree on."""
+    out = {}
+    for tid, r in sorted(rows.items()):
+        if tid is None:
+            continue
+        rec = {"type_id": tid, "rust": r["rust"], "name": "wpp_%s" % r["rust"]}
+        names = r.get("crate_field_names") or []
+        sides = {}
+        for side, addrs in (("encode", r.get("encoders", [])),
+                            ("parse", [r["parser"]] if "parser" in r else [])):
+            for a in addrs:
+                slots = codec_layout(body, ops_at, int(a, 16), side)
+                fields, why, size = struct_fields(slots, names)
+                sides.setdefault(side, []).append(
+                    {"at": a, "slots": slots, "fields": fields, "why": why, "size": size})
+        rec["sides"] = sides
+        enc = sides.get("encode", [])
+        par = sides.get("parse", [])
+        # Only the encoder loads, so only the encoder can say a field is
+        # signed; the shapes are compared with the signedness dropped and a
+        # width or an offset difference is what counts as a disagreement.
+        def shape(fields):
+            return [[f[0].replace("i", "u", 1), f[1]] for f in fields]
+        shapes = {json.dumps(shape(s["fields"])) for s in enc + par}
+        rec["agree"] = len(shapes) <= 1
+        if enc:
+            rec["fields"], rec["size"] = enc[0]["fields"], enc[0]["size"]
+        elif par:
+            rec["fields"], rec["size"] = par[0]["fields"], par[0]["size"]
+        else:
+            rec["fields"], rec["size"] = [], 0
+        rec["why"] = sorted({w for s in enc + par for w in s["why"]})
+        rec["complete"] = bool(rec["fields"] or not names) and not rec["why"] and rec["agree"]
+        out[tid] = rec
+    return out
+
+
+def structs_yaml(structs):
+    """The recovered layouts as the `structs:` entries hwa10.yaml carries.
+
+    The manifest is hand-edited, so this prints a block to paste rather than
+    rewriting the file; re-running it against a later export is how a layout
+    is re-checked.
+    """
+    out = []
+    for tid in sorted(structs):
+        r = structs[tid]
+        ev = []
+        for side, label in (("encode", "encoder"), ("parse", "parser")):
+            for sd in r["sides"].get(side, []):
+                sites = " ".join(
+                    "+0x%x@%s" % (s["offset"], s["at"]) if "offset" in s else "?@%s" % s["at"]
+                    for s in sd["slots"])
+                ev.append("%s %s%s" % (label, sd["at"], (" (%s)" % sites) if sites else ""))
+        out.append("  - name: %s" % r["name"])
+        if r["fields"]:
+            out.append("    fields: [%s]" % ", ".join(
+                '[%s, %s]' % (('"%s"' % t) if "[" in t else t, n) for t, n in r["fields"]))
+        else:
+            out.append("    fields: []")
+        out.append("    notes: >")
+        out.append("      WPP object type %d (%s), %d bytes; %s."
+                   % (tid, r["rust"], r["size"], "; ".join(ev)))
+    return "\n".join(out)
+
+
+def codecs_yaml(structs):
+    """The recovered codecs as the `functions:` entries hwa10.yaml carries.
+
+    Both prototypes come from the call sites rather than from the codec bodies:
+    wpp_obj_parse (0x504b4) hands its callback (&cursor, object length, out) at
+    0x504ea, and the frame appender 0x9d322 hands the encoder (object, &cursor).
+    """
+    out = []
+    for tid in sorted(structs):
+        r = structs[tid]
+        for side, addrs in (("encode", r["sides"].get("encode", [])),
+                            ("parse", r["sides"].get("parse", []))):
+            for n, sd in enumerate(addrs):
+                name = "wpp_obj_%s_%s" % (r["rust"], side)
+                if n:  # autonames.py's own spelling for a second copy
+                    name += "_copy_%s" % sd["at"]
+                out.append("  - name: %s" % name)
+                out.append("    address: %s" % sd["at"])
+                if side == "encode":
+                    out.append("    ret: void")
+                    out.append("    args: [[const struct %s *, obj], [void **, cursor]]"
+                               % r["name"])
+                else:
+                    out.append("    ret: i32")
+                    out.append("    args: [[void **, cursor], [u16, len], "
+                               "[struct %s *, out]]" % r["name"])
+                out.append("    notes: WPP object type %d (%s)" % (tid, r["rust"]))
+    return "\n".join(out)
 
 
 def compare(image, crate):
@@ -302,6 +594,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"))
     ap.add_argument("--out", default=os.path.join(HERE, "out", "protocol"))
+    ap.add_argument("--emit-structs-yaml",
+                    help="write the recovered layouts as a hwa10.yaml structs block")
+    ap.add_argument("--emit-codecs-yaml",
+                    help="write the codec prototypes as a hwa10.yaml functions block")
     args = ap.parse_args()
 
     img = A.Image(os.path.join(SIM, "appl.bin"), os.path.join(SIM, "out", "appl.dis"))
@@ -333,7 +629,33 @@ def main():
         r["parse_match"] = compare(r["image_parse"], r["crate_parse"]) if "image_parse" in r else None
         out.append(r)
 
+    ops_at = {a: o for a, _, o in img.insns}
+    structs = recover_structs(body, ops_at, rows)
+
     os.makedirs(args.out, exist_ok=True)
+    spath = os.path.join(args.out, "structs.json")
+    with open(spath, "w") as fh:
+        json.dump({"_generated": "by abi/protocol.py, do not edit",
+                   "structs": [structs[t] for t in sorted(structs)]}, fh, indent=1)
+    if args.emit_codecs_yaml:
+        with open(args.emit_codecs_yaml, "w") as fh:
+            fh.write(codecs_yaml(structs) + "\n")
+        print(args.emit_codecs_yaml)
+    if args.emit_structs_yaml:
+        with open(args.emit_structs_yaml, "w") as fh:
+            fh.write(structs_yaml(structs) + "\n")
+        print(args.emit_structs_yaml)
+    whole = [r for r in structs.values() if r["complete"]]
+    split = [r for r in structs.values() if not r["agree"]]
+    print("%s: %d object types, %d with a complete in-memory struct, "
+          "%d where the encoder and the parser disagree"
+          % (spath, len(structs), len(whole), len(split)))
+    for r in split:
+        print("  %d %s: encoder %s, parser %s"
+              % (r["type_id"], r["rust"],
+                 [s["at"] for s in r["sides"].get("encode", [])],
+                 [s["at"] for s in r["sides"].get("parse", [])]))
+
     path = os.path.join(args.out, "objects.json")
     with open(path, "w") as fh:
         json.dump({"_generated": "by abi/protocol.py, do not edit", "objects": out},

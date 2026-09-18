@@ -85,7 +85,7 @@ EXT_ARCHIVES = [
 EXT_VARIANTS = ["mbedtls_Os", "mbedtls_O2"]
 
 # Which class names an address when two reach it; earlier wins. See main().
-CLASS_RANK = ["svc", "libc", "extlib", "wppcmd", "shell", "wppobj", "string",
+CLASS_RANK = ["svc", "syscall", "libc", "extlib", "wppcmd", "shell", "wppobj", "string",
               "logtag", "logcb", "bleevt", "logline", "helper"]
 
 INSN = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2,4} )+)\s*\t(\S+)\s*(.*)$")
@@ -242,6 +242,76 @@ def find_svc_wrappers(img, svcs):
         out.append({"address": addr, "name": name, "class": "svc",
                     "proto": proto, "header": "s140/headers/" + header,
                     "evidence": "svc #0x%x; bx lr at 0x%x" % (num, addr)})
+    return out
+
+
+# ------------------------------------------------------------ class: syscall
+
+# newlib's bare syscall stubs. Withings supplies these itself, so no reference
+# archive carries them, and every one of them compiles to the same
+# `errno = N; return -1` -- the same bytes as a dozen stubs libc_nano.a does
+# carry. That is how 0x97fd0 matched the archive's `fcntl`: the body genuinely
+# is fcntl's body, and is equally _fstat's, so a body match cannot choose and
+# takes whichever name the archive happens to offer.
+#
+# The caller can choose. newlib pairs each stub with exactly one reentrant
+# wrapper _X_r, whose shape is its own -- zero the errno cell, shuffle the
+# arguments up by one, call the stub, and on -1 copy errno into the reentrancy
+# struct the first argument points at -- and the relinked newlib binds each of
+# these call sites to a stub by name. The wrapper address is therefore the
+# evidence, and the errno constant in the body corroborates it where the two
+# stubs a wrapper could belong to set different ones.
+SYSCALL_STUBS = {
+    0x97F26: ("_read", 0x9041C, "errno 5 (EIO)"),
+    0x97F36: ("_lseek", 0x903F8, "errno 5 (EIO)"),
+    0x97F46: ("_close", 0x903D8, "errno 9 (EBADF)"),
+    0x97F56: ("_kill", 0x91EB4, "errno 134 (ENOTSUP)"),
+    0x97F66: ("_exit", 0xA920E, "`udf #0` -- the stub cannot return"),
+    0x97F68: ("_getpid", None, "`movs r0,#1; bx lr`, the stub's constant 1"),
+    0x97FD0: ("_fstat", 0x91CD4, "errno 88 (ENOSYS)"),
+    0x97FF4: ("_isatty", 0x91D1C, "returns 1 for fd 0..2 and 0 above"),
+    0x4CA2C: ("_write", 0x90440, "errno 9 (EBADF) above fd 2"),
+}
+
+
+def syscall_stub_names(img, ex):
+    """The nine newlib syscall stubs, named by the wrapper that calls them.
+
+    The call site is looked up in the disassembly rather than in the export's
+    call graph: _kill_r (0x91eb4) and _write_r (0x90440) are only reached by a
+    tail branch, so they have no function start of their own and the export
+    files their call to the stub under the body before them.
+    """
+    if not ex.ok:
+        return []
+    sites = collections.defaultdict(set)
+    for i, (at, mnem, ops) in enumerate(img.insns):
+        if mnem in ("bl", "bl.w", "b.w"):
+            t = _call_target(ops)
+            if t is not None:
+                sites[t].add(at)
+    out = []
+    for addr, (name, wrapper, why) in sorted(SYSCALL_STUBS.items()):
+        callers = sites.get(addr, set())
+        if wrapper is not None and not any(wrapper <= c < wrapper + 0x40
+                                           for c in callers):
+            # The wrapper is the whole of the evidence, so losing it is a
+            # refusal rather than a name taken on the strength of the note.
+            print("autonames: %s: 0x%x does not call 0x%x (callers %s)"
+                  % (name, wrapper, addr,
+                     ", ".join("0x%x" % c for c in sorted(callers)) or "none"),
+                  file=sys.stderr)
+            continue
+        ev = ("newlib syscall stub: %s; the body is an errno stub every such "
+              "stub in libc_nano.a matches, so the archive's own name cannot "
+              "be taken here" % why)
+        if wrapper is not None:
+            ev = ("called by the reentrant wrapper %s_r at 0x%x, which the "
+                  "relinked newlib binds to %s; " % (name, wrapper, name)) + ev
+        else:
+            ev = "no caller in the image; " + ev
+        out.append({"address": addr, "name": name, "class": "syscall",
+                    "evidence": ev})
     return out
 
 
@@ -1500,7 +1570,7 @@ def main():
     ap.add_argument("--dis", default=os.path.join(SIM, "out", "appl.dis"))
     ap.add_argument("--out", default=os.path.join(HERE, "autonames.yaml"))
     ap.add_argument("--classes",
-                    default="svc,libc,extlib,string,logtag,logcb,wppcmd,shell,"
+                    default="svc,syscall,libc,extlib,string,logtag,logcb,wppcmd,shell,"
                             "bleevt,wppobj,logline,helper")
     ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"),
                     help="abi/ghidra/analyze.sh's export; the partition and call graph")
@@ -1536,6 +1606,11 @@ def main():
     if "svc" in want:
         found = find_svc_wrappers(img, softdevice_svcs())
         stats["svc"] = len(found)
+        entries += found
+
+    if "syscall" in want:
+        found = syscall_stub_names(img, ex)
+        stats["syscall"] = len(found)
         entries += found
 
     if "libc" in want:

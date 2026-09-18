@@ -165,6 +165,10 @@ class Export(object):
         self.named = {f["address"]: f["name"] for f in self.autonames}
         self.tables = {t["name"]: t for t in self.manifest["tables"]}
         self.structs = {t["name"]: t for t in self.manifest["table_structs"]}
+        # A row's call target may be declared as one of the manifest's function
+        # pointer typedefs rather than as a bare void *; either way it is the
+        # slot a root is taken from.
+        self.typedefs = {t["name"] for t in self.manifest.get("typedefs", [])}
         self.functions = {f["name"]: f["address"] for f in self.manifest["functions"]}
 
     def word(self, addr):
@@ -268,7 +272,8 @@ def rule_command_table(export, image, group, spec, table, prefix):
         key = next((cols[f] for f, t in types.items() if t == "u32"), None)
         label = next((export.string(cols[f]) for f, t in types.items()
                       if t == "const char *"), None)
-        slots = [f for f, t in types.items() if t == "void *"]
+        slots = [f for f, t in types.items()
+                 if t == "void *" or t in export.typedefs]
         for fname in slots:
             handler = cols[fname]
             if not handler & 1 or not export.in_image(handler):

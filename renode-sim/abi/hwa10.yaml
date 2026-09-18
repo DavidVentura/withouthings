@@ -152,7 +152,7 @@ functions:
   - name: wpp_cmd_battery_status
     address: 0x6ca91
     ret: void
-    args: [[void *, req]]
+    args: [[const void *, objects], [u16, len]]
     notes: >
       WPP command 1284 handler, entry 127 of wpp_cmd_table. Reads the battery
       level, then replies with command 0x504. Ignores its argument. Address
@@ -325,6 +325,1096 @@ functions:
     args: []
     notes: power-up sequence plus the 0x31/0x92 id gate
 
+  # --- WPP dispatch and framing ---
+  - name: wpp_cmd_dispatch
+    address: 0x6c784
+    ret: i32
+    args: [[u16, command], [const void *, objects], [u16, len]]
+    notes: >
+      the master-request walk: steps wpp_cmd_table by 12 between the pair
+      (0x274b4, 0x27ba4) its literal pool holds, logs the row's name when +8 is
+      non-null, calls +4 with (objects, len) and returns 0, or -1 when no row
+      matches
+  - name: wpp_cmd_dispatch_slave
+    address: 0x6e788
+    ret: i32
+    args: [[u16, command], [u32, phase], [const void *, objects], [u16, len]]
+    notes: >
+      the same walk over (0x27ba4, 0x27c04) with one more argument; the row is
+      a tail call, so the handler's result is this one's
+  - name: wpp_obj_parse
+    address: 0x504b4
+    ret: i32
+    args: [[void *, out], [const void *, data], [u16, len], [u16, type],
+           [wpp_obj_parser, parse]]
+    notes: >
+      the TLV walk every request handler reaches its objects through. Reads the
+      {u16 type, u16 length} header at the cursor with 0x9a8fe, skips the object
+      when the type does not match, and on a match calls parse with the advanced
+      cursor, the object's length and out. -2 when the stream runs out before a
+      match ("not found" log at 0x50510), -1 when parse fails.
+  - name: wpp_obj_header_get
+    address: 0x9a8fe
+    ret: void
+    args: [[void **, cursor], [u16 *, out_type], [u16 *, out_len]]
+    notes: >
+      the two big-endian u16 of an object header, read through the same cursor
+      the field primitives use; its only caller is wpp_obj_parse
+  - name: wpp_send_object
+    address: 0x9d38a
+    ret: void
+    args: [[const void *, obj], [u16, command], [wpp_obj_sizer, size],
+           [wpp_obj_encoder, encode]]
+    notes: >
+      builds a 0xb0-byte frame on its own stack (0x9d30e), appends the one
+      object through 0x9d322 and hands the frame to the link layer with
+      0x6bd0c. 0x9d3d8 is a `b.w` to it and is the entry every reply site in
+      the image actually calls.
+  - name: wpp_send_object_alias
+    address: 0x9d3d8
+    ret: void
+    args: [[const void *, obj], [u16, command], [wpp_obj_sizer, size],
+           [wpp_obj_encoder, encode]]
+    notes: the `b.w 0x9d38a` thunk; declared because it is what the handlers call
+  - name: wpp_send_empty
+    address: 0x9d3b4
+    ret: void
+    args: [[u16, command]]
+    notes: the same frame with an empty object list, i.e. a command and nothing else
+  - name: wpp_frame_append_object
+    address: 0x9d322
+    ret: void
+    args: [[void *, frame], [const void *, obj], [wpp_obj_sizer, size],
+           [wpp_obj_encoder, encode]]
+    notes: >
+      appends one object to a frame the caller already has; the (sizer,
+      encoder) pair in r2/r3 is what abi/protocol.py reads a reply's type from
+  - name: wpp_obj_BatteryStatus_size
+    address: 0x98fe4
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      `movs r0, #0xe; bx lr` -- BatteryStatus's ten data bytes plus the
+      four-byte header. It is the r2 wpp_cmd_battery_status loads at 0x6caca
+      alongside the encoder in r3, which is the only thing that ties this
+      one-instruction stub to this object type; the constants around it
+      (0x98fe8 returns 0x18, 0x98fec 0x1d, 0x98ff0 0xb) are the same stub for
+      other types and are left unnamed because no call site has been read for
+      them.
+  - name: battery_status_fill_state
+    address: 0x9211e
+    supersedes: WPP_CMD_BATTERY_STATUS__1
+    ret: void
+    args: [[struct wpp_BatteryStatus *, out]]
+    notes: >
+      stores the charge state into out+1: 0 while the charger reports an error
+      (0x922a2), otherwise 2 when the charger is idle and 1 or 3 from
+      bat_charging_decision's verdict. Its only caller is wpp_cmd_battery_status,
+      which is also what fixes its argument type.
+
+  # The three table handlers the image also calls directly, so their prototype
+  # has to hold at a `bl` as well as at the dispatcher's `blx`. The names are
+  # abi/autonames.py's, taken from the table row's own name string, so that the
+  # manifest adds a prototype without forking the name.
+  - name: WPP_CMD_PROBE
+    address: 0x6c84c
+    ret: void
+    args: [[const void *, objects], [u16, len]]
+    notes: >
+      row 257 of wpp_cmd_table, and also the branch the frame demux 0x6bfa8
+      takes at 0x6c088 when the command word is 0x101, with the same
+      (objects, len) pair it would have given the dispatcher
+  - name: WPP_CMD_MTU_EXCH
+    address: 0x6d2e0
+    ret: void
+    args: [[const void *, objects], [u16, len]]
+    notes: row 341, called directly at 0x6c0aa on the 0x155 branch of the same demux
+  - name: WPP_CMD_SYNC_REQUEST
+    address: 0x3ff1c
+    ret: i32
+    args: [[u32, phase], [const void *, objects], [u16, len]]
+    notes: >
+      row 321 of wpp_cmd_table_slave, so the three-argument prototype; the
+      second caller is wpp_lite_client_cmd_dropped (0x6e7e8), which is inside
+      the slave walk and passes the same three
+
+  # --- WPP object codecs ---
+  # Generated with abi/protocol.py; the names are abi/autonames.py's own, which
+  # is why they are repeated here rather than left to autonames.yaml: only the
+  # manifest can give them a prototype in the unguarded part of the header.
+  # Regenerate with:
+  #   python3 abi/protocol.py --emit-codecs-yaml /tmp/wppcodecs.yaml
+  - name: wpp_obj_Null_encode
+    address: 0x9917a
+    ret: void
+    args: [[const struct wpp_Null *, obj], [void **, cursor]]
+    notes: WPP object type 256 (Null)
+  - name: wpp_obj_Null_encode_copy_0x9a918
+    address: 0x9a918
+    ret: void
+    args: [[const struct wpp_Null *, obj], [void **, cursor]]
+    notes: WPP object type 256 (Null)
+  - name: wpp_obj_Null_parse
+    address: 0x4ed90
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Null *, out]]
+    notes: WPP object type 256 (Null)
+  - name: wpp_obj_BatteryPercent_encode
+    address: 0x99216
+    ret: void
+    args: [[const struct wpp_BatteryPercent *, obj], [void **, cursor]]
+    notes: WPP object type 263 (BatteryPercent)
+  - name: wpp_obj_Cmderror_encode
+    address: 0x9923a
+    ret: void
+    args: [[const struct wpp_Cmderror *, obj], [void **, cursor]]
+    notes: WPP object type 272 (Cmderror)
+  - name: wpp_obj_Cmderror_parse
+    address: 0x4edb0
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Cmderror *, out]]
+    notes: WPP object type 272 (Cmderror)
+  - name: wpp_obj_StoredMeasureMeta_encode
+    address: 0x99266
+    ret: void
+    args: [[const struct wpp_StoredMeasureMeta *, obj], [void **, cursor]]
+    notes: WPP object type 278 (StoredMeasureMeta)
+  - name: wpp_obj_StoredMeasureData_encode
+    address: 0x992ae
+    ret: void
+    args: [[const struct wpp_StoredMeasureData *, obj], [void **, cursor]]
+    notes: WPP object type 279 (StoredMeasureData)
+  - name: wpp_obj_ConnectReason_encode
+    address: 0x992e4
+    ret: void
+    args: [[const struct wpp_ConnectReason *, obj], [void **, cursor]]
+    notes: WPP object type 280 (ConnectReason)
+  - name: wpp_obj_UserUnit_encode
+    address: 0x99308
+    ret: void
+    args: [[const struct wpp_UserUnit *, obj], [void **, cursor]]
+    notes: WPP object type 281 (UserUnit)
+  - name: wpp_obj_DebugDumpData_encode
+    address: 0x99346
+    ret: void
+    args: [[const struct wpp_DebugDumpData *, obj], [void **, cursor]]
+    notes: WPP object type 285 (DebugDumpData)
+  - name: wpp_obj_DebugDumpMask_parse
+    address: 0x4ee88
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_DebugDumpMask *, out]]
+    notes: WPP object type 286 (DebugDumpMask)
+  - name: wpp_obj_DebugDumpType_encode
+    address: 0x9936c
+    ret: void
+    args: [[const struct wpp_DebugDumpType *, obj], [void **, cursor]]
+    notes: WPP object type 287 (DebugDumpType)
+  - name: wpp_obj_LocaleSet_encode
+    address: 0x99398
+    ret: void
+    args: [[const struct wpp_LocaleSet *, obj], [void **, cursor]]
+    notes: WPP object type 289 (LocaleSet)
+  - name: wpp_obj_ProbeChallenge_encode
+    address: 0x993be
+    ret: void
+    args: [[const struct wpp_ProbeChallenge *, obj], [void **, cursor]]
+    notes: WPP object type 290 (ProbeChallenge)
+  - name: wpp_obj_ProbeChallenge_parse
+    address: 0x4eee4
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_ProbeChallenge *, out]]
+    notes: WPP object type 290 (ProbeChallenge)
+  - name: wpp_obj_ProbeChallengeResponse_encode
+    address: 0x993f4
+    ret: void
+    args: [[const struct wpp_ProbeChallengeResponse *, obj], [void **, cursor]]
+    notes: WPP object type 291 (ProbeChallengeResponse)
+  - name: wpp_obj_ProbeChallengeResponse_parse
+    address: 0x4ef24
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_ProbeChallengeResponse *, out]]
+    notes: WPP object type 291 (ProbeChallengeResponse)
+  - name: wpp_obj_BatteryVoltageMv_encode
+    address: 0x9941a
+    ret: void
+    args: [[const struct wpp_BatteryVoltageMv *, obj], [void **, cursor]]
+    notes: WPP object type 292 (BatteryVoltageMv)
+  - name: wpp_obj_DebugDumpIgnoreData_encode
+    address: 0x99440
+    ret: void
+    args: [[const struct wpp_DebugDumpIgnoreData *, obj], [void **, cursor]]
+    notes: WPP object type 293 (DebugDumpIgnoreData)
+  - name: wpp_obj_AlarmId_parse
+    address: 0x4ef54
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_AlarmId *, out]]
+    notes: WPP object type 294 (AlarmId)
+  - name: wpp_obj_NbAlarm_encode
+    address: 0x99464
+    ret: void
+    args: [[const struct wpp_NbAlarm *, obj], [void **, cursor]]
+    notes: WPP object type 295 (NbAlarm)
+  - name: wpp_obj_PlsReturnCode_encode
+    address: 0x99488
+    ret: void
+    args: [[const struct wpp_PlsReturnCode *, obj], [void **, cursor]]
+    notes: WPP object type 296 (PlsReturnCode)
+  - name: wpp_obj_PlsStation_encode
+    address: 0x994c4
+    ret: void
+    args: [[const struct wpp_PlsStation *, obj], [void **, cursor]]
+    notes: WPP object type 297 (PlsStation)
+  - name: wpp_obj_PlsStation_parse
+    address: 0x4ef80
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_PlsStation *, out]]
+    notes: WPP object type 297 (PlsStation)
+  - name: wpp_obj_AppProbe_parse
+    address: 0x4efb8
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_AppProbe *, out]]
+    notes: WPP object type 298 (AppProbe)
+  - name: wpp_obj_FactoryState_encode
+    address: 0x994f0
+    ret: void
+    args: [[const struct wpp_FactoryState *, obj], [void **, cursor]]
+    notes: WPP object type 300 (FactoryState)
+  - name: wpp_obj_FactoryResetMode_parse
+    address: 0x4eff8
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_FactoryResetMode *, out]]
+    notes: WPP object type 302 (FactoryResetMode)
+  - name: wpp_obj_TrackerWearPos_encode
+    address: 0x99514
+    ret: void
+    args: [[const struct wpp_TrackerWearPos *, obj], [void **, cursor]]
+    notes: WPP object type 303 (TrackerWearPos)
+  - name: wpp_obj_TrackerWearPos_parse
+    address: 0x4f024
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_TrackerWearPos *, out]]
+    notes: WPP object type 303 (TrackerWearPos)
+  - name: wpp_obj_FeatureMask_encode
+    address: 0x99538
+    ret: void
+    args: [[const struct wpp_FeatureMask *, obj], [void **, cursor]]
+    notes: WPP object type 307 (FeatureMask)
+  - name: wpp_obj_FeatureMask_parse
+    address: 0x4f050
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_FeatureMask *, out]]
+    notes: WPP object type 307 (FeatureMask)
+  - name: wpp_obj_AccountKey_parse
+    address: 0x4f07c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_AccountKey *, out]]
+    notes: WPP object type 309 (AccountKey)
+  - name: wpp_obj_AdvKey_parse
+    address: 0x4f0b8
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_AdvKey *, out]]
+    notes: WPP object type 310 (AdvKey)
+  - name: wpp_obj_McuId_encode
+    address: 0x9955c
+    ret: void
+    args: [[const struct wpp_McuId *, obj], [void **, cursor]]
+    notes: WPP object type 311 (McuId)
+  - name: wpp_obj_SensorId_parse
+    address: 0x4f0e8
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_SensorId *, out]]
+    notes: WPP object type 312 (SensorId)
+  - name: wpp_obj_SoftdeviceVersion_encode
+    address: 0x99588
+    ret: void
+    args: [[const struct wpp_SoftdeviceVersion *, obj], [void **, cursor]]
+    notes: WPP object type 313 (SoftdeviceVersion)
+  - name: wpp_obj_HrAutoAlgo_encode
+    address: 0x995bc
+    ret: void
+    args: [[const struct wpp_HrAutoAlgo *, obj], [void **, cursor]]
+    notes: WPP object type 314 (HrAutoAlgo)
+  - name: wpp_obj_HrAutoAlgo_parse
+    address: 0x4f118
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_HrAutoAlgo *, out]]
+    notes: WPP object type 314 (HrAutoAlgo)
+  - name: wpp_obj_WorkoutScreenList_encode
+    address: 0x995e0
+    ret: void
+    args: [[const struct wpp_WorkoutScreenList *, obj], [void **, cursor]]
+    notes: WPP object type 316 (WorkoutScreenList)
+  - name: wpp_obj_SyncRequest_encode
+    address: 0x99606
+    ret: void
+    args: [[const struct wpp_SyncRequest *, obj], [void **, cursor]]
+    notes: WPP object type 320 (SyncRequest)
+  - name: wpp_obj_Silent_parse
+    address: 0x4f1c8
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Silent *, out]]
+    notes: WPP object type 322 (Silent)
+  - name: wpp_obj_StoredSignalMeta_encode
+    address: 0x99632
+    ret: void
+    args: [[const struct wpp_StoredSignalMeta *, obj], [void **, cursor]]
+    notes: WPP object type 323 (StoredSignalMeta)
+  - name: wpp_obj_StoredSignalData_encode
+    address: 0x9967e
+    ret: void
+    args: [[const struct wpp_StoredSignalData *, obj], [void **, cursor]]
+    notes: WPP object type 324 (StoredSignalData)
+  - name: wpp_obj_Id_encode
+    address: 0x996a4
+    ret: void
+    args: [[const struct wpp_Id *, obj], [void **, cursor]]
+    notes: WPP object type 325 (Id)
+  - name: wpp_obj_StoredSignalMetaExtend_encode
+    address: 0x996c8
+    ret: void
+    args: [[const struct wpp_StoredSignalMetaExtend *, obj], [void **, cursor]]
+    notes: WPP object type 326 (StoredSignalMetaExtend)
+  - name: wpp_obj_UnitConversionParameters_encode
+    address: 0x996fc
+    ret: void
+    args: [[const struct wpp_UnitConversionParameters *, obj], [void **, cursor]]
+    notes: WPP object type 327 (UnitConversionParameters)
+  - name: wpp_obj_AlgorithmVersion_encode
+    address: 0x99730
+    ret: void
+    args: [[const struct wpp_AlgorithmVersion *, obj], [void **, cursor]]
+    notes: WPP object type 329 (AlgorithmVersion)
+  - name: wpp_obj_FirmwareVersion_encode
+    address: 0x9975c
+    ret: void
+    args: [[const struct wpp_FirmwareVersion *, obj], [void **, cursor]]
+    notes: WPP object type 330 (FirmwareVersion)
+  - name: wpp_obj_Gpio_encode
+    address: 0x99780
+    ret: void
+    args: [[const struct wpp_Gpio *, obj], [void **, cursor]]
+    notes: WPP object type 516 (Gpio)
+  - name: wpp_obj_Gpio_parse
+    address: 0x4f308
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Gpio *, out]]
+    notes: WPP object type 516 (Gpio)
+  - name: wpp_obj_Uint32_encode
+    address: 0x997d8
+    ret: void
+    args: [[const struct wpp_Uint32 *, obj], [void **, cursor]]
+    notes: WPP object type 518 (Uint32)
+  - name: wpp_obj_Uint32_parse
+    address: 0x4f360
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Uint32 *, out]]
+    notes: WPP object type 518 (Uint32)
+  - name: wpp_obj_WppString_encode
+    address: 0x997fc
+    ret: void
+    args: [[const struct wpp_WppString *, obj], [void **, cursor]]
+    notes: WPP object type 519 (WppString)
+  - name: wpp_obj_WppString_parse
+    address: 0x4f38c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_WppString *, out]]
+    notes: WPP object type 519 (WppString)
+  - name: wpp_obj_Int32_encode
+    address: 0x99822
+    ret: void
+    args: [[const struct wpp_Int32 *, obj], [void **, cursor]]
+    notes: WPP object type 535 (Int32)
+  - name: wpp_obj_UpdateFirmware_parse
+    address: 0x4f3e8
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_UpdateFirmware *, out]]
+    notes: WPP object type 1025 (UpdateFirmware)
+  - name: wpp_obj_Mac_encode
+    address: 0x99846
+    ret: void
+    args: [[const struct wpp_Mac *, obj], [void **, cursor]]
+    notes: WPP object type 1043 (Mac)
+  - name: wpp_obj_TimeSet_encode
+    address: 0x9986c
+    ret: void
+    args: [[const struct wpp_TimeSet *, obj], [void **, cursor]]
+    notes: WPP object type 1281 (TimeSet)
+  - name: wpp_obj_TimeSet_parse
+    address: 0x4f420
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_TimeSet *, out]]
+    notes: WPP object type 1281 (TimeSet)
+  - name: wpp_obj_TimeSetReply_encode
+    address: 0x998a8
+    ret: void
+    args: [[const struct wpp_TimeSetReply *, obj], [void **, cursor]]
+    notes: WPP object type 1282 (TimeSetReply)
+  - name: wpp_obj_TrackerUser_encode
+    address: 0x998cc
+    ret: void
+    args: [[const struct wpp_TrackerUser *, obj], [void **, cursor]]
+    notes: WPP object type 1283 (TrackerUser)
+  - name: wpp_obj_TrackerUser_parse
+    address: 0x4f46c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_TrackerUser *, out]]
+    notes: WPP object type 1283 (TrackerUser)
+  - name: wpp_obj_BatteryStatus_encode
+    address: 0x9991e
+    ret: void
+    args: [[const struct wpp_BatteryStatus *, obj], [void **, cursor]]
+    notes: WPP object type 1284 (BatteryStatus)
+  - name: wpp_obj_WamVasistasGet_parse
+    address: 0x4f4d0
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_WamVasistasGet *, out]]
+    notes: WPP object type 1286 (WamVasistasGet)
+  - name: wpp_obj_WamDailyActivities_encode
+    address: 0x9995a
+    ret: void
+    args: [[const struct wpp_WamDailyActivities *, obj], [void **, cursor]]
+    notes: WPP object type 1287 (WamDailyActivities)
+  - name: wpp_obj_WamScreensList_encode
+    address: 0x9999e
+    ret: void
+    args: [[const struct wpp_WamScreensList *, obj], [void **, cursor]]
+    notes: WPP object type 1289 (WamScreensList)
+  - name: wpp_obj_WamScreensList_parse
+    address: 0x4f508
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_WamScreensList *, out]]
+    notes: WPP object type 1289 (WamScreensList)
+  - name: wpp_obj_HandsMove_parse
+    address: 0x4f534
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_HandsMove *, out]]
+    notes: WPP object type 1292 (HandsMove)
+  - name: wpp_obj_TrackerGoal_parse
+    address: 0x4f56c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_TrackerGoal *, out]]
+    notes: WPP object type 1297 (TrackerGoal)
+  - name: wpp_obj_Alarm_encode
+    address: 0x999c4
+    ret: void
+    args: [[const struct wpp_Alarm *, obj], [void **, cursor]]
+    notes: WPP object type 1298 (Alarm)
+  - name: wpp_obj_Alarm_parse
+    address: 0x4f5a4
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Alarm *, out]]
+    notes: WPP object type 1298 (Alarm)
+  - name: wpp_obj_UserSecret_parse
+    address: 0x4f604
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_UserSecret *, out]]
+    notes: WPP object type 1299 (UserSecret)
+  - name: wpp_obj_Name_encode
+    address: 0x99a18
+    ret: void
+    args: [[const struct wpp_Name *, obj], [void **, cursor]]
+    notes: WPP object type 1300 (Name)
+  - name: wpp_obj_VasistasType_parse
+    address: 0x4f664
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_VasistasType *, out]]
+    notes: WPP object type 1301 (VasistasType)
+  - name: wpp_obj_WamVasistasHead_encode
+    address: 0x99a3e
+    ret: void
+    args: [[const struct wpp_WamVasistasHead *, obj], [void **, cursor]]
+    notes: WPP object type 1537 (WamVasistasHead)
+  - name: wpp_obj_WamVasistasDuration_encode
+    address: 0x99a62
+    ret: void
+    args: [[const struct wpp_WamVasistasDuration *, obj], [void **, cursor]]
+    notes: WPP object type 1538 (WamVasistasDuration)
+  - name: wpp_obj_WamVasistasAwake_encode
+    address: 0x99a86
+    ret: void
+    args: [[const struct wpp_WamVasistasAwake *, obj], [void **, cursor]]
+    notes: WPP object type 1539 (WamVasistasAwake)
+  - name: wpp_obj_WamVasistasWalk_encode
+    address: 0x99ac2
+    ret: void
+    args: [[const struct wpp_WamVasistasWalk *, obj], [void **, cursor]]
+    notes: WPP object type 1540 (WamVasistasWalk)
+  - name: wpp_obj_WamVasistasRun_encode
+    address: 0x99ae6
+    ret: void
+    args: [[const struct wpp_WamVasistasRun *, obj], [void **, cursor]]
+    notes: WPP object type 1541 (WamVasistasRun)
+  - name: wpp_obj_WamVasistasSleep_encode
+    address: 0x99b0a
+    ret: void
+    args: [[const struct wpp_WamVasistasSleep *, obj], [void **, cursor]]
+    notes: WPP object type 1543 (WamVasistasSleep)
+  - name: wpp_obj_WamVasistasMetCal_encode
+    address: 0x99b2e
+    ret: void
+    args: [[const struct wpp_WamVasistasMetCal *, obj], [void **, cursor]]
+    notes: WPP object type 1544 (WamVasistasMetCal)
+  - name: wpp_obj_VasistasSwimV1_encode
+    address: 0x99b5a
+    ret: void
+    args: [[const struct wpp_VasistasSwimV1 *, obj], [void **, cursor]]
+    notes: WPP object type 1545 (VasistasSwimV1)
+  - name: wpp_obj_WamVasistasMetCalEarned_encode
+    address: 0x99b86
+    ret: void
+    args: [[const struct wpp_WamVasistasMetCalEarned *, obj], [void **, cursor]]
+    notes: WPP object type 1546 (WamVasistasMetCalEarned)
+  - name: wpp_obj_VasistasActiRecoV1V2_encode
+    address: 0x99bb2
+    ret: void
+    args: [[const struct wpp_VasistasActiRecoV1V2 *, obj], [void **, cursor]]
+    notes: WPP object type 1547 (VasistasActiRecoV1V2)
+  - name: wpp_obj_VasistasSwimType_encode
+    address: 0x99bde
+    ret: void
+    args: [[const struct wpp_VasistasSwimType *, obj], [void **, cursor]]
+    notes: WPP object type 1549 (VasistasSwimType)
+  - name: wpp_obj_ReturnCode_encode
+    address: 0x99c02
+    ret: void
+    args: [[const struct wpp_ReturnCode *, obj], [void **, cursor]]
+    notes: WPP object type 2328 (ReturnCode)
+  - name: wpp_obj_AlarmEnabled_encode
+    address: 0x99c26
+    ret: void
+    args: [[const struct wpp_AlarmEnabled *, obj], [void **, cursor]]
+    notes: WPP object type 2329 (AlarmEnabled)
+  - name: wpp_obj_AlarmEnabled_parse
+    address: 0x4f6f0
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_AlarmEnabled *, out]]
+    notes: WPP object type 2329 (AlarmEnabled)
+  - name: wpp_obj_CalibrationSession_parse
+    address: 0x4f71c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_CalibrationSession *, out]]
+    notes: WPP object type 2332 (CalibrationSession)
+  - name: wpp_obj_AppProbeOsVersion_parse
+    address: 0x4f754
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_AppProbeOsVersion *, out]]
+    notes: WPP object type 2344 (AppProbeOsVersion)
+  - name: wpp_obj_VasistasHeartrate_encode
+    address: 0x99c4a
+    ret: void
+    args: [[const struct wpp_VasistasHeartrate *, obj], [void **, cursor]]
+    notes: WPP object type 2345 (VasistasHeartrate)
+  - name: wpp_obj_AncsStatus_encode
+    address: 0x99c7e
+    ret: void
+    args: [[const struct wpp_AncsStatus *, obj], [void **, cursor]]
+    notes: WPP object type 2346 (AncsStatus)
+  - name: wpp_obj_TempCalReply_encode
+    address: 0x99ca2
+    ret: void
+    args: [[const struct wpp_TempCalReply *, obj], [void **, cursor]]
+    notes: WPP object type 2350 (TempCalReply)
+  - name: wpp_obj_CalibrationPoint_encode
+    address: 0x99cd6
+    ret: void
+    args: [[const struct wpp_CalibrationPoint *, obj], [void **, cursor]]
+    notes: WPP object type 2352 (CalibrationPoint)
+  - name: wpp_obj_LightSensorReply_encode
+    address: 0x99d0a
+    ret: void
+    args: [[const struct wpp_LightSensorReply *, obj], [void **, cursor]]
+    notes: WPP object type 2356 (LightSensorReply)
+  - name: wpp_obj_CustomizationIdGet_encode
+    address: 0x99d36
+    ret: void
+    args: [[const struct wpp_CustomizationIdGet *, obj], [void **, cursor]]
+    notes: WPP object type 2357 (CustomizationIdGet)
+  - name: wpp_obj_CustomizationIdGet_parse
+    address: 0x4f850
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_CustomizationIdGet *, out]]
+    notes: WPP object type 2357 (CustomizationIdGet)
+  - name: wpp_obj_CustomizationIdSet_encode
+    address: 0x99d5a
+    ret: void
+    args: [[const struct wpp_CustomizationIdSet *, obj], [void **, cursor]]
+    notes: WPP object type 2358 (CustomizationIdSet)
+  - name: wpp_obj_CustomizationIdSet_parse
+    address: 0x4f87c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_CustomizationIdSet *, out]]
+    notes: WPP object type 2358 (CustomizationIdSet)
+  - name: wpp_obj_LuminosityLevel_encode
+    address: 0x99d7e
+    ret: void
+    args: [[const struct wpp_LuminosityLevel *, obj], [void **, cursor]]
+    notes: WPP object type 2359 (LuminosityLevel)
+  - name: wpp_obj_LiveHr_encode
+    address: 0x99daa
+    ret: void
+    args: [[const struct wpp_LiveHr *, obj], [void **, cursor]]
+    notes: WPP object type 2369 (LiveHr)
+  - name: wpp_obj_UnknownSteps_encode
+    address: 0x99dce
+    ret: void
+    args: [[const struct wpp_UnknownSteps *, obj], [void **, cursor]]
+    notes: WPP object type 2370 (UnknownSteps)
+  - name: wpp_obj_SpiFlashCmd_parse
+    address: 0x4f8e0
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_SpiFlashCmd *, out]]
+    notes: WPP object type 2372 (SpiFlashCmd)
+  - name: wpp_obj_SpiFlashChunk_encode
+    address: 0x99df2
+    ret: void
+    args: [[const struct wpp_SpiFlashChunk *, obj], [void **, cursor]]
+    notes: WPP object type 2373 (SpiFlashChunk)
+  - name: wpp_obj_BatteryStateOpt_parse
+    address: 0x4f96c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_BatteryStateOpt *, out]]
+    notes: WPP object type 2388 (BatteryStateOpt)
+  - name: wpp_obj_ScreenState_parse
+    address: 0x4f998
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_ScreenState *, out]]
+    notes: WPP object type 2389 (ScreenState)
+  - name: wpp_obj_Steps_encode
+    address: 0x99e18
+    ret: void
+    args: [[const struct wpp_Steps *, obj], [void **, cursor]]
+    notes: WPP object type 2390 (Steps)
+  - name: wpp_obj_Steps_parse
+    address: 0x4f9c4
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Steps *, out]]
+    notes: WPP object type 2390 (Steps)
+  - name: wpp_obj_Calories_encode
+    address: 0x99e3c
+    ret: void
+    args: [[const struct wpp_Calories *, obj], [void **, cursor]]
+    notes: WPP object type 2391 (Calories)
+  - name: wpp_obj_Calories_parse
+    address: 0x4f9f0
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Calories *, out]]
+    notes: WPP object type 2391 (Calories)
+  - name: wpp_obj_Distance_encode
+    address: 0x99e60
+    ret: void
+    args: [[const struct wpp_Distance *, obj], [void **, cursor]]
+    notes: WPP object type 2392 (Distance)
+  - name: wpp_obj_Distance_parse
+    address: 0x4fa1c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Distance *, out]]
+    notes: WPP object type 2392 (Distance)
+  - name: wpp_obj_InfoType_parse
+    address: 0x4fa48
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_InfoType *, out]]
+    notes: WPP object type 2394 (InfoType)
+  - name: wpp_obj_Duration_encode
+    address: 0x99e84
+    ret: void
+    args: [[const struct wpp_Duration *, obj], [void **, cursor]]
+    notes: WPP object type 2395 (Duration)
+  - name: wpp_obj_Duration_parse
+    address: 0x4fa74
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Duration *, out]]
+    notes: WPP object type 2395 (Duration)
+  - name: wpp_obj_GlyphId_encode
+    address: 0x99ea8
+    ret: void
+    args: [[const struct wpp_GlyphId *, obj], [void **, cursor]]
+    notes: WPP object type 2396 (GlyphId)
+  - name: wpp_obj_ImageMetadata_encode
+    address: 0x99ecc
+    ret: void
+    args: [[const struct wpp_ImageMetadata *, obj], [void **, cursor]]
+    notes: WPP object type 2397 (ImageMetadata)
+  - name: wpp_obj_Version_encode
+    address: 0x99f00
+    ret: void
+    args: [[const struct wpp_Version *, obj], [void **, cursor]]
+    notes: WPP object type 2401 (Version)
+  - name: wpp_obj_Version_parse
+    address: 0x4fb3c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Version *, out]]
+    notes: WPP object type 2401 (Version)
+  - name: wpp_obj_NotificationAppInfo_encode
+    address: 0x99f24
+    ret: void
+    args: [[const struct wpp_NotificationAppInfo *, obj], [void **, cursor]]
+    notes: WPP object type 2403 (NotificationAppInfo)
+  - name: wpp_obj_NotificationAppId_encode
+    address: 0x99f54
+    ret: void
+    args: [[const struct wpp_NotificationAppId *, obj], [void **, cursor]]
+    notes: WPP object type 2404 (NotificationAppId)
+  - name: wpp_obj_NotificationAppHashIdVersion_encode
+    address: 0x99f7a
+    ret: void
+    args: [[const struct wpp_NotificationAppHashIdVersion *, obj], [void **, cursor]]
+    notes: WPP object type 2406 (NotificationAppHashIdVersion)
+  - name: wpp_obj_NotificationAppHashIdCrc32_encode
+    address: 0x99f9e
+    ret: void
+    args: [[const struct wpp_NotificationAppHashIdCrc32 *, obj], [void **, cursor]]
+    notes: WPP object type 2407 (NotificationAppHashIdCrc32)
+  - name: wpp_obj_CacheType_parse
+    address: 0x4fc08
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_CacheType *, out]]
+    notes: WPP object type 2408 (CacheType)
+  - name: wpp_obj_ActivitySubcategory_encode
+    address: 0x99fc2
+    ret: void
+    args: [[const struct wpp_ActivitySubcategory *, obj], [void **, cursor]]
+    notes: WPP object type 2409 (ActivitySubcategory)
+  - name: wpp_obj_Timestamp_encode
+    address: 0x99fe8
+    ret: void
+    args: [[const struct wpp_Timestamp *, obj], [void **, cursor]]
+    notes: WPP object type 2410 (Timestamp)
+  - name: wpp_obj_FwInfo_parse
+    address: 0x4fce4
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_FwInfo *, out]]
+    notes: WPP object type 2414 (FwInfo)
+  - name: wpp_obj_FwChunkRequest_encode
+    address: 0x9a00c
+    ret: void
+    args: [[const struct wpp_FwChunkRequest *, obj], [void **, cursor]]
+    notes: WPP object type 2415 (FwChunkRequest)
+  - name: wpp_obj_StartTime_encode
+    address: 0x9a050
+    ret: void
+    args: [[const struct wpp_StartTime *, obj], [void **, cursor]]
+    notes: WPP object type 2418 (StartTime)
+  - name: wpp_obj_EndTime_encode
+    address: 0x9a074
+    ret: void
+    args: [[const struct wpp_EndTime *, obj], [void **, cursor]]
+    notes: WPP object type 2419 (EndTime)
+  - name: wpp_obj_Status_encode
+    address: 0x9a098
+    ret: void
+    args: [[const struct wpp_Status *, obj], [void **, cursor]]
+    notes: WPP object type 2420 (Status)
+  - name: wpp_obj_TestScreen_parse
+    address: 0x4fdd0
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_TestScreen *, out]]
+    notes: WPP object type 2421 (TestScreen)
+  - name: wpp_obj_ChallengeRequest_parse
+    address: 0x4fdfc
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_ChallengeRequest *, out]]
+    notes: WPP object type 2422 (ChallengeRequest)
+  - name: wpp_obj_DebugDumpAnchor_encode
+    address: 0x9a0be
+    ret: void
+    args: [[const struct wpp_DebugDumpAnchor *, obj], [void **, cursor]]
+    notes: WPP object type 2424 (DebugDumpAnchor)
+  - name: wpp_obj_FactoryMode_encode
+    address: 0x9a0e2
+    ret: void
+    args: [[const struct wpp_FactoryMode *, obj], [void **, cursor]]
+    notes: WPP object type 2425 (FactoryMode)
+  - name: wpp_obj_FactoryMode_parse
+    address: 0x4fe54
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_FactoryMode *, out]]
+    notes: WPP object type 2425 (FactoryMode)
+  - name: wpp_obj_GlanceStatus_encode
+    address: 0x9a106
+    ret: void
+    args: [[const struct wpp_GlanceStatus *, obj], [void **, cursor]]
+    notes: WPP object type 2426 (GlanceStatus)
+  - name: wpp_obj_GlanceStatus_parse
+    address: 0x4fe80
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_GlanceStatus *, out]]
+    notes: WPP object type 2426 (GlanceStatus)
+  - name: wpp_obj_MeasureCategory_encode
+    address: 0x9a12a
+    ret: void
+    args: [[const struct wpp_MeasureCategory *, obj], [void **, cursor]]
+    notes: WPP object type 2427 (MeasureCategory)
+  - name: wpp_obj_MeasureLiveMeta_encode
+    address: 0x9a150
+    ret: void
+    args: [[const struct wpp_MeasureLiveMeta *, obj], [void **, cursor]]
+    notes: WPP object type 2428 (MeasureLiveMeta)
+  - name: wpp_obj_MeasureLiveEcg_encode
+    address: 0x9a174
+    ret: void
+    args: [[const struct wpp_MeasureLiveEcg *, obj], [void **, cursor]]
+    notes: WPP object type 2429 (MeasureLiveEcg)
+  - name: wpp_obj_MeasureStopReason_encode
+    address: 0x9a19a
+    ret: void
+    args: [[const struct wpp_MeasureStopReason *, obj], [void **, cursor]]
+    notes: WPP object type 2430 (MeasureStopReason)
+  - name: wpp_obj_PressureTemperature_encode
+    address: 0x9a1be
+    ret: void
+    args: [[const struct wpp_PressureTemperature *, obj], [void **, cursor]]
+    notes: WPP object type 2431 (PressureTemperature)
+  - name: wpp_obj_AltimeterCompensation_parse
+    address: 0x4fed8
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_AltimeterCompensation *, out]]
+    notes: WPP object type 2432 (AltimeterCompensation)
+  - name: wpp_obj_ActivityLap_encode
+    address: 0x9a1f4
+    ret: void
+    args: [[const struct wpp_ActivityLap *, obj], [void **, cursor]]
+    notes: WPP object type 2436 (ActivityLap)
+  - name: wpp_obj_ActivityPause_encode
+    address: 0x9a21a
+    ret: void
+    args: [[const struct wpp_ActivityPause *, obj], [void **, cursor]]
+    notes: WPP object type 2438 (ActivityPause)
+  - name: wpp_obj_PauseState_encode
+    address: 0x9a240
+    ret: void
+    args: [[const struct wpp_PauseState *, obj], [void **, cursor]]
+    notes: WPP object type 2439 (PauseState)
+  - name: wpp_obj_RebootOptional_encode
+    address: 0x9a276
+    ret: void
+    args: [[const struct wpp_RebootOptional *, obj], [void **, cursor]]
+    notes: WPP object type 2443 (RebootOptional)
+  - name: wpp_obj_RebootOptional_parse
+    address: 0x4ff44
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_RebootOptional *, out]]
+    notes: WPP object type 2443 (RebootOptional)
+  - name: wpp_obj_DigitalCrownMotionDelta_encode
+    address: 0x9a29a
+    ret: void
+    args: [[const struct wpp_DigitalCrownMotionDelta *, obj], [void **, cursor]]
+    notes: WPP object type 2445 (DigitalCrownMotionDelta)
+  - name: wpp_obj_MtuWpp_encode
+    address: 0x9a2ca
+    ret: void
+    args: [[const struct wpp_MtuWpp *, obj], [void **, cursor]]
+    notes: WPP object type 2448 (MtuWpp)
+  - name: wpp_obj_MtuWpp_parse
+    address: 0x4ff70
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_MtuWpp *, out]]
+    notes: WPP object type 2448 (MtuWpp)
+  - name: wpp_obj_MtuTls_encode
+    address: 0x9a2ee
+    ret: void
+    args: [[const struct wpp_MtuTls *, obj], [void **, cursor]]
+    notes: WPP object type 2449 (MtuTls)
+  - name: wpp_obj_MtuAttBle_encode
+    address: 0x9a312
+    ret: void
+    args: [[const struct wpp_MtuAttBle *, obj], [void **, cursor]]
+    notes: WPP object type 2450 (MtuAttBle)
+  - name: wpp_obj_Heartrate_encode
+    address: 0x9a336
+    ret: void
+    args: [[const struct wpp_Heartrate *, obj], [void **, cursor]]
+    notes: WPP object type 2452 (Heartrate)
+  - name: wpp_obj_VasistasSpo2_encode
+    address: 0x9a35a
+    ret: void
+    args: [[const struct wpp_VasistasSpo2 *, obj], [void **, cursor]]
+    notes: WPP object type 2453 (VasistasSpo2)
+  - name: wpp_obj_VasistasFlags_encode
+    address: 0x9a38e
+    ret: void
+    args: [[const struct wpp_VasistasFlags *, obj], [void **, cursor]]
+    notes: WPP object type 2461 (VasistasFlags)
+  - name: wpp_obj_VasistasAhi_encode
+    address: 0x9a3ba
+    ret: void
+    args: [[const struct wpp_VasistasAhi *, obj], [void **, cursor]]
+    notes: WPP object type 2464 (VasistasAhi)
+  - name: wpp_obj_ShortcutAction_encode
+    address: 0x9a3ea
+    ret: void
+    args: [[const struct wpp_ShortcutAction *, obj], [void **, cursor]]
+    notes: WPP object type 2465 (ShortcutAction)
+  - name: wpp_obj_NotificationsDisplayState_encode
+    address: 0x9a40e
+    ret: void
+    args: [[const struct wpp_NotificationsDisplayState *, obj], [void **, cursor]]
+    notes: WPP object type 2471 (NotificationsDisplayState)
+  - name: wpp_obj_LocalNotification_encode
+    address: 0x9a432
+    ret: void
+    args: [[const struct wpp_LocalNotification *, obj], [void **, cursor]]
+    notes: WPP object type 2472 (LocalNotification)
+  - name: wpp_obj_EventV2_encode
+    address: 0x9a45e
+    ret: void
+    args: [[const struct wpp_EventV2 *, obj], [void **, cursor]]
+    notes: WPP object type 2473 (EventV2)
+  - name: wpp_obj_Boolean_encode
+    address: 0x9a492
+    ret: void
+    args: [[const struct wpp_Boolean *, obj], [void **, cursor]]
+    notes: WPP object type 2474 (Boolean)
+  - name: wpp_obj_Boolean_parse
+    address: 0x50164
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Boolean *, out]]
+    notes: WPP object type 2474 (Boolean)
+  - name: wpp_obj_InactivityCfg_encode
+    address: 0x9a4b6
+    ret: void
+    args: [[const struct wpp_InactivityCfg *, obj], [void **, cursor]]
+    notes: WPP object type 2477 (InactivityCfg)
+  - name: wpp_obj_AlgoParam_encode
+    address: 0x9a4fa
+    ret: void
+    args: [[const struct wpp_AlgoParam *, obj], [void **, cursor]]
+    notes: WPP object type 2489 (AlgoParam)
+  - name: wpp_obj_Stairs_encode
+    address: 0x9a528
+    ret: void
+    args: [[const struct wpp_Stairs *, obj], [void **, cursor]]
+    notes: WPP object type 2490 (Stairs)
+  - name: wpp_obj_Stairs_parse
+    address: 0x501e0
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Stairs *, out]]
+    notes: WPP object type 2490 (Stairs)
+  - name: wpp_obj_MoveHands_encode
+    address: 0x9a54c
+    ret: void
+    args: [[const struct wpp_MoveHands *, obj], [void **, cursor]]
+    notes: WPP object type 2491 (MoveHands)
+  - name: wpp_obj_MoveHands_parse
+    address: 0x5020c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_MoveHands *, out]]
+    notes: WPP object type 2491 (MoveHands)
+  - name: wpp_obj_WorkoutMaxNumber_encode
+    address: 0x9a570
+    ret: void
+    args: [[const struct wpp_WorkoutMaxNumber *, obj], [void **, cursor]]
+    notes: WPP object type 2493 (WorkoutMaxNumber)
+  - name: wpp_obj_SkinTemperatureMeasureResult_encode
+    address: 0x9a594
+    ret: void
+    args: [[const struct wpp_SkinTemperatureMeasureResult *, obj], [void **, cursor]]
+    notes: WPP object type 2496 (SkinTemperatureMeasureResult)
+  - name: wpp_obj_FluxSensorMeasureResult_encode
+    address: 0x9a5ce
+    ret: void
+    args: [[const struct wpp_FluxSensorMeasureResult *, obj], [void **, cursor]]
+    notes: WPP object type 2497 (FluxSensorMeasureResult)
+  - name: wpp_obj_DeviceChallengeRequest_parse
+    address: 0x50238
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_DeviceChallengeRequest *, out]]
+    notes: WPP object type 2498 (DeviceChallengeRequest)
+  - name: wpp_obj_DeviceChallengeReply_encode
+    address: 0x9a5fa
+    ret: void
+    args: [[const struct wpp_DeviceChallengeReply *, obj], [void **, cursor]]
+    notes: WPP object type 2499 (DeviceChallengeReply)
+  - name: wpp_obj_DeviceChallengeSignature_encode
+    address: 0x9a63a
+    ret: void
+    args: [[const struct wpp_DeviceChallengeSignature *, obj], [void **, cursor]]
+    notes: WPP object type 2500 (DeviceChallengeSignature)
+  - name: wpp_obj_FactoryTestDsc_encode
+    address: 0x9a660
+    ret: void
+    args: [[const struct wpp_FactoryTestDsc *, obj], [void **, cursor]]
+    notes: WPP object type 2501 (FactoryTestDsc)
+  - name: wpp_obj_FactoryTestDsc_parse
+    address: 0x50268
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_FactoryTestDsc *, out]]
+    notes: WPP object type 2501 (FactoryTestDsc)
+  - name: wpp_obj_VasistasCbt_encode
+    address: 0x9a694
+    ret: void
+    args: [[const struct wpp_VasistasCbt *, obj], [void **, cursor]]
+    notes: WPP object type 2502 (VasistasCbt)
+  - name: wpp_obj_Max86173ChannelStats_encode
+    address: 0x9a6c8
+    ret: void
+    args: [[const struct wpp_Max86173ChannelStats *, obj], [void **, cursor]]
+    notes: WPP object type 2505 (Max86173ChannelStats)
+  - name: wpp_obj_GreentegSensitivityBin_encode
+    address: 0x9a73c
+    ret: void
+    args: [[const struct wpp_GreentegSensitivityBin *, obj], [void **, cursor]]
+    notes: WPP object type 2506 (GreentegSensitivityBin)
+  - name: wpp_obj_GreentegSensitivityBin_parse
+    address: 0x502a8
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_GreentegSensitivityBin *, out]]
+    notes: WPP object type 2506 (GreentegSensitivityBin)
+  - name: wpp_obj_DigitalCrownScaleFactor_encode
+    address: 0x9a762
+    ret: void
+    args: [[const struct wpp_DigitalCrownScaleFactor *, obj], [void **, cursor]]
+    notes: WPP object type 2507 (DigitalCrownScaleFactor)
+  - name: wpp_obj_DigitalCrownScaleFactor_parse
+    address: 0x502d8
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_DigitalCrownScaleFactor *, out]]
+    notes: WPP object type 2507 (DigitalCrownScaleFactor)
+  - name: wpp_obj_SymptomType_parse
+    address: 0x50310
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_SymptomType *, out]]
+    notes: WPP object type 2508 (SymptomType)
+  - name: wpp_obj_SymptomListItem_encode
+    address: 0x9a78e
+    ret: void
+    args: [[const struct wpp_SymptomListItem *, obj], [void **, cursor]]
+    notes: WPP object type 2509 (SymptomListItem)
+  - name: wpp_obj_VibratorSetSimple_parse
+    address: 0x503f4
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_VibratorSetSimple *, out]]
+    notes: WPP object type 2511 (VibratorSetSimple)
+  - name: wpp_obj_CycleTrackingMenstruationStart_encode
+    address: 0x9a7d0
+    ret: void
+    args: [[const struct wpp_CycleTrackingMenstruationStart *, obj], [void **, cursor]]
+    notes: WPP object type 2512 (CycleTrackingMenstruationStart)
+  - name: wpp_obj_GreentegIntegrationFactor_encode
+    address: 0x9a7f4
+    ret: void
+    args: [[const struct wpp_GreentegIntegrationFactor *, obj], [void **, cursor]]
+    notes: WPP object type 2518 (GreentegIntegrationFactor)
+  - name: wpp_obj_GreentegIntegrationFactor_parse
+    address: 0x50434
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_GreentegIntegrationFactor *, out]]
+    notes: WPP object type 2518 (GreentegIntegrationFactor)
+  - name: wpp_obj_VasistasHrv_encode
+    address: 0x9a818
+    ret: void
+    args: [[const struct wpp_VasistasHrv *, obj], [void **, cursor]]
+    notes: WPP object type 2520 (VasistasHrv)
+  - name: wpp_obj_VasistasRr_encode
+    address: 0x9a854
+    ret: void
+    args: [[const struct wpp_VasistasRr *, obj], [void **, cursor]]
+    notes: WPP object type 2521 (VasistasRr)
+  - name: wpp_obj_VasistasDbt_encode
+    address: 0x9a878
+    ret: void
+    args: [[const struct wpp_VasistasDbt *, obj], [void **, cursor]]
+    notes: WPP object type 2523 (VasistasDbt)
+
 globals:
   - name: xTickCount
     address: 0x20021920
@@ -366,6 +1456,83 @@ globals:
   - name: spi_flash_handle
     address: 0xb244c
     type: void *
+  - name: battery_state
+    address: 0x20018b58
+    type: struct battery_state
+    notes: >
+      the block battery_measure_get (0x40274) works out of; its only pool word
+      is 0x40348 and the `ldrh r3, [r5, #8]` at 0x40284 is the gate that decides
+      whether the cached reading is usable or a fresh conversion is needed. Only
+      that field is identified.
+  - name: wpp_rx_frame_buffer
+    address: 0x20020aa0
+    type: "u8[0xc8]"
+    notes: >
+      the 200-byte reassembly buffer installed at 0x6c16c together with the
+      capacity 200 at ctx+64; FIRMWARE.md's frame-length section is the
+      evidence, including that the next global begins exactly 200 bytes later
+
+typedefs:
+  # The dispatchers fix these, not the handlers: a handler is only ever reached
+  # through the table, so whatever the walk loads into r0..r2 before `blx r3`
+  # is the whole of its interface.
+  - name: wpp_cmd_handler
+    ret: void
+    args: [[const void *, objects], [u16, len]]
+    notes: >
+      wpp_cmd_table's row +4. The master dispatcher 0x6c784 is called at 0x6c0c2
+      as (command, objects, len) out of the frame the header parser 0x50460
+      filled -- sp+0x14 is the pointer past the five-byte header and sp+0x10 the
+      remaining length -- and at 0x6c7a8..0x6c7ae it moves those two into r0/r1
+      and calls the row. It then returns 0 unconditionally, so a handler's
+      return value is never read.
+  - name: wpp_cmd_slave_handler
+    ret: i32
+    args: [[u32, phase], [const void *, objects], [u16, len]]
+    notes: >
+      wpp_cmd_table_slave's row +4. The slave dispatcher 0x6e788 takes
+      (command, phase, objects, len) and shifts them down by one into the row at
+      0x6e7c0..0x6e7cc, a `bx r3` tail call, so the handler's return value is the
+      dispatcher's and its callers compare it against 1. phase is a literal at
+      every call site: 1 at 0x6e856, 3 at 0x6e948, 4 at 0x6e9cc and a register
+      at 0x6e8ec; objects and len are the same frame pair the master path uses
+      and are 0/0 on the two sites that carry no payload.
+  - name: shell_cmd_run
+    ret: i32
+    args: [[i32, argc], [char **, argv]]
+    notes: >
+      shell_cmd_entry's +4, called at 0x5a242..0x5a248 with the argument count
+      from sp+4 and the argument vector at sp+8; the result is what the shell
+      reports.
+  - name: shell_cmd_help
+    ret: void
+    args: []
+    notes: >
+      shell_cmd_entry's +8, called at 0x5a25c with no argument set up and its
+      result discarded, on the row whose argument strcmps equal to "--help"
+  - name: wpp_obj_encoder
+    ret: void
+    args: [[const void *, obj], [void **, cursor]]
+    notes: >
+      what the frame appender 0x9d322 is handed in r3 and calls as (object,
+      &cursor); every wpp_obj_*_encode body opens `mov r4, r1; mov r5, r0` and
+      loads its fields off r5
+  - name: wpp_obj_sizer
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the r2 of the same appender: the object's data length, a constant for a
+      fixed-size type (0x98fe4 is `movs r0,#0xe; bx lr`, BatteryStatus's ten
+      bytes plus the four-byte header) and a computation off the object for a
+      variable one (0x98ff4 is `ldrb r0,[r0]; adds r0,#5`)
+  - name: wpp_obj_parser
+    ret: i32
+    args: [[void **, cursor], [u16, len], [void *, out]]
+    notes: >
+      the callback wpp_obj_parse (0x504b4) stores at [sp] and calls at 0x504ea
+      with r0 = &cursor (the stack slot it has already advanced past the TLV
+      header), r1 = the object's data length and r2 = the caller's out pointer;
+      a non-zero return is logged as a parse failure and turns into -1
 
 structs:
   - name: nrf_nvic_state
@@ -377,15 +1544,32 @@ structs:
     fields: [[u32, pad0], [u16, wpp_v2_value], [u16, pad1], [u16, wpp_v2_cccd],
              [u16, pad2], [u16, wpp_v3_value], [u16, pad3], [u16, wpp_v3_cccd],
              [u16, pad4], [u16, wpps_value], [u16, pad5], [u16, wpps_cccd],
-             ["u8[0x32]", pad6], [u32, subscribe_bits]]
+             ["u8[0x32]", pad6], [u32, subscribe_bits],
+             ["u8[0xc4]", pad7], [u16, staged_len], ["u8[0x2]", pad8],
+             [u8, tls_state], ["u8[0x5f]", pad9],
+             [u32, record_expected], [u32, record_filled], [void *, record_buf]]
     notes: >
       handle pairs at +4/+8 (WPP_V2), +0xc/+0x10 (WPP_V3), +0x14/+0x18 (WPPS);
-      subscribe bits at +0x4c, bit 3 selects the WPPS TLS record path
+      subscribe bits at +0x4c, bit 3 selects the WPPS TLS record path.
+      The tail is wpp_bytes_received's own: it memcpys the write into +0x4f and
+      stores the length at +0x118 (0x3930c..0x39314), reads +0x4c and +0x4d as
+      two bytes and tests bit 3 of their OR (0x39318..0x39324), and when that
+      bit is set runs the TLS record path over +0x17c (bytes still owed for the
+      record, `cmp r1,#0x54` at 0x39384), +0x180 (bytes of the five-byte record
+      header already in hand, compared against 5 at 0x39364) and +0x184 (the
+      record buffer, a fixed address stored at 0x39344). +0x11c is the TLS state
+      symbols.txt gives: 0 idle, 1 handshaking, 2 established, and
+      wpps_established (0x39124) is `ctx[0x11c] == 2`.
   - name: rambkp
     fields: [["u8[0x14]", pad], [u8, boot_mode], [u8, boot_attempts], ["u8[0xa]", pad2], [u32, crc]]
     notes: mode at +20, attempt counter at +21, CRC at +32
   - name: battery_curve_bounds
     fields: [[u32, pad], [i16, full_mv], [i16, empty_mv]]
+  - name: battery_state
+    fields: [["u8[0x8]", pad], [u16, ready]]
+    notes: >
+      only +8 is identified: battery_measure_get tests it at 0x40284 and takes
+      the fresh-conversion path when it is zero
   - name: fwblk_table
     fields: [[u32, payload_offset], [u32, len], [void *, body]]
     notes: >
@@ -395,6 +1579,655 @@ structs:
   - name: wpp_cmd_entry
     fields: [[u32, id], [void *, handler], [const char *, name]]
     notes: handler carries the Thumb bit as stored
+
+  # --- WPP objects, in memory ---
+  # One struct per wire object type, recovered by abi/protocol.py from the
+  # codecs themselves: the encoder loads every field off r0 before handing it to
+  # a cursor primitive, and the parser hands the primitive a pointer into r2, so
+  # the offset and the width of each field are the instruction's own. Wire order
+  # is what the conformance check already matched against wpp/src/objects.rs
+  # field for field, which is what names them. Signedness is the encoder's
+  # `ldrsb`/`ldrsh` where it has one; a four-byte load cannot say, so every
+  # 32-bit field reads u32 here even where the crate calls it i32. The notes
+  # carry the encoder and parser addresses and the site of every load or store.
+  # Regenerate with:
+  #   python3 abi/protocol.py --emit-structs-yaml /tmp/wppstructs.yaml
+  - name: wpp_Null
+    fields: []
+    notes: >
+      WPP object type 256 (Null), 0 bytes; encoder 0x9917a; encoder 0x9a918; parser 0x4ed90.
+  - name: wpp_BatteryPercent
+    fields: [[u16, percent]]
+    notes: >
+      WPP object type 263 (BatteryPercent), 2 bytes; encoder 0x99216 (+0x0@0x99236).
+  - name: wpp_Cmderror
+    fields: [[u16, cmd], ["u8[0x2]", pad_2], [u32, err]]
+    notes: >
+      WPP object type 272 (Cmderror), 8 bytes; encoder 0x9923a (+0x0@0x99256 +0x4@0x99262); parser 0x4edb0 (+0x0@0x4edbc +0x4@0x4edc4).
+  - name: wpp_StoredMeasureMeta
+    fields: [[u32, uid], [u8, user_id_cnt], ["u8[0x3]", pad_5], ["u32[0x3]", user_id], [u8, attrib], ["u8[0x3]", pad_15], [u32, time]]
+    notes: >
+      WPP object type 278 (StoredMeasureMeta), 28 bytes; encoder 0x99266 (+0x0@0x99282 +0x4@0x9928a +0x8@0x99296 +0x14@0x9929e +0x18@0x992aa).
+  - name: wpp_StoredMeasureData
+    fields: [[u32, value], [u16, type], [i16, exponent]]
+    notes: >
+      WPP object type 279 (StoredMeasureData), 8 bytes; encoder 0x992ae (+0x0@0x992ca +0x4@0x992d2 +0x6@0x992e0).
+  - name: wpp_ConnectReason
+    fields: [[u16, reason]]
+    notes: >
+      WPP object type 280 (ConnectReason), 2 bytes; encoder 0x992e4 (+0x0@0x99304).
+  - name: wpp_UserUnit
+    fields: [[u8, cmd], [i8, rc], [u16, type], [u16, unit]]
+    notes: >
+      WPP object type 281 (UserUnit), 6 bytes; encoder 0x99308 (+0x0@0x99324 +0x1@0x9932e +0x2@0x99336 +0x4@0x99342).
+  - name: wpp_DebugDumpData
+    fields: [["u8[0x41]", buf]]
+    notes: >
+      WPP object type 285 (DebugDumpData), 65 bytes; encoder 0x99346 (+0x0@0x99368).
+  - name: wpp_DebugDumpMask
+    fields: [[u32, mask]]
+    notes: >
+      WPP object type 286 (DebugDumpMask), 4 bytes; parser 0x4ee88 (+0x0@0x4ee90).
+  - name: wpp_DebugDumpType
+    fields: [[u32, type], [u32, size]]
+    notes: >
+      WPP object type 287 (DebugDumpType), 8 bytes; encoder 0x9936c (+0x0@0x99388 +0x4@0x99394).
+  - name: wpp_LocaleSet
+    fields: [["u8[0x41]", locale]]
+    notes: >
+      WPP object type 289 (LocaleSet), 65 bytes; encoder 0x99398 (+0x0@0x993ba).
+  - name: wpp_ProbeChallenge
+    fields: [["u8[0x41]", mac], ["u8[0x41]", challenge]]
+    notes: >
+      WPP object type 290 (ProbeChallenge), 130 bytes; encoder 0x993be (+0x0@0x993e2 +0x41@0x993f0); parser 0x4eee4 (+0x0@0x4eeee +0x41@0x4eef8).
+  - name: wpp_ProbeChallengeResponse
+    fields: [["u8[0x41]", answer]]
+    notes: >
+      WPP object type 291 (ProbeChallengeResponse), 65 bytes; encoder 0x993f4 (+0x0@0x99416); parser 0x4ef24 (+0x0@0x4ef2c).
+  - name: wpp_BatteryVoltageMv
+    fields: [[i16, voltage_mv]]
+    notes: >
+      WPP object type 292 (BatteryVoltageMv), 2 bytes; encoder 0x9941a (+0x0@0x9943c).
+  - name: wpp_DebugDumpIgnoreData
+    fields: [[u32, reason]]
+    notes: >
+      WPP object type 293 (DebugDumpIgnoreData), 4 bytes; encoder 0x99440 (+0x0@0x99460).
+  - name: wpp_AlarmId
+    fields: [[u8, id]]
+    notes: >
+      WPP object type 294 (AlarmId), 1 bytes; parser 0x4ef54 (+0x0@0x4ef5c).
+  - name: wpp_NbAlarm
+    fields: [[u8, nb]]
+    notes: >
+      WPP object type 295 (NbAlarm), 1 bytes; encoder 0x99464 (+0x0@0x99484).
+  - name: wpp_PlsReturnCode
+    fields: [[u32, err], [u32, total], [u32, free], [u32, used]]
+    notes: >
+      WPP object type 296 (PlsReturnCode), 16 bytes; encoder 0x99488 (+0x0@0x994a4 +0x4@0x994ac +0x8@0x994b4 +0xc@0x994c0).
+  - name: wpp_PlsStation
+    fields: [[u16, id], ["u8[0x2]", pad_2], [u32, timestamp]]
+    notes: >
+      WPP object type 297 (PlsStation), 8 bytes; encoder 0x994c4 (+0x0@0x994e0 +0x4@0x994ec); parser 0x4ef80 (+0x0@0x4ef8c +0x4@0x4ef94).
+  - name: wpp_AppProbe
+    fields: [[u8, os], [u8, app], ["u8[0x2]", pad_2], [u32, version]]
+    notes: >
+      WPP object type 298 (AppProbe), 8 bytes; parser 0x4efb8 (+0x0@0x4efc4 +0x1@0x4efcc +0x4@0x4efd4).
+  - name: wpp_FactoryState
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 300 (FactoryState), 1 bytes; encoder 0x994f0 (+0x0@0x99510).
+  - name: wpp_FactoryResetMode
+    fields: [[u32, mode]]
+    notes: >
+      WPP object type 302 (FactoryResetMode), 4 bytes; parser 0x4eff8 (+0x0@0x4f000).
+  - name: wpp_TrackerWearPos
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 303 (TrackerWearPos), 1 bytes; encoder 0x99514 (+0x0@0x99534); parser 0x4f024 (+0x0@0x4f02c).
+  - name: wpp_FeatureMask
+    fields: [[u32, mask]]
+    notes: >
+      WPP object type 307 (FeatureMask), 4 bytes; encoder 0x99538 (+0x0@0x99558); parser 0x4f050 (+0x0@0x4f058).
+  - name: wpp_AccountKey
+    fields: [[u32, id], ["u8[0x41]", secret]]
+    notes: >
+      WPP object type 309 (AccountKey), 69 bytes; parser 0x4f07c (+0x0@0x4f088 +0x4@0x4f090).
+  - name: wpp_AdvKey
+    fields: [["u8[0x41]", secret]]
+    notes: >
+      WPP object type 310 (AdvKey), 65 bytes; parser 0x4f0b8 (+0x0@0x4f0c0).
+  - name: wpp_McuId
+    fields: [[u32, high], [u32, low]]
+    notes: >
+      WPP object type 311 (McuId), 8 bytes; encoder 0x9955c (+0x0@0x99578 +0x4@0x99584).
+  - name: wpp_SensorId
+    fields: [["u8[0x41]", id]]
+    notes: >
+      WPP object type 312 (SensorId), 65 bytes; parser 0x4f0e8 (+0x0@0x4f0f0).
+  - name: wpp_SoftdeviceVersion
+    fields: [[u32, version], [u32, subversion], [u32, company_id]]
+    notes: >
+      WPP object type 313 (SoftdeviceVersion), 12 bytes; encoder 0x99588 (+0x0@0x995a4 +0x4@0x995ac +0x8@0x995b8).
+  - name: wpp_HrAutoAlgo
+    fields: [[u8, mode]]
+    notes: >
+      WPP object type 314 (HrAutoAlgo), 1 bytes; encoder 0x995bc (+0x0@0x995dc); parser 0x4f118 (+0x0@0x4f120).
+  - name: wpp_WorkoutScreenList
+    fields: [["u32[0x8]", screen_nb]]
+    notes: >
+      WPP object type 316 (WorkoutScreenList), 32 bytes; encoder 0x995e0 (+0x0@0x99602).
+  - name: wpp_SyncRequest
+    fields: [[u16, type], [u16, reserved]]
+    notes: >
+      WPP object type 320 (SyncRequest), 4 bytes; encoder 0x99606 (+0x0@0x99622 +0x2@0x9962e).
+  - name: wpp_Silent
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 322 (Silent), 1 bytes; parser 0x4f1c8 (+0x0@0x4f1d0).
+  - name: wpp_StoredSignalMeta
+    fields: [[u16, type], [u16, sampling_freq], [u8, format], [u8, size], [u8, resolution], [u8, channel]]
+    notes: >
+      WPP object type 323 (StoredSignalMeta), 8 bytes; encoder 0x99632 (+0x0@0x9964e +0x2@0x99656 +0x4@0x9965e +0x5@0x99666 +0x6@0x9966e +0x7@0x9967a).
+  - name: wpp_StoredSignalData
+    fields: [["u8[0x41]", samples]]
+    notes: >
+      WPP object type 324 (StoredSignalData), 65 bytes; encoder 0x9967e (+0x0@0x996a0).
+  - name: wpp_Id
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 325 (Id), 4 bytes; encoder 0x996a4 (+0x0@0x996c4).
+  - name: wpp_StoredSignalMetaExtend
+    fields: [[u32, duration], [u32, total_size], [u32, filter_bank]]
+    notes: >
+      WPP object type 326 (StoredSignalMetaExtend), 12 bytes; encoder 0x996c8 (+0x0@0x996e4 +0x4@0x996ec +0x8@0x996f8).
+  - name: wpp_UnitConversionParameters
+    fields: [[u32, offset], [u32, gain], [u32, qfix]]
+    notes: >
+      WPP object type 327 (UnitConversionParameters), 12 bytes; encoder 0x996fc (+0x0@0x99718 +0x4@0x99720 +0x8@0x9972c).
+  - name: wpp_AlgorithmVersion
+    fields: [[u32, type], [u32, version]]
+    notes: >
+      WPP object type 329 (AlgorithmVersion), 8 bytes; encoder 0x99730 (+0x0@0x9974c +0x4@0x99758).
+  - name: wpp_FirmwareVersion
+    fields: [[u32, version]]
+    notes: >
+      WPP object type 330 (FirmwareVersion), 4 bytes; encoder 0x9975c (+0x0@0x9977c).
+  - name: wpp_Gpio
+    fields: [[i8, cmd], [i8, bank], [i8, gpio], [i8, mode], [i8, state], [i8, rc]]
+    notes: >
+      WPP object type 516 (Gpio), 6 bytes; encoder 0x99780 (+0x0@0x9979e +0x1@0x997a8 +0x2@0x997b2 +0x3@0x997bc +0x4@0x997c6 +0x5@0x997d4); parser 0x4f308 (+0x0@0x4f314 +0x1@0x4f31c +0x2@0x4f324 +0x3@0x4f32c +0x4@0x4f334 +0x5@0x4f33c).
+  - name: wpp_Uint32
+    fields: [[u32, val]]
+    notes: >
+      WPP object type 518 (Uint32), 4 bytes; encoder 0x997d8 (+0x0@0x997f8); parser 0x4f360 (+0x0@0x4f368).
+  - name: wpp_WppString
+    fields: [["u8[0x41]", val]]
+    notes: >
+      WPP object type 519 (WppString), 65 bytes; encoder 0x997fc (+0x0@0x9981e); parser 0x4f38c (+0x0@0x4f394).
+  - name: wpp_Int32
+    fields: [[u32, val]]
+    notes: >
+      WPP object type 535 (Int32), 4 bytes; encoder 0x99822 (+0x0@0x99842).
+  - name: wpp_UpdateFirmware
+    fields: [[u8, fw_type], ["u8[0x3]", pad_1], [u32, fw_size]]
+    notes: >
+      WPP object type 1025 (UpdateFirmware), 8 bytes; parser 0x4f3e8 (+0x0@0x4f3f4 +0x4@0x4f3fc).
+  - name: wpp_Mac
+    fields: [["u8[0x41]", mac]]
+    notes: >
+      WPP object type 1043 (Mac), 65 bytes; encoder 0x99846 (+0x0@0x99868).
+  - name: wpp_TimeSet
+    fields: [[u32, utc], [u32, gmt_offset], [u32, dst_change_time], [u32, next_gmt_offset]]
+    notes: >
+      WPP object type 1281 (TimeSet), 16 bytes; encoder 0x9986c (+0x0@0x99888 +0x4@0x99890 +0x8@0x99898 +0xc@0x998a4); parser 0x4f420 (+0x0@0x4f42c +0x4@0x4f434 +0x8@0x4f43e +0xc@0x4f448).
+  - name: wpp_TimeSetReply
+    fields: [[u32, drift]]
+    notes: >
+      WPP object type 1282 (TimeSetReply), 4 bytes; encoder 0x998a8 (+0x0@0x998c8).
+  - name: wpp_TrackerUser
+    fields: [[u32, id], [u32, weight], [u32, height], [u8, gender], ["u8[0x3]", pad_d], [u32, birth], ["u8[0x41]", first_name]]
+    notes: >
+      WPP object type 1283 (TrackerUser), 85 bytes; encoder 0x998cc (+0x0@0x998ec +0x4@0x998f4 +0x8@0x998fc +0xc@0x99904 +0x10@0x9990c +0x14@0x9991a); parser 0x4f46c (+0x0@0x4f478 +0x4@0x4f480 +0x8@0x4f48a +0xc@0x4f494 +0x10@0x4f49e +0x14@0x4f4a8).
+  - name: wpp_BatteryStatus
+    fields: [[u8, battery_percent], [u8, battery_state], ["u8[0x2]", pad_2], [u32, battery_mv], [u32, reserved]]
+    notes: >
+      WPP object type 1284 (BatteryStatus), 12 bytes; encoder 0x9991e (+0x0@0x9993a +0x1@0x99942 +0x4@0x9994a +0x8@0x99956).
+  - name: wpp_WamVasistasGet
+    fields: [[u32, utc_start], [u16, max]]
+    notes: >
+      WPP object type 1286 (WamVasistasGet), 6 bytes; parser 0x4f4d0 (+0x0@0x4f4dc +0x4@0x4f4e4).
+  - name: wpp_WamDailyActivities
+    fields: [[u32, steps], [u32, distance], [u32, ascent], [u32, descent], [u32, calories]]
+    notes: >
+      WPP object type 1287 (WamDailyActivities), 20 bytes; encoder 0x9995a (+0x0@0x99976 +0x4@0x9997e +0x8@0x99986 +0xc@0x9998e +0x10@0x9999a).
+  - name: wpp_WamScreensList
+    fields: [["u8[0x18]", screen_numbers]]
+    notes: >
+      WPP object type 1289 (WamScreensList), 24 bytes; encoder 0x9999e (+0x0@0x999c0); parser 0x4f508 (+0x0@0x4f510).
+  - name: wpp_HandsMove
+    fields: [[u8, hand], ["u8[0x1]", pad_1], [u16, nb_steps]]
+    notes: >
+      WPP object type 1292 (HandsMove), 4 bytes; parser 0x4f534 (+0x0@0x4f540 +0x2@0x4f548).
+  - name: wpp_TrackerGoal
+    fields: [[u32, goal_type], [u32, value]]
+    notes: >
+      WPP object type 1297 (TrackerGoal), 8 bytes; parser 0x4f56c (+0x0@0x4f578 +0x4@0x4f580).
+  - name: wpp_Alarm
+    fields: [[u8, hour], [u8, minute], [u8, wday], [u8, mday], [u8, month], [u8, year], [u8, span]]
+    notes: >
+      WPP object type 1298 (Alarm), 7 bytes; encoder 0x999c4 (+0x0@0x999e0 +0x1@0x999e8 +0x2@0x999f0 +0x3@0x999f8 +0x4@0x99a00 +0x5@0x99a08 +0x6@0x99a14); parser 0x4f5a4 (+0x0@0x4f5b0 +0x1@0x4f5b8 +0x2@0x4f5c0 +0x3@0x4f5c8 +0x4@0x4f5d0 +0x5@0x4f5d8 +0x6@0x4f5e0).
+  - name: wpp_UserSecret
+    fields: [["u8[0x41]", user_secret]]
+    notes: >
+      WPP object type 1299 (UserSecret), 65 bytes; parser 0x4f604 (+0x0@0x4f60c).
+  - name: wpp_Name
+    fields: [["u8[0x41]", str]]
+    notes: >
+      WPP object type 1300 (Name), 65 bytes; encoder 0x99a18 (+0x0@0x99a3a).
+  - name: wpp_VasistasType
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 1301 (VasistasType), 4 bytes; parser 0x4f664 (+0x0@0x4f66c).
+  - name: wpp_WamVasistasHead
+    fields: [[u32, utc]]
+    notes: >
+      WPP object type 1537 (WamVasistasHead), 4 bytes; encoder 0x99a3e (+0x0@0x99a5e).
+  - name: wpp_WamVasistasDuration
+    fields: [[u16, duration]]
+    notes: >
+      WPP object type 1538 (WamVasistasDuration), 2 bytes; encoder 0x99a62 (+0x0@0x99a82).
+  - name: wpp_WamVasistasAwake
+    fields: [[u16, steps], ["u8[0x2]", pad_2], [u32, distance], [u32, ascent], [u32, descent]]
+    notes: >
+      WPP object type 1539 (WamVasistasAwake), 16 bytes; encoder 0x99a86 (+0x0@0x99aa2 +0x4@0x99aaa +0x8@0x99ab2 +0xc@0x99abe).
+  - name: wpp_WamVasistasWalk
+    fields: [[u16, level]]
+    notes: >
+      WPP object type 1540 (WamVasistasWalk), 2 bytes; encoder 0x99ac2 (+0x0@0x99ae2).
+  - name: wpp_WamVasistasRun
+    fields: [[u16, level]]
+    notes: >
+      WPP object type 1541 (WamVasistasRun), 2 bytes; encoder 0x99ae6 (+0x0@0x99b06).
+  - name: wpp_WamVasistasSleep
+    fields: [[u16, level]]
+    notes: >
+      WPP object type 1543 (WamVasistasSleep), 2 bytes; encoder 0x99b0a (+0x0@0x99b2a).
+  - name: wpp_WamVasistasMetCal
+    fields: [[u16, calories], [u16, met]]
+    notes: >
+      WPP object type 1544 (WamVasistasMetCal), 4 bytes; encoder 0x99b2e (+0x0@0x99b4a +0x2@0x99b56).
+  - name: wpp_VasistasSwimV1
+    fields: [[u32, mvt], [u8, laps]]
+    notes: >
+      WPP object type 1545 (VasistasSwimV1), 5 bytes; encoder 0x99b5a (+0x0@0x99b76 +0x4@0x99b82).
+  - name: wpp_WamVasistasMetCalEarned
+    fields: [[u16, calories], [u16, met]]
+    notes: >
+      WPP object type 1546 (WamVasistasMetCalEarned), 4 bytes; encoder 0x99b86 (+0x0@0x99ba2 +0x2@0x99bae).
+  - name: wpp_VasistasActiRecoV1V2
+    fields: [[u16, reco_v1], [u16, reco_v2]]
+    notes: >
+      WPP object type 1547 (VasistasActiRecoV1V2), 4 bytes; encoder 0x99bb2 (+0x0@0x99bce +0x2@0x99bda).
+  - name: wpp_VasistasSwimType
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 1549 (VasistasSwimType), 1 bytes; encoder 0x99bde (+0x0@0x99bfe).
+  - name: wpp_ReturnCode
+    fields: [[u32, rc]]
+    notes: >
+      WPP object type 2328 (ReturnCode), 4 bytes; encoder 0x99c02 (+0x0@0x99c22).
+  - name: wpp_AlarmEnabled
+    fields: [[u8, state]]
+    notes: >
+      WPP object type 2329 (AlarmEnabled), 1 bytes; encoder 0x99c26 (+0x0@0x99c46); parser 0x4f6f0 (+0x0@0x4f6f8).
+  - name: wpp_CalibrationSession
+    fields: [[u32, param0], [u32, param1]]
+    notes: >
+      WPP object type 2332 (CalibrationSession), 8 bytes; parser 0x4f71c (+0x0@0x4f728 +0x4@0x4f730).
+  - name: wpp_AppProbeOsVersion
+    fields: [[u16, os_version]]
+    notes: >
+      WPP object type 2344 (AppProbeOsVersion), 2 bytes; parser 0x4f754 (+0x0@0x4f75c).
+  - name: wpp_VasistasHeartrate
+    fields: [[u8, heartrate], [u8, quality], [u16, temperature]]
+    notes: >
+      WPP object type 2345 (VasistasHeartrate), 4 bytes; encoder 0x99c4a (+0x0@0x99c66 +0x1@0x99c6e +0x2@0x99c7a).
+  - name: wpp_AncsStatus
+    fields: [[u8, status]]
+    notes: >
+      WPP object type 2346 (AncsStatus), 1 bytes; encoder 0x99c7e (+0x0@0x99c9e).
+  - name: wpp_TempCalReply
+    fields: [[u8, point_idx], ["u8[0x3]", pad_1], [u32, temp_mili], [u32, raw_value]]
+    notes: >
+      WPP object type 2350 (TempCalReply), 12 bytes; encoder 0x99ca2 (+0x0@0x99cbe +0x4@0x99cc6 +0x8@0x99cd2).
+  - name: wpp_CalibrationPoint
+    fields: [[u8, point_idx], ["u8[0x3]", pad_1], [u32, reference], [u32, value]]
+    notes: >
+      WPP object type 2352 (CalibrationPoint), 12 bytes; encoder 0x99cd6 (+0x0@0x99cf2 +0x4@0x99cfa +0x8@0x99d06).
+  - name: wpp_LightSensorReply
+    fields: [[u32, value], [u32, type]]
+    notes: >
+      WPP object type 2356 (LightSensorReply), 8 bytes; encoder 0x99d0a (+0x0@0x99d26 +0x4@0x99d32).
+  - name: wpp_CustomizationIdGet
+    fields: [[u32, identifier]]
+    notes: >
+      WPP object type 2357 (CustomizationIdGet), 4 bytes; encoder 0x99d36 (+0x0@0x99d56); parser 0x4f850 (+0x0@0x4f858).
+  - name: wpp_CustomizationIdSet
+    fields: [[u32, identifier]]
+    notes: >
+      WPP object type 2358 (CustomizationIdSet), 4 bytes; encoder 0x99d5a (+0x0@0x99d7a); parser 0x4f87c (+0x0@0x4f884).
+  - name: wpp_LuminosityLevel
+    fields: [[u8, mode], [u8, level]]
+    notes: >
+      WPP object type 2359 (LuminosityLevel), 2 bytes; encoder 0x99d7e (+0x0@0x99d9a +0x1@0x99da6).
+  - name: wpp_LiveHr
+    fields: [[u8, hr]]
+    notes: >
+      WPP object type 2369 (LiveHr), 1 bytes; encoder 0x99daa (+0x0@0x99dca).
+  - name: wpp_UnknownSteps
+    fields: [[u32, steps]]
+    notes: >
+      WPP object type 2370 (UnknownSteps), 4 bytes; encoder 0x99dce (+0x0@0x99dee).
+  - name: wpp_SpiFlashCmd
+    fields: [[u32, cmd], [u32, arg1], [u32, arg2], [u32, arg3]]
+    notes: >
+      WPP object type 2372 (SpiFlashCmd), 16 bytes; parser 0x4f8e0 (+0x0@0x4f8ec +0x4@0x4f8f4 +0x8@0x4f8fe +0xc@0x4f908).
+  - name: wpp_SpiFlashChunk
+    fields: [["u8[0x10]", chunk]]
+    notes: >
+      WPP object type 2373 (SpiFlashChunk), 16 bytes; encoder 0x99df2 (+0x0@0x99e14).
+  - name: wpp_BatteryStateOpt
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 2388 (BatteryStateOpt), 4 bytes; parser 0x4f96c (+0x0@0x4f974).
+  - name: wpp_ScreenState
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 2389 (ScreenState), 1 bytes; parser 0x4f998 (+0x0@0x4f9a0).
+  - name: wpp_Steps
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 2390 (Steps), 4 bytes; encoder 0x99e18 (+0x0@0x99e38); parser 0x4f9c4 (+0x0@0x4f9cc).
+  - name: wpp_Calories
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 2391 (Calories), 4 bytes; encoder 0x99e3c (+0x0@0x99e5c); parser 0x4f9f0 (+0x0@0x4f9f8).
+  - name: wpp_Distance
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 2392 (Distance), 4 bytes; encoder 0x99e60 (+0x0@0x99e80); parser 0x4fa1c (+0x0@0x4fa24).
+  - name: wpp_InfoType
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 2394 (InfoType), 1 bytes; parser 0x4fa48 (+0x0@0x4fa50).
+  - name: wpp_Duration
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 2395 (Duration), 4 bytes; encoder 0x99e84 (+0x0@0x99ea4); parser 0x4fa74 (+0x0@0x4fa7c).
+  - name: wpp_GlyphId
+    fields: [[u32, unicode]]
+    notes: >
+      WPP object type 2396 (GlyphId), 4 bytes; encoder 0x99ea8 (+0x0@0x99ec8).
+  - name: wpp_ImageMetadata
+    fields: [[u8, type], [u8, width], [u8, height]]
+    notes: >
+      WPP object type 2397 (ImageMetadata), 3 bytes; encoder 0x99ecc (+0x0@0x99ee8 +0x1@0x99ef0 +0x2@0x99efc).
+  - name: wpp_Version
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 2401 (Version), 1 bytes; encoder 0x99f00 (+0x0@0x99f20); parser 0x4fb3c (+0x0@0x4fb44).
+  - name: wpp_NotificationAppInfo
+    fields: [["u8[0x41]", name], [u8, category]]
+    notes: >
+      WPP object type 2403 (NotificationAppInfo), 66 bytes; encoder 0x99f24 (+0x0@0x99f42 +0x41@0x99f50).
+  - name: wpp_NotificationAppId
+    fields: [["u8[0x41]", id]]
+    notes: >
+      WPP object type 2404 (NotificationAppId), 65 bytes; encoder 0x99f54 (+0x0@0x99f76).
+  - name: wpp_NotificationAppHashIdVersion
+    fields: [[u8, version]]
+    notes: >
+      WPP object type 2406 (NotificationAppHashIdVersion), 1 bytes; encoder 0x99f7a (+0x0@0x99f9a).
+  - name: wpp_NotificationAppHashIdCrc32
+    fields: [[u32, hash_id]]
+    notes: >
+      WPP object type 2407 (NotificationAppHashIdCrc32), 4 bytes; encoder 0x99f9e (+0x0@0x99fbe).
+  - name: wpp_CacheType
+    fields: [[u8, type]]
+    notes: >
+      WPP object type 2408 (CacheType), 1 bytes; parser 0x4fc08 (+0x0@0x4fc10).
+  - name: wpp_ActivitySubcategory
+    fields: [[i16, value]]
+    notes: >
+      WPP object type 2409 (ActivitySubcategory), 2 bytes; encoder 0x99fc2 (+0x0@0x99fe4).
+  - name: wpp_Timestamp
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 2410 (Timestamp), 4 bytes; encoder 0x99fe8 (+0x0@0x9a008).
+  - name: wpp_FwInfo
+    fields: [[u32, version], [u32, size], [u32, crc], ["u8[0x14]", sha1]]
+    notes: >
+      WPP object type 2414 (FwInfo), 32 bytes; parser 0x4fce4 (+0x0@0x4fcf0 +0x4@0x4fcf8 +0x8@0x4fd02 +0xc@0x4fd0e).
+  - name: wpp_FwChunkRequest
+    fields: [[u32, version], [u32, offset], [u32, size], [u8, percent], [u8, packet_max_size]]
+    notes: >
+      WPP object type 2415 (FwChunkRequest), 14 bytes; encoder 0x9a00c (+0x0@0x9a028 +0x4@0x9a030 +0x8@0x9a038 +0xc@0x9a040 +0xd@0x9a04c).
+  - name: wpp_StartTime
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 2418 (StartTime), 4 bytes; encoder 0x9a050 (+0x0@0x9a070).
+  - name: wpp_EndTime
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 2419 (EndTime), 4 bytes; encoder 0x9a074 (+0x0@0x9a094).
+  - name: wpp_Status
+    fields: [[i8, value]]
+    notes: >
+      WPP object type 2420 (Status), 1 bytes; encoder 0x9a098 (+0x0@0x9a0ba).
+  - name: wpp_TestScreen
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 2421 (TestScreen), 1 bytes; parser 0x4fdd0 (+0x0@0x4fdd8).
+  - name: wpp_ChallengeRequest
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 2422 (ChallengeRequest), 1 bytes; parser 0x4fdfc (+0x0@0x4fe04).
+  - name: wpp_DebugDumpAnchor
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 2424 (DebugDumpAnchor), 4 bytes; encoder 0x9a0be (+0x0@0x9a0de).
+  - name: wpp_FactoryMode
+    fields: [[u32, mode]]
+    notes: >
+      WPP object type 2425 (FactoryMode), 4 bytes; encoder 0x9a0e2 (+0x0@0x9a102); parser 0x4fe54 (+0x0@0x4fe5c).
+  - name: wpp_GlanceStatus
+    fields: [[u8, status]]
+    notes: >
+      WPP object type 2426 (GlanceStatus), 1 bytes; encoder 0x9a106 (+0x0@0x9a126); parser 0x4fe80 (+0x0@0x4fe88).
+  - name: wpp_MeasureCategory
+    fields: [[i16, value]]
+    notes: >
+      WPP object type 2427 (MeasureCategory), 2 bytes; encoder 0x9a12a (+0x0@0x9a14c).
+  - name: wpp_MeasureLiveMeta
+    fields: [[u32, time_window]]
+    notes: >
+      WPP object type 2428 (MeasureLiveMeta), 4 bytes; encoder 0x9a150 (+0x0@0x9a170).
+  - name: wpp_MeasureLiveEcg
+    fields: [["u8[0x41]", samples]]
+    notes: >
+      WPP object type 2429 (MeasureLiveEcg), 65 bytes; encoder 0x9a174 (+0x0@0x9a196).
+  - name: wpp_MeasureStopReason
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 2430 (MeasureStopReason), 4 bytes; encoder 0x9a19a (+0x0@0x9a1ba).
+  - name: wpp_PressureTemperature
+    fields: [[u32, pressure], [u32, temperature], ["u32[0x8]", calib_coefs]]
+    notes: >
+      WPP object type 2431 (PressureTemperature), 40 bytes; encoder 0x9a1be (+0x0@0x9a1da +0x4@0x9a1e2 +0x8@0x9a1f0).
+  - name: wpp_AltimeterCompensation
+    fields: [[u32, val]]
+    notes: >
+      WPP object type 2432 (AltimeterCompensation), 4 bytes; parser 0x4fed8 (+0x0@0x4fee0).
+  - name: wpp_ActivityLap
+    fields: [[i8, value]]
+    notes: >
+      WPP object type 2436 (ActivityLap), 1 bytes; encoder 0x9a1f4 (+0x0@0x9a216).
+  - name: wpp_ActivityPause
+    fields: [[i8, value]]
+    notes: >
+      WPP object type 2438 (ActivityPause), 1 bytes; encoder 0x9a21a (+0x0@0x9a23c).
+  - name: wpp_PauseState
+    fields: [[i8, value], ["u8[0x3]", pad_1], [u32, start_time], [u32, sum]]
+    notes: >
+      WPP object type 2439 (PauseState), 12 bytes; encoder 0x9a240 (+0x0@0x9a25e +0x4@0x9a266 +0x8@0x9a272).
+  - name: wpp_RebootOptional
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 2443 (RebootOptional), 1 bytes; encoder 0x9a276 (+0x0@0x9a296); parser 0x4ff44 (+0x0@0x4ff4c).
+  - name: wpp_DigitalCrownMotionDelta
+    fields: [[i16, x], [i16, y]]
+    notes: >
+      WPP object type 2445 (DigitalCrownMotionDelta), 4 bytes; encoder 0x9a29a (+0x0@0x9a2b8 +0x2@0x9a2c6).
+  - name: wpp_MtuWpp
+    fields: [[u16, max_recv_size]]
+    notes: >
+      WPP object type 2448 (MtuWpp), 2 bytes; encoder 0x9a2ca (+0x0@0x9a2ea); parser 0x4ff70 (+0x0@0x4ff78).
+  - name: wpp_MtuTls
+    fields: [[u16, mtu]]
+    notes: >
+      WPP object type 2449 (MtuTls), 2 bytes; encoder 0x9a2ee (+0x0@0x9a30e).
+  - name: wpp_MtuAttBle
+    fields: [[u16, mtu]]
+    notes: >
+      WPP object type 2450 (MtuAttBle), 2 bytes; encoder 0x9a312 (+0x0@0x9a332).
+  - name: wpp_Heartrate
+    fields: [[u8, heartrate]]
+    notes: >
+      WPP object type 2452 (Heartrate), 1 bytes; encoder 0x9a336 (+0x0@0x9a356).
+  - name: wpp_VasistasSpo2
+    fields: [[u16, spo2], [u16, quality], [u16, error]]
+    notes: >
+      WPP object type 2453 (VasistasSpo2), 6 bytes; encoder 0x9a35a (+0x0@0x9a376 +0x2@0x9a37e +0x4@0x9a38a).
+  - name: wpp_VasistasFlags
+    fields: [[u16, enabled_flags], [u16, supported_flags]]
+    notes: >
+      WPP object type 2461 (VasistasFlags), 4 bytes; encoder 0x9a38e (+0x0@0x9a3aa +0x2@0x9a3b6).
+  - name: wpp_VasistasAhi
+    fields: [[i16, ahi], [i16, bd_proba]]
+    notes: >
+      WPP object type 2464 (VasistasAhi), 4 bytes; encoder 0x9a3ba (+0x0@0x9a3d8 +0x2@0x9a3e6).
+  - name: wpp_ShortcutAction
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 2465 (ShortcutAction), 1 bytes; encoder 0x9a3ea (+0x0@0x9a40a).
+  - name: wpp_NotificationsDisplayState
+    fields: [[u8, status]]
+    notes: >
+      WPP object type 2471 (NotificationsDisplayState), 1 bytes; encoder 0x9a40e (+0x0@0x9a42e).
+  - name: wpp_LocalNotification
+    fields: [[u32, id], [u8, status]]
+    notes: >
+      WPP object type 2472 (LocalNotification), 5 bytes; encoder 0x9a432 (+0x0@0x9a44e +0x4@0x9a45a).
+  - name: wpp_EventV2
+    fields: [[u32, type], [u32, epoch], [u32, userid]]
+    notes: >
+      WPP object type 2473 (EventV2), 12 bytes; encoder 0x9a45e (+0x0@0x9a47a +0x4@0x9a482 +0x8@0x9a48e).
+  - name: wpp_Boolean
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 2474 (Boolean), 1 bytes; encoder 0x9a492 (+0x0@0x9a4b2); parser 0x50164 (+0x0@0x5016c).
+  - name: wpp_InactivityCfg
+    fields: [[u8, from_hour], [u8, from_minute], [u8, to_hour], [u8, to_minute], [u8, wday]]
+    notes: >
+      WPP object type 2477 (InactivityCfg), 5 bytes; encoder 0x9a4b6 (+0x0@0x9a4d2 +0x1@0x9a4da +0x2@0x9a4e2 +0x3@0x9a4ea +0x4@0x9a4f6).
+  - name: wpp_AlgoParam
+    fields: [[i16, id], ["u8[0x2]", pad_2], [u32, value]]
+    notes: >
+      WPP object type 2489 (AlgoParam), 8 bytes; encoder 0x9a4fa (+0x0@0x9a518 +0x4@0x9a524).
+  - name: wpp_Stairs
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 2490 (Stairs), 4 bytes; encoder 0x9a528 (+0x0@0x9a548); parser 0x501e0 (+0x0@0x501e8).
+  - name: wpp_MoveHands
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 2491 (MoveHands), 1 bytes; encoder 0x9a54c (+0x0@0x9a56c); parser 0x5020c (+0x0@0x50214).
+  - name: wpp_WorkoutMaxNumber
+    fields: [[u8, value]]
+    notes: >
+      WPP object type 2493 (WorkoutMaxNumber), 1 bytes; encoder 0x9a570 (+0x0@0x9a590).
+  - name: wpp_SkinTemperatureMeasureResult
+    fields: [[i16, temp_q7], [i16, integer], [i16, fraction]]
+    notes: >
+      WPP object type 2496 (SkinTemperatureMeasureResult), 6 bytes; encoder 0x9a594 (+0x0@0x9a5b2 +0x2@0x9a5bc +0x4@0x9a5ca).
+  - name: wpp_FluxSensorMeasureResult
+    fields: [[u32, value_uv], [u32, value_adc]]
+    notes: >
+      WPP object type 2497 (FluxSensorMeasureResult), 8 bytes; encoder 0x9a5ce (+0x0@0x9a5ea +0x4@0x9a5f6).
+  - name: wpp_DeviceChallengeRequest
+    fields: [["u8[0x41]", platform_random]]
+    notes: >
+      WPP object type 2498 (DeviceChallengeRequest), 65 bytes; parser 0x50238 (+0x0@0x50240).
+  - name: wpp_DeviceChallengeReply
+    fields: [["u8[0x41]", platform_random], ["u8[0x41]", device_random], ["u8[0x2]", pad_82], [u32, signature_algo_id]]
+    notes: >
+      WPP object type 2499 (DeviceChallengeReply), 136 bytes; encoder 0x9a5fa (+0x0@0x9a61e +0x41@0x9a628 +0x84@0x9a636).
+  - name: wpp_DeviceChallengeSignature
+    fields: [["u8[0x41]", data]]
+    notes: >
+      WPP object type 2500 (DeviceChallengeSignature), 65 bytes; encoder 0x9a63a (+0x0@0x9a65c).
+  - name: wpp_FactoryTestDsc
+    fields: [[u8, type], [u8, status], ["u8[0x2]", pad_2], [u32, arg]]
+    notes: >
+      WPP object type 2501 (FactoryTestDsc), 8 bytes; encoder 0x9a660 (+0x0@0x9a67c +0x1@0x9a684 +0x4@0x9a690); parser 0x50268 (+0x0@0x50274 +0x1@0x5027c +0x4@0x50284).
+  - name: wpp_VasistasCbt
+    fields: [[u8, algo], [u8, attrib], ["u8[0x2]", pad_2], [u32, temperature]]
+    notes: >
+      WPP object type 2502 (VasistasCbt), 8 bytes; encoder 0x9a694 (+0x0@0x9a6b0 +0x1@0x9a6b8 +0x4@0x9a6c4).
+  - name: wpp_Max86173ChannelStats
+    fields: [[u16, tag], ["u8[0x41]", channel_name], ["u8[0x1]", pad_43], [u32, avg_paperma], [u32, avg_adc], [u32, std_adc], [u16, led_value], [u8, adc_range], [u8, led_range], [u8, agc_changes]]
+    notes: >
+      WPP object type 2505 (Max86173ChannelStats), 85 bytes; encoder 0x9a6c8 (+0x0@0x9a6ec +0x2@0x9a6f4 +0x44@0x9a6fc +0x48@0x9a704 +0x4c@0x9a70c +0x50@0x9a716 +0x52@0x9a720 +0x53@0x9a72a +0x54@0x9a738).
+  - name: wpp_GreentegSensitivityBin
+    fields: [["u8[0x41]", reel_char]]
+    notes: >
+      WPP object type 2506 (GreentegSensitivityBin), 65 bytes; encoder 0x9a73c (+0x0@0x9a75e); parser 0x502a8 (+0x0@0x502b0).
+  - name: wpp_DigitalCrownScaleFactor
+    fields: [[u16, numerator], [u16, denominator]]
+    notes: >
+      WPP object type 2507 (DigitalCrownScaleFactor), 4 bytes; encoder 0x9a762 (+0x0@0x9a77e +0x2@0x9a78a); parser 0x502d8 (+0x0@0x502e4 +0x2@0x502ec).
+  - name: wpp_SymptomType
+    fields: [[u16, id]]
+    notes: >
+      WPP object type 2508 (SymptomType), 2 bytes; parser 0x50310 (+0x0@0x50318).
+  - name: wpp_SymptomListItem
+    fields: [[u32, id], [u8, activated], ["u8[0x3]", pad_5], [u32, timestamp], ["u8[0x41]", label]]
+    notes: >
+      WPP object type 2509 (SymptomListItem), 77 bytes; encoder 0x9a78e (+0x0@0x9a7ae +0x4@0x9a7b6 +0x8@0x9a7be +0xc@0x9a7cc).
+  - name: wpp_VibratorSetSimple
+    fields: [[u16, duration_on_ms], [u16, duration_off_ms], [u8, nb_loop]]
+    notes: >
+      WPP object type 2511 (VibratorSetSimple), 5 bytes; parser 0x503f4 (+0x0@0x50400 +0x2@0x50408 +0x4@0x50410).
+  - name: wpp_CycleTrackingMenstruationStart
+    fields: [[u32, timestamp]]
+    notes: >
+      WPP object type 2512 (CycleTrackingMenstruationStart), 4 bytes; encoder 0x9a7d0 (+0x0@0x9a7f0).
+  - name: wpp_GreentegIntegrationFactor
+    fields: [[u32, value]]
+    notes: >
+      WPP object type 2518 (GreentegIntegrationFactor), 4 bytes; encoder 0x9a7f4 (+0x0@0x9a814); parser 0x50434 (+0x0@0x5043c).
+  - name: wpp_VasistasHrv
+    fields: [[u8, hr], ["u8[0x1]", pad_1], [u16, sdnn], [u16, rmssd], [u8, quality]]
+    notes: >
+      WPP object type 2520 (VasistasHrv), 7 bytes; encoder 0x9a818 (+0x0@0x9a834 +0x2@0x9a83c +0x4@0x9a844 +0x6@0x9a850).
+  - name: wpp_VasistasRr
+    fields: [[u16, rr]]
+    notes: >
+      WPP object type 2521 (VasistasRr), 2 bytes; encoder 0x9a854 (+0x0@0x9a874).
+  - name: wpp_VasistasDbt
+    fields: [[u8, hr_max_avg], [u8, hr_min_avg], [u8, in_period_ds], [u8, ex_period_ds], [u8, in_period_target_s], [u8, ex_period_target_s], [u8, duration_target], [u8, is_from_ecg], [u8, hr_quality]]
+    notes: >
+      WPP object type 2523 (VasistasDbt), 9 bytes; encoder 0x9a878 (+0x0@0x9a894 +0x1@0x9a89c +0x2@0x9a8a4 +0x3@0x9a8ac +0x4@0x9a8b4 +0x5@0x9a8bc +0x6@0x9a8c4 +0x7@0x9a8cc +0x8@0x9a8d8).
 
 tables:
   - name: wpp_cmd_table
@@ -422,7 +2255,7 @@ tables:
       regardless (proven by diverting the battery handler to a logging hook).
   - name: wpp_cmd_table_slave
     address: 0x27ba4
-    entry: wpp_cmd_entry
+    entry: wpp_cmd_slave_entry
     stride: 12
     count: 8
     notes: >
@@ -581,12 +2414,20 @@ table_structs:
       offset of the payload (the header offset plus 4), the u16 length from the
       header widened to a word, and the buffer holding header + payload + CRC32
   - name: wpp_cmd_entry
-    fields: [[u32, command], [void *, handler], [const char *, name]]
+    fields: [[u32, command], [wpp_cmd_handler, handler], [const char *, name]]
     notes: >
       handler has the Thumb bit set and name points at the handler's source
-      name; abi/autonames.py walks the table on exactly that shape.
+      name; abi/autonames.py walks the table on exactly that shape. The
+      dispatcher 0x6c784 loads the row's +0 as a u16 to compare and its +4 as
+      the call target, so command is only ever read sixteen bits wide.
+  - name: wpp_cmd_slave_entry
+    fields: [[u32, command], [wpp_cmd_slave_handler, handler], [const char *, name]]
+    notes: >
+      the same three words as wpp_cmd_entry, which is why a walk by shape alone
+      reads the two tables as one; the difference is the dispatcher, and so the
+      handler's prototype.
   - name: shell_cmd_entry
-    fields: [[const char *, name], [void *, run], [void *, help]]
+    fields: [[const char *, name], [shell_cmd_run, run], [shell_cmd_help, help]]
     notes: >
       both entry points carry the Thumb bit as stored. The walk at 0x5a224
       strcmps the argument against +0, calls +4 with (argc, argv), and calls +8

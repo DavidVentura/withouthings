@@ -12,8 +12,8 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 4, helper: 426, libc: 98, logcb: 3, logline: 335, logtag: 8, module_functions: 1797, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
-  known_addresses: {agree: 3, disagree: 14}
+  counts: {bleevt: 28, extlib: 4, helper: 421, libc: 98, logcb: 3, logline: 336, logtag: 8, module_functions: 1799, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  known_addresses: {agree: 200, disagree: 14}
 
 functions:
   - name: memchr
@@ -930,13 +930,6 @@ functions:
     class: logline
     evidence: "the only line 0x3fe90 logs, wlog('[SYNC] Max of %d timeout reties in %ds, wait for next alarm') at 0x3fec8"
     module: SYNC
-  - name: WPP_CMD_SYNC_REQUEST
-    address: 0x3ff1c
-    class: wppcmd
-    command: 321
-    evidence: "wpp_cmd_table row 0x27ba4: key 321, label 'WPP_CMD_SYNC_REQUEST', CMD_SYNC_REQUEST in wpp/src/commands.rs"
-    module: SYNC
-    also_named: [sync_bg_response_time (logline)]
   - name: shell_help_background_sync
     address: 0x3ffa4
     class: shell
@@ -1616,10 +1609,10 @@ functions:
     class: wppcmd
     command: 2415
     evidence: "wpp_cmd_table row 0x276ac: key 2415, label 'FACTORY_MODE_GET', CMD_FACTORY_MODE_GET in wpp/src/commands.rs"
-  - name: __swrite__1
+  - name: _write
     address: 0x4ca2c
-    class: helper
-    evidence: "only 0xa858e (__swrite) calls 0x4ca2c; 50 bytes"
+    class: syscall
+    evidence: "called by the reentrant wrapper _write_r at 0x90440, which the relinked newlib binds to _write; newlib syscall stub: errno 9 (EBADF) above fd 2; the body is an errno stub every such stub in libc_nano.a matches, so the archive's own name cannot be taken here"
   - name: fwblk_unsupported_ext_table_ver
     address: 0x4ca64
     class: logline
@@ -1764,16 +1757,6 @@ functions:
     class: logline
     evidence: "the only line 0x4eb78 logs, wlog('[i2c] Device on address 0x%0x has not been requested') at 0x4eb88"
     module: I2C
-  - name: wpp_obj_Null_parse
-    address: 0x4ed90
-    class: wppobj
-    evidence: "the parser 0x65334 hands the object walk (0x504b4) for type 256 (TYPE_NULL)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_Cmderror_parse
-    address: 0x4edb0
-    class: wppobj
-    evidence: "the parser 0x6e912 hands the object walk (0x504b4) for type 272 (TYPE_CMDERROR)"
-    module: PAIRING_PROTO
   - name: WPP_CMD_STORED_MEASURE_SIGNAL_GET__1
     address: 0x4ede8
     class: helper
@@ -1784,85 +1767,15 @@ functions:
     class: helper
     evidence: "only 0x60c68 (WPP_CMD_USER_UNIT) calls 0x4ee40; 62 bytes"
     module: PAIRING_PROTO
-  - name: wpp_obj_DebugDumpMask_parse
-    address: 0x4ee88
-    class: wppobj
-    evidence: "the parser 0x6d63a hands the object walk (0x504b4) for type 286 (TYPE_DEBUG_DUMP_MASK)"
-    module: PAIRING_PROTO
   - name: wpp_asked_locale__1
     address: 0x4eeb4
     class: helper
     evidence: "only 0x51224 (wpp_asked_locale) calls 0x4eeb4; 38 bytes"
     module: PAIRING_PROTO
-  - name: wpp_obj_ProbeChallenge_parse
-    address: 0x4eee4
-    class: wppobj
-    evidence: "the parser 0x6c72a hands the object walk (0x504b4) for type 290 (TYPE_PROBE_CHALLENGE)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_ProbeChallengeResponse_parse
-    address: 0x4ef24
-    class: wppobj
-    evidence: "the parser 0x6c6be hands the object walk (0x504b4) for type 291 (TYPE_PROBE_CHALLENGE_RESPONSE)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_AlarmId_parse
-    address: 0x4ef54
-    class: wppobj
-    evidence: "the parser 0x3d344 hands the object walk (0x504b4) for type 294 (TYPE_ALARM_ID)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_PlsStation_parse
-    address: 0x4ef80
-    class: wppobj
-    evidence: "the parser 0x5681a hands the object walk (0x504b4) for type 297 (TYPE_PLS_STATION)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_AppProbe_parse
-    address: 0x4efb8
-    class: wppobj
-    evidence: "the parser 0x6c868 hands the object walk (0x504b4) for type 298 (TYPE_APP_PROBE)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_FactoryResetMode_parse
-    address: 0x4eff8
-    class: wppobj
-    evidence: "the parser 0x4be4c hands the object walk (0x504b4) for type 302 (TYPE_FACTORY_RESET_MODE)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_TrackerWearPos_parse
-    address: 0x4f024
-    class: wppobj
-    evidence: "the parser 0x6d144 hands the object walk (0x504b4) for type 303 (TYPE_TRACKER_WEAR_POS)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_FeatureMask_parse
-    address: 0x4f050
-    class: wppobj
-    evidence: "the parser 0x6cb3a hands the object walk (0x504b4) for type 307 (TYPE_FEATURE_MASK)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_AccountKey_parse
-    address: 0x4f07c
-    class: wppobj
-    evidence: "the parser 0x3b5e6 hands the object walk (0x504b4) for type 309 (TYPE_ACCOUNT_KEY)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_AdvKey_parse
-    address: 0x4f0b8
-    class: wppobj
-    evidence: "the parser 0x3b60e hands the object walk (0x504b4) for type 310 (TYPE_ADV_KEY)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_SensorId_parse
-    address: 0x4f0e8
-    class: wppobj
-    evidence: "the parser 0x6d0f2 hands the object walk (0x504b4) for type 312 (TYPE_SENSOR_ID)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_HrAutoAlgo_parse
-    address: 0x4f118
-    class: wppobj
-    evidence: "the parser 0x4eb04 hands the object walk (0x504b4) for type 314 (TYPE_HR_AUTO_ALGORITHM)"
-    module: PAIRING_PROTO
   - name: WPP_CMD_WORKOUT_SCREEN_SET__1
     address: 0x4f144
     class: helper
     evidence: "only 0x6b224 (WPP_CMD_WORKOUT_SCREEN_SET) calls 0x4f144; 78 bytes"
-    module: PAIRING_PROTO
-  - name: wpp_obj_Silent_parse
-    address: 0x4f1c8
-    class: wppobj
-    evidence: "the parser 0x3cc8c hands the object walk (0x504b4) for type 322 (TYPE_SILENT)"
     module: PAIRING_PROTO
   - name: WPP_CMD_CUSTO_SCREEN_SET__1
     address: 0x4f278
@@ -1874,100 +1787,20 @@ functions:
     class: helper
     evidence: "only 0x58b34 (raw_unknown_wpp_cmd) calls 0x4f2dc; 34 bytes"
     module: PAIRING_PROTO
-  - name: wpp_obj_Gpio_parse
-    address: 0x4f308
-    class: wppobj
-    evidence: "the parser 0x7e61a hands the object walk (0x504b4) for type 516 (TYPE_GPIO)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_Uint32_parse
-    address: 0x4f360
-    class: wppobj
-    evidence: "the parser 0x4b420 hands the object walk (0x504b4) for type 518 (TYPE_UINT32)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_WppString_parse
-    address: 0x4f38c
-    class: wppobj
-    evidence: "the parser 0x5374a hands the object walk (0x504b4) for type 519 (TYPE_STRING)"
-    module: PAIRING_PROTO
   - name: WPP_CMD_GET_LIGHT_SENSOR__1
     address: 0x4f3bc
     class: helper
     evidence: "only 0x50658 (WPP_CMD_GET_LIGHT_SENSOR) calls 0x4f3bc; 34 bytes"
-    module: PAIRING_PROTO
-  - name: wpp_obj_UpdateFirmware_parse
-    address: 0x4f3e8
-    class: wppobj
-    evidence: "the parser 0x6e64c hands the object walk (0x504b4) for type 1025 (TYPE_UP_FIRMWARE_START)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_TimeSet_parse
-    address: 0x4f420
-    class: wppobj
-    evidence: "the parser 0x5e30a hands the object walk (0x504b4) for type 1281 (TYPE_TIME_SET)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_TrackerUser_parse
-    address: 0x4f46c
-    class: wppobj
-    evidence: "the parser 0x6055c hands the object walk (0x504b4) for type 1283 (TYPE_TRACKER_USER)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_WamVasistasGet_parse
-    address: 0x4f4d0
-    class: wppobj
-    evidence: "the parser 0x33de6 hands the object walk (0x504b4) for type 1286 (TYPE_WAM_VASISTAS_GET)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_WamScreensList_parse
-    address: 0x4f508
-    class: wppobj
-    evidence: "the parser 0x34188 hands the object walk (0x504b4) for type 1289 (TYPE_WAM_SCREENS_LIST)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_HandsMove_parse
-    address: 0x4f534
-    class: wppobj
-    evidence: "the parser 0x448dc hands the object walk (0x504b4) for type 1292 (TYPE_HANDS_MOVE)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_TrackerGoal_parse
-    address: 0x4f56c
-    class: wppobj
-    evidence: "the parser 0x608b8 hands the object walk (0x504b4) for type 1297 (TYPE_TRACKER_GOAL)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_Alarm_parse
-    address: 0x4f5a4
-    class: wppobj
-    evidence: "the parser 0x3d32e hands the object walk (0x504b4) for type 1298 (TYPE_ALARM)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_UserSecret_parse
-    address: 0x4f604
-    class: wppobj
-    evidence: "the parser 0x60586 hands the object walk (0x504b4) for type 1299 (TYPE_USER_SECRET)"
     module: PAIRING_PROTO
   - name: WPP_CMD_SET_MULTI_ALARM__1
     address: 0x4f634
     class: helper
     evidence: "only 0x3d088 (WPP_CMD_SET_MULTI_ALARM) calls 0x4f634; 38 bytes"
     module: PAIRING_PROTO
-  - name: wpp_obj_VasistasType_parse
-    address: 0x4f664
-    class: wppobj
-    evidence: "the parser 0x33d7c hands the object walk (0x504b4) for type 1301 (TYPE_VASISTAS_TYPE)"
-    module: PAIRING_PROTO
   - name: WPP_CMD_SCREEN_LIST_SET__1
     address: 0x4f690
     class: helper
     evidence: "only 0x34238 (WPP_CMD_SCREEN_LIST_SET) calls 0x4f690; 86 bytes"
-    module: PAIRING_PROTO
-  - name: wpp_obj_AlarmEnabled_parse
-    address: 0x4f6f0
-    class: wppobj
-    evidence: "the parser 0x3ceda hands the object walk (0x504b4) for type 2329 (TYPE_ALARM_ENABLED)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_CalibrationSession_parse
-    address: 0x4f71c
-    class: wppobj
-    evidence: "the parser 0x60688 hands the object walk (0x504b4) for type 2332 (TYPE_CALIBRATION_SESSION)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_AppProbeOsVersion_parse
-    address: 0x4f754
-    class: wppobj
-    evidence: "the parser 0x6c882 hands the object walk (0x504b4) for type 2344 (TYPE_APP_PROBE_OS_VERSION)"
     module: PAIRING_PROTO
   - name: WPP_CMD_MCU_TEMP_CAL_SET__1
     address: 0x4f7ac
@@ -1979,85 +1812,25 @@ functions:
     class: helper
     evidence: "only 0x94bba (WPP_CMD_CALIBRATION_SET) calls 0x4f810; 56 bytes"
     module: PAIRING_PROTO
-  - name: wpp_obj_CustomizationIdGet_parse
-    address: 0x4f850
-    class: wppobj
-    evidence: "the parser 0x46c52 hands the object walk (0x504b4) for type 2357 (TYPE_CUSTOMIZATION_ID_GET)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_CustomizationIdSet_parse
-    address: 0x4f87c
-    class: wppobj
-    evidence: "the parser 0x46c7e hands the object walk (0x504b4) for type 2358 (TYPE_CUSTOMIZATION_ID_SET)"
-    module: PAIRING_PROTO
   - name: WPP_CMD_SET_LUMINOSITY_LEVEL__1
     address: 0x4f8a8
     class: helper
     evidence: "only 0x92f32 (WPP_CMD_SET_LUMINOSITY_LEVEL) calls 0x4f8a8; 46 bytes"
-    module: PAIRING_PROTO
-  - name: wpp_obj_SpiFlashCmd_parse
-    address: 0x4f8e0
-    class: wppobj
-    evidence: "the parser 0x5bdb4 hands the object walk (0x504b4) for type 2372 (TYPE_SPI_FLASH_CMD)"
     module: PAIRING_PROTO
   - name: wpp_h_m__1
     address: 0x4f92c
     class: helper
     evidence: "only 0x44934 (wpp_h_m) calls 0x4f92c; 56 bytes"
     module: PAIRING_PROTO
-  - name: wpp_obj_BatteryStateOpt_parse
-    address: 0x4f96c
-    class: wppobj
-    evidence: "the parser 0x408ca hands the object walk (0x504b4) for type 2388 (TYPE_BATTERY_STATE_OPT)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_ScreenState_parse
-    address: 0x4f998
-    class: wppobj
-    evidence: "the parser 0x6870c hands the object walk (0x504b4) for type 2389 (TYPE_SCREEN_STATE)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_Steps_parse
-    address: 0x4f9c4
-    class: wppobj
-    evidence: "the parser 0x6cc94 hands the object walk (0x504b4) for type 2390 (TYPE_STEPS)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_Calories_parse
-    address: 0x4f9f0
-    class: wppobj
-    evidence: "the parser 0x6ccae hands the object walk (0x504b4) for type 2391 (TYPE_CALORIES)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_Distance_parse
-    address: 0x4fa1c
-    class: wppobj
-    evidence: "the parser 0x6ccc8 hands the object walk (0x504b4) for type 2392 (TYPE_DISTANCE)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_InfoType_parse
-    address: 0x4fa48
-    class: wppobj
-    evidence: "the parser 0x6cd84 hands the object walk (0x504b4) for type 2394 (TYPE_INFO_TYPE)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_Duration_parse
-    address: 0x4fa74
-    class: wppobj
-    evidence: "the parser 0x5ff82 hands the object walk (0x504b4) for type 2395 (TYPE_DURATION)"
-    module: PAIRING_PROTO
   - name: WPP_CMD_GLYPH_GET__1
     address: 0x4faa0
     class: helper
     evidence: "only 0x560c8 (WPP_CMD_GLYPH_GET) calls 0x4faa0; 34 bytes"
     module: PAIRING_PROTO
-  - name: wpp_obj_Version_parse
-    address: 0x4fb3c
-    class: wppobj
-    evidence: "the parser 0x33e06 hands the object walk (0x504b4) for type 2401 (TYPE_VERSION)"
-    module: PAIRING_PROTO
   - name: WPP_CMD_DEBUG_DUMP__1
     address: 0x4fb68
     class: helper
     evidence: "only 0x6dfa8 (WPP_CMD_DEBUG_DUMP) calls 0x4fb68; 34 bytes"
-    module: PAIRING_PROTO
-  - name: wpp_obj_CacheType_parse
-    address: 0x4fc08
-    class: wppobj
-    evidence: "the parser 0x55d28 hands the object walk (0x504b4) for type 2408 (TYPE_CACHE_TYPE)"
     module: PAIRING_PROTO
   - name: WPP_CMD_WORKOUT_LIVE_DATA__1
     address: 0x4fc60
@@ -2074,60 +1847,20 @@ functions:
     class: helper
     evidence: "only 0x6a7a8 (WPP_CMD_WORKOUT_LIVE_DATA) calls 0x4fcb8; 34 bytes"
     module: PAIRING_PROTO
-  - name: wpp_obj_FwInfo_parse
-    address: 0x4fce4
-    class: wppobj
-    evidence: "the parser 0x65104 hands the object walk (0x504b4) for type 2414 (TYPE_FW_INFO)"
-    module: PAIRING_PROTO
   - name: WPP_CMD_REQUEST_FW_CHUNK__1
     address: 0x4fd30
     class: helper
     evidence: "only 0x6530c (WPP_CMD_REQUEST_FW_CHUNK) calls 0x4fd30; 64 bytes"
-    module: PAIRING_PROTO
-  - name: wpp_obj_TestScreen_parse
-    address: 0x4fdd0
-    class: wppobj
-    evidence: "the parser 0x68750 hands the object walk (0x504b4) for type 2421 (TYPE_TEST_SCREEN)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_ChallengeRequest_parse
-    address: 0x4fdfc
-    class: wppobj
-    evidence: "the parser 0x6c8b2 hands the object walk (0x504b4) for type 2422 (TYPE_CHALLENGE_REQUEST)"
     module: PAIRING_PROTO
   - name: WPP_CMD_DEBUG_DUMP__2
     address: 0x4fe28
     class: helper
     evidence: "only 0x6dfa8 (WPP_CMD_DEBUG_DUMP) calls 0x4fe28; 34 bytes"
     module: PAIRING_PROTO
-  - name: wpp_obj_FactoryMode_parse
-    address: 0x4fe54
-    class: wppobj
-    evidence: "the parser 0x4c9b6 hands the object walk (0x504b4) for type 2425 (TYPE_FACTORY_MODE)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_GlanceStatus_parse
-    address: 0x4fe80
-    class: wppobj
-    evidence: "the parser 0x4d2c8 hands the object walk (0x504b4) for type 2426 (TYPE_GLANCE_STATUS)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_AltimeterCompensation_parse
-    address: 0x4fed8
-    class: wppobj
-    evidence: "the parser 0x3de40 hands the object walk (0x504b4) for type 2432 (TYPE_ALTIMETER_COMPENSATION)"
-    module: PAIRING_PROTO
   - name: WPP_CMD_WORKOUT_START_0x6a864__1
     address: 0x4ff04
     class: helper
     evidence: "only 0x6a864 (WPP_CMD_WORKOUT_START_0x6a864) calls 0x4ff04; 56 bytes"
-    module: PAIRING_PROTO
-  - name: wpp_obj_RebootOptional_parse
-    address: 0x4ff44
-    class: wppobj
-    evidence: "the parser 0x65248 hands the object walk (0x504b4) for type 2443 (TYPE_REBOOT_OPTIONAL)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_MtuWpp_parse
-    address: 0x4ff70
-    class: wppobj
-    evidence: "the parser 0x6d2fc hands the object walk (0x504b4) for type 2448 (TYPE_MTU_WPP)"
     module: PAIRING_PROTO
   - name: feature_tags_skip_userid_no_slot_left__2
     address: 0x4ff9c
@@ -2154,50 +1887,10 @@ functions:
     class: helper
     evidence: "only 0x5160c (WPP_CMD_LOCAL_NOTIFICATIONS_CONFIG_SET) calls 0x5012c; 46 bytes"
     module: PAIRING_PROTO
-  - name: wpp_obj_Boolean_parse
-    address: 0x50164
-    class: wppobj
-    evidence: "the parser 0x6ab64 hands the object walk (0x504b4) for type 2474 (TYPE_BOOLEAN)"
-    module: PAIRING_PROTO
   - name: WPP_CMD_INACTIVITY_CFG_SET__1
     address: 0x50190
     class: helper
     evidence: "only 0x5ef3c (WPP_CMD_INACTIVITY_CFG_SET) calls 0x50190; 70 bytes"
-    module: PAIRING_PROTO
-  - name: wpp_obj_Stairs_parse
-    address: 0x501e0
-    class: wppobj
-    evidence: "the parser 0x6ccee hands the object walk (0x504b4) for type 2490 (TYPE_STAIRS)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_MoveHands_parse
-    address: 0x5020c
-    class: wppobj
-    evidence: "the parser 0x6d05a hands the object walk (0x504b4) for type 2491 (TYPE_TRACKER_MOVE_HANDS)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_DeviceChallengeRequest_parse
-    address: 0x50238
-    class: wppobj
-    evidence: "the parser 0x6d534 hands the object walk (0x504b4) for type 2498 (TYPE_DEVICE_CHALLENGE_REQUEST)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_FactoryTestDsc_parse
-    address: 0x50268
-    class: wppobj
-    evidence: "the parser 0x302a6 hands the object walk (0x504b4) for type 2501 (TYPE_FACTORY_TEST_DSC)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_GreentegSensitivityBin_parse
-    address: 0x502a8
-    class: wppobj
-    evidence: "the parser 0x4d80a hands the object walk (0x504b4) for type 2506 (TYPE_GREENTEG_SENSITIVITY_BIN)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_DigitalCrownScaleFactor_parse
-    address: 0x502d8
-    class: wppobj
-    evidence: "the parser 0x49b10 hands the object walk (0x504b4) for type 2507 (TYPE_DIGITAL_CROWN_SCALE_FACTOR)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_SymptomType_parse
-    address: 0x50310
-    class: wppobj
-    evidence: "the parser 0x6782a hands the object walk (0x504b4) for type 2508 (TYPE_SYMPTOM_TYPE)"
     module: PAIRING_PROTO
   - name: WPP_CMD_SET_SYMPTOMS__1
     address: 0x5033c
@@ -2208,16 +1901,6 @@ functions:
     address: 0x5038c
     class: helper
     evidence: "only 0x47150 (WPP_CMD_CYCLE_TRACKING_SET_CYCLES) calls 0x5038c; 96 bytes"
-    module: PAIRING_PROTO
-  - name: wpp_obj_VibratorSetSimple_parse
-    address: 0x503f4
-    class: wppobj
-    evidence: "the parser 0x66f62 hands the object walk (0x504b4) for type 2511 (TYPE_VIBRATOR_SET_SIMPLE)"
-    module: PAIRING_PROTO
-  - name: wpp_obj_GreentegIntegrationFactor_parse
-    address: 0x50434
-    class: wppobj
-    evidence: "the parser 0x4d9c0 hands the object walk (0x504b4) for type 2518 (TYPE_GREENTEG_INTEGRATION_FACTOR)"
     module: PAIRING_PROTO
   - name: wpp_error_protocol_is_not_supported
     address: 0x50460
@@ -3507,6 +3190,11 @@ functions:
     class: helper
     evidence: "only 0x64cf8 (FW_AVAILABLE__1) calls 0x64a0c; 38 bytes"
     module: CHUNKED_UPDATE
+  - name: chunked_update_not_aligned
+    address: 0x64bc8
+    class: logline
+    evidence: "the only line 0x64bc8 logs, wlog('[CHUNKED_UPDATE] not aligned') at 0x64bf2"
+    module: CHUNKED_UPDATE
   - name: FW_AVAILABLE__1
     address: 0x64cf8
     class: helper
@@ -4023,12 +3711,6 @@ functions:
     class: logline
     evidence: "the only line 0x6c6ac logs, wlog('auth failed') at 0x6c6c6"
     module: WPP
-  - name: WPP_CMD_PROBE
-    address: 0x6c84c
-    class: wppcmd
-    command: 257
-    evidence: "wpp_cmd_table row 0x27afc: key 257, label 'WPP_CMD_PROBE', CMD_PROBE in wpp/src/commands.rs"
-    module: WPP
   - name: process_cmd_probe_challenge_continue
     address: 0x6c94c
     class: logline
@@ -4136,12 +3818,6 @@ functions:
     evidence: "wpp_cmd_table row 0x27a00: key 2476, label 'WPP_CMD_TRACKER_MOVE_HANDS_GET', CMD_TRACKER_MOVE_HANDS_GET in wpp/src/commands.rs"
     module: WPP
     also_named: [wpp_error_tracker_move_hands_not (logline)]
-  - name: WPP_CMD_MTU_EXCH
-    address: 0x6d2e0
-    class: wppcmd
-    command: 341
-    evidence: "wpp_cmd_table row 0x27b2c: key 341, label 'WPP_CMD_MTU_EXCH', CMD_MTU_EXCH in wpp/src/commands.rs"
-    module: WPP
   - name: WPP_CMD_WUP_DEVICE_SET
     address: 0x6d38c
     class: wppcmd
@@ -4776,14 +4452,6 @@ functions:
     class: helper
     evidence: "only 0x80378 (wui_event_resent) calls 0x9200e; 66 bytes"
     module: WUI
-  - name: WPP_CMD_BATTERY_STATUS__1__1
-    address: 0x9210a
-    class: helper
-    evidence: "only 0x9211e (WPP_CMD_BATTERY_STATUS__1) calls 0x9210a; 20 bytes"
-  - name: WPP_CMD_BATTERY_STATUS__1
-    address: 0x9211e
-    class: helper
-    evidence: "only 0x6ca90 (WPP_CMD_BATTERY_STATUS) calls 0x9211e; 36 bytes"
   - name: bt_e_bt_disconnect_evt_0x__3__1
     address: 0x92170
     class: helper
@@ -5709,20 +5377,39 @@ functions:
     class: helper
     evidence: "only 0x4c594 (flash_cache_init_ctx_type) calls 0x97f22; 2 bytes"
     module: FLASH_CACHE
-  - name: __assert_func__1__2
+  - name: _read
+    address: 0x97f26
+    class: syscall
+    evidence: "called by the reentrant wrapper _read_r at 0x9041c, which the relinked newlib binds to _read; newlib syscall stub: errno 5 (EIO); the body is an errno stub every such stub in libc_nano.a matches, so the archive's own name cannot be taken here"
+  - name: _lseek
+    address: 0x97f36
+    class: syscall
+    evidence: "called by the reentrant wrapper _lseek_r at 0x903f8, which the relinked newlib binds to _lseek; newlib syscall stub: errno 5 (EIO); the body is an errno stub every such stub in libc_nano.a matches, so the archive's own name cannot be taken here"
+  - name: _close
+    address: 0x97f46
+    class: syscall
+    evidence: "called by the reentrant wrapper _close_r at 0x903d8, which the relinked newlib binds to _close; newlib syscall stub: errno 9 (EBADF); the body is an errno stub every such stub in libc_nano.a matches, so the archive's own name cannot be taken here"
+  - name: _kill
+    address: 0x97f56
+    class: syscall
+    evidence: "called by the reentrant wrapper _kill_r at 0x91eb4, which the relinked newlib binds to _kill; newlib syscall stub: errno 134 (ENOTSUP); the body is an errno stub every such stub in libc_nano.a matches, so the archive's own name cannot be taken here"
+  - name: _exit
     address: 0x97f66
-    class: helper
-    evidence: "only 0xa920e (__assert_func__1) calls 0x97f66; 2 bytes"
-  - name: fcntl
+    class: syscall
+    evidence: "called by the reentrant wrapper _exit_r at 0xa920e, which the relinked newlib binds to _exit; newlib syscall stub: `udf #0` -- the stub cannot return; the body is an errno stub every such stub in libc_nano.a matches, so the archive's own name cannot be taken here"
+  - name: _getpid
+    address: 0x97f68
+    class: syscall
+    evidence: "no caller in the image; newlib syscall stub: `movs r0,#1; bx lr`, the stub's constant 1; the body is an errno stub every such stub in libc_nano.a matches, so the archive's own name cannot be taken here"
+  - name: _fstat
     address: 0x97fd0
-    class: libc
-    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 6 insns, direct"
-    header: arm-none-eabi/include/sys/_default_fcntl.h
-    proto: "int fcntl (int, int, ...);"
-  - name: __smakebuf_r__1__1
+    class: syscall
+    evidence: "called by the reentrant wrapper _fstat_r at 0x91cd4, which the relinked newlib binds to _fstat; newlib syscall stub: errno 88 (ENOSYS); the body is an errno stub every such stub in libc_nano.a matches, so the archive's own name cannot be taken here"
+    also_named: [fcntl (libc)]
+  - name: _isatty
     address: 0x97ff4
-    class: helper
-    evidence: "only 0x91d1c (__smakebuf_r__1) calls 0x97ff4; 10 bytes"
+    class: syscall
+    evidence: "called by the reentrant wrapper _isatty_r at 0x91d1c, which the relinked newlib binds to _isatty; newlib syscall stub: returns 1 for fd 0..2 and 0 above; the body is an errno stub every such stub in libc_nano.a matches, so the archive's own name cannot be taken here"
   - name: glyph_cache_post_update__1
     address: 0x980ba
     class: helper
@@ -5816,540 +5503,11 @@ functions:
     class: helper
     evidence: "only 0x50034 (WPP_CMD_BOOTSTRAP_REDIRECT__2) calls 0x990f8; 18 bytes"
     module: PAIRING_PROTO
-  - name: wpp_obj_Null_encode
-    address: 0x9917a
-    class: wppobj
-    evidence: "writes type 256 (TYPE_NULL) then length 0 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_BatteryPercent_encode
-    address: 0x99216
-    class: wppobj
-    evidence: "writes type 263 (TYPE_BATTERY_PERCENT) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Cmderror_encode
-    address: 0x9923a
-    class: wppobj
-    evidence: "writes type 272 (TYPE_CMDERROR) then length 6 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_StoredMeasureMeta_encode
-    address: 0x99266
-    class: wppobj
-    evidence: "writes type 278 (TYPE_STORED_MEASURE_META) then length 23 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_StoredMeasureData_encode
-    address: 0x992ae
-    class: wppobj
-    evidence: "writes type 279 (TYPE_STORED_MEASURE_DATA) then length 8 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_ConnectReason_encode
-    address: 0x992e4
-    class: wppobj
-    evidence: "writes type 280 (TYPE_CONNECT_REASON) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_UserUnit_encode
-    address: 0x99308
-    class: wppobj
-    evidence: "writes type 281 (TYPE_USER_UNIT) then length 6 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_DebugDumpData_encode
-    address: 0x99346
-    class: wppobj
-    evidence: "writes type 285 (TYPE_DEBUG_DUMP_DATA) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_DebugDumpType_encode
-    address: 0x9936c
-    class: wppobj
-    evidence: "writes type 287 (TYPE_DEBUG_DUMP_TYPE) then length 8 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_LocaleSet_encode
-    address: 0x99398
-    class: wppobj
-    evidence: "writes type 289 (TYPE_LOCALE) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_ProbeChallenge_encode
-    address: 0x993be
-    class: wppobj
-    evidence: "writes type 290 (TYPE_PROBE_CHALLENGE) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_ProbeChallengeResponse_encode
-    address: 0x993f4
-    class: wppobj
-    evidence: "writes type 291 (TYPE_PROBE_CHALLENGE_RESPONSE) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_BatteryVoltageMv_encode
-    address: 0x9941a
-    class: wppobj
-    evidence: "writes type 292 (TYPE_BATTERY_VOLTAGE) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_DebugDumpIgnoreData_encode
-    address: 0x99440
-    class: wppobj
-    evidence: "writes type 293 (TYPE_DEBUG_DUMP_IGNORE_DATA) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_NbAlarm_encode
-    address: 0x99464
-    class: wppobj
-    evidence: "writes type 295 (TYPE_GET_NB_MAX_ALARM) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_PlsReturnCode_encode
-    address: 0x99488
-    class: wppobj
-    evidence: "writes type 296 (TYPE_PLS_RETURN_CODE) then length 16 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_PlsStation_encode
-    address: 0x994c4
-    class: wppobj
-    evidence: "writes type 297 (TYPE_PLS_STATION) then length 6 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_FactoryState_encode
-    address: 0x994f0
-    class: wppobj
-    evidence: "writes type 300 (TYPE_FACTORY_STATE) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_TrackerWearPos_encode
-    address: 0x99514
-    class: wppobj
-    evidence: "writes type 303 (TYPE_TRACKER_WEAR_POS) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_FeatureMask_encode
-    address: 0x99538
-    class: wppobj
-    evidence: "writes type 307 (TYPE_FEATURE_MASK) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_McuId_encode
-    address: 0x9955c
-    class: wppobj
-    evidence: "writes type 311 (TYPE_MCU_ID) then length 8 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_SoftdeviceVersion_encode
-    address: 0x99588
-    class: wppobj
-    evidence: "writes type 313 (TYPE_SOFTDEVICE_VERSION) then length 12 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_HrAutoAlgo_encode
-    address: 0x995bc
-    class: wppobj
-    evidence: "writes type 314 (TYPE_HR_AUTO_ALGORITHM) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WorkoutScreenList_encode
-    address: 0x995e0
-    class: wppobj
-    evidence: "writes type 316 (TYPE_WORKOUT_SCREEN_LIST) then length 33 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_SyncRequest_encode
-    address: 0x99606
-    class: wppobj
-    evidence: "writes type 320 (TYPE_SYNC_REQUEST) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_StoredSignalMeta_encode
-    address: 0x99632
-    class: wppobj
-    evidence: "writes type 323 (TYPE_STORED_SIGNAL_META) then length 8 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_StoredSignalData_encode
-    address: 0x9967e
-    class: wppobj
-    evidence: "writes type 324 (TYPE_STORED_SIGNAL_DATA) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Id_encode
-    address: 0x996a4
-    class: wppobj
-    evidence: "writes type 325 (TYPE_ID) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_StoredSignalMetaExtend_encode
-    address: 0x996c8
-    class: wppobj
-    evidence: "writes type 326 (TYPE_STORED_SIGNAL_META_EXTEND) then length 12 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_UnitConversionParameters_encode
-    address: 0x996fc
-    class: wppobj
-    evidence: "writes type 327 (TYPE_UNIT_CONVERSION_PARAMETERS) then length 12 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_AlgorithmVersion_encode
-    address: 0x99730
-    class: wppobj
-    evidence: "writes type 329 (TYPE_ALGORITHM_VERSION) then length 8 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_FirmwareVersion_encode
-    address: 0x9975c
-    class: wppobj
-    evidence: "writes type 330 (TYPE_FIRMWARE_VERSION) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Gpio_encode
-    address: 0x99780
-    class: wppobj
-    evidence: "writes type 516 (TYPE_GPIO) then length 6 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Uint32_encode
-    address: 0x997d8
-    class: wppobj
-    evidence: "writes type 518 (TYPE_UINT32) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WppString_encode
-    address: 0x997fc
-    class: wppobj
-    evidence: "writes type 519 (TYPE_STRING) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Int32_encode
-    address: 0x99822
-    class: wppobj
-    evidence: "writes type 535 (TYPE_INT32) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Mac_encode
-    address: 0x99846
-    class: wppobj
-    evidence: "writes type 1043 (TYPE_MAC) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_TimeSet_encode
-    address: 0x9986c
-    class: wppobj
-    evidence: "writes type 1281 (TYPE_TIME_SET) then length 16 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_TimeSetReply_encode
-    address: 0x998a8
-    class: wppobj
-    evidence: "writes type 1282 (TYPE_TIME_SET_REPLY) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_TrackerUser_encode
-    address: 0x998cc
-    class: wppobj
-    evidence: "writes type 1283 (TYPE_TRACKER_USER) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_BatteryStatus_encode
-    address: 0x9991e
-    class: wppobj
-    evidence: "writes type 1284 (TYPE_BATTERY_STATUS) then length 10 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WamDailyActivities_encode
-    address: 0x9995a
-    class: wppobj
-    evidence: "writes type 1287 (TYPE_WAM_DAILY_ACTIVITIES) then length 20 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WamScreensList_encode
-    address: 0x9999e
-    class: wppobj
-    evidence: "writes type 1289 (TYPE_WAM_SCREENS_LIST) then length 25 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Alarm_encode
-    address: 0x999c4
-    class: wppobj
-    evidence: "writes type 1298 (TYPE_ALARM) then length 7 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Name_encode
-    address: 0x99a18
-    class: wppobj
-    evidence: "writes type 1300 (TYPE_NAME) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WamVasistasHead_encode
-    address: 0x99a3e
-    class: wppobj
-    evidence: "writes type 1537 (TYPE_WAM_VASISTAS_HEAD) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WamVasistasDuration_encode
-    address: 0x99a62
-    class: wppobj
-    evidence: "writes type 1538 (TYPE_WAM_VASISTAS_DURATION) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WamVasistasAwake_encode
-    address: 0x99a86
-    class: wppobj
-    evidence: "writes type 1539 (TYPE_WAM_VASISTAS_AWAKE) then length 14 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WamVasistasWalk_encode
-    address: 0x99ac2
-    class: wppobj
-    evidence: "writes type 1540 (TYPE_WAM_VASISTAS_WALK) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WamVasistasRun_encode
-    address: 0x99ae6
-    class: wppobj
-    evidence: "writes type 1541 (TYPE_WAM_VASISTAS_RUN) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WamVasistasSleep_encode
-    address: 0x99b0a
-    class: wppobj
-    evidence: "writes type 1543 (TYPE_WAM_VASISTAS_SLEEP) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WamVasistasMetCal_encode
-    address: 0x99b2e
-    class: wppobj
-    evidence: "writes type 1544 (TYPE_WAM_VASISTAS_MET_CAL) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_VasistasSwimV1_encode
-    address: 0x99b5a
-    class: wppobj
-    evidence: "writes type 1545 (TYPE_VASISTAS_SWIM_V1) then length 5 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WamVasistasMetCalEarned_encode
-    address: 0x99b86
-    class: wppobj
-    evidence: "writes type 1546 (TYPE_WAM_VASISTAS_MET_CAL_EARNED) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_VasistasActiRecoV1V2_encode
-    address: 0x99bb2
-    class: wppobj
-    evidence: "writes type 1547 (TYPE_VASISTAS_ACTI_RECO_V1_V2) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_VasistasSwimType_encode
-    address: 0x99bde
-    class: wppobj
-    evidence: "writes type 1549 (TYPE_VASISTAS_SWIM_TYPE) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_ReturnCode_encode
-    address: 0x99c02
-    class: wppobj
-    evidence: "writes type 2328 (TYPE_RETURN_CODE) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_AlarmEnabled_encode
-    address: 0x99c26
-    class: wppobj
-    evidence: "writes type 2329 (TYPE_ALARM_ENABLED) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_VasistasHeartrate_encode
-    address: 0x99c4a
-    class: wppobj
-    evidence: "writes type 2345 (TYPE_VASISTAS_HEARTRATE) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_AncsStatus_encode
-    address: 0x99c7e
-    class: wppobj
-    evidence: "writes type 2346 (TYPE_ANCS_STATUS) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_TempCalReply_encode
-    address: 0x99ca2
-    class: wppobj
-    evidence: "writes type 2350 (TYPE_TEMP_CAL_REPLY) then length 9 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_CalibrationPoint_encode
-    address: 0x99cd6
-    class: wppobj
-    evidence: "writes type 2352 (TYPE_CALIBRATION_POINT) then length 9 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_LightSensorReply_encode
-    address: 0x99d0a
-    class: wppobj
-    evidence: "writes type 2356 (TYPE_LIGHT_SENSOR_REPLY) then length 8 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_CustomizationIdGet_encode
-    address: 0x99d36
-    class: wppobj
-    evidence: "writes type 2357 (TYPE_CUSTOMIZATION_ID_GET) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_CustomizationIdSet_encode
-    address: 0x99d5a
-    class: wppobj
-    evidence: "writes type 2358 (TYPE_CUSTOMIZATION_ID_SET) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_LuminosityLevel_encode
-    address: 0x99d7e
-    class: wppobj
-    evidence: "writes type 2359 (TYPE_LUMINOSITY_LEVEL) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_LiveHr_encode
-    address: 0x99daa
-    class: wppobj
-    evidence: "writes type 2369 (TYPE_LIVE_HR) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_UnknownSteps_encode
-    address: 0x99dce
-    class: wppobj
-    evidence: "writes type 2370 (TYPE_UNKNOWN_STEPS) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_SpiFlashChunk_encode
-    address: 0x99df2
-    class: wppobj
-    evidence: "writes type 2373 (TYPE_SPI_FLASH_CHUNK) then length 17 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Steps_encode
-    address: 0x99e18
-    class: wppobj
-    evidence: "writes type 2390 (TYPE_STEPS) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Calories_encode
-    address: 0x99e3c
-    class: wppobj
-    evidence: "writes type 2391 (TYPE_CALORIES) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Distance_encode
-    address: 0x99e60
-    class: wppobj
-    evidence: "writes type 2392 (TYPE_DISTANCE) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Duration_encode
-    address: 0x99e84
-    class: wppobj
-    evidence: "writes type 2395 (TYPE_DURATION) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_GlyphId_encode
-    address: 0x99ea8
-    class: wppobj
-    evidence: "writes type 2396 (TYPE_GLYPH_ID) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_ImageMetadata_encode
-    address: 0x99ecc
-    class: wppobj
-    evidence: "writes type 2397 (TYPE_IMAGE_METADATA) then length 3 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Version_encode
-    address: 0x99f00
-    class: wppobj
-    evidence: "writes type 2401 (TYPE_VERSION) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_NotificationAppInfo_encode
-    address: 0x99f24
-    class: wppobj
-    evidence: "writes type 2403 (TYPE_NOTIFICATION_APP_INFO) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_NotificationAppId_encode
-    address: 0x99f54
-    class: wppobj
-    evidence: "writes type 2404 (TYPE_NOTIFICATION_APP_ID) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_NotificationAppHashIdVersion_encode
-    address: 0x99f7a
-    class: wppobj
-    evidence: "writes type 2406 (TYPE_NOTIFICATION_APP_HASH_ID_VERSION) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_NotificationAppHashIdCrc32_encode
-    address: 0x99f9e
-    class: wppobj
-    evidence: "writes type 2407 (TYPE_NOTIFICATION_APP_HASH_ID_CRC32) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_ActivitySubcategory_encode
-    address: 0x99fc2
-    class: wppobj
-    evidence: "writes type 2409 (TYPE_ACTIVITY_SUBCATEGORY) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Timestamp_encode
-    address: 0x99fe8
-    class: wppobj
-    evidence: "writes type 2410 (TYPE_TIMESTAMP) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_FwChunkRequest_encode
-    address: 0x9a00c
-    class: wppobj
-    evidence: "writes type 2415 (TYPE_FW_CHUNK_REQUEST) then length 14 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_StartTime_encode
-    address: 0x9a050
-    class: wppobj
-    evidence: "writes type 2418 (TYPE_START_TIME) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_EndTime_encode
-    address: 0x9a074
-    class: wppobj
-    evidence: "writes type 2419 (TYPE_END_TIME) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Status_encode
-    address: 0x9a098
-    class: wppobj
-    evidence: "writes type 2420 (TYPE_STATUS) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_DebugDumpAnchor_encode
-    address: 0x9a0be
-    class: wppobj
-    evidence: "writes type 2424 (TYPE_DEBUG_DUMP_ANCHOR) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_FactoryMode_encode
-    address: 0x9a0e2
-    class: wppobj
-    evidence: "writes type 2425 (TYPE_FACTORY_MODE) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_GlanceStatus_encode
-    address: 0x9a106
-    class: wppobj
-    evidence: "writes type 2426 (TYPE_GLANCE_STATUS) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_MeasureCategory_encode
-    address: 0x9a12a
-    class: wppobj
-    evidence: "writes type 2427 (TYPE_MEASURE_CATEGORY) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_MeasureLiveMeta_encode
-    address: 0x9a150
-    class: wppobj
-    evidence: "writes type 2428 (TYPE_MEASURE_LIVE_META) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_MeasureLiveEcg_encode
-    address: 0x9a174
-    class: wppobj
-    evidence: "writes type 2429 (TYPE_MEASURE_LIVE_ECG) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_MeasureStopReason_encode
-    address: 0x9a19a
-    class: wppobj
-    evidence: "writes type 2430 (TYPE_MEASURE_STOP_REASON) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_PressureTemperature_encode
-    address: 0x9a1be
-    class: wppobj
-    evidence: "writes type 2431 (TYPE_PRESSURE_TEMPERATURE) then length 41 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_ActivityLap_encode
-    address: 0x9a1f4
-    class: wppobj
-    evidence: "writes type 2436 (TYPE_ACTIVITY_LAP) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_ActivityPause_encode
-    address: 0x9a21a
-    class: wppobj
-    evidence: "writes type 2438 (TYPE_ACTIVITY_PAUSE) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_PauseState_encode
-    address: 0x9a240
-    class: wppobj
-    evidence: "writes type 2439 (TYPE_PAUSE_STATE) then length 9 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_RebootOptional_encode
-    address: 0x9a276
-    class: wppobj
-    evidence: "writes type 2443 (TYPE_REBOOT_OPTIONAL) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_DigitalCrownMotionDelta_encode
-    address: 0x9a29a
-    class: wppobj
-    evidence: "writes type 2445 (TYPE_DIGITAL_CROWN_MOTION_DELTA) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_MtuWpp_encode
-    address: 0x9a2ca
-    class: wppobj
-    evidence: "writes type 2448 (TYPE_MTU_WPP) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_MtuTls_encode
-    address: 0x9a2ee
-    class: wppobj
-    evidence: "writes type 2449 (TYPE_MTU_TLS) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_MtuAttBle_encode
-    address: 0x9a312
-    class: wppobj
-    evidence: "writes type 2450 (TYPE_MTU_ATT_BLE) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Heartrate_encode
-    address: 0x9a336
-    class: wppobj
-    evidence: "writes type 2452 (TYPE_HEARTRATE) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_VasistasSpo2_encode
-    address: 0x9a35a
-    class: wppobj
-    evidence: "writes type 2453 (TYPE_VASISTAS_SPO2) then length 6 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_VasistasFlags_encode
-    address: 0x9a38e
-    class: wppobj
-    evidence: "writes type 2461 (TYPE_VASISTAS_FLAGS) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_VasistasAhi_encode
-    address: 0x9a3ba
-    class: wppobj
-    evidence: "writes type 2464 (TYPE_VASISTAS_AHI) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_ShortcutAction_encode
-    address: 0x9a3ea
-    class: wppobj
-    evidence: "writes type 2465 (TYPE_SHORTCUT_ACTION) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_NotificationsDisplayState_encode
-    address: 0x9a40e
-    class: wppobj
-    evidence: "writes type 2471 (TYPE_NOTIFICATIONS_DISPLAY_STATE) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_LocalNotification_encode
-    address: 0x9a432
-    class: wppobj
-    evidence: "writes type 2472 (TYPE_LOCAL_NOTIFICATION) then length 5 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_EventV2_encode
-    address: 0x9a45e
-    class: wppobj
-    evidence: "writes type 2473 (TYPE_EVENT_V2) then length 12 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Boolean_encode
-    address: 0x9a492
-    class: wppobj
-    evidence: "writes type 2474 (TYPE_BOOLEAN) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_InactivityCfg_encode
-    address: 0x9a4b6
-    class: wppobj
-    evidence: "writes type 2477 (TYPE_INACTIVITY_CFG) then length 5 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_AlgoParam_encode
-    address: 0x9a4fa
-    class: wppobj
-    evidence: "writes type 2489 (TYPE_ALGO_PARAM) then length 6 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Stairs_encode
-    address: 0x9a528
-    class: wppobj
-    evidence: "writes type 2490 (TYPE_STAIRS) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_MoveHands_encode
-    address: 0x9a54c
-    class: wppobj
-    evidence: "writes type 2491 (TYPE_TRACKER_MOVE_HANDS) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_WorkoutMaxNumber_encode
-    address: 0x9a570
-    class: wppobj
-    evidence: "writes type 2493 (TYPE_WORKOUT_MAX_NUMBER) then length 1 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_SkinTemperatureMeasureResult_encode
-    address: 0x9a594
-    class: wppobj
-    evidence: "writes type 2496 (TYPE_SKIN_TEMPERATURE_MEASURE_RESULT) then length 6 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_FluxSensorMeasureResult_encode
-    address: 0x9a5ce
-    class: wppobj
-    evidence: "writes type 2497 (TYPE_FLUX_SENSOR_MEASURE_RESULT) then length 8 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_DeviceChallengeReply_encode
-    address: 0x9a5fa
-    class: wppobj
-    evidence: "writes type 2499 (TYPE_DEVICE_CHALLENGE_REPLY) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_DeviceChallengeSignature_encode
-    address: 0x9a63a
-    class: wppobj
-    evidence: "writes type 2500 (TYPE_DEVICE_CHALLENGE_SIGNATURE) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_FactoryTestDsc_encode
-    address: 0x9a660
-    class: wppobj
-    evidence: "writes type 2501 (TYPE_FACTORY_TEST_DSC) then length 6 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_VasistasCbt_encode
-    address: 0x9a694
-    class: wppobj
-    evidence: "writes type 2502 (TYPE_VASISTAS_CBT) then length 6 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_Max86173ChannelStats_encode
-    address: 0x9a6c8
-    class: wppobj
-    evidence: "writes type 2505 (TYPE_MAX86173_CHANNEL_STATS) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_GreentegSensitivityBin_encode
-    address: 0x9a73c
-    class: wppobj
-    evidence: "writes type 2506 (TYPE_GREENTEG_SENSITIVITY_BIN) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_DigitalCrownScaleFactor_encode
-    address: 0x9a762
-    class: wppobj
-    evidence: "writes type 2507 (TYPE_DIGITAL_CROWN_SCALE_FACTOR) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_SymptomListItem_encode
-    address: 0x9a78e
-    class: wppobj
-    evidence: "writes type 2509 (TYPE_SYMPTOM_LIST_ITEM) then length None through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_CycleTrackingMenstruationStart_encode
-    address: 0x9a7d0
-    class: wppobj
-    evidence: "writes type 2512 (TYPE_CYCLE_TRACKING_START_OF_MENSTRUATION_LOG) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_GreentegIntegrationFactor_encode
-    address: 0x9a7f4
-    class: wppobj
-    evidence: "writes type 2518 (TYPE_GREENTEG_INTEGRATION_FACTOR) then length 4 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_VasistasHrv_encode
-    address: 0x9a818
-    class: wppobj
-    evidence: "writes type 2520 (TYPE_VASISTAS_HRV) then length 6 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_VasistasRr_encode
-    address: 0x9a854
-    class: wppobj
-    evidence: "writes type 2521 (TYPE_VASISTAS_RR) then length 2 through the frame's u16 writer (0x9a954) as its first two calls"
-  - name: wpp_obj_VasistasDbt_encode
-    address: 0x9a878
-    class: wppobj
-    evidence: "writes type 2523 (TYPE_VASISTAS_DBT) then length 9 through the frame's u16 writer (0x9a954) as its first two calls"
   - name: wpp_lite_state_disc_or_not_slave__1
     address: 0x9a8dc
     class: helper
     evidence: "only 0x6bd0c (wpp_lite_state_disc_or_not_slave) calls 0x9a8dc; 34 bytes"
     module: WPP_LITE
-  - name: wpp_obj_Null_encode_copy_0x9a918
-    address: 0x9a918
-    class: wppobj
-    evidence: "writes type 256 (TYPE_NULL) then length 0 through the frame's u16 writer (0x9a954) as its first two calls; second copy of wpp_obj_Null_encode (0x9917a)"
-    module: WPP
   - name: shell_cmd_light_sensor__2
     address: 0x9a9c2
     class: helper
@@ -6996,7 +6154,7 @@ functions:
     address: 0xa920e
     class: helper
     evidence: "only 0x91d3c (__assert_func) calls 0xa920e; 96 bytes"
-  - name: __assert_func__1__3
+  - name: __assert_func__1__2
     address: 0xa926e
     class: helper
     evidence: "only 0xa920e (__assert_func__1) calls 0xa926e; 4 bytes"
@@ -7005,7 +6163,204 @@ functions:
 # derived for them. A disagreement is a finding: one of the two is wrong.
 agrees_with_hand_map:
   - {address: 0x3baf0, name: adxl367_power_check, class: string}
+  - {address: 0x3ff1c, name: WPP_CMD_SYNC_REQUEST, class: wppcmd}
   - {address: 0x400b4, name: battery_adc_value_gain_adaptation, class: string}
+  - {address: 0x4ed90, name: wpp_obj_Null_parse, class: wppobj}
+  - {address: 0x4edb0, name: wpp_obj_Cmderror_parse, class: wppobj}
+  - {address: 0x4ee88, name: wpp_obj_DebugDumpMask_parse, class: wppobj}
+  - {address: 0x4eee4, name: wpp_obj_ProbeChallenge_parse, class: wppobj}
+  - {address: 0x4ef24, name: wpp_obj_ProbeChallengeResponse_parse, class: wppobj}
+  - {address: 0x4ef54, name: wpp_obj_AlarmId_parse, class: wppobj}
+  - {address: 0x4ef80, name: wpp_obj_PlsStation_parse, class: wppobj}
+  - {address: 0x4efb8, name: wpp_obj_AppProbe_parse, class: wppobj}
+  - {address: 0x4eff8, name: wpp_obj_FactoryResetMode_parse, class: wppobj}
+  - {address: 0x4f024, name: wpp_obj_TrackerWearPos_parse, class: wppobj}
+  - {address: 0x4f050, name: wpp_obj_FeatureMask_parse, class: wppobj}
+  - {address: 0x4f07c, name: wpp_obj_AccountKey_parse, class: wppobj}
+  - {address: 0x4f0b8, name: wpp_obj_AdvKey_parse, class: wppobj}
+  - {address: 0x4f0e8, name: wpp_obj_SensorId_parse, class: wppobj}
+  - {address: 0x4f118, name: wpp_obj_HrAutoAlgo_parse, class: wppobj}
+  - {address: 0x4f1c8, name: wpp_obj_Silent_parse, class: wppobj}
+  - {address: 0x4f308, name: wpp_obj_Gpio_parse, class: wppobj}
+  - {address: 0x4f360, name: wpp_obj_Uint32_parse, class: wppobj}
+  - {address: 0x4f38c, name: wpp_obj_WppString_parse, class: wppobj}
+  - {address: 0x4f3e8, name: wpp_obj_UpdateFirmware_parse, class: wppobj}
+  - {address: 0x4f420, name: wpp_obj_TimeSet_parse, class: wppobj}
+  - {address: 0x4f46c, name: wpp_obj_TrackerUser_parse, class: wppobj}
+  - {address: 0x4f4d0, name: wpp_obj_WamVasistasGet_parse, class: wppobj}
+  - {address: 0x4f508, name: wpp_obj_WamScreensList_parse, class: wppobj}
+  - {address: 0x4f534, name: wpp_obj_HandsMove_parse, class: wppobj}
+  - {address: 0x4f56c, name: wpp_obj_TrackerGoal_parse, class: wppobj}
+  - {address: 0x4f5a4, name: wpp_obj_Alarm_parse, class: wppobj}
+  - {address: 0x4f604, name: wpp_obj_UserSecret_parse, class: wppobj}
+  - {address: 0x4f664, name: wpp_obj_VasistasType_parse, class: wppobj}
+  - {address: 0x4f6f0, name: wpp_obj_AlarmEnabled_parse, class: wppobj}
+  - {address: 0x4f71c, name: wpp_obj_CalibrationSession_parse, class: wppobj}
+  - {address: 0x4f754, name: wpp_obj_AppProbeOsVersion_parse, class: wppobj}
+  - {address: 0x4f850, name: wpp_obj_CustomizationIdGet_parse, class: wppobj}
+  - {address: 0x4f87c, name: wpp_obj_CustomizationIdSet_parse, class: wppobj}
+  - {address: 0x4f8e0, name: wpp_obj_SpiFlashCmd_parse, class: wppobj}
+  - {address: 0x4f96c, name: wpp_obj_BatteryStateOpt_parse, class: wppobj}
+  - {address: 0x4f998, name: wpp_obj_ScreenState_parse, class: wppobj}
+  - {address: 0x4f9c4, name: wpp_obj_Steps_parse, class: wppobj}
+  - {address: 0x4f9f0, name: wpp_obj_Calories_parse, class: wppobj}
+  - {address: 0x4fa1c, name: wpp_obj_Distance_parse, class: wppobj}
+  - {address: 0x4fa48, name: wpp_obj_InfoType_parse, class: wppobj}
+  - {address: 0x4fa74, name: wpp_obj_Duration_parse, class: wppobj}
+  - {address: 0x4fb3c, name: wpp_obj_Version_parse, class: wppobj}
+  - {address: 0x4fc08, name: wpp_obj_CacheType_parse, class: wppobj}
+  - {address: 0x4fce4, name: wpp_obj_FwInfo_parse, class: wppobj}
+  - {address: 0x4fdd0, name: wpp_obj_TestScreen_parse, class: wppobj}
+  - {address: 0x4fdfc, name: wpp_obj_ChallengeRequest_parse, class: wppobj}
+  - {address: 0x4fe54, name: wpp_obj_FactoryMode_parse, class: wppobj}
+  - {address: 0x4fe80, name: wpp_obj_GlanceStatus_parse, class: wppobj}
+  - {address: 0x4fed8, name: wpp_obj_AltimeterCompensation_parse, class: wppobj}
+  - {address: 0x4ff44, name: wpp_obj_RebootOptional_parse, class: wppobj}
+  - {address: 0x4ff70, name: wpp_obj_MtuWpp_parse, class: wppobj}
+  - {address: 0x50164, name: wpp_obj_Boolean_parse, class: wppobj}
+  - {address: 0x501e0, name: wpp_obj_Stairs_parse, class: wppobj}
+  - {address: 0x5020c, name: wpp_obj_MoveHands_parse, class: wppobj}
+  - {address: 0x50238, name: wpp_obj_DeviceChallengeRequest_parse, class: wppobj}
+  - {address: 0x50268, name: wpp_obj_FactoryTestDsc_parse, class: wppobj}
+  - {address: 0x502a8, name: wpp_obj_GreentegSensitivityBin_parse, class: wppobj}
+  - {address: 0x502d8, name: wpp_obj_DigitalCrownScaleFactor_parse, class: wppobj}
+  - {address: 0x50310, name: wpp_obj_SymptomType_parse, class: wppobj}
+  - {address: 0x503f4, name: wpp_obj_VibratorSetSimple_parse, class: wppobj}
+  - {address: 0x50434, name: wpp_obj_GreentegIntegrationFactor_parse, class: wppobj}
+  - {address: 0x6c84c, name: WPP_CMD_PROBE, class: wppcmd}
+  - {address: 0x6d2e0, name: WPP_CMD_MTU_EXCH, class: wppcmd}
+  - {address: 0x9917a, name: wpp_obj_Null_encode, class: wppobj}
+  - {address: 0x99216, name: wpp_obj_BatteryPercent_encode, class: wppobj}
+  - {address: 0x9923a, name: wpp_obj_Cmderror_encode, class: wppobj}
+  - {address: 0x99266, name: wpp_obj_StoredMeasureMeta_encode, class: wppobj}
+  - {address: 0x992ae, name: wpp_obj_StoredMeasureData_encode, class: wppobj}
+  - {address: 0x992e4, name: wpp_obj_ConnectReason_encode, class: wppobj}
+  - {address: 0x99308, name: wpp_obj_UserUnit_encode, class: wppobj}
+  - {address: 0x99346, name: wpp_obj_DebugDumpData_encode, class: wppobj}
+  - {address: 0x9936c, name: wpp_obj_DebugDumpType_encode, class: wppobj}
+  - {address: 0x99398, name: wpp_obj_LocaleSet_encode, class: wppobj}
+  - {address: 0x993be, name: wpp_obj_ProbeChallenge_encode, class: wppobj}
+  - {address: 0x993f4, name: wpp_obj_ProbeChallengeResponse_encode, class: wppobj}
+  - {address: 0x9941a, name: wpp_obj_BatteryVoltageMv_encode, class: wppobj}
+  - {address: 0x99440, name: wpp_obj_DebugDumpIgnoreData_encode, class: wppobj}
+  - {address: 0x99464, name: wpp_obj_NbAlarm_encode, class: wppobj}
+  - {address: 0x99488, name: wpp_obj_PlsReturnCode_encode, class: wppobj}
+  - {address: 0x994c4, name: wpp_obj_PlsStation_encode, class: wppobj}
+  - {address: 0x994f0, name: wpp_obj_FactoryState_encode, class: wppobj}
+  - {address: 0x99514, name: wpp_obj_TrackerWearPos_encode, class: wppobj}
+  - {address: 0x99538, name: wpp_obj_FeatureMask_encode, class: wppobj}
+  - {address: 0x9955c, name: wpp_obj_McuId_encode, class: wppobj}
+  - {address: 0x99588, name: wpp_obj_SoftdeviceVersion_encode, class: wppobj}
+  - {address: 0x995bc, name: wpp_obj_HrAutoAlgo_encode, class: wppobj}
+  - {address: 0x995e0, name: wpp_obj_WorkoutScreenList_encode, class: wppobj}
+  - {address: 0x99606, name: wpp_obj_SyncRequest_encode, class: wppobj}
+  - {address: 0x99632, name: wpp_obj_StoredSignalMeta_encode, class: wppobj}
+  - {address: 0x9967e, name: wpp_obj_StoredSignalData_encode, class: wppobj}
+  - {address: 0x996a4, name: wpp_obj_Id_encode, class: wppobj}
+  - {address: 0x996c8, name: wpp_obj_StoredSignalMetaExtend_encode, class: wppobj}
+  - {address: 0x996fc, name: wpp_obj_UnitConversionParameters_encode, class: wppobj}
+  - {address: 0x99730, name: wpp_obj_AlgorithmVersion_encode, class: wppobj}
+  - {address: 0x9975c, name: wpp_obj_FirmwareVersion_encode, class: wppobj}
+  - {address: 0x99780, name: wpp_obj_Gpio_encode, class: wppobj}
+  - {address: 0x997d8, name: wpp_obj_Uint32_encode, class: wppobj}
+  - {address: 0x997fc, name: wpp_obj_WppString_encode, class: wppobj}
+  - {address: 0x99822, name: wpp_obj_Int32_encode, class: wppobj}
+  - {address: 0x99846, name: wpp_obj_Mac_encode, class: wppobj}
+  - {address: 0x9986c, name: wpp_obj_TimeSet_encode, class: wppobj}
+  - {address: 0x998a8, name: wpp_obj_TimeSetReply_encode, class: wppobj}
+  - {address: 0x998cc, name: wpp_obj_TrackerUser_encode, class: wppobj}
+  - {address: 0x9991e, name: wpp_obj_BatteryStatus_encode, class: wppobj}
+  - {address: 0x9995a, name: wpp_obj_WamDailyActivities_encode, class: wppobj}
+  - {address: 0x9999e, name: wpp_obj_WamScreensList_encode, class: wppobj}
+  - {address: 0x999c4, name: wpp_obj_Alarm_encode, class: wppobj}
+  - {address: 0x99a18, name: wpp_obj_Name_encode, class: wppobj}
+  - {address: 0x99a3e, name: wpp_obj_WamVasistasHead_encode, class: wppobj}
+  - {address: 0x99a62, name: wpp_obj_WamVasistasDuration_encode, class: wppobj}
+  - {address: 0x99a86, name: wpp_obj_WamVasistasAwake_encode, class: wppobj}
+  - {address: 0x99ac2, name: wpp_obj_WamVasistasWalk_encode, class: wppobj}
+  - {address: 0x99ae6, name: wpp_obj_WamVasistasRun_encode, class: wppobj}
+  - {address: 0x99b0a, name: wpp_obj_WamVasistasSleep_encode, class: wppobj}
+  - {address: 0x99b2e, name: wpp_obj_WamVasistasMetCal_encode, class: wppobj}
+  - {address: 0x99b5a, name: wpp_obj_VasistasSwimV1_encode, class: wppobj}
+  - {address: 0x99b86, name: wpp_obj_WamVasistasMetCalEarned_encode, class: wppobj}
+  - {address: 0x99bb2, name: wpp_obj_VasistasActiRecoV1V2_encode, class: wppobj}
+  - {address: 0x99bde, name: wpp_obj_VasistasSwimType_encode, class: wppobj}
+  - {address: 0x99c02, name: wpp_obj_ReturnCode_encode, class: wppobj}
+  - {address: 0x99c26, name: wpp_obj_AlarmEnabled_encode, class: wppobj}
+  - {address: 0x99c4a, name: wpp_obj_VasistasHeartrate_encode, class: wppobj}
+  - {address: 0x99c7e, name: wpp_obj_AncsStatus_encode, class: wppobj}
+  - {address: 0x99ca2, name: wpp_obj_TempCalReply_encode, class: wppobj}
+  - {address: 0x99cd6, name: wpp_obj_CalibrationPoint_encode, class: wppobj}
+  - {address: 0x99d0a, name: wpp_obj_LightSensorReply_encode, class: wppobj}
+  - {address: 0x99d36, name: wpp_obj_CustomizationIdGet_encode, class: wppobj}
+  - {address: 0x99d5a, name: wpp_obj_CustomizationIdSet_encode, class: wppobj}
+  - {address: 0x99d7e, name: wpp_obj_LuminosityLevel_encode, class: wppobj}
+  - {address: 0x99daa, name: wpp_obj_LiveHr_encode, class: wppobj}
+  - {address: 0x99dce, name: wpp_obj_UnknownSteps_encode, class: wppobj}
+  - {address: 0x99df2, name: wpp_obj_SpiFlashChunk_encode, class: wppobj}
+  - {address: 0x99e18, name: wpp_obj_Steps_encode, class: wppobj}
+  - {address: 0x99e3c, name: wpp_obj_Calories_encode, class: wppobj}
+  - {address: 0x99e60, name: wpp_obj_Distance_encode, class: wppobj}
+  - {address: 0x99e84, name: wpp_obj_Duration_encode, class: wppobj}
+  - {address: 0x99ea8, name: wpp_obj_GlyphId_encode, class: wppobj}
+  - {address: 0x99ecc, name: wpp_obj_ImageMetadata_encode, class: wppobj}
+  - {address: 0x99f00, name: wpp_obj_Version_encode, class: wppobj}
+  - {address: 0x99f24, name: wpp_obj_NotificationAppInfo_encode, class: wppobj}
+  - {address: 0x99f54, name: wpp_obj_NotificationAppId_encode, class: wppobj}
+  - {address: 0x99f7a, name: wpp_obj_NotificationAppHashIdVersion_encode, class: wppobj}
+  - {address: 0x99f9e, name: wpp_obj_NotificationAppHashIdCrc32_encode, class: wppobj}
+  - {address: 0x99fc2, name: wpp_obj_ActivitySubcategory_encode, class: wppobj}
+  - {address: 0x99fe8, name: wpp_obj_Timestamp_encode, class: wppobj}
+  - {address: 0x9a00c, name: wpp_obj_FwChunkRequest_encode, class: wppobj}
+  - {address: 0x9a050, name: wpp_obj_StartTime_encode, class: wppobj}
+  - {address: 0x9a074, name: wpp_obj_EndTime_encode, class: wppobj}
+  - {address: 0x9a098, name: wpp_obj_Status_encode, class: wppobj}
+  - {address: 0x9a0be, name: wpp_obj_DebugDumpAnchor_encode, class: wppobj}
+  - {address: 0x9a0e2, name: wpp_obj_FactoryMode_encode, class: wppobj}
+  - {address: 0x9a106, name: wpp_obj_GlanceStatus_encode, class: wppobj}
+  - {address: 0x9a12a, name: wpp_obj_MeasureCategory_encode, class: wppobj}
+  - {address: 0x9a150, name: wpp_obj_MeasureLiveMeta_encode, class: wppobj}
+  - {address: 0x9a174, name: wpp_obj_MeasureLiveEcg_encode, class: wppobj}
+  - {address: 0x9a19a, name: wpp_obj_MeasureStopReason_encode, class: wppobj}
+  - {address: 0x9a1be, name: wpp_obj_PressureTemperature_encode, class: wppobj}
+  - {address: 0x9a1f4, name: wpp_obj_ActivityLap_encode, class: wppobj}
+  - {address: 0x9a21a, name: wpp_obj_ActivityPause_encode, class: wppobj}
+  - {address: 0x9a240, name: wpp_obj_PauseState_encode, class: wppobj}
+  - {address: 0x9a276, name: wpp_obj_RebootOptional_encode, class: wppobj}
+  - {address: 0x9a29a, name: wpp_obj_DigitalCrownMotionDelta_encode, class: wppobj}
+  - {address: 0x9a2ca, name: wpp_obj_MtuWpp_encode, class: wppobj}
+  - {address: 0x9a2ee, name: wpp_obj_MtuTls_encode, class: wppobj}
+  - {address: 0x9a312, name: wpp_obj_MtuAttBle_encode, class: wppobj}
+  - {address: 0x9a336, name: wpp_obj_Heartrate_encode, class: wppobj}
+  - {address: 0x9a35a, name: wpp_obj_VasistasSpo2_encode, class: wppobj}
+  - {address: 0x9a38e, name: wpp_obj_VasistasFlags_encode, class: wppobj}
+  - {address: 0x9a3ba, name: wpp_obj_VasistasAhi_encode, class: wppobj}
+  - {address: 0x9a3ea, name: wpp_obj_ShortcutAction_encode, class: wppobj}
+  - {address: 0x9a40e, name: wpp_obj_NotificationsDisplayState_encode, class: wppobj}
+  - {address: 0x9a432, name: wpp_obj_LocalNotification_encode, class: wppobj}
+  - {address: 0x9a45e, name: wpp_obj_EventV2_encode, class: wppobj}
+  - {address: 0x9a492, name: wpp_obj_Boolean_encode, class: wppobj}
+  - {address: 0x9a4b6, name: wpp_obj_InactivityCfg_encode, class: wppobj}
+  - {address: 0x9a4fa, name: wpp_obj_AlgoParam_encode, class: wppobj}
+  - {address: 0x9a528, name: wpp_obj_Stairs_encode, class: wppobj}
+  - {address: 0x9a54c, name: wpp_obj_MoveHands_encode, class: wppobj}
+  - {address: 0x9a570, name: wpp_obj_WorkoutMaxNumber_encode, class: wppobj}
+  - {address: 0x9a594, name: wpp_obj_SkinTemperatureMeasureResult_encode, class: wppobj}
+  - {address: 0x9a5ce, name: wpp_obj_FluxSensorMeasureResult_encode, class: wppobj}
+  - {address: 0x9a5fa, name: wpp_obj_DeviceChallengeReply_encode, class: wppobj}
+  - {address: 0x9a63a, name: wpp_obj_DeviceChallengeSignature_encode, class: wppobj}
+  - {address: 0x9a660, name: wpp_obj_FactoryTestDsc_encode, class: wppobj}
+  - {address: 0x9a694, name: wpp_obj_VasistasCbt_encode, class: wppobj}
+  - {address: 0x9a6c8, name: wpp_obj_Max86173ChannelStats_encode, class: wppobj}
+  - {address: 0x9a73c, name: wpp_obj_GreentegSensitivityBin_encode, class: wppobj}
+  - {address: 0x9a762, name: wpp_obj_DigitalCrownScaleFactor_encode, class: wppobj}
+  - {address: 0x9a78e, name: wpp_obj_SymptomListItem_encode, class: wppobj}
+  - {address: 0x9a7d0, name: wpp_obj_CycleTrackingMenstruationStart_encode, class: wppobj}
+  - {address: 0x9a7f4, name: wpp_obj_GreentegIntegrationFactor_encode, class: wppobj}
+  - {address: 0x9a818, name: wpp_obj_VasistasHrv_encode, class: wppobj}
+  - {address: 0x9a854, name: wpp_obj_VasistasRr_encode, class: wppobj}
+  - {address: 0x9a878, name: wpp_obj_VasistasDbt_encode, class: wppobj}
+  - {address: 0x9a918, name: wpp_obj_Null_encode_copy_0x9a918, class: wppobj}
   - {address: 0xa866e, name: memcmp, class: libc}
 disagrees_with_hand_map:
   - {address: 0x46980, hand: ptls_verify_certificate_cb, derived: verify_cert, class: logtag}

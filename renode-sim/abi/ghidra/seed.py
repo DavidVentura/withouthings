@@ -52,6 +52,15 @@ def main():
 
     manifest = load("hwa10.yaml")
     strides = {t["name"]: t for t in manifest.get("table_structs", [])}
+    # The seed is a map of addresses and widths, not of prototypes: a row field
+    # declared as one of the manifest's function-pointer typedefs is the same
+    # four-byte code pointer the scripts downstream read as `void *`, and only
+    # abi/gen.py has any use for the prototype.
+    typedefs = {t["name"] for t in manifest.get("typedefs", [])}
+
+    def erase(fields):
+        return [["void *" if str(t) in typedefs else t, n] for t, n in fields]
+
     for fn in manifest["functions"]:
         addr = fn["address"] & ~1
         if in_app(addr):
@@ -67,7 +76,7 @@ def main():
         tables.append({"address": t["address"], "name": t["name"],
                        "entry": t["entry"], "stride": t["stride"],
                        "count": t["count"],
-                       "fields": entry["fields"] if entry else None,
+                       "fields": erase(entry["fields"]) if entry else None,
                        "source": "hwa10"})
 
     # An address a manifest entry declares it corrects is not a function start,
