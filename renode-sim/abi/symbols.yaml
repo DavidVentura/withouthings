@@ -153,24 +153,24 @@ symbols:
     and 0x56ba8 calls +4, both stepping by eight and both under product_get_erase_flag,
     and 0x2e1d8 calls the first at 0x2e3aa ahead of the module inits and the second
     at 0x2e3e8 behind them. cfs_post_update_check sits in the first column with
-    cfs_post_update_mark beside it, which names the two; the other rows are
-    flash_cache, glyph_cache and workout_cache post_update_check, wftl_post_update,
-    ecg_post_update, spo2_post_update and update_stats_post_update. The table
-    starts where the six-row table at 0x27c04 stops.'
+    cfs_post_update_mark beside it, which names the two; the other rows are flash_cache,
+    glyph_cache and workout_cache post_update_check, wftl_post_update, ecg_post_update,
+    spo2_post_update and update_stats_post_update. The table starts where the six-row
+    table at 0x27c04 stops.'
 - address: 0x27cec
   name: debug_dump_ram_items
   kind: table
   class: hand
   module: dblib
   evidence: 'six twelve-byte rows between the pair (0x27cec, 0x27d34) debug_dump_dblib_ram__2
-    loads into r8 and r9 and walks with `adds r3, #0xc`. The first word is two
-    u16 fields and not a pointer: the walk compares the halfword at +0 against
-    the id at +6 of its cursor and takes the record length from the halfword at
-    +2, and three of the six first words (0x2010c, 0x10013a, 0x4013c) are outside
-    the image altogether. The ids are 313, 268, 314, 330, 316 and 355, the +4
-    column is called with the destination four bytes past the header the walk
-    writes out of +0, and +8 is named by notification_enabled_get_num_elem
-    standing beside notification_enabled_fetch in the same row.'
+    loads into r8 and r9 and walks with `adds r3, #0xc`. The first word is two u16
+    fields and not a pointer: the walk compares the halfword at +0 against the id
+    at +6 of its cursor and takes the record length from the halfword at +2, and
+    three of the six first words (0x2010c, 0x10013a, 0x4013c) are outside the image
+    altogether. The ids are 313, 268, 314, 330, 316 and 355, the +4 column is called
+    with the destination four bytes past the header the walk writes out of +0, and
+    +8 is named by notification_enabled_get_num_elem standing beside notification_enabled_fetch
+    in the same row.'
 - address: 0x27d34
   name: factory_reset_hooks
   kind: global
@@ -5118,7 +5118,7 @@ symbols:
   name: input_nb_steps_is_too__1
   kind: function
   class: helper
-  evidence: only 0x7eb88 (input_nb_steps_is_too) calls 0x5cde4; 86 bytes
+  evidence: only 0x7eb88 (input_nb_steps_is_too) calls 0x5cde4; 38 bytes
 - address: 0x5ce14
   name: lap_hand_id
   kind: function
@@ -5832,6 +5832,12 @@ symbols:
   kind: label
   class: prose
   evidence: streams image, memcmp 20B vs stored digest
+- address: 0x64bc8
+  name: chunked_update_not_aligned
+  kind: function
+  class: logline
+  evidence: the only line 0x64bc8 logs, wlog('[CHUNKED_UPDATE] not aligned') at
+    0x64bf2
 - address: 0x64cf8
   name: FW_AVAILABLE__1
   kind: function
@@ -6776,11 +6782,6 @@ symbols:
   kind: function
   class: logline
   evidence: the only line 0x6c6ac logs, wlog('auth failed') at 0x6c6c6
-- address: 0x6c708
-  name: wpp_not_enough_space_in_wpp__1
-  kind: function
-  class: helper
-  evidence: only 0x6d250 (wpp_not_enough_space_in_wpp) calls 0x6c708; 106 bytes
 - address: 0x6c784
   name: wpp_cmd_dispatch
   kind: function
@@ -6927,12 +6928,6 @@ symbols:
   class: wppcmd
   evidence: 'wpp_cmd_table row 0x27a00: key 2476, label ''WPP_CMD_TRACKER_MOVE_HANDS_GET'',
     CMD_TRACKER_MOVE_HANDS_GET in wpp/src/commands.rs'
-- address: 0x6d250
-  name: wpp_not_enough_space_in_wpp
-  kind: function
-  class: logline
-  evidence: the only line 0x6d250 logs, wlog('[WPP] Not enough space in wpp packet')
-    at 0x6d298
 - address: 0x6d2e0
   name: WPP_CMD_MTU_EXCH
   kind: function
@@ -7068,7 +7063,12 @@ symbols:
   name: ws_events_wpp_bad_state__1
   kind: function
   class: helper
-  evidence: only 0x6ec6c (ws_events_wpp_bad_state) calls 0x6eaa4; 94 bytes
+  evidence: only 0x6eb84 (ws_events_wpp_bad_state) calls 0x6eaa4; 94 bytes
+- address: 0x6eb84
+  name: ws_events_wpp
+  kind: function
+  class: logtag
+  evidence: wlog('[ws_events_wpp] Bad state') at 0x6ebaa, tag is a C identifier
 - address: 0x6ec6c
   name: WPP_CMD_EVENTS_GET_V2
   kind: function
@@ -7086,89 +7086,11 @@ symbols:
   class: logline
   evidence: the only line 0x6eed8 logs, wlog('[WUI] Failed to push event 0x%08x')
     at 0x6eefe
-- address: 0x6f19c
-  name: picotls__6f19c
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x6f1c8
-  name: picotls__6f1c8
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x6f1fc
-  name: picotls__6f1fc
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x6f230
-  name: picotls__6f230
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x6f240
-  name: picotls__6f240
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x6f350
-  name: picotls__6f350
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x6f3a4
-  name: picotls__6f3a4
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x6f460
-  name: picotls__6f460
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x6f490
   name: mbedtls_x509_get_serial
   kind: function
   class: extlib
   evidence: mbedtls_Os, score 0.97 over 30 insns, direct
-- address: 0x6f4e0
-  name: picotls__6f4e0
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x6f5d4
-  name: picotls__6f5d4
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x6f734
-  name: picotls__6f734
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x6f76c
-  name: picotls__6f76c
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x6f7ac
-  name: picotls__6f7ac
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x7022c
   name: ptls_verify_certificate
   kind: function
@@ -7177,124 +7099,10 @@ symbols:
   evidence: 1616 bytes entered from verify_cert__1 0x468b8 and perso_crt_verify
     0x5abbc and from nothing else; the certificate callback picotls takes, which
     is why the entry is on this side of the boundary.
-- address: 0x7032c
-  name: picotls__7032c
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x70394
-  name: picotls__70394
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x703d4
-  name: picotls__703d4
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x70574
-  name: picotls__70574
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x705ac
-  name: picotls__705ac
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x70600
-  name: picotls__70600
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x707c0
-  name: picotls__707c0
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x708a8
-  name: picotls__708a8
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x70934
-  name: picotls__70934
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x70990
-  name: picotls__70990
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x70a28
-  name: picotls__70a28
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x70a68
-  name: picotls__70a68
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x70b28
-  name: picotls__70b28
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x70be8
-  name: picotls__70be8
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x70c70
-  name: picotls__70c70
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x7159c
-  name: picotls__7159c
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x717bc
   name: ptls_send_alert
   kind: label
   class: prose
-- address: 0x71ca0
-  name: picotls__71ca0
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x7272c
-  name: picotls__7272c
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x72834
-  name: picotls__72834
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x72ac0
   name: ptls_handshake
   kind: label
@@ -7833,54 +7641,6 @@ symbols:
     array at rr+0x14, which is then sorted. Its caller passes the algorithm object''s
     ctx+0xe78, which is the same object ecg_algo_heart_rate_from_rr divides 60000
     by.'
-- address: 0x7838c
-  name: ecgsw2__7838c
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0x783c0
-  name: ecgsw2__783c0
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0x78428
-  name: ecgsw2__78428
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0x78590
-  name: ecgsw2__78590
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0x785f8
-  name: ecgsw2__785f8
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0x78724
-  name: ecgsw2__78724
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0x78834
-  name: ecgsw2__78834
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0x789c0
-  name: ecgsw2__789c0
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
 - address: 0x78f1c
   name: ecg_nn_classify
   kind: function
@@ -7892,30 +7652,6 @@ symbols:
     to provide an output" and trap (0x77964). The four floats it leaves at ctx+0x1f3c
     are what ecg_algo_finish divides by that count into the class probabilities,
     which are the "out=%d, %d, %d, %d" of the diagnosis line.'
-- address: 0x79138
-  name: ecgsw2__79138
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0x791fc
-  name: ecgsw2__791fc
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0x79278
-  name: ecgsw2__79278
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0x793a0
-  name: ecgsw2__793a0
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
 - address: 0x79560
   name: sleep_wake_algo_step
   kind: function
@@ -9703,12 +9439,6 @@ symbols:
   class: logline
   evidence: the only line 0x8b924 logs, wlog('[WARNING] unknown type 0x%.4x !!')
     at 0x8bab0
-- address: 0x8bbc0
-  name: greenteg_cbta__8bbc0
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
 - address: 0x8bd04
   name: vendor_greenteg_cbta_sample_convert
   kind: function
@@ -9781,18 +9511,6 @@ symbols:
   evidence: 0x42974 calls it and logs "algorithm init failed" through "[BODY_TEMP][err]
     FL %s" when it returns zero; it runs the constructor 0x8c230 over the free-living
     state and sets the instance's ready flag.
-- address: 0x8c0cc
-  name: greenteg_cbta__8c0cc
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
-- address: 0x8c230
-  name: greenteg_cbta__8c230
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
 - address: 0x8c294
   name: vendor_greenteg_cbta_sport_update
   kind: function
@@ -9813,24 +9531,6 @@ symbols:
   component: greenteg_cbta
   evidence: The free-living init's twin against the second state, over the constructor
     0x8c774; 0x42974 logs its failure as "[BODY_TEMP][err] WO %s".
-- address: 0x8c340
-  name: greenteg_cbta__8c340
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
-- address: 0x8c500
-  name: greenteg_cbta__8c500
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
-- address: 0x8c774
-  name: greenteg_cbta__8c774
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
 - address: 0x8c8fc
   name: pow
   kind: function
@@ -11663,11 +11363,6 @@ symbols:
   kind: function
   class: hand
   module: wpp
-- address: 0x98e24
-  name: WPP_CMD_DEVICE_CHALLENGE__1
-  kind: function
-  class: helper
-  evidence: only 0x6d50c (WPP_CMD_DEVICE_CHALLENGE) calls 0x98e24; 24 bytes
 - address: 0x98ec6
   name: wpp_asked_locale__2
   kind: function
@@ -12871,8 +12566,7 @@ symbols:
   class: codec
   module: wpp_objects
   evidence: 'WPP object type 519 (WppString), 65 bytes: the encode body, its field
-    layout read off the cursor primitives it calls. replied by CMD_EVENTS_GET_V2
-    (0x6ec6c).'
+    layout read off the cursor primitives it calls.'
 - address: 0x99822
   name: wpp_obj_Int32_encode
   kind: function
@@ -12941,14 +12635,14 @@ symbols:
   class: codec
   module: wpp_objects
   evidence: 'WPP object type 1298 (Alarm), 7 bytes: the encode body, its field layout
-    read off the cursor primitives it calls. replied by CMD_GET_MULTI_ALARM (0x3d05c).'
+    read off the cursor primitives it calls.'
 - address: 0x99a18
   name: wpp_obj_Name_encode
   kind: function
   class: codec
   module: wpp_objects
   evidence: 'WPP object type 1300 (Name), 65 bytes: the encode body, its field layout
-    read off the cursor primitives it calls. replied by CMD_GET_MULTI_ALARM (0x3d05c).'
+    read off the cursor primitives it calls.'
 - address: 0x99a3e
   name: wpp_obj_WamVasistasHead_encode
   kind: function
@@ -13247,16 +12941,16 @@ symbols:
   class: codec
   module: wpp_objects
   evidence: 'WPP object type 2418 (StartTime), 4 bytes: the encode body, its field
-    layout read off the cursor primitives it calls. replied by CMD_GET_MULTI_ALARM
-    (0x3d05c), CMD_WORKOUT_START (0x6ad30), CMD_WORKOUT_STATUS (0x6aab4).'
+    layout read off the cursor primitives it calls. replied by CMD_WORKOUT_START
+    (0x6ad30), CMD_WORKOUT_STATUS (0x6aab4).'
 - address: 0x9a074
   name: wpp_obj_EndTime_encode
   kind: function
   class: codec
   module: wpp_objects
   evidence: 'WPP object type 2419 (EndTime), 4 bytes: the encode body, its field
-    layout read off the cursor primitives it calls. replied by CMD_GET_MULTI_ALARM
-    (0x3d05c), CMD_WORKOUT_START (0x6ad30).'
+    layout read off the cursor primitives it calls. replied by CMD_WORKOUT_START
+    (0x6ad30).'
 - address: 0x9a098
   name: wpp_obj_Status_encode
   kind: function
@@ -13442,8 +13136,7 @@ symbols:
   class: codec
   module: wpp_objects
   evidence: 'WPP object type 2473 (EventV2), 12 bytes: the encode body, its field
-    layout read off the cursor primitives it calls. replied by CMD_EVENTS_GET_V2
-    (0x6ec6c).'
+    layout read off the cursor primitives it calls.'
 - address: 0x9a492
   name: wpp_obj_Boolean_encode
   kind: function
@@ -13514,8 +13207,7 @@ symbols:
   class: codec
   module: wpp_objects
   evidence: 'WPP object type 2499 (DeviceChallengeReply), 136 bytes: the encode
-    body, its field layout read off the cursor primitives it calls. replied by CMD_DEVICE_CHALLENGE
-    (0x6d50c).'
+    body, its field layout read off the cursor primitives it calls.'
 - address: 0x9a63a
   name: wpp_obj_DeviceChallengeSignature_encode
   kind: function
@@ -14254,22 +13946,16 @@ symbols:
   class: helper
   evidence: only 0x9d734 (WPP_CMD_EVENTS_DEL) calls 0x9d6be; 18 bytes
 - address: 0x9d6d0
-  name: ws_events_wpp_bad_state__2
+  name: WPP_CMD_EVENTS_GET_V2__1
   kind: function
   class: helper
-  evidence: only 0x6ec6c (ws_events_wpp_bad_state) calls 0x9d6d0; 100 bytes
+  evidence: only 0x6ec6c (WPP_CMD_EVENTS_GET_V2) calls 0x9d6d0; 100 bytes
 - address: 0x9d734
   name: WPP_CMD_EVENTS_DEL
   kind: function
   class: wppcmd
   evidence: 'wpp_cmd_table row 0x27b80: key 2452, label ''WPP_CMD_EVENTS_DEL'',
     CMD_EVENTS_DEL in wpp/src/commands.rs'
-- address: 0x9d76a
-  name: picotls__9d76a
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x9d7ac
   name: mbedtls_pk_can_do
   kind: function
@@ -14280,87 +13966,15 @@ symbols:
   kind: function
   class: extlib
   evidence: mbedtls_Os, score 1.00 over 17 insns, direct
-- address: 0x9d8f8
-  name: picotls__9d8f8
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x9d928
-  name: picotls__9d928
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x9d96a
-  name: picotls__9d96a
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x9d9aa
   name: mbedtls_asn1_get_bitstring_null
   kind: function
   class: extlib
   evidence: mbedtls_Os, score 1.00 over 18 insns, direct
-- address: 0x9d9d2
-  name: picotls__9d9d2
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x9da48
-  name: picotls__9da48
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x9dae4
-  name: picotls__9dae4
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x9df52
-  name: picotls__9df52
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x9dfb8
-  name: picotls__9dfb8
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x9dfd0
-  name: picotls__9dfd0
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x9dffa
-  name: picotls__9dffa
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
-- address: 0x9e014
-  name: picotls__9e014
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x9e05e
   name: ptls_set_server_name
   kind: label
   class: prose
-- address: 0x9e1be
-  name: picotls__9e1be
-  kind: function
-  class: vendor
-  component: picotls
-  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x9e284
   name: ptls_receive
   kind: label
@@ -14601,12 +14215,6 @@ symbols:
     rows - 1 rows it copies every column from the row below (`ldrh.w r7, [r5, r1,
     lsl #1]` against `strh r7, [r5], #2` at 0x9ee6c), with r1 the column count and
     r2 the row count. Dropping the oldest row of a history matrix is the whole body'
-- address: 0x9f084
-  name: ecgsw2__9f084
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
 - address: 0x9f3c4
   name: delay_f32_push_pop
   kind: function
@@ -14772,96 +14380,6 @@ symbols:
   evidence: '`return ctx->0 >= ctx->8 && ctx->b2c <= 30 * ctx->5c;` -- enough samples
     in and not past the measurement''s window. Every per-sample caller gates on
     it before reading an output, three times a sample between them.'
-- address: 0xa0de6
-  name: ecgsw2__a0de6
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa0e8c
-  name: ecgsw2__a0e8c
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa0ea0
-  name: ecgsw2__a0ea0
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa0f3c
-  name: ecgsw2__a0f3c
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa0f8e
-  name: ecgsw2__a0f8e
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa0f9e
-  name: ecgsw2__a0f9e
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa0ff6
-  name: ecgsw2__a0ff6
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa100a
-  name: ecgsw2__a100a
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa1086
-  name: ecgsw2__a1086
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa1158
-  name: ecgsw2__a1158
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa115c
-  name: ecgsw2__a115c
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa128c
-  name: ecgsw2__a128c
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa12aa
-  name: ecgsw2__a12aa
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa12cc
-  name: ecgsw2__a12cc
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
-- address: 0xa135c
-  name: ecgsw2__a135c
-  kind: function
-  class: vendor
-  component: ecgsw2
-  evidence: 'interior: reached only through ecgsw2''s entries'
 - address: 0xa17f8
   name: fft_complex_transform
   kind: function
@@ -15869,66 +15387,6 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x88868 (gui_notif_resources_available) calls 0xa70fc; 40 bytes
-- address: 0xa74b0
-  name: greenteg_cbta__a74b0
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
-- address: 0xa74de
-  name: greenteg_cbta__a74de
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
-- address: 0xa7532
-  name: greenteg_cbta__a7532
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
-- address: 0xa753a
-  name: greenteg_cbta__a753a
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
-- address: 0xa7a1c
-  name: greenteg_cbta__a7a1c
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
-- address: 0xa7a44
-  name: greenteg_cbta__a7a44
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
-- address: 0xa7ab4
-  name: greenteg_cbta__a7ab4
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
-- address: 0xa7aca
-  name: greenteg_cbta__a7aca
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
-- address: 0xa7b5c
-  name: greenteg_cbta__a7b5c
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
-- address: 0xa7c58
-  name: greenteg_cbta__a7c58
-  kind: function
-  class: vendor
-  component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
 - address: 0xa7c6e
   name: sqrt
   kind: function

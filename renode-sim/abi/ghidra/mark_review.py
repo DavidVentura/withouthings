@@ -41,6 +41,8 @@ def main():
         install = found[-1]
     pyghidra.start(install_dir=install)
     from ghidra.program.model.listing import CodeUnit
+    from java.awt import Color
+    from resources import ResourceManager
     counts = {"review": 0, "pointer": 0}
     project = pyghidra.open_project(args.project, "hwa10", create=False)
     try:
@@ -59,8 +61,13 @@ def main():
         tx = program.startTransaction("word classification")
         try:
             # A word decided since the last run must lose its Review bookmark,
-            # so both types are rebuilt from scratch rather than added to.
-            for kind in ("Review", "Pointer"):
+            # so both types are rebuilt from scratch rather than added to. The
+            # project analyze.sh leaves behind has never held either type, and
+            # removeBookmarks throws on a type the program has not defined, so
+            # both are defined before they are cleared.
+            for kind, image, color in (("Review", "images/warning.png", Color.RED),
+                                       ("Pointer", "images/flag.png", Color.BLUE)):
+                bookmarks.defineType(kind, ResourceManager.loadImage(image), color, 0)
                 bookmarks.removeBookmarks(kind)
             for r in rows:
                 if r["class"] not in counts:
