@@ -231,7 +231,7 @@ symbols:
   name: __ieee754_exp
   kind: function
   class: match
-  evidence: toolchain, score 0.94 over 231 insns, direct
+  evidence: toolchain, score 1.00 over 227 insns, direct
 - address: 0x2b040
   name: __ieee754_log
   kind: function
@@ -3782,12 +3782,12 @@ symbols:
   name: prvInsertBlockIntoFreeList
   kind: function
   class: match
-  evidence: app, score 0.85 over 34 insns, direct
+  evidence: app, score 0.97 over 34 insns, direct
 - address: 0x51a04
   name: pvPortMalloc
   kind: function
   class: match
-  evidence: app, score 0.85 over 92 insns, direct
+  evidence: app, score 0.98 over 91 insns, direct
 - address: 0x51afc
   name: vPortFree
   kind: function
@@ -6407,7 +6407,7 @@ symbols:
   name: vTaskGetInfo
   kind: function
   class: match
-  evidence: app, score 0.94 over 52 insns, direct
+  evidence: app, score 1.00 over 54 insns, direct
 - address: 0x73614
   name: uxTaskGetStackHighWaterMark
   kind: function
@@ -6437,7 +6437,7 @@ symbols:
   name: vTaskPriorityDisinheritAfterTimeout
   kind: function
   class: match
-  evidence: app, score 0.85 over 41 insns, direct
+  evidence: app, score 1.00 over 41 insns, direct
 - address: 0x737b0
   name: pvTaskIncrementMutexHeldCount
   kind: function
@@ -6474,7 +6474,7 @@ symbols:
   name: xQueueReceive
   kind: function
   class: match
-  evidence: app, score 0.83 over 81 insns, direct
+  evidence: app, score 1.00 over 92 insns, direct
 - address: 0x73dd0
   name: vPortStartFirstTask
   aliases:
@@ -6491,7 +6491,7 @@ symbols:
   name: pxPortInitialiseStack
   kind: function
   class: match
-  evidence: app+graph, score 0.70 over 10 insns, propagated from prvInitialiseNewTask.constprop.0
+  evidence: app, score 1.00 over 12 insns, direct
 - address: 0x73e3c
   name: vPortEnterCritical
   aliases:
@@ -6907,6 +6907,11 @@ symbols:
   kind: function
   class: match
   evidence: app, score 1.00 over 24 insns, direct
+- address: 0x7dd10
+  name: nrfx_saadc_channels_config
+  kind: function
+  class: match
+  evidence: app, score 0.90 over 88 insns, direct
 - address: 0x7de34
   name: nrfx_saadc_simple_mode_set
   aliases:
@@ -6914,6 +6919,11 @@ symbols:
   kind: function
   class: match
   evidence: app, score 1.00 over 35 insns, direct
+- address: 0x7de94
+  name: nrfx_saadc_advanced_mode_set
+  kind: function
+  class: match
+  evidence: app, score 0.98 over 61 insns, direct
 - address: 0x7df40
   name: nrfx_saadc_buffer_set
   aliases:
@@ -6922,10 +6932,10 @@ symbols:
   class: match
   evidence: app, score 1.00 over 48 insns, direct
 - address: 0x7dfb8
-  name: saadc_sample_blocking
-  kind: label
-  class: prose
-  evidence: 'nrfx SAADC: START/EVENTS_STARTED, SAMPLE/EVENTS_END, STOP/EVENTS_STOPPED'
+  name: nrfx_saadc_mode_trigger
+  kind: function
+  class: match
+  evidence: app, score 0.99 over 123 insns, direct
 - address: 0x7e108
   name: nrfx_saadc_abort
   kind: function
@@ -6940,7 +6950,7 @@ symbols:
   name: SAADC_IRQHandler
   kind: function
   class: match
-  evidence: app, score 0.98 over 118 insns, direct
+  evidence: app, score 1.00 over 118 insns, direct
 - address: 0x7e478
   name: adc_not_using_internal_timer_setup
   kind: function
@@ -8420,7 +8430,7 @@ symbols:
   name: __ieee754_sqrt
   kind: function
   class: match
-  evidence: toolchain, score 0.97 over 158 insns, direct
+  evidence: toolchain, score 1.00 over 157 insns, direct
 - address: 0x8cf10
   name: round
   kind: function
@@ -8435,12 +8445,12 @@ symbols:
   name: __ieee754_expf
   kind: function
   class: match
-  evidence: toolchain, score 0.78 over 106 insns, direct
+  evidence: toolchain, score 0.99 over 102 insns, direct
 - address: 0x8d170
   name: __ieee754_powf
   kind: function
   class: match
-  evidence: toolchain, score 0.66 over 386 insns, direct
+  evidence: toolchain, score 0.75 over 381 insns, direct
 - address: 0x8d6f8
   name: scalbnf
   kind: function
@@ -12430,7 +12440,7 @@ symbols:
   name: prvInitialiseNewTask.constprop.0
   kind: function
   class: match
-  evidence: app, score 0.96 over 51 insns, direct
+  evidence: app, score 1.00 over 51 insns, direct
 - address: 0x9e3dc
   name: xTaskCreateStatic
   kind: function
@@ -12460,17 +12470,17 @@ symbols:
   name: vListInsertEnd
   kind: function
   class: match
-  evidence: app, score 0.82 over 11 insns, direct
+  evidence: app, score 1.00 over 11 insns, direct
 - address: 0x9e52c
   name: vListInsert
   kind: function
   class: match
-  evidence: app, score 0.91 over 22 insns, direct
+  evidence: app, score 1.00 over 22 insns, direct
 - address: 0x9e55a
   name: uxListRemove
   kind: function
   class: match
-  evidence: app, score 0.71 over 17 insns, direct
+  evidence: app, score 1.00 over 15 insns, direct
 - address: 0x9e57a
   name: prvIsQueueEmpty
   kind: function
@@ -12497,7 +12507,7 @@ symbols:
   name: prvUnlockQueue
   kind: function
   class: match
-  evidence: app+graph, score 0.62 over 45 insns, propagated from xQueueReceive
+  evidence: app+graph, score 0.62 over 45 insns, propagated from xQueueGenericSend
 - address: 0x9e6e8
   name: xQueueGenericReset
   kind: function
