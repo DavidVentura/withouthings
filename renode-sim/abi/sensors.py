@@ -220,6 +220,37 @@ ROWS = [
                   " and r2 the row count. Dropping the oldest row of a history"
                   " matrix is the whole body"),
 
+    # --- the beat detector under ppg_heart_beats_algo_step ------------------
+    dict(address=0x9EE42, name="ring_index_advance", kind="function",
+         evidence="(i + step + capacity) modulo capacity, with the `blt` at"
+                  " 0x9ee50 adding the capacity back until the remainder is"
+                  " non-negative, which is what makes a negative step a step"
+                  " backwards round the ring rather than an out-of-range index"),
+    dict(address=0xA05AA, name="beat_peak_detect", kind="function",
+         calls=[0x9EE42, 0xA86C2],
+         evidence="the beat test, and the only writer of the beat position."
+                  " Each call pushes the caller's four floats at +0x74..+0x80"
+                  " into a 0x24-slot ring through ring_index_advance"
+                  " (0xa05b8..0xa05d6), and once the fill at +0xa8 passes 8 it"
+                  " copies the ring out in order and, for each of the four,"
+                  " tests the middle element at index 16 against the 16 before"
+                  " it and the 15 after it (the two counting loops at 0xa0622"
+                  " and 0xa063a), declaring a beat only when more than 15 and"
+                  " more than 14 of them run lower. The winner's channel goes"
+                  " to +0x94 and its value to +0x98, and +0xa0 takes the"
+                  " position as (channel + 0x10) + (samples - 9) * 4"
+                  " (0xa0674..0xa067e), which is quarter-sample units because"
+                  " the four values are four interleaved sub-samples."
+                  " ppg_heart_beats_algo_step calls it twice, negating those"
+                  " four floats in between (0xa0554..0xa0584), so the second"
+                  " call is the same detector finding troughs"),
+    dict(address=0x76F4C, name="beat_rate_from_interval", kind="function",
+         evidence="the gap between the beat position at +0xa0 and the previous"
+                  " one at +0xa4, converted to a float and divided into the"
+                  " constant at 0x4ff78, stored at +0xac (0x76f60..0x76f6e);"
+                  " a constant over an interval is a rate, and it does nothing"
+                  " when no beat has been seen"),
+
     # --- the distribution tracker the HR chain estimates a rate with ---------
     # Its object is one array of weights over one axis of values, multiplied by
     # a likelihood and renormalised every step, which is a distribution and not

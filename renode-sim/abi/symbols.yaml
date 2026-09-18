@@ -7103,6 +7103,15 @@ symbols:
   class: helper
   evidence: only 0x6370c (WPP_CMD_STORED_MEASURE_SIGNAL_GET__3) calls 0x765c4; 4
     bytes
+- address: 0x76f4c
+  name: beat_rate_from_interval
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: the gap between the beat position at +0xa0 and the previous one at +0xa4,
+    converted to a float and divided into the constant at 0x4ff78, stored at +0xac
+    (0x76f60..0x76f6e); a constant over an interval is a rate, and it does nothing
+    when no beat has been seen
 - address: 0x7710c
   name: ppg_rr_algo_step
   kind: function
@@ -13566,6 +13575,14 @@ symbols:
   class: hand
   module: ecg
   evidence: the sum divided by the count as a float, then both back to zero.
+- address: 0x9ee42
+  name: ring_index_advance
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: (i + step + capacity) modulo capacity, with the `blt` at 0x9ee50 adding
+    the capacity back until the remainder is non-negative, which is what makes a
+    negative step a step backwards round the ring rather than an out-of-range index
 - address: 0x9ee58
   name: mat_u16_drop_first_row
   kind: function
@@ -13668,6 +13685,22 @@ symbols:
   class: hand
   module: sensors_sync
   evidence: the call under algo_enabled(0xc) (0x7d54a, 0x7d55a); id 12 is PPG_HEART_BEATS.
+- address: 0xa05aa
+  name: beat_peak_detect
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: the beat test, and the only writer of the beat position. Each call pushes
+    the caller's four floats at +0x74..+0x80 into a 0x24-slot ring through ring_index_advance
+    (0xa05b8..0xa05d6), and once the fill at +0xa8 passes 8 it copies the ring out
+    in order and, for each of the four, tests the middle element at index 16 against
+    the 16 before it and the 15 after it (the two counting loops at 0xa0622 and
+    0xa063a), declaring a beat only when more than 15 and more than 14 of them run
+    lower. The winner's channel goes to +0x94 and its value to +0x98, and +0xa0
+    takes the position as (channel + 0x10) + (samples - 9) * 4 (0xa0674..0xa067e),
+    which is quarter-sample units because the four values are four interleaved sub-samples.
+    ppg_heart_beats_algo_step calls it twice, negating those four floats in between
+    (0xa0554..0xa0584), so the second call is the same detector finding troughs
 - address: 0xa0bf2
   name: rr_get_interval
   kind: function
