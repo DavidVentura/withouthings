@@ -653,17 +653,26 @@ class Unit(object):
             moves[s.sym] = at + (s.start - self.start)
 
 
-def units(sections):
+def units(sections, cuts=()):
     """`sections` grouped into the blocks a layout may move, in address order.
 
     Adjacency is what joins: two data sections with a code section between them
     are not one run, and a gap the partition left is not something anything
     indexes across.
+
+    `cuts` are the addresses an object is known to end at, which is the only
+    thing that can shorten a run: a memcpy whose length the classification
+    recovered says where the image it copies stops, and the bytes after it are
+    not part of it however adjacent they are. The version trailer is the case
+    this exists for -- the RAM initialiser at 0xefe58 ends at 0xf113c and the
+    build string and the version word start there, so without the cut the
+    trailer is held by a copy it is merely next to.
     """
+    cuts = set(cuts)
     out = []
     for s in sorted(sections, key=lambda s: s.start):
         joins = (out and s.kind == "data" and out[-1][-1].kind == "data"
-                 and out[-1][-1].end == s.start)
+                 and out[-1][-1].end == s.start and s.start not in cuts)
         if joins:
             out[-1].append(s)
         else:
@@ -728,8 +737,10 @@ def pack(movable, free):
     return moves, (free[host][1] - low, free[host][1])
 
 
-def relayout(sections, mode, pinned, anchors, dead=(), data=False):
+def relayout(sections, mode, pinned, anchors, cuts=(), dead=(), data=False):
     """Give every section a new address, and prove none keeps its old one.
+
+    `cuts` are handed to `units`: the addresses an object is known to end at.
 
     `data` says the app's data is linked from the source abi/datagen.py writes
     (blobify's --data-source, DATA=1 on the scripts), which is the condition for
@@ -783,7 +794,7 @@ def relayout(sections, mode, pinned, anchors, dead=(), data=False):
                 held.setdefault(s.start, "data source that is switched off")
     dead = set(dead)
     kinds = ("code", "data") if data else ("code",)
-    all_units = units(sections)
+    all_units = units(sections, cuts)
     dead = set(u.sections[0].start for u in all_units
                if len(u.sections) == 1 and u.sections[0].start in dead)
     stuck = pinned | set(held)

@@ -1158,9 +1158,20 @@ def main():
         # the first one -- which is the app's whole .data, so the watch comes up
         # with its device tables full of the wrong words. Holding the run is the
         # honest fix while the cut has no way to say "these items move together".
+        # A run that is copied out in one go is one object to the code that
+        # reads it and many items to the partition: the copy's length comes
+        # from two RAM addresses and only the run's first byte is ever named,
+        # so every byte behind it is reached by still being where it was. The
+        # length is also the one thing in the image that says where such an
+        # object ends, so it is a cut as well as a hold: without it the version
+        # trailer, which starts where the RAM initialiser image stops, is held
+        # by a copy that does not reach it.
+        cuts = set()
         for w in words:
             if not w.get("span"):
                 continue
+            cuts.add(w["target"])
+            cuts.add(w["target"] + w["span"])
             for s in sections:
                 if s.start < w["target"] + w["span"] and w["target"] < s.end:
                     anchors[s.start] = "block a single copy reads"
@@ -1173,7 +1184,7 @@ def main():
         else:
             dead = set()
         moves, spare, held, dead = objectify.relayout(
-            sections, args.layout, pinned, anchors, dead, data=True)
+            sections, args.layout, pinned, anchors, cuts, dead, data=True)
         by_kind = collections.Counter(s.kind for s in sections if s.sym in moves)
         if args.layout == "pack":
             hole, spare = spare, objectify.SPARE_BASE
