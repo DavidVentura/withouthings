@@ -106,3 +106,169 @@ groups:
         symbol: get_fw_version
         proto: "unsigned int get_fw_version(void);"
         why: same section as the faithful reimplementation replaces.
+
+  - group: newlib
+    why: >
+      The libc the image carries is newlib 4.3.0.20230120 built by Withings from
+      the vanilla tarball (FIRMWARE.md's provenance section), and abi/refbuild.sh
+      builds that configuration back. This is the whole of it swapped for the
+      source archives: every body the build reproduces becomes a call into
+      libc.a instead of into the blob's copy, the one global the app and the
+      libc share is relocated onto the source's definition, and the four
+      reentrant allocator shims the image puts in front of FreeRTOS are written
+      out in C so the archive's nano-malloc is never pulled in.
+    sources: [replace/newlib_glue.c]
+    derive:
+      bodies: ../out/relink/libc-bodies.yaml
+      build: newlib-nano-big
+      reproduces: [exact, masked]
+      why: >
+        abi/libc_check.py compares every body abi/autonames.yaml classes `libc`
+        against the same body in the build, with the fields a relocation owns
+        masked out. `exact` and `masked` are the two verdicts that say the
+        source is the image's source; `differs` and `absent` are the bodies the
+        blob keeps, and they are reported by name at every link. `local` is the
+        third of those: a body the archive defines static to its own object,
+        which reproduces the image's bytes and still cannot be linked against,
+        because the name belongs to the source file (qsort's swapfunc, dtoa's
+        quorem, setenv_r's validate_structure).
+      except:
+        - symbol: fcntl
+          why: >
+            0x97fd0 is the stub _fstat_r at 0x91cd4 calls, and _fstat_r is
+            reached only from __swhatbuf_r at 0xa9030, which __smakebuf_r calls;
+            every `errno = <n>; return -1` stub compiles to the same four
+            instructions, so a body match cannot tell fcntl from _fstat and took
+            the name the archive has a global for. The exports below name it
+            _fstat, which is what the archive's own _fstat_r then binds to.
+    exports:
+      - at: 0x4ca2c
+        as: _write
+        proto: "int _write(int fd, const char *buf, int len);"
+        why: >
+          newlib is configured --disable-newlib-supplied-syscalls, so the
+          archive's _write_r has to find a _write and Withings supply it. This
+          is the one that is not a stub: _write_r at 0x90440 calls it, and
+          __swrite at 0xa858e (matched against the archive) calls _write_r; the
+          body takes the log UART's semaphore, which is where a printf goes.
+      - at: 0x97f26
+        as: _read
+        proto: "int _read(int fd, char *buf, int len);"
+        why: >
+          `errno = EIO; return -1`. _read_r at 0x9041c calls it, and the body
+          that calls _read_r is 0xa8568, the stdio.c entry before the matched
+          __swrite in the same object, which is __sread.
+      - at: 0x97f36
+        as: _lseek
+        proto: "int _lseek(int fd, int off, int whence);"
+        why: >
+          `errno = EIO; return -1`. _lseek_r at 0x903f8 calls it, and _lseek_r
+          is what the matched __sseek at 0xa85c6 calls -- its only call -- and
+          what the matched __swrite calls for its append case.
+      - at: 0x97f46
+        as: _close
+        proto: "int _close(int fd);"
+        why: >
+          `errno = EBADF; return -1`. _close_r at 0x903d8 calls it, and the body
+          that calls _close_r is 0xa85ea, the stdio.c entry after the matched
+          __sseek, which is __sclose.
+      - at: 0x97f56
+        as: _kill
+        proto: "int _kill(int pid, int sig);"
+        why: >
+          `errno = ENOTSUP; return -1`. _kill_r at 0x91eb4 calls it, and raise
+          at 0x91ea4 is what abort calls with SIGABRT.
+      - at: 0x97f66
+        as: _exit
+        proto: "void _exit(int status);"
+        why: >
+          `udf #0`, a two-byte trap. abort at 0xa920e is `movs r0,#6; bl 0x91ea4
+          (raise); movs r0,#1; bl 0x97f66`, which is newlib's abort with the
+          _exit(1) after the raise, so this is _exit and it faults rather than
+          returning.
+      - at: 0x97f68
+        as: _getpid
+        proto: "int _getpid(void);"
+        why: >
+          `return 1`. _getpid_r at 0xa926e is one tail call onto it and nothing
+          else, which is the whole of newlib's _getpid_r; _raise_r in the same
+          object calls _getpid_r to pick the pid it kills.
+      - at: 0x97fd0
+        as: _fstat
+        proto: "int _fstat(int fd, void *st);"
+        why: >
+          `errno = ENOSYS; return -1`, the stub the `except` above is about:
+          _fstat_r at 0x91cd4 calls it and __swhatbuf_r at 0xa9030 calls
+          _fstat_r, which __smakebuf_r (matched) is the only caller of.
+      - at: 0x97ff4
+        as: _isatty
+        proto: "int _isatty(int fd);"
+        why: >
+          `return fd <= 2`. _isatty_r at 0x91d1c calls it, and __smakebuf_r
+          calls _isatty_r to decide line buffering; that call is what pulls the
+          archive's isattyr.o into the link.
+    globals:
+      - at: 0x20024be0
+        as: __sf
+        proto: "extern char __sf[];"
+        why: >
+          The three standard streams, as one global array rather than a member
+          of struct _reent: a stock run has _impure_ptr->_stdin, _stdout and
+          _stderr holding 0x20024be0, 0x20024c48 and 0x20024cb0, which is this
+          address and this address plus one and two FILEs of 0x68. The blob's
+          __sinit at 0x91b78 sets `s->__cleanup` and then reads
+          `__stdio_exit_handler` as `0x20024be0 + 0x138` to decide whether to
+          run global_stdio_init, so the flag that says the streams are set up
+          travels with the array; relink.ld asserts the source build keeps the
+          same distance between the two.
+      - at: 0x20007698
+        as: environ
+        proto: "extern char **environ;"
+        why: >
+          The environment vector. _setenv_r at 0x8eb9c is one of the three
+          bodies the source build does not reproduce, so the blob keeps it and
+          goes on writing this pointer, while _findenv_r at 0x908a0 is taken
+          from the archive and reads the source's; they are the only two bodies
+          that name it, and unless it is one object the watch sets TZ in one
+          environment and reads it out of another. The hour the tracker's
+          timestamps move by without this is that read failing.
+      - at: 0x20006d48
+        as: _impure_ptr
+        proto: "extern void *_impure_ptr;"
+        why: >
+          The reentrancy pointer, and the only object the app and the libc
+          share: 37 literal-pool words hold this address and nothing holds an
+          address inside it. The classification calls a RAM address a constant
+          because nothing in flash moves when it changes, which stops being true
+          the moment the object it names is the source build's `impure_data`
+          rather than the blob's; both halves have to read one `_impure_ptr` or
+          each keeps its own stdio state and its own errno.
+    replacements:
+      - at: 0x97f6c
+        symbol: _malloc_r
+        proto: "void * _malloc_r(void *reent, unsigned int size);"
+        why: >
+          `mov r0,r1; b.w pvPortMalloc` -- the image has no sbrk heap, and the
+          reentrant allocator newlib calls is two instructions onto FreeRTOS
+          heap_4. Eight callers, all of them newlib bodies (__ssputs_r,
+          __smakebuf_r, _svfprintf_r, _setenv_r and the malloc wrappers).
+      - at: 0x97f72
+        symbol: _free_r
+        proto: "void _free_r(void *reent, void *p);"
+        why: "`mov r0,r1; b.w vPortFree`, the same shim on the free side."
+      - at: 0x97f78
+        symbol: _realloc_r
+        proto: "void * _realloc_r(void *reent, void *p, unsigned int size);"
+        why: >
+          `if (!p) return pvPortMalloc(size); if (!size) { vPortFree(p); return
+          0; } q = pvPortMalloc(size); if (!q) return 0; memcpy(q, p, size);
+          vPortFree(p); return q;` -- read off 0x97f78..0x97fb2. The memcpy
+          length is the new size and not the old one, which over-reads when a
+          block grows; heap_4 gives no usable size, so that is what the image
+          does and what this reproduces.
+      - at: 0x97fb4
+        symbol: _calloc_r
+        proto: "void * _calloc_r(void *reent, unsigned int n, unsigned int size);"
+        why: >
+          `n *= size; p = pvPortMalloc(n); if (p) memset(p, 0, n); return p;`
+          -- read off 0x97fb4..0x97fce. No overflow check, as in the image.

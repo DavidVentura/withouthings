@@ -12,6 +12,7 @@ proof this step rests on: nothing is moved, so any difference is a bug in the
 cutting.
 """
 
+import collections
 import json
 import os
 
@@ -495,6 +496,42 @@ def word_relocations(blob, layout, words, skip, retarget=None):
         counts["pointer"] += 1
         counts["into_code"] += 1 if row["in_code"] else 0
     counts["ram"] = sum(1 for r in words if r["signal"] == "ram")
+    return counts
+
+
+def global_relocations(blob, layout, words, skip, globals_):
+    """Every pool word naming a RAM global, as an R_ARM_ABS32 onto its definition.
+
+    A RAM address is a constant to the classification -- nothing in flash moves
+    when it changes -- which is right until the object that lives there is the
+    one the source build defines. Then the address in the word is the blob's
+    copy and the definition is somewhere else, and the two have to be the same
+    object or the app and the library each keep half the state. The word is
+    blanked and bound to the symbol, which is undefined in the object, so the
+    link decides where the object really is.
+
+    A word is matched on the whole address and not on a range: an offset into
+    the object would need an addend the classification has not established, and
+    a global whose interior is named is refused rather than guessed at.
+    """
+    by_value = {g["at"]: g["as"] for g in globals_}
+    counts = collections.Counter()
+    for row in words:
+        if row["addr"] in skip or row["value"] not in by_value:
+            continue
+        section = layout.at(row["addr"])
+        if section is None or row["addr"] + 4 > section.end:
+            raise SystemExit("word 0x%x is not inside one section" % row["addr"])
+        sym = by_value[row["value"]]
+        off = row["addr"] - APP_BASE
+        blob[off:off + 4] = b"\0\0\0\0"
+        section.relocs.append((row["addr"] - section.start, sym, R_ARM_ABS32))
+        skip.add(row["addr"])
+        counts[sym] += 1
+    missing = [g["as"] for g in globals_ if not counts[g["as"]]]
+    if missing:
+        raise SystemExit("no word names %s, so the global is not the one the image"
+                         " uses" % ", ".join(missing))
     return counts
 
 

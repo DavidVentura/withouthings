@@ -74,11 +74,19 @@ void app_error_handler_bare(unsigned int error_code)
  * a call to memset: the app's memset is not on this side of the boundary. */
 extern unsigned int __libbss_start[];
 extern unsigned int __libbss_end[];
+extern unsigned int __libdata_start[];
+extern unsigned int __libdata_end[];
+extern unsigned int __libdata_load[];
 
 void appl_SystemInit(void);
 
 void relink_startup(void)
 {
+    const unsigned int *from = __libdata_load;
+
+    for (volatile unsigned int *p = __libdata_start; p != __libdata_end; p++) {
+        *p = *from++;
+    }
     for (volatile unsigned int *p = __libbss_start; p != __libbss_end; p++) {
         *p = 0;
     }

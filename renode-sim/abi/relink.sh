@@ -73,7 +73,22 @@ done
 # whose feature names a group turns it on by itself, so the argument is built
 # here and handed to every blobify run including the identity one.
 REPLACE_ARGS=""
+LIBS=""
 for g in $(echo "${REPLACE:-}" | tr , ' '); do REPLACE_ARGS="$REPLACE_ARGS --replace $g"; done
+
+# The newlib group swaps the image's libc for the source build's, so the link
+# needs the archives it swapped them for. abi/libc_check.py's verdicts are what
+# the group derives its entries from, so they are measured here rather than
+# carried in the repo: a newlib built differently gives different ones.
+case ",${REPLACE:-}," in *,newlib,*)
+    NEWLIB=${NEWLIB:-newlib-nano-big}
+    TC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
+    python3 libc_check.py --build "$NEWLIB" --emit "$OUT/libc-bodies.yaml"
+    LIBS="$ROOT/build/$NEWLIB/arm-none-eabi/newlib/libc.a
+ $ROOT/build/$NEWLIB/arm-none-eabi/newlib/libm.a
+ $TC/lib/gcc/arm-none-eabi/13.2.1/thumb/v7e-m+fp/hard/libgcc.a"
+    ;;
+esac
 
 # The objectified blob must link back to the stock image before it is worth
 # linking against anything else; this writes $OUT/appl-blob.o and the two
@@ -107,7 +122,7 @@ done < ../out/replace-sources.txt
 # to check a gc link: where each surviving section ended up, and which ranges
 # are gone, so a word still holding one of those addresses can be found.
 "$GCC-ld" -L ../out -T relink.ld --gc-sections --print-gc-sections -M \
-    --emit-relocs -o "$OUT/relinked.elf" "$OUT/appl-blob.o" $objs \
+    --emit-relocs -o "$OUT/relinked.elf" "$OUT/appl-blob.o" $objs $LIBS \
     > "$OUT/relinked.map" 2> "$OUT/relinked.gc"
 cat "$OUT/relinked.gc" >&2
 "$GCC-objcopy" -O binary --gap-fill 0xff "$OUT/relinked.elf" "$OUT/appl.bin"

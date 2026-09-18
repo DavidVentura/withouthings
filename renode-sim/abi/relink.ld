@@ -50,17 +50,29 @@ SECTIONS
         __libbss_end = .;
     } > LRAM
 
-    /* relink_startup (relink_glue.c) zeroes .libbss, but nothing copies the
-     * source library's .data: the blob's Reset_Handler only knows about the
-     * blob's own image. Every kernel static must therefore be zero-initialised
-     * and land in .bss. port.c's uxCriticalNesting is the one that is not, and
-     * xPortStartScheduler assigns it before the first task runs, so
-     * -fno-zero-initialized-in-bss is not needed and this holds. If a static
-     * ever does need a non-zero initialiser, relink_startup is where the .data
-     * copy goes, with a LOAD region in .libtext to copy it from. */
-    .libdata : ALIGN(4) { *(.data .data.*) } > LRAM
-    ASSERT(SIZEOF(.libdata) == 0,
-           "source library has initialised data but nothing copies it; add an init stub")
+    /* The blob's Reset_Handler copies the blob's own .data and knows nothing
+     * about this one, so relink_startup (relink_glue.c) copies it from the
+     * load image the linker leaves in LIB. newlib is what makes it non-empty:
+     * `impure_data` is an initialised struct _reent and `_impure_ptr` points at
+     * it, and both the app and the library read that pointer. */
+    .libdata : ALIGN(4)
+    {
+        __libdata_start = .;
+        *(.data .data.*)
+        . = ALIGN(4);
+        __libdata_end = .;
+    } > LRAM AT> LIB
+    __libdata_load = LOADADDR(.libdata);
 
     /DISCARD/ : { *(.ARM.exidx*) *(.comment) *(.note*) *(.debug*) }
 }
+
+/* The blob reaches __stdio_exit_handler as __sf + 0x138 -- it is the word after
+ * the three FILEs, in the same translation unit -- and abi/replacements.yaml's
+ * newlib group relocates only __sf, so the two have to stay that far apart. The
+ * PROVIDEs are what makes the link without newlib pass the same assertion:
+ * neither symbol exists there, and a link that defines one defines both. */
+PROVIDE(__sf = 0);
+PROVIDE(__stdio_exit_handler = 0x138);
+ASSERT(__stdio_exit_handler - __sf == 0x138,
+       "newlib's __stdio_exit_handler is no longer the word after __sf[3]")

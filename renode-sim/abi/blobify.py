@@ -279,15 +279,20 @@ def stock_definitions(boundary, replacements, path):
     # library gets, so the identity link still reproduces the image.
     for e in replacements.entries:
         defs[e["symbol"]] = e["at"] | 1
+    # A RAM global's stand-in is the blob's own copy of the object, and it is
+    # data: the Thumb bit is not part of an object's address, and setting it
+    # would make the identity link write an address one byte past the object.
+    data_defs = dict((e["as"], e["at"]) for e in replacements.globals)
 
     strtab = bytearray(b"\0")
     shstr = bytearray(b"\0")
     symtab = bytearray(b"\0" * 16)
-    for sym, value in sorted(defs.items()):
+    for sym, value in sorted(list(defs.items()) + list(data_defs.items())):
         off = len(strtab)
         strtab += sym.encode() + b"\0"
+        styp = STT_OBJECT if sym in data_defs else STT_FUNC
         symtab += struct.pack("<IIIBBH", off, value, 0,
-                              (STB_GLOBAL << 4) | STT_FUNC, 0, SHN_ABS)
+                              (STB_GLOBAL << 4) | styp, 0, SHN_ABS)
 
     names = {}
     for n in (".symtab", ".strtab", ".shstrtab"):
@@ -318,7 +323,7 @@ def stock_definitions(boundary, replacements, path):
             f.write(b)
         f.write(b"\0" * (shoff - f.tell()))
         f.write(b"".join(sh))
-    return len(defs)
+    return len(defs) + len(data_defs)
 
 
 def pinned_addresses(manifest, layout):
@@ -331,6 +336,62 @@ def pinned_addresses(manifest, layout):
             sys.exit("fixed point %s at 0x%x is outside the app" % (f["name"], addr))
         pinned.add(section.start)
     return pinned
+
+def derive(spec, relative_to):
+    """The replacement entries a `derive:` block stands for, from a measurement.
+
+    The libc group is 95 entries long and every one of them is the same
+    decision: the source build reproduces this body, so the link may take it
+    from the archive instead of the blob. Writing them out by hand would make
+    the list a decision, which it is not; this reads abi/libc_check.py's
+    verdicts and turns the ones that reproduce into entries.
+    """
+    bodies = os.path.join(relative_to, spec["bodies"])
+    if not os.path.exists(bodies):
+        sys.exit("%s does not exist; run abi/libc_check.py --emit" % bodies)
+    verdicts = yaml.safe_load(open(bodies))
+    if verdicts["build"] != spec["build"]:
+        sys.exit("%s was measured against %s, the group asks for %s"
+                 % (bodies, verdicts["build"], spec["build"]))
+    wanted = set(spec["reproduces"])
+    excepted = {e["symbol"]: e["why"] for e in spec.get("except", [])}
+    found = set(b["symbol"] for b in verdicts["bodies"])
+    for symbol in excepted:
+        if symbol not in found:
+            sys.exit("%s excepts %s, which %s does not measure"
+                     % (relative_to, symbol, bodies))
+    return [{"at": b["address"], "symbol": b["symbol"], "derived": True,
+             "why": "%s: %s" % (b["verdict"], b["why"])}
+            for b in verdicts["bodies"]
+            if b["verdict"] in wanted and b["symbol"] not in excepted]
+
+
+class ReferenceIndex(object):
+    """Every reference the partition holds, keyed by the address it names.
+
+    The refusal test asks the same four questions of each candidate body, and
+    there are 95 candidates and tens of thousands of references; asked
+    address-first each question is a dict lookup per byte of the body.
+    """
+
+    def __init__(self, refs, reads, words):
+        self.falls_into = collections.defaultdict(list)
+        self.falls_out_of = collections.defaultdict(list)
+        self.read_by = collections.defaultdict(list)
+        self.called_by = collections.defaultdict(list)
+        self.named_by = collections.defaultdict(list)
+        for row in refs["fallthrough"]:
+            self.falls_into[row["to"]].append(row["from"])
+            self.falls_out_of[row["from"]].append(row["to"])
+        for site, target in reads:
+            self.read_by[target].append(site)
+        for row in refs["calls"]:
+            if not row["external"]:
+                self.called_by[row["to"]].append(row["from"])
+        for word in words:
+            if word.get("target") is not None:
+                self.named_by[word["target"]].append(word)
+
 
 class Replacements(object):
     """abi/replacements.yaml: partition sections bound to a definition from source.
@@ -350,12 +411,19 @@ class Replacements(object):
         if unknown:
             sys.exit("%s names no group of %s" % (", ".join(unknown), path))
         self.entries, self.exports, self.sources = [], [], []
+        self.globals, self.refused = [], []
         for name in wanted:
             group = groups[name]
             self.sources += group.get("sources", [])
             for e in group.get("exports", []):
                 self.exports.append(e)
-            for e in group["replacements"]:
+            for e in group.get("globals", []):
+                e = dict(e, group=name)
+                e["at"] = int(str(e["at"]), 0)
+                self.globals.append(e)
+            derived = (derive(group["derive"], os.path.dirname(path))
+                       if "derive" in group else [])
+            for e in group.get("replacements", []) + derived:
                 e = dict(e, group=name)
                 e["at"] = int(str(e["at"]), 0)
                 self.entries.append(e)
@@ -370,6 +438,11 @@ class Replacements(object):
             if seen.setdefault(e["as"], e["at"]) != e["at"]:
                 sys.exit("%s is exported from two addresses" % e["as"])
         self.exports = list({e["as"]: e for e in self.exports}.values())
+        seen = {}
+        for e in self.globals:
+            if seen.setdefault(e["as"], e["at"]) != e["at"]:
+                sys.exit("%s is a global at two addresses" % e["as"])
+        self.globals = list({e["as"]: e for e in self.globals}.values())
         self.by_start = {}
 
     def symbols(self):
@@ -381,75 +454,85 @@ class Replacements(object):
         Everything refused here is a reference the linker has no way to express
         against a symbol that is not the section's own start: a second function
         in the same bytes, a fall-through, a pool word read from outside, an
-        entry into the middle. Each is a fact about the image, so it is refused
-        rather than worked around.
+        entry into the middle. Each is a fact about the image, so a hand-written
+        entry is refused rather than worked around. A derived entry is dropped
+        with the same reason instead, because the derivation is a measurement of
+        what the source build reproduces and says nothing about how the image
+        happens to have cut that body.
         """
+        index = ReferenceIndex(refs, reads, words)
         retarget = {}
         for e in self.entries:
-            at, symbol = e["at"], e["symbol"]
-            section = layout.at(at)
-            if section is None:
-                sys.exit("replacement %s: 0x%x is outside the app" % (symbol, at))
-            if section.start != at:
-                sys.exit("replacement %s: 0x%x is inside the section %s at 0x%x,"
-                         " not its start" % (symbol, at, section.sym, section.start))
-            if section.kind != "code":
-                sys.exit("replacement %s: 0x%x is a %s section"
-                         % (symbol, at, section.kind))
-            if len(section.functions) > 1:
-                sys.exit("replacement %s: the section at 0x%x holds %d functions"
-                         " (%s); a replacement is one definition"
-                         % (symbol, at, len(section.functions),
-                            ", ".join("0x%x" % f for f in section.functions)))
-            if section.labels:
-                sys.exit("replacement %s: the section at 0x%x carries the interior"
-                         " symbols %s, so something names bytes inside the body"
-                         % (symbol, at, ", ".join(sorted(section.labels.values()))))
-            inside = lambda a: section.start <= a < section.end
-            for row in refs["fallthrough"]:
-                if inside(row["to"]) and not inside(row["from"]):
-                    sys.exit("replacement %s: 0x%x falls through into 0x%x, and a"
-                             " replacement cannot be fallen into"
-                             % (symbol, row["from"], row["to"]))
-                if inside(row["from"]) and not inside(row["to"]):
-                    sys.exit("replacement %s: 0x%x falls through out of the body"
-                             " into 0x%x, so the body is not a whole function"
-                             % (symbol, row["from"], row["to"]))
-            for site, target in reads:
-                if inside(target) and not inside(site):
-                    sys.exit("replacement %s: 0x%x reads the word 0x%x inside the"
-                             " body, which goes away with it"
-                             % (symbol, site, target))
-            for row in refs["calls"]:
-                if row["external"] or not inside(row["to"]) or inside(row["from"]):
-                    continue
-                if row["to"] != at:
-                    sys.exit("replacement %s: 0x%x enters the body at 0x%x, which"
-                             " is not its entry point" % (symbol, row["from"], row["to"]))
-            for word in words:
-                target = word.get("target")
-                if target is None or not inside(target):
-                    continue
-                if word["class"] == "review":
-                    sys.exit("replacement %s: the word 0x%x is still unclassified"
-                             " and may name 0x%x" % (symbol, word["addr"], target))
-                if word["class"] != "pointer":
-                    continue
-                if target != at or not word["thumb_target"]:
-                    sys.exit("replacement %s: the word 0x%x names 0x%x%s, not the"
-                             " entry point" % (symbol, word["addr"], target,
-                                               "" if word["thumb_target"] else " as data"))
-            if section.sym == symbol:
-                sys.exit("replacement %s: the partition still holds the name, so"
-                         " the reservation did not take" % symbol)
-            if "name" in e and e["name"] != section.sym:
-                sys.exit("replacement %s: 0x%x is called %s in the entry and %s"
-                         " in the partition" % (symbol, at, e["name"], section.sym))
-            section.sym = "orig_" + symbol
+            why = self.refusal(e, layout, index)
+            if why is not None:
+                if not e.get("derived"):
+                    sys.exit("replacement %s: %s" % (e["symbol"], why))
+                self.refused.append((e, why))
+                continue
+            section = layout.at(e["at"])
+            section.sym = "orig_" + e["symbol"]
             section.name = ".text." + section.sym
-            retarget[at] = symbol
+            retarget[e["at"]] = e["symbol"]
             self.by_start[section.start] = e
         return retarget
+
+    @staticmethod
+    def refusal(e, layout, index):
+        """Why this section cannot be swapped for a definition, or None."""
+        at, symbol = e["at"], e["symbol"]
+        section = layout.at(at)
+        if section is None:
+            return "0x%x is outside the app" % at
+        if section.start != at:
+            return ("0x%x is inside the section %s at 0x%x, not its start"
+                    % (at, section.sym, section.start))
+        if section.kind != "code":
+            return "0x%x is a %s section" % (at, section.kind)
+        if len(section.functions) > 1:
+            return ("the section at 0x%x holds %d functions (%s); a replacement"
+                    " is one definition"
+                    % (at, len(section.functions),
+                       ", ".join("0x%x" % f for f in section.functions)))
+        if section.labels:
+            return ("the section at 0x%x carries the interior symbols %s, so"
+                    " something names bytes inside the body"
+                    % (at, ", ".join(sorted(section.labels.values()))))
+        inside = lambda a: section.start <= a < section.end
+        for addr in range(section.start, section.end):
+            for site in index.falls_into.get(addr, ()):
+                if not inside(site):
+                    return ("0x%x falls through into 0x%x, and a replacement"
+                            " cannot be fallen into" % (site, addr))
+            for target in index.falls_out_of.get(addr, ()):
+                if not inside(target):
+                    return ("0x%x falls through out of the body into 0x%x, so"
+                            " the body is not a whole function" % (addr, target))
+            for site in index.read_by.get(addr, ()):
+                if not inside(site):
+                    return ("0x%x reads the word 0x%x inside the body, which goes"
+                            " away with it" % (site, addr))
+            for site in index.called_by.get(addr, ()):
+                if inside(site) or addr == at:
+                    continue
+                return ("0x%x enters the body at 0x%x, which is not its entry"
+                        " point" % (site, addr))
+            for word in index.named_by.get(addr, ()):
+                if word["class"] == "review":
+                    return ("the word 0x%x is still unclassified and may name"
+                            " 0x%x" % (word["addr"], addr))
+                if word["class"] != "pointer":
+                    continue
+                if addr != at or not word["thumb_target"]:
+                    return ("the word 0x%x names 0x%x%s, not the entry point"
+                            % (word["addr"], addr,
+                               "" if word["thumb_target"] else " as data"))
+        if section.sym == symbol:
+            return ("the partition still holds the name, so the reservation did"
+                    " not take")
+        if "name" in e and e["name"] != section.sym:
+            return ("0x%x is called %s in the entry and %s in the partition"
+                    % (at, e["name"], section.sym))
+        return None
 
     def header(self, path):
         """out/replace.h: what the sources may call, and nothing else.
@@ -460,11 +543,15 @@ class Replacements(object):
         """
         lines = ["/* Generated by abi/blobify.py from abi/replacements.yaml --"
                  " do not edit. */", "#ifndef REPLACE_H", "#define REPLACE_H", ""]
-        for e in self.exports:
+        for e in self.exports + self.globals:
+            if "proto" not in e:
+                continue
             lines.append("/* 0x%x: %s */" % (e["at"], " ".join(str(e["why"]).split())))
             proto = e["proto"]
             lines.append(proto if proto.startswith("extern") else "extern " + proto)
         for e in self.entries:
+            if "proto" not in e:
+                continue        # the archive defines it; no source of ours calls it
             proto, symbol = e["proto"], e["symbol"]
             marker = " %s(" % symbol
             if proto.count(marker) != 1:
@@ -694,6 +781,12 @@ def main():
         reserved[e["symbol"]] = NOWHERE
     for e in replacements.exports:
         reserved[e["as"]] = e["at"]
+    # A RAM global has no section of its own in the object -- the object is only
+    # flash -- so there is nothing to rename, but the name still has to stay
+    # undefined or a partition section that happens to carry it would swallow
+    # the relocation.
+    for e in replacements.globals:
+        reserved[e["as"]] = NOWHERE
     # `adr rN,#imm` is the other pc-relative reference the image holds and the
     # only one with no relocation at all: 21 of the 179 in this image name a
     # data item outside the function's section, so unless the two ends are one
@@ -725,6 +818,8 @@ def main():
     counts, unrelocatable, indirect = objectify.internal_relocations(
         blob, layout, refs["calls"], owned, retarget)
     word_counts = objectify.word_relocations(blob, layout, words, owned, retarget)
+    global_counts = objectify.global_relocations(blob, layout, words, owned,
+                                                 replacements.globals)
     if unrelocatable:
         for row in unrelocatable[:20]:
             print("0x%x: %s (%d bytes) to 0x%x leaves its section and cannot be"
@@ -769,11 +864,17 @@ def main():
 
     for e in boundary.get("startup", []):
         export(e["original_symbol"], int(e["original"]), STT_FUNC)
+    # A name a replacement owns is undefined in the object, so the boundary
+    # cannot also export the blob's copy of it: memset and memcpy are the app
+    # bodies the source kernel calls and are also libc bodies the newlib group
+    # takes from the archive, and both halves have to reach the same one.
+    replaced_names = set(replacements.symbols())
     for e in boundary["lib_to_app"]:
-        if e["symbol"] and not e.get("library_not_app"):
+        if e["symbol"] and not e.get("library_not_app") \
+                and e["symbol"] not in replaced_names:
             export(e["symbol"], int(e["addr"]), STT_FUNC)
     for v in boundary["data_references"]["vector_table"]:
-        if not v.get("relocate"):
+        if not v.get("relocate") and v["symbol"] not in replaced_names:
             export(v["symbol"], v["word"] & ~1, STT_FUNC)
     for e in replacements.exports:
         export(e["as"], e["at"], STT_OBJECT if e.get("kind") == "data" else STT_FUNC)
@@ -874,6 +975,16 @@ def main():
     print("  words: %d R_ARM_ABS32 (%d into code, %d RAM pointers left as"
           " constants because RAM does not move yet)"
           % (word_counts["pointer"], word_counts["into_code"], word_counts["ram"]))
+    if replacements.globals:
+        print("  globals: %s"
+              % ", ".join("%s (0x%x) relocated in %d words" % (g["as"], g["at"],
+                                                               global_counts[g["as"]])
+                          for g in replacements.globals))
+    if replacements.refused:
+        print("  %d derived replacements refused, so the blob keeps those bodies:"
+              % len(replacements.refused))
+        for e, why in replacements.refused:
+            print("      %-22s 0x%05x  %s" % (e["symbol"], e["at"], why))
     if replacements.entries:
         print("  replaced %s: %d sections (%d bytes) renamed orig_* and left"
               " referenced by nothing"
