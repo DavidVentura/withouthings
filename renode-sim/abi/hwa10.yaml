@@ -1415,6 +1415,936 @@ functions:
     args: [[const struct wpp_VasistasDbt *, obj], [void **, cursor]]
     notes: WPP object type 2523 (VasistasDbt)
 
+  # ---- dblib, the settings store on the external MX25R -------------------------
+  - name: dblib_get
+    address: 0x48294
+    ret: i32
+    args: [[u16, ie], [void *, buf], [u16, len]]
+    notes: >
+      one information element into the caller's buffer. The body builds a
+      dblib_query on its stack (strh r0 at +0, strh r2 at +2, -4 at +4, zeros at
+      +8 and +0xa, 0x482a2..0x482ca) and hands it to the store walk at 0x975ca
+      with the caller's buffer in r2; 2 when the store is not initialised
+      (0x482ee), 0 on a hit.
+  - name: dblib_set
+    address: 0x47df0
+    ret: i32
+    args: [[u16, ie], [const void *, buf], [u16, len]]
+    notes: >
+      the blob setter: passes (ie, buf, len, 0) to the common writer 0x475c4,
+      whose fifth argument is a value-kind tag the other setter wrappers vary
+      (0x47e58 and 0x480f0 pass 1, 0x47f58 and 0x4814c pass 2).
+  - name: dblib_query_init
+    address: 0x47b00
+    ret: i32
+    args: [[struct dblib_query *, q], [u16, ie], [u16, len]]
+    notes: >
+      opens a cursor over every entry stored under one id. Stores ie, len, -4, 0
+      and 0 into the twelve-byte descriptor at 0x47b12..0x47b20.
+  - name: dblib_query_next
+    address: 0x47b8c
+    ret: i32
+    args: [[struct dblib_query *, q], [void *, buf]]
+    notes: >
+      the next entry the cursor reaches into buf, non-zero when the cursor runs
+      out; every enumerating caller loops on `== 0`.
+  - name: dblib_query_end
+    address: 0x47b64
+    ret: i32
+    args: [[struct dblib_query *, q]]
+    notes: closes the cursor; 0x472ac under the same lock dblib_query_init takes.
+  - name: dblib_get_first
+    address: 0x9776e
+    ret: i32
+    args: [[u16, ie], [void *, buf], [u16, len]]
+    notes: >
+      dblib_query_init, one dblib_query_next, dblib_query_end, returning the
+      next's result; the whole body is those three calls.
+  - name: dblib_count
+    address: 0x97746
+    ret: i32
+    args: [[u16, ie]]
+    notes: >
+      how many entries are stored under one id: a cursor opened with length 0 and
+      drained with a null buffer, counting the iterations.
+
+  # ---- WPP reply sizers --------------------------------------------------------
+  # abi/protocol.py --emit-sizers-yaml: the stub the send path is handed in r2 at
+  # the same call as the type's encoder in r3. Declaring the pair lets gen.py emit
+  # a typed wpp_send_<Class>, which is what takes the cast out of the reply sites.
+  - name: wpp_obj_ActivitySubcategory_size
+    address: 0x9908a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count ActivitySubcategory's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_ActivitySubcategory_encode
+      in r3 at 0x33844, 0x6aafa, 0x6ac8e.
+  - name: wpp_obj_AlarmEnabled_size
+    address: 0x9902a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count AlarmEnabled's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_AlarmEnabled_encode
+      in r3 at 0x3ceae.
+  - name: wpp_obj_Alarm_size
+    address: 0x98ff0
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Alarm's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Alarm_encode
+      in r3 at 0x3cfc4.
+  - name: wpp_obj_AlgoParam_size
+    address: 0x9911e
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count AlgoParam's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_AlgoParam_encode
+      in r3 at 0x4ad18, 0x4ad86, 0x61f46, 0x61f6a.
+  - name: wpp_obj_AlgorithmVersion_size
+    address: 0x98fb6
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count AlgorithmVersion's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_AlgorithmVersion_encode
+      in r3 at 0x33c5c, 0x33c9c, 0x4acd8, 0x4ad6e, 0x61f06, 0x6377e.
+  - name: wpp_obj_AncsStatus_size
+    address: 0x99032
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count AncsStatus's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_AncsStatus_encode
+      in r3 at 0x3f246.
+  - name: wpp_obj_BatteryPercent_size
+    address: 0x98f32
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count BatteryPercent's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_BatteryPercent_encode
+      in r3 at 0x408fc.
+  - name: wpp_obj_BatteryVoltageMv_size
+    address: 0x98f6c
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count BatteryVoltageMv's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_BatteryVoltageMv_encode
+      in r3 at 0x40908.
+  - name: wpp_obj_Boolean_size
+    address: 0x99116
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Boolean's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Boolean_encode
+      in r3 at 0x6abc4.
+  - name: wpp_obj_Calories_size
+    address: 0x9905e
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Calories's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Calories_encode
+      in r3 at 0x6ce0c.
+  - name: wpp_obj_Cmderror_size
+    address: 0x98f36
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Cmderror's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Cmderror_encode
+      in r3 at 0x6c7d6.
+  - name: wpp_obj_ConnectReason_size
+    address: 0x98f42
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count ConnectReason's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_ConnectReason_encode
+      in r3 at 0x6ca06.
+  - name: wpp_obj_CustomizationIdGet_size
+    address: 0x99042
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count CustomizationIdGet's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_CustomizationIdGet_encode
+      in r3 at 0x46c68.
+  - name: wpp_obj_CycleTrackingMenstruationStart_size
+    address: 0x99166
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count CycleTrackingMenstruationStart's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_CycleTrackingMenstruationStart_encode
+      in r3 at 0x47262.
+  - name: wpp_obj_DebugDumpAnchor_size
+    address: 0x990a2
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count DebugDumpAnchor's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_DebugDumpAnchor_encode
+      in r3 at 0x6d6da.
+  - name: wpp_obj_DebugDumpData_size
+    address: 0x98f4a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count DebugDumpData's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_DebugDumpData_encode
+      in r3 at 0x6dba6, 0x6dbc6, 0x6dc9c, 0x6de06, 0x6de26, 0x6df18.
+  - name: wpp_obj_DebugDumpIgnoreData_size
+    address: 0x98f70
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count DebugDumpIgnoreData's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_DebugDumpIgnoreData_encode
+      in r3 at 0x6ddd6.
+  - name: wpp_obj_DebugDumpType_size
+    address: 0x98f50
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count DebugDumpType's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_DebugDumpType_encode
+      in r3 at 0x6d81a, 0x6d938, 0x6dab8.
+  - name: wpp_obj_DeviceChallengeReply_size
+    address: 0x99136
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count DeviceChallengeReply's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_DeviceChallengeReply_encode
+      in r3 at 0x6d47c.
+  - name: wpp_obj_DigitalCrownMotionDelta_size
+    address: 0x990d4
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count DigitalCrownMotionDelta's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_DigitalCrownMotionDelta_encode
+      in r3 at 0x49ad8.
+  - name: wpp_obj_Distance_size
+    address: 0x99062
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Distance's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Distance_encode
+      in r3 at 0x6ce18.
+  - name: wpp_obj_Duration_size
+    address: 0x99066
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Duration's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Duration_encode
+      in r3 at 0x6cdf4.
+  - name: wpp_obj_EndTime_size
+    address: 0x9909a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count EndTime's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_EndTime_encode
+      in r3 at 0x3cffa, 0x6acde.
+  - name: wpp_obj_EventV2_size
+    address: 0x99112
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count EventV2's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_EventV2_encode
+      in r3 at 0x6ebe4.
+  - name: wpp_obj_FactoryMode_size
+    address: 0x990a6
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count FactoryMode's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_FactoryMode_encode
+      in r3 at 0x4ca10.
+  - name: wpp_obj_FactoryState_size
+    address: 0x98f80
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count FactoryState's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_FactoryState_encode
+      in r3 at 0x6c8fa, 0x6d2ac.
+  - name: wpp_obj_FactoryTestDsc_size
+    address: 0x99148
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count FactoryTestDsc's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_FactoryTestDsc_encode
+      in r3 at 0x30278.
+  - name: wpp_obj_FeatureMask_size
+    address: 0x98f88
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count FeatureMask's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_FeatureMask_encode
+      in r3 at 0x3ce70, 0x6cb0e.
+  - name: wpp_obj_FirmwareVersion_size
+    address: 0x98fba
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count FirmwareVersion's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_FirmwareVersion_encode
+      in r3 at 0x4acea, 0x4ad7a, 0x61f18, 0x63790.
+  - name: wpp_obj_FluxSensorMeasureResult_size
+    address: 0x99132
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count FluxSensorMeasureResult's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_FluxSensorMeasureResult_encode
+      in r3 at 0x5b678.
+  - name: wpp_obj_FwChunkRequest_size
+    address: 0x99092
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count FwChunkRequest's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_FwChunkRequest_encode
+      in r3 at 0x65042.
+  - name: wpp_obj_GlanceStatus_size
+    address: 0x990aa
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count GlanceStatus's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_GlanceStatus_encode
+      in r3 at 0x4d328.
+  - name: wpp_obj_Gpio_size
+    address: 0x98fbe
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Gpio's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Gpio_encode
+      in r3 at 0x7e64c.
+  - name: wpp_obj_GreentegIntegrationFactor_size
+    address: 0x9916a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count GreentegIntegrationFactor's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_GreentegIntegrationFactor_encode
+      in r3 at 0x4daaa.
+  - name: wpp_obj_GreentegSensitivityBin_size
+    address: 0x99156
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count GreentegSensitivityBin's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_GreentegSensitivityBin_encode
+      in r3 at 0x4d792.
+  - name: wpp_obj_Heartrate_size
+    address: 0x990e4
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Heartrate's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Heartrate_encode
+      in r3 at 0x62582.
+  - name: wpp_obj_HrAutoAlgo_size
+    address: 0x98f94
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count HrAutoAlgo's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_HrAutoAlgo_encode
+      in r3 at 0x4eb66.
+  - name: wpp_obj_Id_size
+    address: 0x98faa
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Id's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Id_encode
+      in r3 at 0x5136e.
+  - name: wpp_obj_ImageMetadata_size
+    address: 0x9906e
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count ImageMetadata's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_ImageMetadata_encode
+      in r3 at 0x56456, 0x564e4, 0x6b150, 0x6b16a.
+  - name: wpp_obj_InactivityCfg_size
+    address: 0x9911a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count InactivityCfg's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_InactivityCfg_encode
+      in r3 at 0x5f00c.
+  - name: wpp_obj_Int32_size
+    address: 0x98fcc
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Int32's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Int32_encode
+      in r3 at 0x6d1b6.
+  - name: wpp_obj_LightSensorReply_size
+    address: 0x9903e
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count LightSensorReply's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_LightSensorReply_encode
+      in r3 at 0x50708.
+  - name: wpp_obj_LiveHr_size
+    address: 0x9904e
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count LiveHr's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_LiveHr_encode
+      in r3 at 0x54760, 0x6add6.
+  - name: wpp_obj_LocaleSet_size
+    address: 0x98f54
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count LocaleSet's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_LocaleSet_encode
+      in r3 at 0x512ca.
+  - name: wpp_obj_LuminosityLevel_size
+    address: 0x9904a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count LuminosityLevel's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_LuminosityLevel_encode
+      in r3 at 0x3412a.
+  - name: wpp_obj_Mac_size
+    address: 0x98fd0
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Mac's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Mac_encode
+      in r3 at 0x6d5f0.
+  - name: wpp_obj_McuId_size
+    address: 0x98f8c
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count McuId's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_McuId_encode
+      in r3 at 0x6cbd4.
+  - name: wpp_obj_MeasureCategory_size
+    address: 0x990ae
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count MeasureCategory's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_MeasureCategory_encode
+      in r3 at 0x54528, 0x54652.
+  - name: wpp_obj_MeasureLiveMeta_size
+    address: 0x990b2
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count MeasureLiveMeta's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_MeasureLiveMeta_encode
+      in r3 at 0x542fe, 0x54662.
+  - name: wpp_obj_MeasureStopReason_size
+    address: 0x990bc
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count MeasureStopReason's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_MeasureStopReason_encode
+      in r3 at 0x54534.
+  - name: wpp_obj_MoveHands_size
+    address: 0x99126
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count MoveHands's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_MoveHands_encode
+      in r3 at 0x6d21c.
+  - name: wpp_obj_MtuAttBle_size
+    address: 0x990e0
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count MtuAttBle's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_MtuAttBle_encode
+      in r3 at 0x6d350.
+  - name: wpp_obj_MtuTls_size
+    address: 0x990dc
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count MtuTls's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_MtuTls_encode
+      in r3 at 0x6d33c.
+  - name: wpp_obj_MtuWpp_size
+    address: 0x990d8
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count MtuWpp's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_MtuWpp_encode
+      in r3 at 0x6d328.
+  - name: wpp_obj_Name_size
+    address: 0x98ff4
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Name's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Name_encode
+      in r3 at 0x3cfe8.
+  - name: wpp_obj_NbAlarm_size
+    address: 0x98f74
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count NbAlarm's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_NbAlarm_encode
+      in r3 at 0x3ce64.
+  - name: wpp_obj_NotificationAppHashIdCrc32_size
+    address: 0x99086
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count NotificationAppHashIdCrc32's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_NotificationAppHashIdCrc32_encode
+      in r3 at 0x55b5a, 0x55b78.
+  - name: wpp_obj_NotificationAppHashIdVersion_size
+    address: 0x99082
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count NotificationAppHashIdVersion's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_NotificationAppHashIdVersion_encode
+      in r3 at 0x55afc.
+  - name: wpp_obj_NotificationAppId_size
+    address: 0x9907c
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count NotificationAppId's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_NotificationAppId_encode
+      in r3 at 0x563fc.
+  - name: wpp_obj_NotificationAppInfo_size
+    address: 0x99076
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count NotificationAppInfo's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_NotificationAppInfo_encode
+      in r3 at 0x56434.
+  - name: wpp_obj_NotificationsDisplayState_size
+    address: 0x9910a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count NotificationsDisplayState's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_NotificationsDisplayState_encode
+      in r3 at 0x3f260.
+  - name: wpp_obj_Null_size
+    address: 0x98f16
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Null's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Null_encode
+      in r3 at 0x6d6e6.
+  - name: wpp_obj_PauseState_size
+    address: 0x990cc
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count PauseState's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_PauseState_encode
+      in r3 at 0x6ab18, 0x6acbc.
+  - name: wpp_obj_PlsReturnCode_size
+    address: 0x98f78
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count PlsReturnCode's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_PlsReturnCode_encode
+      in r3 at 0x56866, 0x568f8, 0x56966.
+  - name: wpp_obj_PlsStation_size
+    address: 0x98f7c
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count PlsStation's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_PlsStation_encode
+      in r3 at 0x5685a.
+  - name: wpp_obj_PressureTemperature_size
+    address: 0x990c0
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count PressureTemperature's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_PressureTemperature_encode
+      in r3 at 0x3de8e.
+  - name: wpp_obj_ProbeChallengeResponse_size
+    address: 0x98f66
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count ProbeChallengeResponse's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_ProbeChallengeResponse_encode
+      in r3 at 0x6c76a.
+  - name: wpp_obj_ProbeChallenge_size
+    address: 0x98f5a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count ProbeChallenge's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_ProbeChallenge_encode
+      in r3 at 0x6c68c.
+  - name: wpp_obj_RebootOptional_size
+    address: 0x990d0
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count RebootOptional's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_RebootOptional_encode
+      in r3 at 0x65272.
+  - name: wpp_obj_ReturnCode_size
+    address: 0x99026
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count ReturnCode's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_ReturnCode_encode
+      in r3 at 0x64fd6, 0x652f0, 0x66fd6.
+  - name: wpp_obj_ShortcutAction_size
+    address: 0x990f4
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count ShortcutAction's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_ShortcutAction_encode
+      in r3 at 0x59ad8.
+  - name: wpp_obj_SkinTemperatureMeasureResult_size
+    address: 0x9912e
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count SkinTemperatureMeasureResult's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_SkinTemperatureMeasureResult_encode
+      in r3 at 0x5e770.
+  - name: wpp_obj_SoftdeviceVersion_size
+    address: 0x98f90
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count SoftdeviceVersion's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_SoftdeviceVersion_encode
+      in r3 at 0x6cbb8.
+  - name: wpp_obj_Stairs_size
+    address: 0x99122
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Stairs's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Stairs_encode
+      in r3 at 0x6ce2c.
+  - name: wpp_obj_StartTime_size
+    address: 0x99096
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count StartTime's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_StartTime_encode
+      in r3 at 0x3d00c, 0x6aaee, 0x6ac9a.
+  - name: wpp_obj_Status_size
+    address: 0x9909e
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Status's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Status_encode
+      in r3 at 0x6aadc.
+  - name: wpp_obj_Steps_size
+    address: 0x9905a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Steps's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Steps_encode
+      in r3 at 0x6ce00.
+  - name: wpp_obj_StoredMeasureData_size
+    address: 0x98f3e
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count StoredMeasureData's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_StoredMeasureData_encode
+      in r3 at 0x4acb2, 0x4ad5e, 0x61ef0, 0x61f8e, 0x6376a.
+  - name: wpp_obj_StoredMeasureMeta_size
+    address: 0x98f3a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count StoredMeasureMeta's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_StoredMeasureMeta_encode
+      in r3 at 0x4aca4, 0x61ee4, 0x6374c.
+  - name: wpp_obj_StoredSignalData_size
+    address: 0x98fa4
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count StoredSignalData's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_StoredSignalData_encode
+      in r3 at 0x6e1f6.
+  - name: wpp_obj_StoredSignalMetaExtend_size
+    address: 0x98fae
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count StoredSignalMetaExtend's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_StoredSignalMetaExtend_encode
+      in r3 at 0x4ad34, 0x54316, 0x5467a, 0x61f82, 0x637da.
+  - name: wpp_obj_StoredSignalMeta_size
+    address: 0x98fa0
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count StoredSignalMeta's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_StoredSignalMeta_encode
+      in r3 at 0x4ad26, 0x5430a, 0x5466e, 0x61f76, 0x637a4.
+  - name: wpp_obj_SymptomListItem_size
+    address: 0x99160
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count SymptomListItem's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_SymptomListItem_encode
+      in r3 at 0x677fa.
+  - name: wpp_obj_SyncRequest_size
+    address: 0x98f9c
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count SyncRequest's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_SyncRequest_encode
+      in r3 at 0x3fe54.
+  - name: wpp_obj_TempCalReply_size
+    address: 0x99036
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count TempCalReply's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_TempCalReply_encode
+      in r3 at 0x53e2c.
+  - name: wpp_obj_TimeSetReply_size
+    address: 0x98fda
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count TimeSetReply's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_TimeSetReply_encode
+      in r3 at 0x5e3b4.
+  - name: wpp_obj_TimeSet_size
+    address: 0x98fd6
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count TimeSet's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_TimeSet_encode
+      in r3 at 0x5e438.
+  - name: wpp_obj_Timestamp_size
+    address: 0x9908e
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Timestamp's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Timestamp_encode
+      in r3 at 0x5473a.
+  - name: wpp_obj_TrackerUser_size
+    address: 0x98fde
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count TrackerUser's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_TrackerUser_encode
+      in r3 at 0x6065e.
+  - name: wpp_obj_TrackerWearPos_size
+    address: 0x98f84
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count TrackerWearPos's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_TrackerWearPos_encode
+      in r3 at 0x4ad50, 0x5432e, 0x54692, 0x61fa6, 0x6cf78.
+  - name: wpp_obj_Uint32_size
+    address: 0x98fc2
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Uint32's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Uint32_encode
+      in r3 at 0x34358.
+  - name: wpp_obj_UnitConversionParameters_size
+    address: 0x98fb2
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count UnitConversionParameters's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_UnitConversionParameters_encode
+      in r3 at 0x4ad42, 0x54322, 0x54686, 0x61f9a.
+  - name: wpp_obj_UnknownSteps_size
+    address: 0x99052
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count UnknownSteps's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_UnknownSteps_encode
+      in r3 at 0x6cc62.
+  - name: wpp_obj_VasistasActiRecoV1V2_size
+    address: 0x9901e
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count VasistasActiRecoV1V2's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_VasistasActiRecoV1V2_encode
+      in r3 at 0x3347a.
+  - name: wpp_obj_VasistasHeartrate_size
+    address: 0x9902e
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count VasistasHeartrate's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_VasistasHeartrate_encode
+      in r3 at 0x3375c.
+  - name: wpp_obj_VasistasSwimType_size
+    address: 0x99022
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count VasistasSwimType's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_VasistasSwimType_encode
+      in r3 at 0x33702.
+  - name: wpp_obj_Version_size
+    address: 0x99072
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count Version's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_Version_encode
+      in r3 at 0x336e6, 0x34364.
+  - name: wpp_obj_WamDailyActivities_size
+    address: 0x98fe8
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count WamDailyActivities's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_WamDailyActivities_encode
+      in r3 at 0x6cc30.
+  - name: wpp_obj_WamScreensList_size
+    address: 0x98fec
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count WamScreensList's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_WamScreensList_encode
+      in r3 at 0x34220.
+  - name: wpp_obj_WamVasistasAwake_size
+    address: 0x99002
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count WamVasistasAwake's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_WamVasistasAwake_encode
+      in r3 at 0x333bc.
+  - name: wpp_obj_WamVasistasDuration_size
+    address: 0x98ffe
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count WamVasistasDuration's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_WamVasistasDuration_encode
+      in r3 at 0x33374.
+  - name: wpp_obj_WamVasistasHead_size
+    address: 0x98ffa
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count WamVasistasHead's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_WamVasistasHead_encode
+      in r3 at 0x334a8, 0x6cde8.
+  - name: wpp_obj_WamVasistasMetCalEarned_size
+    address: 0x9901a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count WamVasistasMetCalEarned's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_WamVasistasMetCalEarned_encode
+      in r3 at 0x3342a.
+  - name: wpp_obj_WamVasistasRun_size
+    address: 0x9900a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count WamVasistasRun's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_WamVasistasRun_encode
+      in r3 at 0x33620.
+  - name: wpp_obj_WamVasistasSleep_size
+    address: 0x9900e
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count WamVasistasSleep's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_WamVasistasSleep_encode
+      in r3 at 0x33664.
+  - name: wpp_obj_WamVasistasWalk_size
+    address: 0x99006
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count WamVasistasWalk's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_WamVasistasWalk_encode
+      in r3 at 0x33510.
+  - name: wpp_obj_WorkoutMaxNumber_size
+    address: 0x9912a
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count WorkoutMaxNumber's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_WorkoutMaxNumber_encode
+      in r3 at 0x6abf0.
+  - name: wpp_obj_WorkoutScreenList_size
+    address: 0x98f98
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count WorkoutScreenList's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_WorkoutScreenList_encode
+      in r3 at 0x6b136.
+  - name: wpp_obj_WppString_size
+    address: 0x98fc6
+    ret: i32
+    args: [[const void *, obj]]
+    notes: >
+      the byte count WppString's reply carries, a `movs r0, #N; bx lr` stub.
+      It is the r2 the send path is handed alongside wpp_obj_WppString_encode
+      in r3 at 0x6ec2e.
+
 globals:
   - name: xTickCount
     address: 0x20021920
@@ -2229,6 +3159,193 @@ structs:
     notes: >
       WPP object type 2523 (VasistasDbt), 9 bytes; encoder 0x9a878 (+0x0@0x9a894 +0x1@0x9a89c +0x2@0x9a8a4 +0x3@0x9a8ac +0x4@0x9a8b4 +0x5@0x9a8bc +0x6@0x9a8c4 +0x7@0x9a8cc +0x8@0x9a8d8).
 
+  # ---- dblib entry layouts ----------------------------------------------------
+  # Recovered from the code that reads each entry back; one struct per information
+  # element whose reader determines a layout. The enum of ids is under enums:.
+  - name: dblib_calib_axis
+    notes: >
+      one axis of DBLIB_IE_ACCELERO_CALIB_MATRIX; the shell's `adxl calibrate <axis>`
+      branch hands 0x3ca9c the three fields of one group as (u16*, i16*, i16*)
+    fields:
+      - [u16, gain]
+      - [i16, offset_a]
+      - [i16, offset_b]
+  - name: dblib_query
+    notes: >
+      the cursor dblib_query_init fills in: 0x47b00 stores ie, len, -4, 0 and 0 at +0,
+      +2, +4, +8 and +0xa, and 0x47b40 copies the whole thing with a three-word ldm/stm
+    fields:
+      - [u16, ie]
+      - [u16, len]
+      - [i32, cursor]
+      - [u16, seq]
+      - [u8, flags]
+      - [u8, pad]
+  - name: dblib_ie_macaddress
+    notes: >
+      DBLIB_IE 0x1: 0x36eb4 reads 0x12 bytes and strcpy()s a default over them on a
+      miss, so the entry is a NUL-terminated string.
+    fields:
+      - ["char[18]", value]
+  - name: dblib_ie_secret
+    notes: >
+      DBLIB_IE 0x3: 0x93256 reads 0x11 bytes and zeroes byte 0 on a miss, so the entry
+      is a NUL-terminated string.
+    fields:
+      - ["char[17]", value]
+  - name: dblib_ie_mfgid
+    notes: >
+      DBLIB_IE 0xb: 0x36ed8 reads 4 bytes into one word and returns it.
+    fields:
+      - [u32, value]
+  - name: dblib_ie_accelero_calib_matrix
+    notes: >
+      DBLIB_IE 0x43: the shell's `adxl calibrate <axis>` branch at 0x3c9dc reads 0x12
+      bytes and writes one of three identical six-byte groups at +0, +6 and +0xc.
+    fields:
+      - ["struct dblib_calib_axis[3]", axis]
+  - name: dblib_ie_quartz_millihz
+    notes: >
+      DBLIB_IE 0x76: 0x34654 reads and writes 4 bytes through one word.
+    fields:
+      - [u32, value]
+  - name: dblib_ie_session_nonce
+    notes: >
+      DBLIB_IE 0x99: 0x9326c reads 8 bytes and passes them whole to 0x59474.
+    fields:
+      - ["u8[8]", value]
+  - name: dblib_ie_mcu_temp_cal
+    notes: >
+      DBLIB_IE 0xa5: 0x9abba copies the 0x20 bytes into two four-word arrays and the
+      setter writes x[ch] and y[ch] for a channel ch it parses out of the request;
+      0x53b78 interpolates between (x[0],y[0]) and (x[1],y[1]).
+    fields:
+      - ["u32[4]", x]
+      - ["u32[4]", y]
+  - name: dblib_ie_event_with_time
+    notes: >
+      DBLIB_IE 0xa7: 0x6ea20 enumerates 0x14-byte entries and keeps the one with the
+      smallest first word, which it logs as a timestamp.
+    fields:
+      - [i32, timestamp]
+      - ["u8[16]", payload]
+  - name: dblib_ie_battery_cal
+    notes: >
+      DBLIB_IE 0xb5: 0x40014 reads 8 bytes into two words and shifts each right by
+      three; dblib.py reads the pair as 4193 mV against 985 ADC counts.
+    fields:
+      - [u32, a]
+      - [u32, b]
+  - name: dblib_ie_cust
+    notes: >
+      DBLIB_IE 0xb8: 0x46b78 reads 4 bytes into one word and caches it behind a loaded
+      flag.
+    fields:
+      - [u32, value]
+  - name: dblib_ie_part_id
+    notes: >
+      DBLIB_IE 0xe3: 0x5a87c enumerates 0x16-byte entries, strcmp()s the first 16 bytes
+      against the shell argument and logs the last six one byte at a time.
+    fields:
+      - ["char[16]", name]
+      - ["u8[6]", value]
+  - name: dblib_ie_alarm_slot
+    notes: >
+      DBLIB_IE 0x112: 0x944a0 enumerates 0x28-byte entries and matches the first byte
+      against a slot index it refuses above 10.
+    fields:
+      - [u8, slot]
+      - ["u8[39]", payload]
+  - name: dblib_ie_tls_client_cert
+    notes: >
+      DBLIB_IE 0x12b: 0x974fc allocates 0x202 bytes, reads the entry into them, then
+      copies der_len bytes from offset 2 as the certificate.
+    fields:
+      - [u16, der_len]
+      - ["u8[512]", der]
+  - name: dblib_ie_tls_client_keys
+    notes: >
+      DBLIB_IE 0x12c: 0x6d50c reads 0x40 bytes and passes them to ed25519_sign as the
+      key; 0x974fc reads the same 0x40 into the TLS context.
+    fields:
+      - ["u8[64]", key]
+  - name: dblib_ie_wpps_redirect
+    notes: >
+      DBLIB_IE 0x141: 0x55454 writes 0x50 bytes and wpps_build_sni 0x553b4 formats them
+      with "%s.%s".
+    fields:
+      - ["char[80]", value]
+  - name: dblib_ie_thresholds
+    notes: >
+      DBLIB_IE 0x146: 0x5e850 reads 0x34 bytes and copies all thirteen words out one at
+      a time after matching the first against its argument.
+    fields:
+      - ["i32[13]", value]
+  - name: dblib_ie_counter
+    notes: >
+      DBLIB_IE 0x149: 0x9ac8c enumerates 0xc-byte entries and matches the low byte of
+      the first word against the counter id.
+    fields:
+      - [u32, key]
+      - [u32, a]
+      - [u32, b]
+  - name: dblib_ie_reset_event
+    notes: >
+      DBLIB_IE 0x15b: 0x9add6 enumerates 0x2c-byte entries, matches byte 0 against its
+      argument and sums seven halfwords starting at offset 2.
+    fields:
+      - [u8, kind]
+      - [u8, pad]
+      - ["u16[7]", count]
+      - ["u8[28]", rest]
+  - name: dblib_ie_greenteg_sensitivity_bin
+    notes: >
+      DBLIB_IE 0x16a: 0x4d728 reads one byte and falls back to 0x4a.
+    fields:
+      - [u8, value]
+  - name: dblib_ie_ie_0x16e
+    notes: >
+      DBLIB_IE 0x16e: 0x67a20 reads 2 bytes and passes each as a signed byte to 0x9cfd2.
+    fields:
+      - ["i8[2]", value]
+  - name: dblib_ie_crown_scale
+    notes: >
+      DBLIB_IE 0x16f: 0x491c0 reads 4 bytes and splits them into two halfwords its
+      caller names the digital crown scale factor.
+    fields:
+      - [u16, a]
+      - [u16, b]
+  - name: dblib_ie_menstrual_cycle_info
+    notes: >
+      DBLIB_IE 0x170: 0x470dc enumerates 0x1c-byte entries into a word-indexed array
+      (param_1 + i*7) and stops after three.
+    fields:
+      - ["u32[7]", field]
+  - name: dblib_ie_menstrual_cycle_unk
+    notes: >
+      DBLIB_IE 0x174: 0x46ec8 enumerates 4-byte entries and compares the value against a
+      time window.
+    fields:
+      - [u32, timestamp]
+  - name: dblib_ie_greenteg_integration_factor
+    notes: >
+      DBLIB_IE 0x180: 0x4d8a8 builds the 0x10 bytes as byte 0 = 0x4a, two zero words and
+      a float, memcmp()s them against the stored entry and writes on a difference.
+    fields:
+      - [u8, sensor]
+      - ["u8[3]", pad]
+      - [u32, a]
+      - [u32, b]
+      - [float, factor]
+  - name: dblib_ie_inactivity_sample
+    notes: >
+      DBLIB_IE 0x181: 0x5ec34 enumerates 0xc-byte entries, sums the second word for the
+      entries whose third word is inside a 24 h window.
+    fields:
+      - [u32, a]
+      - [i32, minutes]
+      - [u32, timestamp]
+
 tables:
   - name: wpp_cmd_table
     address: 0x274b4
@@ -2481,3 +3598,560 @@ fixed_points:
       different version. FIRMWARE.md's update section is the evidence: a package
       that changes only this word and the header's version field installs and is
       reported back.
+# ---- dblib, the settings store on the external MX25R ------------------------
+# Every information element the image reads or writes, from the literal in the id
+# register at each call site of the dblib API (abi/out/ghidra + abi/protocol.py's
+# register model); the ids whose only name is their number are declared by number
+# rather than guessed. Cross-checked against ~/git/scanwatch_ble/dblib.py.
+enums:
+  - name: dblib_ie
+    type: u16
+    notes: >
+      the information-element id dblib keys on. The API takes it as a u16 (0x47b00
+      stores it with strh).
+    values:
+      - name: DBLIB_IE_MACADDRESS
+        value: 0x1
+        notes: >
+          perso shell table row 0xb41ec {"mac", 1, 0x5b011}; also named in the erase
+          help line at 0xdda48; reached through dblib_get 0x48294 from 0x36eb4, 0x592d4,
+          0x59474; entry length 0x12.
+      - name: DBLIB_IE_WSTARGET
+        value: 0x2
+        notes: >
+          perso shell table row 0xb4210 {"wstarget", 2, 0x9b9fb}; reached through the
+          perso shell table only.
+      - name: DBLIB_IE_SECRET
+        value: 0x3
+        notes: >
+          perso shell table row 0xb4204 {"secret", 3, 0x5af39}; also named in the erase
+          help line at 0xdda48; reached through dblib_get 0x48294, the setter at 0x480f0
+          from 0x5af38, 0x93256, 0x9326c; entry length 0x11.
+      - name: DBLIB_IE_004
+        value: 0x4
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x5e0d4,
+          0x5e210, 0x5e2f8, 0x5e3e0; entry length 0xc.
+      - name: DBLIB_IE_007
+        value: 0x7
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x510f4,
+          0x51170; entry length 0x6.
+      - name: DBLIB_IE_MFGID
+        value: 0xb
+        notes: >
+          perso shell table row 0xb421c {"mfgid", 0xb, 0x5a581}; reached through
+          dblib_get 0x48294 from 0x36ed8; entry length 0x4.
+      - name: DBLIB_IE_00F
+        value: 0xf
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the setter at
+          0x47f58 from 0x5dfe4, 0x5e024, 0x5e18c; entry length 0x4.
+      - name: DBLIB_IE_011
+        value: 0x11
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x4c8a0,
+          0x4c908; entry length 0x4.
+      - name: DBLIB_IE_013
+        value: 0x13
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47f58 from 0x2e1d8,
+          0x5e7e0.
+      - name: DBLIB_IE_019
+        value: 0x19
+        notes: >
+          reached through the setter at 0x47ebc from 0x40274; entry length 0x8.
+      - name: DBLIB_IE_BANK_RECOVER_CNT
+        value: 0x32
+        notes: >
+          perso shell table row 0xb4234 {"bank_recover_cnt", 0x32, 0x5a52d}; reached
+          through the perso shell table only.
+      - name: DBLIB_IE_ACCELERO_CALIB_MATRIX
+        value: 0x43
+        notes: >
+          the shell's `adxl calibrate x|y|z` branch (strings 0x3cc44/0x3cc4c..0x3cc54)
+          reads and writes it at 0x3c9dc/0x3ca04; reached through dblib_get 0x48294, the
+          setter at 0x48200 from 0x3c6b8; entry length 0x12.
+      - name: DBLIB_IE_048
+        value: 0x48
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the setter at
+          0x47e58 from 0x4bcb0, 0x6037c, 0x603d8, 0x6060c, 0x92170; entry length 0x58.
+      - name: DBLIB_IE_04A
+        value: 0x4a
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x60a54,
+          0x60a88; entry length 0xc.
+      - name: DBLIB_IE_FACTORY_FW
+        value: 0x4c
+        notes: >
+          perso shell table row 0xb4228 {"factory_fw", 0x4c, 0x5aa2d}; reached through
+          the perso shell table only.
+      - name: DBLIB_IE_055
+        value: 0x55
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x94700;
+          entry length 0x104.
+      - name: DBLIB_IE_DEBUG_MASK
+        value: 0x5b
+        notes: >
+          the debug-dump parts mask, cached at 0x20019234 (FIRMWARE.md); written at
+          0x48f68; reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+          0x48f30, 0x48f68; entry length 0x4.
+      - name: DBLIB_IE_068
+        value: 0x68
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x33028,
+          0x330f8; entry length 0x180.
+      - name: DBLIB_IE_06F
+        value: 0x6f
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x607e4,
+          0x60854; entry length 0x4.
+      - name: DBLIB_IE_070
+        value: 0x70
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x60824,
+          0x60854; entry length 0x4.
+      - name: DBLIB_IE_075
+        value: 0x75
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x3d450,
+          0x3d65c, 0x9444a, 0x944e2; entry length 0x50.
+      - name: DBLIB_IE_QUARTZ_MILLIHZ
+        value: 0x76
+        notes: >
+          the shell's quartz calibration command 0x34654 reads it under `get` and writes
+          it under `set`; reached through dblib_get 0x48294, the setter at 0x48200 from
+          0x34654; entry length 0x4.
+      - name: DBLIB_IE_077
+        value: 0x77
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the setter at
+          0x47e58 from 0x590c4, 0x9b82e; entry length 0x16c.
+      - name: DBLIB_IE_079
+        value: 0x79
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x395dc,
+          0x3b5a8, 0x60528, 0x60738, 0x6c59c, 0x6c60c; entry length 0x21.
+      - name: DBLIB_IE_07C
+        value: 0x7c
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the setter at
+          0x47e58 from 0x2e1d8, 0x2e50c, 0x9259c; entry length 0x14.
+      - name: DBLIB_IE_07D
+        value: 0x7d
+        notes: >
+          reached through dblib_get 0x48294, the setter at 0x48200 from 0x56788,
+          0x9af6a; entry length 0x800.
+      - name: DBLIB_IE_081
+        value: 0x81
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x5cc38,
+          0x5cd10; entry length 0x8.
+      - name: DBLIB_IE_086
+        value: 0x86
+        notes: >
+          reached through the setter at 0x47ebc from 0x44784; entry length 0x10.
+      - name: DBLIB_IE_088
+        value: 0x88
+        notes: >
+          reached through the setter at 0x47ebc from 0x3baf0; entry length 0x1.
+      - name: DBLIB_IE_PUBKEY
+        value: 0x98
+        notes: >
+          perso shell table row 0xb41f8 {"pubkey", 0x98, 0x5aa8d}; reached through the
+          perso shell table only.
+      - name: DBLIB_IE_099
+        value: 0x99
+        notes: >
+          reached through dblib_get 0x48294, the setter at 0x48200, the setter at
+          0x480f0 from 0x5af38, 0x9326c; entry length 0x8.
+      - name: DBLIB_IE_09A
+        value: 0x9a
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x5d604,
+          0x5d6e8; entry length 0x8.
+      - name: DBLIB_IE_09B
+        value: 0x9b
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x5d604,
+          0x5d69c; entry length 0x8.
+      - name: DBLIB_IE_09D
+        value: 0x9d
+        notes: >
+          reached through the setter at 0x48200 from 0x6d0e0; entry length 0x12.
+      - name: DBLIB_IE_0A2
+        value: 0xa2
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x4bcb0,
+          0x4bd18; entry length 0x1.
+      - name: DBLIB_IE_0A5
+        value: 0xa5
+        notes: >
+          reached through dblib_get 0x48294, the setter at 0x48200, the setter at
+          0x4814c from 0x53b78, 0x53c08, 0x53db4, 0x9abba; entry length 0x20.
+      - name: DBLIB_IE_0A7
+        value: 0xa7
+        notes: >
+          reached through dblib_query_init 0x47b00, the setter at 0x47f58 from 0x6ea20,
+          0x9d684, 0x9d6be, 0x9d6d0; entry length 0x14.
+      - name: DBLIB_IE_0A8
+        value: 0xa8
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the setter at
+          0x47f58 from 0x2fc28, 0x3119c, 0x407c4; entry length 0x4.
+      - name: DBLIB_IE_0AB
+        value: 0xab
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x3e808,
+          0x3f060, 0x3f1e4, 0x3fb48; entry length 0x8.
+      - name: DBLIB_IE_0AF
+        value: 0xaf
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x40eb4,
+          0x41018, 0x41088, 0x948d6; entry length 0x6e, 0x226.
+      - name: DBLIB_IE_BATTERY_CAL
+        value: 0xb5
+        notes: >
+          perso shell table row 0xb4240 {"battery_cal", 0xb5, 0x5a9b9}; reached through
+          dblib_get 0x48294 from 0x40014; entry length 0x8.
+      - name: DBLIB_IE_0B6
+        value: 0xb6
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x60a54,
+          0x60a88; entry length 0x1.
+      - name: DBLIB_IE_0B8
+        value: 0xb8
+        notes: >
+          reached through dblib_get 0x48294, the setter at 0x48200 from 0x46b78,
+          0x46ba4; entry length 0x4.
+      - name: DBLIB_IE_0B9
+        value: 0xb9
+        notes: >
+          reached through the setter at 0x47ebc from 0x9bef4; entry length 0x4.
+      - name: DBLIB_IE_0BA
+        value: 0xba
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the setter at
+          0x47e58 from 0x3e808, 0x3f060, 0x3f1e4; entry length 0x6.
+      - name: DBLIB_IE_0BB
+        value: 0xbb
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x3051c,
+          0x340f8, 0x92f32; entry length 0x2.
+      - name: DBLIB_IE_0BC
+        value: 0xbc
+        notes: >
+          reached through dblib_get_first 0x9776e from 0x2e1d8.
+      - name: DBLIB_IE_0C0
+        value: 0xc0
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the setter at
+          0x47e58 from 0x2e50c, 0x3119c, 0x9259c; entry length 0x18.
+      - name: DBLIB_IE_0C1
+        value: 0xc1
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x4be68,
+          0x4be9c; entry length 0x4.
+      - name: DBLIB_IE_0CF
+        value: 0xcf
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x3b574,
+          0x93ce6, 0x93d10, 0x93d4a; entry length 0x28.
+      - name: DBLIB_IE_0E2
+        value: 0xe2
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x4ea68,
+          0x4eac0; entry length 0x1.
+      - name: DBLIB_IE_PART_ID
+        value: 0xe3
+        notes: >
+          perso shell table row 0xb424c {"part_id", 0xe3, 0x5a87d}; reached through
+          dblib_query_init 0x47b00 from 0x5a87c; entry length 0x16.
+      - name: DBLIB_IE_0E4
+        value: 0xe4
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x69958;
+          entry length 0x1.
+      - name: DBLIB_IE_0E6
+        value: 0xe6
+        notes: >
+          reached through the setter at 0x47ebc from 0x2e1d8; entry length 0x8.
+      - name: DBLIB_IE_0E8
+        value: 0xe8
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x3cec0,
+          0x82a58, 0x923b0, 0x94480; entry length 0x1.
+      - name: DBLIB_IE_0EB
+        value: 0xeb
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x50abc,
+          0x50ebc; entry length 0x2.
+      - name: DBLIB_IE_0ED
+        value: 0xed
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x69464,
+          0x6976c; entry length 0x4.
+      - name: DBLIB_IE_0F6
+        value: 0xf6
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x36f58,
+          0x36fb4, 0x932a2, 0x932d2; entry length 0xc.
+      - name: DBLIB_IE_0FD
+        value: 0xfd
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x55704,
+          0x55788; entry length 0x1.
+      - name: DBLIB_IE_101
+        value: 0x101
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x55894;
+          entry length 0x2.
+      - name: DBLIB_IE_102
+        value: 0x102
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x69414,
+          0x69464; entry length 0x48.
+      - name: DBLIB_IE_103
+        value: 0x103
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x658bc,
+          0x658e8, 0x6593c; entry length 0x4.
+      - name: DBLIB_IE_104
+        value: 0x104
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x4cdd4,
+          0x4ce0c; entry length 0x1.
+      - name: DBLIB_IE_106
+        value: 0x106
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x576d4,
+          0x57800; entry length 0xc.
+      - name: DBLIB_IE_107
+        value: 0x107
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x4c300,
+          0x4c32c, 0x4c360; entry length 0x4.
+      - name: DBLIB_IE_108
+        value: 0x108
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x378f4,
+          0x37a58.
+      - name: DBLIB_IE_112
+        value: 0x112
+        notes: >
+          reached through dblib_query_init 0x47b00 from 0x944a0, 0x94530, 0x9459a; entry
+          length 0x28.
+      - name: DBLIB_IE_11B
+        value: 0x11b
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x2e50c,
+          0xa4fa0.
+      - name: DBLIB_IE_11F
+        value: 0x11f
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x4a068,
+          0x4ac90, 0x61ea8, 0x6cf94, 0x6d188, 0x86d38; entry length 0x1.
+      - name: DBLIB_IE_120
+        value: 0x120
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x4b168,
+          0x4b7d0, 0x6cf48, 0x6d134, 0x85090, 0x857e4, 0x861d4, 0x9c0e6; entry length
+          0x1.
+      - name: DBLIB_IE_124
+        value: 0x124
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x4ddc0,
+          0x4ddec, 0x4de24; entry length 0x4.
+      - name: DBLIB_IE_TLS_CLIENT_CERT
+        value: 0x12b
+        notes: >
+          perso shell table row 0xb4264 {"crt", 0x12b, 0x5abbd}; 0x974fc reads it as the
+          client certificate mbedTLS is handed; reached through dblib_get 0x48294 from
+          0x974fc; entry length 0x202.
+      - name: DBLIB_IE_TLS_CLIENT_KEYS
+        value: 0x12c
+        notes: >
+          named in the erase help line at 0xdda48; the perso row 0xb4258 calls it "csr",
+          but 0x974fc and 0x6d50c read 0x40 bytes out of it and hand them to
+          ed25519_sign as the key; reached through dblib_get 0x48294 from 0x5abbc,
+          0x6d50c, 0x974fc; entry length 0x40.
+      - name: DBLIB_IE_130
+        value: 0x130
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x4d370,
+          0x980ba; entry length 0x3.
+      - name: DBLIB_IE_131
+        value: 0x131
+        notes: >
+          reached through the setter at 0x47ebc from 0x3c39c; entry length 0x8.
+      - name: DBLIB_IE_132
+        value: 0x132
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x982da;
+          entry length 0x4.
+      - name: DBLIB_IE_133
+        value: 0x133
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x37004,
+          0x37028; entry length 0x4.
+      - name: DBLIB_IE_136
+        value: 0x136
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x59a44,
+          0x9b926; entry length 0x1.
+      - name: DBLIB_IE_137
+        value: 0x137
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x6ae78,
+          0x6aeb8; entry length 0x6.
+      - name: DBLIB_IE_13B
+        value: 0x13b
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x4bef8,
+          0x4bf68; entry length 0x140.
+      - name: DBLIB_IE_WPPS_REDIRECT
+        value: 0x141
+        notes: >
+          wpps_build_sni 0x553b4 builds the TLS SNI from it; reached through
+          dblib_get_first 0x9776e, dblib_set 0x47df0 from 0x553b4, 0x55454; entry length
+          0x50.
+      - name: DBLIB_IE_142
+        value: 0x142
+        notes: >
+          reached through dblib_get_first 0x9776e from 0x9af06.
+      - name: DBLIB_IE_146
+        value: 0x146
+        notes: >
+          reached through dblib_query_init 0x47b00 from 0x5e850, 0x5e9a4; entry length
+          0x34.
+      - name: DBLIB_IE_147
+        value: 0x147
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x51554,
+          0x516d8; entry length 0x28.
+      - name: DBLIB_IE_148
+        value: 0x148
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x6adfc,
+          0x6ae38; entry length 0x1.
+      - name: DBLIB_IE_149
+        value: 0x149
+        notes: >
+          reached through dblib_query_init 0x47b00 from 0x9ac8c, 0x9acda, 0x9ad18,
+          0x9ad72; entry length 0xc.
+      - name: DBLIB_IE_14D
+        value: 0x14d
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x5ee94,
+          0x5eef4; entry length 0x5.
+      - name: DBLIB_IE_152
+        value: 0x152
+        notes: >
+          reached through dblib_get_first 0x9776e, dblib_set 0x47df0, the setter at
+          0x47ebc from 0x64568, 0x64658, 0x647ac, 0x647f4; entry length 0x14.
+      - name: DBLIB_IE_MOVE_HANDS
+        value: 0x156
+        notes: >
+          the only function that touches it, 0x7fb24, logs "[UI] DBLIB_IE_MOVE_HANDS not
+          found" (0xe6854); reached through dblib_get_first 0x9776e, the setter at
+          0x47ebc from 0x6d038, 0x6d1ec, 0x7fb24, 0x7fcac; entry length 0x1.
+      - name: DBLIB_IE_15B
+        value: 0x15b
+        notes: >
+          reached through dblib_query_init 0x47b00 from 0x53e9c, 0x9add6, 0x9ae22; entry
+          length 0x2c.
+      - name: DBLIB_IE_164
+        value: 0x164
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the setter at
+          0x47f58 from 0x30af8, 0x30c08; entry length 0x2.
+      - name: DBLIB_IE_167
+        value: 0x167
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47f58 from 0x2e1d8,
+          0x6bb24.
+      - name: DBLIB_IE_16A
+        value: 0x16a
+        notes: >
+          reached through dblib_get 0x48294, the setter at 0x47f58, the setter at
+          0x48200, the setter at 0x480f0 from 0x4d728, 0x4d7a4, 0x4d860; entry length
+          0x1.
+      - name: DBLIB_IE_16E
+        value: 0x16e
+        notes: >
+          reached through dblib_get 0x48294, the setter at 0x48200 from 0x67a20,
+          0x67a70, 0x9cc60; entry length 0x2.
+      - name: DBLIB_IE_16F
+        value: 0x16f
+        notes: >
+          reached through dblib_get 0x48294, the setter at 0x48200 from 0x49184,
+          0x491c0; entry length 0x4.
+      - name: DBLIB_IE_170
+        value: 0x170
+        notes: >
+          reached through dblib_query_init 0x47b00, the setter at 0x47f58 from 0x46ccc,
+          0x470dc, 0x97548, 0x97570; entry length 0x1c.
+      - name: DBLIB_IE_171
+        value: 0x171
+        notes: >
+          reached through dblib_query_init 0x47b00, the setter at 0x47f58 from 0x9ca18,
+          0x9ca5e; entry length 0x24.
+      - name: DBLIB_IE_172
+        value: 0x172
+        notes: >
+          reached through dblib_query_init 0x47b00, the setter at 0x47f58 from 0x9ca18,
+          0x9ca5e; entry length 0xc.
+      - name: DBLIB_IE_173
+        value: 0x173
+        notes: >
+          reached through dblib_query_init 0x47b00, the setter at 0x47f58 from 0x9ca18,
+          0x9ca5e; entry length 0x40.
+      - name: DBLIB_IE_174
+        value: 0x174
+        notes: >
+          reached through dblib_query_init 0x47b00, the setter at 0x47f58 from 0x46ec8,
+          0x47150, 0x47228; entry length 0x4.
+      - name: DBLIB_IE_177
+        value: 0x177
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x7fdd4,
+          0xa5502; entry length 0x1.
+      - name: DBLIB_IE_178
+        value: 0x178
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x4414c,
+          0x44178, 0x441ac; entry length 0x4.
+      - name: DBLIB_IE_179
+        value: 0x179
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x5ff04;
+          entry length 0x70.
+      - name: DBLIB_IE_17C
+        value: 0x17c
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the setter at
+          0x47f58 from 0x2e1d8, 0x2f05c, 0x2f5fc, 0x613a0; entry length 0x34.
+      - name: DBLIB_IE_180
+        value: 0x180
+        notes: >
+          reached through dblib_get 0x48294, dblib_get_first 0x9776e, the setter at
+          0x47ebc, the setter at 0x47f58, the setter at 0x48200, the setter at 0x480f0
+          from 0x4d8a8, 0x4da04, 0x4dabc; entry length 0x10.
+      - name: DBLIB_IE_181
+        value: 0x181
+        notes: >
+          reached through dblib_count 0x97746, dblib_query_init 0x47b00 from 0x5ec34,
+          0x6a384; entry length 0xc.
+      - name: DBLIB_IE_182
+        value: 0x182
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x31a88,
+          0x31ab0; entry length 0x2.
+      - name: DBLIB_IE_18D
+        value: 0x18d
+        notes: >
+          reached through dblib_get_first 0x9776e, the setter at 0x47ebc from 0x404b8,
+          0x4056c; entry length 0x28.
+

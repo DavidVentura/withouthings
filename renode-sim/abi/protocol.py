@@ -558,6 +558,54 @@ def command_facts(img, ex, body, encoders):
     return facts
 
 
+# The sizer and the encoder travel together: every send and append site loads
+# them into r2 and r3 of the same call, so the sizer of a type is whichever stub
+# shares a call with that type's encoder. The stubs are one `movs r0,#N; bx lr`
+# each and say nothing on their own.
+SIZER_SITES = {0x9D38A: (2, 3), 0x9D3D8: (2, 3),
+               0x6BB98: (2, 3), 0x9D322: (2, 3), 0x9D330: (2, 3)}
+
+
+def codec_sizers(img, encoders):
+    """{encoder address: (sizer address, [call sites])}, refusing a split."""
+    pairs = collections.defaultdict(set)
+    for i, (addr, mnem, ops) in enumerate(img.insns):
+        if mnem not in ("bl", "bl.w", "b.w", "b"):
+            continue
+        spec = SIZER_SITES.get(A._call_target(ops))
+        if spec is None:
+            continue
+        _, size = _reg_source(img, i, "r%d" % spec[0])
+        _, enc = _reg_source(img, i, "r%d" % spec[1])
+        if size and enc and (enc & ~1) in encoders:
+            pairs[enc & ~1].add((size & ~1, addr))
+    out = {}
+    for enc, seen in pairs.items():
+        sizes = {s for s, _ in seen}
+        if len(sizes) != 1:
+            raise SystemExit("protocol: encoder 0x%x is sent with %d sizers: %s"
+                             % (enc, len(sizes), ["0x%x" % s for s in sorted(sizes)]))
+        out[enc] = (sizes.pop(), sorted(a for _, a in seen))
+    return out
+
+
+def sizers_yaml(sizers, enc_names):
+    """The recovered sizers as the `functions:` entries hwa10.yaml carries."""
+    lines = []
+    for enc in sorted(sizers, key=lambda a: enc_names[a]):
+        size, sites = sizers[enc]
+        rust = enc_names[enc][len("wpp_obj_"):-len("_encode")]
+        lines += ["  - name: wpp_obj_%s_size" % rust,
+                  "    address: 0x%x" % size,
+                  "    ret: i32",
+                  "    args: [[const void *, obj]]",
+                  "    notes: >",
+                  "      the byte count %s's reply carries, a `movs r0, #N; bx lr` stub." % rust,
+                  "      It is the r2 the send path is handed alongside wpp_obj_%s_encode" % rust,
+                  "      in r3 at %s." % ", ".join("0x%x" % a for a in sites)]
+    return "\n".join(lines)
+
+
 def owning_handler(ex, handlers):
     """{function: handler} for every function only one command handler reaches.
 
@@ -596,6 +644,8 @@ def main():
     ap.add_argument("--out", default=os.path.join(HERE, "out", "protocol"))
     ap.add_argument("--emit-structs-yaml",
                     help="write the recovered layouts as a hwa10.yaml structs block")
+    ap.add_argument("--emit-sizers-yaml",
+                    help="write the recovered sizers as a hwa10.yaml functions block")
     ap.add_argument("--emit-codecs-yaml",
                     help="write the codec prototypes as a hwa10.yaml functions block")
     args = ap.parse_args()
@@ -669,6 +719,16 @@ def main():
     for tid, r in rows.items():
         for a in r.get("encoders", ()):
             encoders[int(a, 16)] = tid
+    enc_names = {e["address"]: e["name"] for e in names
+                 if e["name"].endswith("_encode")}
+    sizers = codec_sizers(img, enc_names)
+    print("%d of %d encoders are sent with a sizer the call site pairs them with"
+          % (len(sizers), len(enc_names)))
+    if args.emit_sizers_yaml:
+        with open(args.emit_sizers_yaml, "w") as fh:
+            fh.write(sizers_yaml(sizers, enc_names) + "\n")
+        print(args.emit_sizers_yaml)
+
     table = A.walk_table(img, A.WPP_ANCHOR, lambda r: r["key"] < A.WPP_ID_MAX)
     handlers = {r["handler"]: r for r in table}
     facts = command_facts(img, ex, body, encoders)
