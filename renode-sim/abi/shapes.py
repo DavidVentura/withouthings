@@ -147,6 +147,24 @@ class Types(object):
             out.append(Table(sym, obj, self.struct(obj.element)))
         return sorted(out, key=lambda t: t.address)
 
+    def typed_regions(self, smap):
+        """Every declared object whose bytes have a row layout.
+
+        A struct global is a table of one row, and its words are typed by its
+        declaration for the same reason a table's are. The 126 WUI view
+        descriptors are why this is not the same set as `tables`: they agree on
+        five words and then differ in length, so they are declared one by one
+        rather than as a table, and their name slot at +4 is a `const char *`
+        whichever way they are written down.
+        """
+        out = list(self.tables(smap))
+        for sym in smap.of_kind("global"):
+            obj = self.objects.get(sym.name)
+            if obj is None or obj.kind != STRUCT:
+                continue
+            out.append(Table(sym, obj, self.struct(obj.element)))
+        return sorted(out, key=lambda t: t.address)
+
 
 # ------------------------------------------------------------------- the read
 

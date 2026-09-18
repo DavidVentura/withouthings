@@ -196,6 +196,42 @@ class Partition(object):
                 and word["addr"] not in overrides
                 and not set(word.get("uses") or ()) & POINTER_USES)
 
+    def string_run(self, value):
+        """(start, end) of the printable NUL-terminated run `value` is in.
+
+        The run is bounded by the NUL in front of it and the NUL that ends it,
+        neither of which the disassembly may cover, and its bytes have to be
+        text. The UI text is UTF-8 (accented French, the degree sign, a
+        non-breaking space in one log line), so the run is decoded rather than
+        tested byte by byte; a run that is not well-formed UTF-8 or holds a
+        control character is not text.
+        """
+        at = value - APP_BASE
+        if not 0 < at < len(self.blob) or self.covered[at] or not self.blob[at]:
+            return None
+        end = at
+        while end < len(self.blob) and self.blob[end]:
+            if self.covered[end]:
+                return None
+            end += 1
+        if end >= len(self.blob):
+            return None
+        start = at
+        while start and self.blob[start - 1]:
+            if self.covered[start - 1]:
+                return None
+            start -= 1
+        if not start:
+            return None
+        try:
+            text = self.blob[start:end].decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        if not all(ord(c) >= 0x20 and not 0x7F <= ord(c) <= 0x9F or c in "\t\n\r"
+                   for c in text):
+            return None
+        return start + APP_BASE, end + APP_BASE
+
     def names_a_string(self, value):
         """Is `value` the first byte of a printable NUL-terminated run?
 
@@ -206,29 +242,13 @@ class Partition(object):
         terminator, and the disassembly covers none of it. Anything else that
         happened to hold the address of such a byte would have to reproduce the
         whole address, which is the same argument a function start gets.
+
+        A value further into such a run is a different question, because an
+        integer that happens to land inside the string region reproduces
+        nothing: abi/runs.py takes those, and only with a column beside them.
         """
-        at = value - APP_BASE
-        if not 0 < at < len(self.blob) or self.covered[at]:
-            return False
-        if self.blob[at - 1] != 0:
-            return False
-        end = at
-        while end < len(self.blob) and self.blob[end]:
-            if self.covered[end]:
-                return False
-            end += 1
-        if end >= len(self.blob) or end - at < PRINTABLE_MIN:
-            return False
-        # The UI text is UTF-8 (accented French, the degree sign, a
-        # non-breaking space in one log line), so the run is decoded rather
-        # than tested byte by byte; a run that is not well-formed UTF-8 or
-        # holds a control character is not text.
-        try:
-            text = self.blob[at:end].decode("utf-8")
-        except UnicodeDecodeError:
-            return False
-        return all(ord(c) >= 0x20 and not 0x7F <= ord(c) <= 0x9F or c in "\t\n\r"
-                   for c in text)
+        run = self.string_run(value)
+        return run is not None and run[0] == value and run[1] - value >= PRINTABLE_MIN
 
     def is_slot(self, addr):
         return addr in self.slots
@@ -570,7 +590,7 @@ def classify(items, refs, blob, contracts, overrides, tables, cells=()):
     first = [dict(word, **dict(zip(("class", "signal", "note"),
                                   decide(word, part, contracts, overrides))))
              for word in refs["words"]]
-    from_runs = runs.analyse(items, refs, first, blob, tables)
+    from_runs = runs.analyse(items, refs, first, blob, tables, part)
     for word in first:
         klass, signal, note = (from_runs.get(word["addr"])
                                or (word["class"], word["signal"], word["note"]))
@@ -636,7 +656,7 @@ def main():
     with open(args.image, "rb") as fh:
         blob = fh.read()
     contracts, overrides = read_facts(args.facts, blob, items["functions"])
-    tables = shapes.load().tables(symbols.load())
+    tables = shapes.load().typed_regions(symbols.load())
     rows, buckets, review, displacements = classify(items, refs, blob, contracts,
                                                     overrides, tables, cells)
     pointers = [r for r in rows if r["class"] == "pointer"]

@@ -57,7 +57,21 @@ each is a decision with a name:
                     table is typed by the declaration, and the declaration is
                     also a root for the reachability walk, because a table
                     nothing names is exactly what that walk would otherwise
-                    call unreachable.
+                    call unreachable. A struct global is a table of one row and
+                    is typed the same way, which is what reaches the 126 WUI
+                    view descriptors: they differ in length past their fifth
+                    word, so they are declared one by one rather than as a
+                    table, and the `const char *` name slot at +4 of the ones
+                    that hold an interned string was review until this saw it.
+
+  names_a_string_*  The linker merges a string that is a suffix of another, so
+                    the shorter one's pointer lands in the middle of the
+                    longer one's run, and it leaves runs of one and two
+                    characters that classify_words.py's PRINTABLE_MIN holds
+                    back. Neither shape decides on its own -- the string
+                    region is wide enough that an integer lands in a string by
+                    chance -- so what decides is the position: a column beside
+                    words already known to name strings.
 
   ordered_column    Where nothing names a run often enough to space out a grid,
                     the grid is read off the run itself: a column whose every
@@ -241,7 +255,86 @@ def addressish(value):
             or (value & 1 and APP_BASE <= (value & ~1) < APP_END))
 
 
-def analyse(items, refs, rows, blob, tables):
+# A string run of one or two characters, which abi/classify_words.py's
+# PRINTABLE_MIN holds back because a two-byte run reproduces nothing.
+SHORT_STRING_MAX = 2
+
+
+def interned_strings(rows, decided, runs, part, declared):
+    """Review words that name a string the linker interned inside another one.
+
+    The linker merges a string that is a suffix of another, so the shorter
+    one's pointer lands in the middle of the longer one's run: 0xd57de is
+    `PREDICTED_PERIOD` inside `BEFORE_PREDICTED_PERIOD`, 0xe81f6 is `Info`
+    inside `Clear Info`. The same merge leaves runs of one and two characters
+    that PRINTABLE_MIN holds back.
+
+    Neither shape decides anything on its own, because the string region is
+    160 KB wide and an integer lands in it by chance: 0xd0000 and 0xe0000 are
+    round numbers this image holds and both land inside a log line. What
+    decides is the position rather than the value -- the word has to sit where
+    a pointer sits, which is a column beside words already known to name
+    strings: the adjacent words of the same object, or the same field of the
+    rows on either side of a declared table. A lone short run with nothing
+    beside it stays on review.
+    """
+    by_addr = {row["addr"]: row for row in rows}
+    found = {}
+
+    def klass(row):
+        if row["addr"] in found:
+            return "pointer"
+        return decided.get(row["addr"], (row["class"],))[0]
+
+    def names_text(row):
+        return klass(row) == "pointer" and part.string_run(row["value"]) is not None
+
+    def column(row):
+        """The words that hold the same field of the object this word is in."""
+        here = runs.of(row["addr"])
+        near = [row["addr"] - 4, row["addr"] + 4]
+        for table in declared:
+            if table.address <= row["addr"] < table.end:
+                near += [row["addr"] - table.stride, row["addr"] + table.stride]
+        for addr in near:
+            mate = by_addr.get(addr)
+            if mate is not None and mate["kind"] == row["kind"] \
+                    and runs.of(addr) == here:
+                yield mate
+
+    candidates = []
+    for row in rows:
+        if klass(row) != "review":
+            continue
+        run = part.string_run(row["value"])
+        if run is None:
+            continue
+        start, end = run
+        offset = row["value"] - start
+        if not offset and end - row["value"] > SHORT_STRING_MAX:
+            continue
+        candidates.append((row, start, end, offset))
+
+    # A run of adjacent name slots is decided from its outside in, which takes
+    # as many rounds as the run is long: the cycle phases at 0xb35a4 are an
+    # override, then a tail, then the tail beside that one.
+    while True:
+        grew = False
+        for row, start, end, offset in candidates:
+            if row["addr"] in found:
+                continue
+            if not any(names_text(mate) for mate in column(row)):
+                continue
+            signal = "names_a_string_tail" if offset else "names_a_short_string"
+            found[row["addr"]] = ("pointer", signal,
+                                  "0x%x + %d of %d bytes" % (start, offset,
+                                                             end - start))
+            grew = True
+        if not grew:
+            return found
+
+
+def analyse(items, refs, rows, blob, declared, part):
     """{word address: (class, signal, note)} for the review words it decides."""
     runs = Runs(items)
     in_run = collections.defaultdict(list)
@@ -263,7 +356,7 @@ def analyse(items, refs, rows, blob, tables):
     def word_at(addr):
         return int.from_bytes(blob[addr - APP_BASE:addr - APP_BASE + 4], "little")
 
-    seeds = [t.address for t in tables]
+    seeds = [t.address for t in declared]
     for row in rows:
         if row["class"] == "pointer" or row["kind"] in ("pool", "jumptable"):
             seeds.append(row["value"])
@@ -284,7 +377,7 @@ def analyse(items, refs, rows, blob, tables):
     hinted = reader_strides(rows, runs)
     decided = {}
     by_addr = dict((row["addr"], row) for row in rows)
-    for table in tables:
+    for table in declared:
         fields = table.pointer_map()
         for at in range(table.address, table.end, 4):
             row = by_addr.get(at)
@@ -330,7 +423,7 @@ def analyse(items, refs, rows, blob, tables):
                     for stride in strides if len(strides) == 1]
             if len(refs) >= MIN_REFERENCES:
                 grid = segments(refs, end) or grid
-            tables = []
+            grids = []
             for base, stride, limit in grid:
                 count = (limit - base) // stride
                 if count < MIN_RECORDS:
@@ -341,12 +434,12 @@ def analyse(items, refs, rows, blob, tables):
                               for k in range(count)]
                     fields[at] = (any(column)
                                   and all(addressish(v) for v in column))
-                tables.append(("table", base, stride, fields, count))
-            if not tables:
+                grids.append(("table", base, stride, fields, count))
+            if not grids:
                 climbed = climbing_grid(start, end, word_at)
                 if climbed is not None:
-                    tables.append(("ordered",) + climbed)
-            for how, base, stride, fields, count in tables:
+                    grids.append(("ordered",) + climbed)
+            for how, base, stride, fields, count in grids:
                 for r in review:
                     if not base <= r["addr"] < base + count * stride:
                         continue
@@ -367,4 +460,5 @@ def analyse(items, refs, rows, blob, tables):
                     grew += 1
         if not grew:
             break
+    decided.update(interned_strings(rows, decided, runs, part, declared))
     return decided
