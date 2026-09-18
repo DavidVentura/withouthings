@@ -75,7 +75,7 @@ groups:
         kind: data
         proto: "extern const unsigned int appl_fw_version;"
         why: >
-          hwa10.yaml's fw_version_trailer fixed point, the u32 the bootloader and
+          the fw_version_trailer fixed point facts.yaml used to carry, the u32 the bootloader and
           the phone read. The original body loads it through a pool word, so the
           reimplementation has to name the same object rather than an address:
           exporting the section is what lets it, and a layout that moved the

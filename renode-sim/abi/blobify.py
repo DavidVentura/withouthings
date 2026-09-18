@@ -41,6 +41,8 @@ import archive_cost
 
 import datagen
 import objectify
+import shapes
+import symbols as symmap
 from objectify import (APP_BASE, APP_END, R_ARM_ABS32, R_ARM_THM_CALL,
                        R_ARM_THM_JUMP24, R_ARM_THM_JUMP19, SELF_BL, SELF_B)
 
@@ -206,27 +208,13 @@ def build(sections, blob, symbols, path):
 DATA_OBJECT = "*appl-data.o"
 
 
-def declared_tables(manifest, header):
-    """Every table hwa10.yaml declares, keyed by its address, with its fields.
-
-    The struct is gen.py's, so the fields come out of the same manifest entry
-    the header was generated from; `entry_fields` returns None where a C
-    compiler would lay the struct out differently from the stride the image
-    has, and that table stays bytes.
-    """
-    datagen.read_header(header)
-    structs = dict((t["name"], t["fields"]) for t in manifest["table_structs"])
-    typedefs = set(t["name"] for t in manifest.get("typedefs", []))
-    out = {}
-    for t in manifest["tables"]:
-        fields = datagen.entry_fields(structs[t["entry"]], typedefs)
-        out[t["address"]] = ((t["address"], t["stride"], t["count"], t["name"],
-                              t["entry"]), fields)
-    return out
+def declared_tables(tables):
+    """Every declared table, keyed by the address the map gives it."""
+    return dict((t.address, t) for t in tables)
 
 
 def emit_data(directory, sources, delegated, blob, section_names, forced,
-              reached_from, reserved, tables):
+              reached_from, reserved, tables, declared):
     """Write each delegated data section as source, and say which names it publishes.
 
     A name is published where something outside the section reaches it, and only
@@ -255,8 +243,7 @@ def emit_data(directory, sources, delegated, blob, section_names, forced,
         body = bytes(blob[s.start - APP_BASE:s.end - APP_BASE])
         words = dict((off, sym) for off, sym, t in s.relocs if t == R_ARM_ABS32)
         if s.start in tables:
-            table, fields = tables[s.start]
-            text, why = datagen.render_table(s, body, table, fields, words,
+            text, why = datagen.render_table(s, body, tables[s.start], declared, words,
                                              names)
             if text is not None:
                 emitted.append((s, text, "typed"))
@@ -405,10 +392,10 @@ def stock_definitions(boundary, replacements, path):
     return len(defs) + len(data_defs)
 
 
-def pinned_addresses(manifest, layout):
-    """The section starts hwa10.yaml's fixed points name, checked against the cover."""
+def pinned_addresses(facts, layout):
+    """The section starts abi/facts.yaml's fixed points name, checked against the cover."""
     pinned = set()
-    for f in manifest["fixed_points"]:
+    for f in facts["fixed_points"]:
         addr = int(f["addr"], 0) if isinstance(f["addr"], str) else f["addr"]
         section = layout.at(addr)
         if section is None:
@@ -1046,9 +1033,6 @@ def main():
                     help="write every data section to DIR as assembler or C"
                          " source and leave it out of the object, so the link"
                          " takes the app's data from source like its kernel")
-    ap.add_argument("--header", default=os.path.join(SIM, "out", "hwa10.h"),
-                    help="gen.py's header, which the typed tables include and"
-                         " which says which names are already declared")
     ap.add_argument("--data-sources",
                     default=os.path.join(SIM, "out", "data-sources.txt"),
                     help="where to list the C files --data-source wrote, for"
@@ -1073,7 +1057,9 @@ def main():
         args.replace + [g for g in prune_replacements(args.prunes, args.prune)
                         if g not in args.replace])
     boundary = yaml.safe_load(open(os.path.join(HERE, "boundary.yaml")))
-    manifest = yaml.safe_load(open(os.path.join(HERE, "hwa10.yaml")))
+    facts = yaml.safe_load(open(os.path.join(HERE, "facts.yaml")))
+    types = shapes.load()
+    tables = types.tables(symmap.load())
     blob = bytearray(open(args.image, "rb").read())
     if len(blob) != APP_END - APP_BASE:
         sys.exit("%s is %d bytes, the app image is %d"
@@ -1151,15 +1137,14 @@ def main():
     named |= set(r["target"] for r in refs["pc_addresses"])
     named |= set(t for _, t in reads)
     named |= set(a for a in reserved.values() if a >= 0)
-    named |= set(int(str(f["addr"]), 0) for f in manifest["fixed_points"])
+    named |= set(int(str(f["addr"]), 0) for f in facts["fixed_points"])
     named |= set(f["start"] for f in items["functions"])
-    # A table the manifest declares is an object whatever the run around it
-    # looks like, and both its ends are points: the declaration is what says
-    # where the rows stop, and a table that shares a section with the bytes
-    # after it cannot be emitted as the array it is.
-    for table in manifest["tables"]:
-        lo = table["address"]
-        hi = lo + table["stride"] * table["count"]
+    # A declared table is an object whatever the run around it looks like, and
+    # both its ends are points: the declaration is what says where the rows
+    # stop, and a table that shares a section with the bytes after it cannot be
+    # emitted as the array it is.
+    for table in tables:
+        lo, hi = table.address, table.end
         # A declaration is stronger than the generic rule: the rows are one
         # object, so a word naming row 17 of the asset table is a label inside
         # it and not a second section. Both ends are points, and nothing
@@ -1170,9 +1155,9 @@ def main():
 
     # Only the declared tables stop a string run: see objectify.string_runs.
     table_bounds = set()
-    for table in manifest["tables"]:
-        table_bounds.add(table["address"])
-        table_bounds.add(table["address"] + table["stride"] * table["count"])
+    for table in tables:
+        table_bounds.add(table.address)
+        table_bounds.add(table.end)
     strings = objectify.string_runs(blob, covered, table_bounds)
     sections, shared, slivers, distant = objectify.build_sections(
         items, refs["calls"], reads, refs["fallthrough"],
@@ -1344,7 +1329,7 @@ def main():
             print("  %s enters the blob at %d of its sections"
                   % (os.path.basename(path), len(named)))
     if args.gc:
-        keep = gc_keep_list(sections, layout, pinned_addresses(manifest, layout),
+        keep = gc_keep_list(sections, layout, pinned_addresses(facts, layout),
                             words, args.reach, section_names,
                             replacements.by_start, outside)
         if args.keep_also:
@@ -1368,7 +1353,7 @@ def main():
                      " the data has to be linked from abi/datagen.py's source"
                      " for that: rerun with DATA=1 (--data-source <dir>)"
                      % args.layout)
-        pinned = pinned_addresses(manifest, layout)
+        pinned = pinned_addresses(facts, layout)
         anchors = dict((w["value"] & ~1, "review") for w in words
                        if w["class"] == "review")
         for d in classified["displacements"]:
@@ -1447,8 +1432,8 @@ def main():
     if args.data_source:
         data_files, untyped = emit_data(
             args.data_source, args.data_sources, delegated, blob, section_names,
-            forced, reached_from, reserved,
-            declared_tables(manifest, args.header))
+            forced, reached_from, reserved, declared_tables(tables),
+            types.declared)
     build(in_blob, blob, symbols, args.o)
     obj = "*" + os.path.basename(args.o)
     if args.gc:
@@ -1461,7 +1446,7 @@ def main():
               % (len(keep), sum(s.end - s.start for s, _ in keep),
                  ", ".join("%s %d" % (k, n) for k, n in sorted(reasons.items()))))
     elif args.reclaim:
-        objectify.reclaim_placement(sections, pinned_addresses(manifest, layout),
+        objectify.reclaim_placement(sections, pinned_addresses(facts, layout),
                                     args.place, obj)
     else:
         objectify.placement(sections, moves, args.place, obj, drop=dead,

@@ -22,7 +22,7 @@ while read -r src; do
     [ -n "$src" ] || continue
     o="$OUT/data_$(basename "$src" .c).o"
     "$GCC-gcc" $ARCH -Os -ffunction-sections -fdata-sections -fshort-enums \
-        -std=gnu99 -w -I ../out -c "$src" -o "$o"
+        -std=gnu99 -w -I ../out -I include -c "$src" -o "$o"
     objs="$objs $o"
 done < ../out/data-sources.txt
 "$GCC-ld" -r -o "$OUT/appl-data.o" $objs

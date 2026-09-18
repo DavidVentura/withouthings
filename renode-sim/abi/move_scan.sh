@@ -28,10 +28,6 @@ DATA_ARGS=""
 if [ -n "${DATA:-}" ]; then
     DATA_ARGS="--data-source $(cd ..; pwd)/out/data"
     DATA_OBJ="$OUT/appl-data.o"
-    # The typed tables include out/hwa10.h and are compiled against it, so it is
-    # generated from the manifest here as identity.sh does it; without this the
-    # scan compiles this run's tables against the last run's header.
-    python3 gen.py --out ../out > /dev/null
 fi
 python3 blobify.py -o "$OUT/appl-blob.o" --layout "$LAYOUT" $DATA_ARGS
 if [ -n "${DATA:-}" ]; then ./datagen.sh; fi

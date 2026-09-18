@@ -43,6 +43,7 @@ import sys
 import yaml
 
 import libc_check
+import symbols as symmap
 import match
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -149,18 +150,11 @@ def load_archives(args):
 
 def known_names():
     """What every address is called today, and by whom."""
-    auto = yaml.safe_load(open(os.path.join(HERE, "autonames.yaml")))
-    hand = yaml.safe_load(open(os.path.join(HERE, "hwa10.yaml")))
-    matched = yaml.safe_load(open(os.path.join(HERE, "matches.yaml")))
     named = {}
-    for f in auto["functions"]:
-        named[f["address"]] = ("autonames:" + f["class"], f["name"])
-    for f in matched.get("functions", []) or []:
-        addr = f.get("address")
-        if addr is not None:
-            named.setdefault(addr, ("matches", f.get("name") or f.get("symbol")))
-    for f in hand.get("functions", []) or []:
-        named[f["address"]] = ("hand", f["name"])
+    for sym in symmap.load().of_kind("function"):
+        source = {symmap.HAND: "hand", "match": "matches"}.get(
+            sym.klass, "autonames:" + sym.klass)
+        named[sym.address] = (source, sym.name)
     return named
 
 

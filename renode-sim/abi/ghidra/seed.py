@@ -4,43 +4,48 @@
     python3 abi/ghidra/seed.py [-o abi/out/ghidra/seed.json]
 
 abi/ghidra/analyze.sh runs this before analyzeHeadless; the Ghidra pre-script
-applies the result. Sources, and what each is trusted to say:
+applies the result.
 
-  abi/hwa10.yaml     functions (prototype known), globals (typed) and tables
-                     (entry struct and stride), the only place strides come from
-  abi/matches.yaml   library bodies recovered by abi/match.py: function starts
-  abi/autonames.yaml mechanically derived names: function starts
-  symbols.txt        the prose map: names only, no kind, because it mixes code,
-                     flash data and RAM addresses in one list
-
-Nothing here guesses a kind: a symbols.txt address becomes a label and lets the
-analysis decide whether a function starts there.
+abi/symbols.yaml is where every name comes from and its `kind` is what each is
+trusted to say: a function start, a typed global, a table, or -- for the prose
+entries, which mix code, flash data and RAM in one list -- a bare label that
+lets the analysis decide whether a function starts there. The shape a global or
+a table's rows are laid out in is C, so it comes from the hand headers through
+abi/shapes.py, which is also the only place a stride can come from: a stride is
+`sizeof` the row struct.
 """
 
 import argparse
 import json
 import os
-import re
 import sys
-
-import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ABI = os.path.dirname(HERE)
-SIM = os.path.dirname(ABI)
-APP_BASE = 0x27000
-APP_END = 0xF117C
+sys.path.insert(0, ABI)
 
-SYM_LINE = re.compile(r"^(0x[0-9a-fA-F]+)\s+([A-Za-z_][A-Za-z0-9_]*)")
+import symbols as S      # noqa: E402
+import shapes as T        # noqa: E402
+
+APP_BASE = S.APP_BASE
+APP_END = S.APP_END
 
 
 def in_app(addr):
     return APP_BASE <= addr < APP_END
 
 
-def load(name):
-    with open(os.path.join(ABI, name)) as fh:
-        return yaml.safe_load(fh)
+def shape(field):
+    """One struct member as the seed carries it: a width and what it is.
+
+    The seed is a map of addresses and widths, not of prototypes: a row field
+    declared as a function-pointer typedef is the same four-byte code pointer
+    the scripts downstream read as any other, so the C spelling is dropped here
+    and only the shape survives.
+    """
+    return {"name": field.name, "offset": field.offset, "size": field.size,
+            "kind": field.kind, "count": field.count, "unit": field.unit,
+            "points_to": field.points_to}
 
 
 def main():
@@ -48,71 +53,38 @@ def main():
     ap.add_argument("-o", "--out", default=os.path.join(ABI, "out", "ghidra", "seed.json"))
     args = ap.parse_args()
 
+    smap = S.load()
+    types = T.load()
     functions, labels, data, tables = {}, {}, [], []
+    corrected = smap.corrected()
 
-    manifest = load("hwa10.yaml")
-    strides = {t["name"]: t for t in manifest.get("table_structs", [])}
-    # The seed is a map of addresses and widths, not of prototypes: a row field
-    # declared as one of the manifest's function-pointer typedefs is the same
-    # four-byte code pointer the scripts downstream read as `void *`, and only
-    # abi/gen.py has any use for the prototype.
-    typedefs = {t["name"] for t in manifest.get("typedefs", [])}
-
-    def erase(fields):
-        return [["void *" if str(t) in typedefs else t, n] for t, n in fields]
-
-    for fn in manifest["functions"]:
-        addr = fn["address"] & ~1
-        if in_app(addr):
-            functions[addr] = {"name": fn["name"], "source": "hwa10"}
-    for g in manifest["globals"]:
-        if in_app(g["address"]):
-            data.append({"address": g["address"], "name": g["name"],
-                         "type": g["type"], "source": "hwa10"})
-    for t in manifest["tables"]:
-        if not in_app(t["address"]):
+    for sym in smap.symbols:
+        if not in_app(sym.address) or sym.address in corrected:
             continue
-        entry = strides.get(t["entry"])
-        tables.append({"address": t["address"], "name": t["name"],
-                       "entry": t["entry"], "stride": t["stride"],
-                       "count": t["count"],
-                       "fields": erase(entry["fields"]) if entry else None,
-                       "source": "hwa10"})
-
-    # An address a manifest entry declares it corrects is not a function start,
-    # so the generated map must not seed one there as well: two entries six
-    # bytes apart would make the body's own prologue a separate item.
-    corrected = set(fn["corrects"] & ~1 for fn in manifest["functions"]
-                    if "corrects" in fn)
-    # abi/match.py settles a body by its normalised disassembly, which cannot see
-    # the first instructions of a body whose prologue the alignment swallowed, so
-    # it can place a symbol a few bytes into itself. abi/autonames.py's
-    # archive-side search compares the bytes, and where the two put one name at
-    # two addresses the bytes decide: seeding both would cut the body in half at
-    # the matcher's address and leave the head its own function.
-    byte_evidence = {fn["name"]: fn["address"] & ~1
-                     for fn in load("autonames.yaml").get("functions", [])}
-    for src in ("matches.yaml", "autonames.yaml"):
-        doc = load(src)
-        for fn in doc.get("functions", []):
-            addr = fn["address"] & ~1
-            if not in_app(addr) or addr in functions or addr in corrected:
-                continue
-            if byte_evidence.get(fn["name"], addr) != addr:
-                continue
-            functions[addr] = {"name": fn["name"], "source": src.split(".")[0]}
-
-    with open(os.path.join(SIM, "symbols.txt")) as fh:
-        for line in fh:
-            if line.startswith("#"):
-                continue
-            m = SYM_LINE.match(line.strip())
-            if not m:
-                continue
-            addr = int(m.group(1), 16) & ~1
-            if not in_app(addr) or addr in functions:
-                continue
-            labels.setdefault(addr, {"name": m.group(2), "source": "symbols"})
+        if sym.kind == "function":
+            functions[sym.address] = {"name": sym.name, "source": sym.klass}
+        elif sym.kind == "global":
+            obj = types.object(sym.name)
+            data.append({"address": sym.address, "name": sym.name,
+                         "size": obj.size, "type": obj.ctype, "kind": obj.kind,
+                         "element": obj.element, "count": obj.count,
+                         "source": sym.klass})
+        elif sym.kind == "table":
+            obj = types.object(sym.name)
+            row = types.struct(obj.element)
+            tables.append({"address": sym.address, "name": sym.name,
+                           "entry": obj.element, "stride": row.size,
+                           "count": obj.count,
+                           "fields": [shape(f) for f in row.fields],
+                           "source": sym.klass})
+    # A second name for an address is a label, and only where the address is
+    # not already a function: Ghidra takes the function's own name from the
+    # entry, and a label on top of it would only rename the same item.
+    for sym in smap.symbols:
+        if not in_app(sym.address) or sym.address in functions:
+            continue
+        for name in ([sym.name] if sym.kind == "label" else []) + sym.aliases:
+            labels.setdefault(sym.address, {"name": name, "source": sym.klass})
 
     out = {"app_base": APP_BASE, "app_end": APP_END,
            "functions": [dict(address=a, **v) for a, v in sorted(functions.items())],

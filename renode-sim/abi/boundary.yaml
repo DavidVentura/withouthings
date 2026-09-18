@@ -47,7 +47,7 @@ config_corrections:
     617 in xQueueGiveMutexRecursive), which also dates the kernel source.
 
 # Spans of the image the library occupies, as abi/matches.yaml brackets them
-# (first to last matched function of each run, with hwa10.yaml's corrections
+# (first to last matched function of each run, with the map's corrections
 # applied). A `bl` from inside a span is a
 # library-internal call and is not part of the boundary. The spans understate
 # the library slightly at their edges -- prvInitialiseTaskLists below 0x72eb0,
@@ -261,7 +261,7 @@ app_to_lib:
     sites: 82
     tail_sites: 56
     symbol: "xQueueGenericSend"
-    how: "hwa10.yaml/symbols.txt"
+    how: "symbols.yaml, hand"
     confidence: "high"
   - addr: 0x73bc0
     sites: 23
@@ -327,7 +327,7 @@ app_to_lib:
     sites: 105
     tail_sites: 20
     symbol: "xQueueSemaphoreTake"
-    how: "hwa10.yaml + reference 0.86"
+    how: "symbols.yaml + reference 0.86"
     confidence: "high"
   - addr: 0x9e9ac
     sites: 1

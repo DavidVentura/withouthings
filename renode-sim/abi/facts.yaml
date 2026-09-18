@@ -1,0 +1,76 @@
+# HWA10 (ScanWatch 2) application firmware v3411 -- what is neither
+# C nor an address: the regions the relink places into, the sections
+# no layout may move, and the corrections the reference build needs.
+# Written by abi/migrate.py; hand-maintained.
+
+meta:
+  firmware: appl v3411
+  cpu: cortex-m4
+  float_abi: hard
+  app_base: 159744
+  app_end: 987516
+  bootloader_base: 1032192
+regions:
+- name: LIBRARY_FLASH
+  start: 987520
+  size: 44672
+  kind: flash
+  notes: 'Internal flash between the end of the app image (0xf117c) and the bootloader
+    (0xfc000). The app can only program internal flash through two leaf routines,
+    int_flash_erase_range (0x3a318) and int_flash_write (0x3a348); the only callers
+    in the image are the thunks 0x9ab8e/0x93786, whose single caller is the UART
+    debug shell''s "erase range" command (strings ''erase''/''range'' at 0xde12b/0xda248,
+    handler around 0x53920). Nothing on the normal boot or WPP path writes internal
+    flash: settings and the firmware banks live in the external MX25R (dblib / fwblk).
+    Confirmed in the sim over 600 s of virtual time with a WPP session and a time
+    write: the NVMC model logged no ERASEPAGE and a snapshot of 0xf1000..0xfc000
+    taken at reset verified byte-identical at the end of the run. The start is the
+    app image end rounded up to the 16 bytes .libtext''s own alignment asks for,
+    not a round address: abi/relink.ld puts the relinked library here so that app
+    and library are one contiguous block and travel as one `appl` part in a firmware
+    package. Word alignment is all the package needs, since a part''s CRC32 is taken
+    over its length rounded up to a word and the bootloader''s copy (0xfc78c) is
+    byte-addressed and 512-byte chunked. The size runs to the bootloader at 0xfc000.
+
+    '
+- name: LIBRARY_RAM
+  start: 537083904
+  size: 24576
+  kind: ram
+  notes: 'The app''s initial MSP is 0x20040000 (top of the 256 KB SRAM) and the
+    main stack grows down from there. After 600 s of virtual time that included
+    a BLE connection, a WPP probe, the read-only command walk, a time write and
+    the algorithm manager running, a dump of 0x20026000..0x20040000 was non-zero
+    only in 0x20026000..0x2002ae00 (statics and the FreeRTOS heap) and 0x2003f000..0x20040000
+    (the main stack''s low-water mark). The 0x14200 bytes between them were never
+    written. 0x20034000 sits in the middle of that hole, 0x9200 above the highest
+    used static and 0xb000 below the deepest the stack reached, and 0x2003a000 is
+    still 0x5000 below it; the source heap_4 brings its own 16 KB ucHeap, which
+    is what the size holds. Cross-checked by snapshotting this exact range at reset
+    with the NVMC model''s SnapshotProtectedRegion (it works on any sysbus range,
+    not just flash) and verifying it at the end of the run: zero words differed.
+
+    '
+fixed_points:
+- addr: 159744
+  name: app_vector_table
+  read_by: MBR, SoftDevice, bootloader
+  notes: 'The application''s vector table. The SoftDevice forwards every interrupt
+    through the table at the base it is given, the bootloader boots the app by reading
+    the initial MSP and the reset entry from the first two words, and the linked
+    library''s port.c reads the same table for the main stack top. 0x27000 is also
+    the size field of the MBR/SoftDevice structure, which is why the app links there
+    in the first place.
+
+    '
+reference_build:
+  tick_timer:
+    header: CMSIS/nrf52/portmacro_cmsis.h
+    replace:
+    - - NRF_RTC1
+      - NRF_RTC2
+    - - RTC1_IRQn
+      - RTC2_IRQn
+    notes: 'The SDK''s FreeRTOS port hardcodes RTC1 as the tick source. This firmware''s
+      tick is RTC2: 0x74034 writes RTC2''s PRESCALER as 0x20 and vector 52, RTC2''s,
+      is the tick ISR. The path is relative to the SDK''s freertos/portable.'

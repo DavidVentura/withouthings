@@ -1,7 +1,7 @@
 /* WPP_CMD_BATTERY_STATUS (1284) rewritten in C against the generated header.
  *
  * Not wired into the relink: abi/replacements.yaml does not list it. It exists
- * to show that abi/out/hwa10.h alone carries everything a replacement of a WPP
+ * to show that abi/include/withings alone carries everything a replacement of a WPP
  * command handler needs: the handler's prototype, the reply object's in-memory
  * struct, and a send path typed by that struct.
  *
@@ -11,7 +11,7 @@
  *     -I abi/out -fsyntax-only abi/replace/examples/wpp_cmd_battery_status.c
  */
 
-#include "hwa10.h"
+#include "withings/all.h"
 
 void wpp_cmd_battery_status(const void *objects, unsigned short len)
 {

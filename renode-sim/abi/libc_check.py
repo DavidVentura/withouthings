@@ -46,6 +46,8 @@ import sys
 
 import yaml
 
+import symbols as symmap
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIM = os.path.dirname(HERE)
 APP_BASE = 0x27000
@@ -249,9 +251,7 @@ def name_index():
     matcher. A partition spelling like `_scanf_i__2` is a split function's tail
     numbered after its head and claims nothing, so it is not one of them.
     """
-    auto = yaml.safe_load(open(os.path.join(HERE, "autonames.yaml")))
-    hand = yaml.safe_load(open(os.path.join(HERE, "hwa10.yaml")))
-    matched = yaml.safe_load(open(os.path.join(HERE, "matches.yaml")))
+    smap = symmap.load()
     boundary = yaml.safe_load(open(os.path.join(HERE, "boundary.yaml")))
     repl = yaml.safe_load(open(os.path.join(HERE, "replacements.yaml")))
     names = collections.defaultdict(set)
@@ -262,12 +262,10 @@ def name_index():
             return
         names[addr].add(base_name(name))
 
-    for f in auto["functions"]:
-        claim(f["address"], f["name"])
-    for f in matched.get("functions", []) or []:
-        claim(f.get("address"), f.get("name") or f.get("symbol"))
-    for f in hand.get("functions", []) or []:
-        claim(f["address"], f["name"])
+    for sym in smap.of_kind("function"):
+        claim(sym.address, sym.name)
+        for alias in sym.aliases:
+            claim(sym.address, alias)
     for group in ("app_to_lib", "lib_to_app"):
         for e in boundary.get(group, []) or []:
             claim(e.get("addr"), e.get("symbol"))
