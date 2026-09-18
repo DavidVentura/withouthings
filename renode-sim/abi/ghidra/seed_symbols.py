@@ -40,7 +40,11 @@ SEED_TYPES = {
 }
 
 
-FIELD_ARRAY = re.compile(r"^(.*)\[(\d+)\]$")
+# The manifest writes a length however it reads best at the declaration, and a
+# run measured off an address is written in hex: `u8[0x23a4]` used to match
+# nothing here and seed nothing, while abi/gen.py's own ARRAY accepted both all
+# along, so the C header had the array and Ghidra did not.
+FIELD_ARRAY = re.compile(r"^(.*)\[(0x[0-9a-fA-F]+|\d+)\]$")
 
 
 def field_type(t):
@@ -50,7 +54,8 @@ def field_type(t):
     m = FIELD_ARRAY.match(t)
     if m:
         base = field_type(m.group(1))
-        return None if base is None else ArrayDataType(base, int(m.group(2)), base.getLength())
+        return None if base is None else ArrayDataType(base, int(m.group(2), 0),
+                                                       base.getLength())
     return SEED_TYPES.get(t)
 
 

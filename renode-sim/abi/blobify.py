@@ -732,6 +732,89 @@ def apply_prunes(blob, items, path, wanted):
     return touched
 
 
+def ar_members(data):
+    """Each member of a `!<arch>` archive, as bytes; the tables are skipped.
+
+    An archive on the link line is read whole rather than as the members the
+    link would really pull in: a member that is not pulled in contributes roots
+    for nothing, which costs a few sections kept, and guessing which ones the
+    link wants would be reimplementing the link.
+    """
+    at, out = 8, []
+    while at + 60 <= len(data):
+        name = data[at:at + 16].decode("latin1").strip()
+        size = int(data[at + 48:at + 58].decode("latin1").strip() or 0)
+        body = at + 60
+        at = body + size + (size & 1)
+        if name in ("/", "//", "/SYM64/") or data[body:body + 4] != b"\x7fELF":
+            continue
+        out.append(data[body:body + size])
+    return out
+
+
+def undefined_symbols(path):
+    """The names an ELF32-LE relocatable or archive references and does not define."""
+    blob = open(path, "rb").read()
+    if blob[:8] == b"!<arch>\n":
+        out = set()
+        for member in ar_members(blob):
+            out |= elf_undefined(member, path)
+        return out
+    return elf_undefined(blob, path)
+
+
+def elf_undefined(data, path):
+    if data[:4] != b"\x7fELF" or data[4] != 1 or data[5] != 1:
+        sys.exit("%s is not an ELF32 little-endian object" % path)
+    shoff, = struct.unpack_from("<I", data, 0x20)
+    shentsize, shnum, _ = struct.unpack_from("<HHH", data, 0x2E)
+    headers = [struct.unpack_from("<10I", data, shoff + i * shentsize)
+               for i in range(shnum)]
+    found = set()
+    for _, styp, _, _, off, size, link, _, _, entsize in headers:
+        if styp != 2 or not entsize:            # SHT_SYMTAB
+            continue
+        stroff = headers[link][4]
+        for at in range(entsize, size, entsize):
+            name, _, _, _, _, shndx = struct.unpack_from("<IIIBBH", data, off + at)
+            if not name or shndx:               # defined here, or unnamed
+                continue
+            end = data.index(b"\0", stroff + name)
+            found.add(data[stroff + name:end].decode())
+    return found
+
+
+def linked_roots(sections, section_names, objects, exported=()):
+    """The blob sections the rest of the link line reaches by name.
+
+    --gc-sections walks from every object it links, not from the app alone, so
+    a section whose only keeper is the source kernel, the glue, a replacement
+    body or the C library is kept by the real link and looks dead to a walk
+    that enters the app's vector table and nothing else. That gap is what
+    relink.ld's `.blobdead` was catching: the sections a layout left out of the
+    placement because the walk called them dead, which the link then kept and
+    put in the library region. Reading each object's undefined symbols closes
+    it -- an undefined name a blob section defines is an edge into the blob
+    from outside it, and that is exactly a root. The archives count: the nine
+    syscalls the C library calls are exported from the image rather than
+    stubbed, and `_write`, `_lseek`, `_exit`, `_getpid` and `_isatty` are the
+    five that no app path reaches, so libc.a is the only thing keeping them.
+    """
+    owner = dict(exported)
+    for s in sections:
+        for _, name, _ in section_names(s):
+            owner.setdefault(name, s)
+    roots, by_object = [], {}
+    for path in objects:
+        if not os.path.exists(path):
+            sys.exit("%s is on the link line but does not exist yet; the gc walk"
+                     " needs it before the placement is written" % path)
+        named = sorted(n for n in undefined_symbols(path) if n in owner)
+        by_object[path] = named
+        roots.extend(owner[n] for n in named)
+    return roots, by_object
+
+
 def gc_reachable(sections, section_names, start, also=()):
     """The section starts --gc-sections keeps when it enters the object at `start`.
 
@@ -740,6 +823,10 @@ def gc_reachable(sections, section_names, start, also=()):
     in hand so that the replacements and prunes this run applied are in it.
     A relocation against a name no section defines -- what a replaced body's
     callers now hold -- is an edge out of the object and not an edge at all.
+
+    `also` is the rest of the link line, as `linked_roots` reads it: every other
+    object and archive is a way into the blob and its entries are roots beside
+    the vector table.
     """
     owner = {}
     for s in sections:
@@ -757,7 +844,7 @@ def gc_reachable(sections, section_names, start, also=()):
 
 
 def gc_keep_list(sections, layout, pinned, words, reach_path, section_names,
-                 replaced=()):
+                 replaced=(), also=()):
     """(section, why) for everything --gc-sections must not be allowed to drop.
 
     Three kinds, and only three. The fixed points are a contract with the MBR,
@@ -781,7 +868,7 @@ def gc_keep_list(sections, layout, pinned, words, reach_path, section_names,
     with open(reach_path) as fh:
         reach = json.load(fh)
     keep, seen = [], set()
-    already = gc_reachable(sections, section_names, layout.at(APP_BASE))
+    already = gc_reachable(sections, section_names, layout.at(APP_BASE), also)
 
     replaced = set(replaced)
 
@@ -828,6 +915,11 @@ def main():
                          " the library region after the image; the library"
                          " region ends at the bootloader and cannot grow, so"
                          " this is the only place a bigger library fits")
+    ap.add_argument("--also-linked", action="append", default=[], metavar="OBJECT",
+                    help="another object on the link line, whose undefined"
+                         " symbols are roots for the --gc walk; without them the"
+                         " walk enters the app alone and calls dead what the"
+                         " source kernel, the glue or a replacement keeps")
     ap.add_argument("--gc", action="store_true",
                     help="place only the fixed points and KEEP only what the"
                          " linker cannot see, so --gc-sections drops the rest;"
@@ -1047,10 +1139,18 @@ def main():
             symbols.add(address_alias(addr), (addr - s.start) | (1 if is_func else 0),
                         s.index + 1, STB_LOCAL, STT_FUNC if is_func else STT_OBJECT)
 
+    exported = {}
+
     def export(name, addr, styp):
         section = layout.at(addr)
         if section is None:
             sys.exit("cannot export %s: 0x%x is outside the app" % (name, addr))
+        # The boundary's and the replacements' published names are how the rest
+        # of the link line reaches into the blob, and they are not among the
+        # names `section_names` gives a section, so the gc walk needs them
+        # separately: the kernel's three application hooks and the five
+        # syscalls only libc.a calls are all of this kind.
+        exported.setdefault(name, section)
         if id(section) in delegated_set:
             # The definition is in datagen's file, so this object only declares
             # the name and the fragment there publishes it. A function name can
@@ -1117,11 +1217,17 @@ def main():
     # for the packing exactly as a replaced body's are. A section that survives
     # after all is not placed by the fragment and falls into relink.ld's
     # `.blobdead`, where it is linked correctly and shows up in the map.
-    keep = None
+    keep, outside = None, []
+    if args.gc or args.also_linked:
+        outside, by_object = linked_roots(sections, section_names,
+                                          args.also_linked, exported)
+        for path, named in sorted(by_object.items()):
+            print("  %s enters the blob at %d of its sections"
+                  % (os.path.basename(path), len(named)))
     if args.gc:
         keep = gc_keep_list(sections, layout, pinned_addresses(manifest, layout),
                             words, args.reach, section_names,
-                            replacements.by_start)
+                            replacements.by_start, outside)
         if args.keep_also:
             by_name = {s.name: s for s in sections}
             listed = set(s.name for s, _ in keep)
@@ -1179,7 +1285,8 @@ def main():
             dead = set(replacements.by_start)
             if keep is not None:
                 survives = gc_reachable(sections, section_names,
-                                        layout.at(APP_BASE), [s for s, _ in keep])
+                                        layout.at(APP_BASE),
+                                        [s for s, _ in keep] + outside)
                 dead |= set(s.start for s in sections if s.start not in survives)
         else:
             dead = set()

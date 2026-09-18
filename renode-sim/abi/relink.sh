@@ -120,6 +120,27 @@ if [ -n "${DATA:-}" ]; then
     DATA_OBJ="$OUT/appl-data.o"
 fi
 REPLACE_ARGS="$REPLACE_ARGS" ./identity.sh
+
+# The replacement sources, compiled against the same generated header the rest
+# of the new code uses (out/hwa10.h) plus out/replace.h, which the identity run
+# above wrote from replacements.yaml so the prototype and the evidence for it
+# live together. They are built here rather than after the placement because
+# the --gc walk needs every object on the link line: a section whose only
+# keeper is a replacement body is kept by the real link and looks dead to a
+# walk that enters the app alone.
+python3 gen.py --out ../out > /dev/null
+while read -r src; do
+    [ -n "$src" ] || continue
+    o="$OUT/replace_$(basename "$src" .c).o"
+    "$GCC-gcc" $ARCH $COMMON -I../out -c "$src" -o "$o"
+    objs="$objs $o"
+done < ../out/replace-sources.txt
+# Every object and archive the link will see, so the --gc walk enters the blob
+# everywhere the link does: the source kernel, the glue, the replacement bodies
+# and the C library, which is the only thing that reaches five of the syscalls
+# the image exports.
+ALSO_ARGS=""
+for o in $objs $LIBS; do ALSO_ARGS="$ALSO_ARGS --also-linked $o"; done
 # LAYOUT=shift|reverse re-cuts the same object with every text section moved;
 # the identity link above still ran first, so the cutting is proven either way.
 # GC=1 re-cuts it with a placement that KEEPs only what the linker cannot see,
@@ -129,22 +150,12 @@ REPLACE_ARGS="$REPLACE_ARGS" ./identity.sh
 # means anything together with GC=1: the edits make the feature unreachable and
 # --gc-sections is what removes it.
 if [ -n "${GC:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" --gc ${LAYOUT:+--layout "$LAYOUT"} $SPILL_ARGS ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
+    python3 blobify.py -o "$OUT/appl-blob.o" --gc $ALSO_ARGS ${LAYOUT:+--layout "$LAYOUT"} $SPILL_ARGS ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
 elif [ -n "${LAYOUT:-}" ] || [ -n "$REPLACE_ARGS" ] || [ -n "${PRUNE:-}" ] || [ -n "${DATA:-}" ]; then
     python3 blobify.py -o "$OUT/appl-blob.o" ${LAYOUT:+--layout "$LAYOUT"} $SPILL_ARGS ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
 fi
 if [ -n "${DATA:-}" ]; then ./datagen.sh; fi
 
-# The replacement sources, compiled against the same generated header the rest
-# of the new code uses (out/hwa10.h) plus out/replace.h, which blobify writes
-# from replacements.yaml so the prototype and the evidence for it live together.
-python3 gen.py --out ../out > /dev/null
-while read -r src; do
-    [ -n "$src" ] || continue
-    o="$OUT/replace_$(basename "$src" .c).o"
-    "$GCC-gcc" $ARCH $COMMON -I../out -c "$src" -o "$o"
-    objs="$objs $o"
-done < ../out/replace-sources.txt
 # The map and the list of what gc removed are the inputs abi/stale_scan.py needs
 # to check a gc link: where each surviving section ended up, and which ranges
 # are gone, so a word still holding one of those addresses can be found.
