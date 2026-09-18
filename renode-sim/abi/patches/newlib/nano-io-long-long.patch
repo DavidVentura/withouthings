@@ -1,0 +1,157 @@
+--- a/newlib/libc/stdio/nano-vfprintf_local.h
++++ b/newlib/libc/stdio/nano-vfprintf_local.h
+@@ -74,6 +74,10 @@
+ #define _NO_LONGDBL
+ 
+ #define _NO_LONGLONG
++#if defined _WANT_IO_LONG_LONG \
++	&& (defined __GNUC__ || __STDC_VERSION__ >= 199901L)
++# undef _NO_LONGLONG
++#endif
+ 
+ #define _PRINTF_FLOAT_TYPE double
+ 
+@@ -110,8 +114,13 @@
+    value, we should use a conservative value.  */
+ #define	BUF		40
+ 
++#ifndef _NO_LONGLONG
++#define quad_t long long
++#define u_quad_t unsigned long long
++#else
+ #define quad_t long
+ #define u_quad_t unsigned long
++#endif
+ 
+ typedef quad_t * quad_ptr_t;
+ typedef void *void_ptr_t;
+@@ -138,7 +147,11 @@
+ /* ifdef _NO_LONGLONG, make QUADINT equivalent to LONGINT, so
+    that %lld behaves the same as %ld, not as %d, as expected if:
+    sizeof (long long) = sizeof long > sizeof int.  */
++#ifndef _NO_LONGLONG
++#define QUADINT		0x200		/* Quad integer.  */
++#else
+ #define QUADINT		LONGINT
++#endif
+ #define FPT		0x400		/* Floating point number.  */
+ /* Define as 0, to make SARG and UARG occupy fewer instructions.  */
+ # define CHARINT	0
+@@ -149,6 +162,18 @@
+ /* To extend shorts properly, we need both signed and unsigned
+    argument extraction methods.  Also they should be used in nano-vfprintf_i.c
+    and nano-vfprintf_float.c only, since ap is a pointer to va_list.  */
++#ifndef _NO_LONGLONG
++#define	SARG(flags) \
++	(flags&QUADINT ? GET_ARG (N, (*ap), quad_t) : \
++	    flags&LONGINT ? (long)GET_ARG (N, (*ap), long) : \
++	    flags&SHORTINT ? (long)(short)GET_ARG (N, (*ap), int) : \
++	    (long)GET_ARG (N, (*ap), int))
++#define	UARG(flags) \
++	(flags&QUADINT ? GET_ARG (N, (*ap), u_quad_t) : \
++	    flags&LONGINT ? (u_long)GET_ARG (N, (*ap), u_long) : \
++	    flags&SHORTINT ? (u_long)(u_short)GET_ARG (N, (*ap), int) : \
++	    (u_long)GET_ARG (N, (*ap), u_int))
++#else
+ #define	SARG(flags) \
+ 	(flags&LONGINT ? GET_ARG (N, (*ap), long) : \
+ 	    flags&SHORTINT ? (long)(short)GET_ARG (N, (*ap), int) : \
+@@ -159,6 +184,7 @@
+ 	    flags&SHORTINT ? (u_long)(u_short)GET_ARG (N, (*ap), int) : \
+ 	    flags&CHARINT ? (u_long)(unsigned char)GET_ARG (N, (*ap), int) : \
+ 	    (u_long)GET_ARG (N, (*ap), u_int))
++#endif
+ 
+ /* BEWARE, these `goto error' on error. And they are used
+    in more than one functions.
+--- a/newlib/libc/stdio/nano-vfprintf.c
++++ b/newlib/libc/stdio/nano-vfprintf.c
+@@ -611,6 +611,15 @@
+ 	  prt_data.flags |= (SHORTINT << (cp - flag_chars));
+ 	  fmt++;
+ 	}
++#ifndef _NO_LONGLONG
++      /* "ll" is a quad integer; nano's memchr-driven modifier scan only
++	 consumes one character, so the second 'l' is taken here.  */
++      if (prt_data.flags == LONGINT && *fmt == 'l')
++	{
++	  prt_data.flags = QUADINT;
++	  fmt++;
++	}
++#endif
+ 
+       /* The conversion specifiers.  */
+       prt_data.code = *fmt++;
+--- a/newlib/libc/stdio/nano-vfprintf_i.c
++++ b/newlib/libc/stdio/nano-vfprintf_i.c
+@@ -127,7 +127,11 @@
+     case 'd':
+     case 'i':
+       _uquad = SARG (pdata->flags);
++#ifndef _NO_LONGLONG
++      if ((quad_t) _uquad < 0)
++#else
+       if ((long) _uquad < 0)
++#endif
+ 	{
+ 	  _uquad = -_uquad;
+ 	  pdata->l_buf[0] = '-';
+--- a/newlib/libc/stdio/nano-vfscanf_local.h
++++ b/newlib/libc/stdio/nano-vfscanf_local.h
+@@ -88,6 +88,14 @@
+ 
+ 
+ #define _NO_LONGLONG
++#if defined _WANT_IO_LONG_LONG \
++	&& (defined __GNUC__ || __STDC_VERSION__ >= 199901L)
++# undef _NO_LONGLONG
++#endif
++#ifndef _NO_LONGLONG
++typedef unsigned long long u_quad_t;
++typedef long long quad_t;
++#endif
+ #undef _WANT_IO_C99_FORMATS
+ #undef _WANT_IO_POS_ARGS
+ 
+--- a/newlib/libc/stdio/nano-vfscanf_i.c
++++ b/newlib/libc/stdio/nano-vfscanf_i.c
+@@ -214,15 +214,31 @@
+     {
+       u_long ul;
+       *p = 0;
+-      ul = (*ccfn) (rptr, pdata->buf, (char **) NULL, pdata->base);
+-      if (pdata->flags & POINTER)
+-	*GET_ARG (N, *ap, void **) = (void *) (uintptr_t) ul;
+-      else if (pdata->flags & SHORT)
+-	*GET_ARG (N, *ap, short *) = ul;
+-      else if (pdata->flags & LONG)
+-	*GET_ARG (N, *ap, long *) = ul;
++#ifndef _NO_LONGLONG
++      if ((pdata->flags & LONGDBL) == 0)
++#endif
++	{
++	  ul = (*ccfn) (rptr, pdata->buf, (char **) NULL, pdata->base);
++	  if (pdata->flags & POINTER)
++	    *GET_ARG (N, *ap, void **) = (void *) (uintptr_t) ul;
++	  else if (pdata->flags & SHORT)
++	    *GET_ARG (N, *ap, short *) = ul;
++	  else if (pdata->flags & LONG)
++	    *GET_ARG (N, *ap, long *) = ul;
++	  else
++	    *GET_ARG (N, *ap, int *) = ul;
++	}
++#ifndef _NO_LONGLONG
+       else
+-	*GET_ARG (N, *ap, int *) = ul;
++	{
++	  u_quad_t uq;
++	  uq = (pdata->code == CT_INT)
++	       ? (u_quad_t) _strtoll_r (rptr, pdata->buf, (char **) NULL,
++					pdata->base)
++	       : _strtoull_r (rptr, pdata->buf, (char **) NULL, pdata->base);
++	  *GET_ARG (N, *ap, u_quad_t *) = uq;
++	}
++#endif
+       
+       pdata->nassigned++;
+     }

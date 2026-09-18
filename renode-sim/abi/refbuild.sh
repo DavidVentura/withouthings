@@ -24,6 +24,7 @@
 # the commit message and the notes in matches.yaml.
 set -eu
 
+HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=${ROOT:-$HOME/ref-build}
 SDK=$ROOT/sdk/nRF5_SDK_17.1.0_ddde560
 GCC=$ROOT/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi
@@ -472,13 +473,17 @@ NANO_OPTS="--target=arm-none-eabi --disable-multilib --disable-nls
  --disable-newlib-unbuf-stream-opt --enable-lite-exit
  --enable-newlib-global-atexit --enable-newlib-nano-formatted-io"
 
+# NEWLIB_SRC is the tree a build configures from, so a patched copy is a
+# variant rather than a second function.
+NEWLIB_SRC=$ROOT/src/$NEWLIB
+
 build_newlib() {
     # $1 is the build name, $2... any extra configure options.
     local name=$1; shift
     local d=$OUT/$name
     [ -f "$d/arm-none-eabi/newlib/libc.a" ] && return 0
     rm -rf "$d"; mkdir -p "$d"
-    (cd "$d" && PATH=$NEWLIB_CC:$PATH "$ROOT/src/$NEWLIB/configure" \
+    (cd "$d" && PATH=$NEWLIB_CC:$PATH "$NEWLIB_SRC/configure" \
         --prefix="$ROOT/install/$name" $NANO_OPTS "$@" \
         CFLAGS_FOR_TARGET="$NEWLIB_CFLAGS" > conf.log 2>&1)
     # libgloss wants the syscalls that are disabled, so it fails and is not
@@ -489,6 +494,28 @@ build_newlib() {
 }
 build_newlib newlib-nano-big
 build_newlib newlib-nano-small --enable-newlib-reent-small --enable-newlib-reent-check-verify
+
+# The image's printf and scanf take long long, which no release of newlib can
+# do in the nano files: nano-vfprintf_local.h and nano-vfscanf_local.h define
+# _NO_LONGLONG unconditionally in 4.3.0 and still do in 4.5.0, and no Arm
+# prebuilt nano archive differs there. abi/patches/newlib/ makes those two
+# headers honour --enable-newlib-io-long-long the way the non-nano files
+# already do and adds the two bodies the image shows: the second 'l' consumed
+# into QUADINT in nano-vfprintf.c, and the _strtoll_r/_strtoull_r arm in
+# nano-vfscanf_i.c. With it _svfprintf_r (0x90fb8) and _scanf_i (0x91780)
+# reproduce the image byte for byte, which they do under no other
+# configuration tried: -O2/-O3, GCC 12.3/13.2/13.3/14.2, newlib 4.4.0/4.5.0,
+# reent-small, and the io-c99-formats/io-pos-args/multithread options.
+NEWLIB_LL_SRC=$ROOT/src/$NEWLIB-longlong
+if [ ! -d "$NEWLIB_LL_SRC" ]; then
+    cp -r "$ROOT/src/$NEWLIB" "$NEWLIB_LL_SRC"
+    for p in "$HERE"/patches/newlib/*.patch; do
+        (cd "$NEWLIB_LL_SRC" && patch -p1 -s < "$p")
+    done
+fi
+NEWLIB_SRC=$NEWLIB_LL_SRC
+build_newlib newlib-nano-ll --enable-newlib-io-long-long
+NEWLIB_SRC=$ROOT/src/$NEWLIB
 
 # ---- CMSIS-DSP and KissFFT --------------------------------------------------
 # Candidates for the float and signal-processing blocks inside SENSORS_SYNC and

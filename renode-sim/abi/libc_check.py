@@ -50,16 +50,38 @@ class Archive(object):
         for obj in sorted(glob.glob(os.path.join(into, "*.o"))):
             listing = subprocess.run([self.tools + "objdump", "-t", obj],
                                      capture_output=True, text=True).stdout
+            found, offsets = [], {}
             for line in listing.splitlines():
                 row = line.split()
                 sections = [w for w in row if w.startswith(".text")]
                 if len(row) < 6 or "F" not in row[2:5] or not sections:
                     continue
                 section = sections[0]
+                off = int(row[0], 16)
                 size = int(row[row.index(section) + 1], 16)
-                if size and row[-1] not in self.bodies:
-                    self.bodies[row[-1]] = (obj, section, int(row[0], 16), size,
-                                            row[1])
+                found.append((section, off, size, row[-1], row[1]))
+                offsets.setdefault(section, set()).add(off)
+            # An assembly body has no .size directive, so its symbol carries
+            # size 0: memchr and the __aeabi_?ldivmod pair are written in .S and
+            # would otherwise read as absent from the build. The extent is then
+            # the next symbol in the same section, or the section's end.
+            ends = self.section_sizes(obj) if any(s == 0 for _, _, s, _, _ in found) else {}
+            for section, off, size, name, bind in found:
+                if not size:
+                    after = sorted(o for o in offsets[section] if o > off)
+                    size = (after[0] if after else ends.get(section, off)) - off
+                if size and name not in self.bodies:
+                    self.bodies[name] = (obj, section, off, size, bind)
+
+    def section_sizes(self, obj):
+        listing = subprocess.run([self.tools + "objdump", "-h", obj],
+                                 capture_output=True, text=True).stdout
+        sizes = {}
+        for line in listing.splitlines():
+            row = line.split()
+            if len(row) > 2 and row[1].startswith(".text"):
+                sizes[row[1]] = int(row[2], 16)
+        return sizes
 
     def body(self, name):
         obj, section, off, size, _ = self.bodies[name]
