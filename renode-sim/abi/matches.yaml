@@ -10,7 +10,31 @@ meta:
   app_base: 0x27000
   sdk: nRF5_SDK_17.1.0_ddde560
   toolchain: gcc-arm-none-eabi-9-2020-q2-update
+  saadc_toolchain: arm-gnu-toolchain-13.2.Rel1, nrfx 2.1.0 (abi/refbuild.sh)
+  libm_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120)
+  measured: 2026-09-18
   threshold: 0.65
+  # The reference builds this measurement is comparable against, and the
+  # set a re-run uses unless --variants or --all-variants says otherwise:
+  # ~/ref-build grows a variant whenever anybody recovers a driver, and a
+  # score is only a score against a fixed set of bodies.
+  variants: [O2_a0, O2_a2, O2_a3, O3_a0, O3_a2, O3_a3, Os_a0, Os_a2, Os_a3, fix_O2, fix_Os, k10_0_1_O2_a0, k10_0_1_O2_a3, k10_0_1_Os_a0, k10_0_1_Os_a3, k10_2_1_O2_a0, k10_2_1_O2_a3, k10_2_1_Os_a0, k10_2_1_Os_a3, k10_4_3_O2_a0, k10_4_3_O2_a3, k10_4_3_Os_a0, k10_4_3_Os_a3, k9_0_0_O2_a0, k9_0_0_O2_a3, k9_0_0_Os_a0, k9_0_0_Os_a3, libm_nano-big, libm_nano-small, n1_7_2_O2, n1_7_2_Os, n1_8_6_O2, n1_8_6_Os, n2_0_0_O2, n2_0_0_Os, n2_1_0_O2, n2_1_0_Os]
+  # `verdict` is the byte comparison of the recorded variant's body
+  # against the image with relocated fields masked (abi/body_check.py),
+  # plus agreement of every call the reference resolves itself. A verdict
+  # is a fact about one body and one build, so adding references can add
+  # candidates but cannot unsettle one. token_only entries are carried by
+  # the alignment score alone and are not settled.
+  verdicts: {exact: 12, masked: 41, token_only: 38}
+  ties: 0
+  # Candidates tried against the hard-float blocks in SENSORS_SYNC and
+  # ECG and rejected on bodies, not on constant tables: CMSIS-DSP 1.9.0
+  # (CMSIS 5.7.0), 1.10.0 (CMSIS 5.9.0) and 1.14.4 at -Os and -O2, whose
+  # only hit was one 17-instruction arm_rfft_*_fast_init_f64 body that
+  # eight of its own transform sizes share, and KissFFT 131.1.0, which
+  # reached no candidate position at all. The libm that does match is
+  # newlib 4.3.0.20230120 built by abi/refbuild.sh with the image's own
+  # flags, and none of its bodies lands in either block.
   # accuracy against the addresses already established in symbols.txt
   known_set: {correct: 7, wrong: 0, missing: 11, precision: 1.00, recall: 0.39}
 
@@ -18,6 +42,9 @@ functions:
   - name: prvIdleTask
     address: 0x27da6
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 52
+    divergence: "70 of 128 bytes differ outside the 52 a relocation owns, first at +0x0"
     score: 0.833
     insns: 42
     how: direct
@@ -26,6 +53,8 @@ functions:
   - name: SVC_Handler
     address: 0x27e20
     variant: O2_a0
+    verdict: token_only
+    divergence: "1 of 28 bytes differ outside the 0 a relocation owns, first at +0x0"
     score: 1.000
     insns: 9
     how: direct
@@ -33,6 +62,9 @@ functions:
   - name: PendSV_Handler
     address: 0x27e50
     variant: O2_a0
+    verdict: token_only
+    masked_bytes: 4
+    divergence: "6 of 92 bytes differ outside the 4 a relocation owns, first at +0x8"
     score: 0.929
     insns: 28
     how: direct
@@ -40,6 +72,8 @@ functions:
   - name: exp
     address: 0x2a7e0
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 24
     score: 1.000
     insns: 37
     how: direct
@@ -47,6 +81,8 @@ functions:
   - name: log
     address: 0x2a870
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 32
     score: 1.000
     insns: 39
     how: direct
@@ -55,6 +91,8 @@ functions:
   - name: cos
     address: 0x2a8f0
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 28
     score: 1.000
     insns: 50
     how: direct
@@ -62,6 +100,8 @@ functions:
   - name: sin
     address: 0x2a998
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 28
     score: 1.000
     insns: 51
     how: direct
@@ -70,6 +110,7 @@ functions:
   - name: nan
     address: 0x2aa40
     variant: libm_nano-big+graph
+    verdict: exact
     score: 1.000
     insns: 3
     how: propagated from log
@@ -77,6 +118,8 @@ functions:
   - name: __kernel_cos
     address: 0x2aa50
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 88
     score: 0.992
     insns: 120
     how: direct
@@ -84,6 +127,8 @@ functions:
   - name: __kernel_sin
     address: 0x2abe0
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 92
     score: 0.991
     insns: 115
     how: direct
@@ -91,6 +136,9 @@ functions:
   - name: __ieee754_exp
     address: 0x2ad58
     variant: libm_nano-big
+    verdict: token_only
+    masked_bytes: 164
+    divergence: "432 of 756 bytes differ outside the 164 a relocation owns, first at +0x8"
     score: 0.935
     insns: 231
     how: direct
@@ -98,6 +146,8 @@ functions:
   - name: __ieee754_log
     address: 0x2b040
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 192
     score: 1.000
     insns: 281
     how: direct
@@ -105,6 +155,8 @@ functions:
   - name: __ieee754_rem_pio2
     address: 0x2bdf8
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 208
     score: 0.822
     insns: 343
     how: direct
@@ -112,6 +164,8 @@ functions:
   - name: scalbn
     address: 0x2c1f0
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 12
     score: 1.000
     insns: 77
     how: direct
@@ -119,14 +173,18 @@ functions:
   - name: __kernel_rem_pio2
     address: 0x2c308
     variant: libm_nano-big
-    score: 0.951
+    verdict: masked
+    masked_bytes: 216
+    score: 0.594
     insns: 577
-    how: direct
+    how: byte-confirmed by autonames
     links: []
     broken_links: 1
   - name: floor
     address: 0x2c9a8
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 28
     score: 0.989
     insns: 90
     how: direct
@@ -135,6 +193,9 @@ functions:
   - name: pvPortMalloc
     address: 0x51a04
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 40
+    divergence: "182 of 236 bytes differ outside the 40 a relocation owns, first at +0xa"
     score: 0.727
     insns: 88
     how: direct
@@ -144,6 +205,8 @@ functions:
   - name: vPortFree
     address: 0x51afc
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 20
     score: 1.000
     insns: 24
     how: direct
@@ -153,6 +216,9 @@ functions:
   - name: prvGetExpectedIdleTime
     address: 0x72eb0
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 20
+    divergence: "22 of 60 bytes differ outside the 20 a relocation owns, first at +0xa"
     score: 0.900
     insns: 20
     how: direct
@@ -160,6 +226,8 @@ functions:
   - name: prvResetNextTaskUnblockTime
     address: 0x72eec
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 8
     score: 1.000
     insns: 13
     how: direct
@@ -167,6 +235,9 @@ functions:
   - name: eTaskGetState
     address: 0x72fa4
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 28
+    divergence: "3 of 104 bytes differ outside the 28 a relocation owns, first at +0x30"
     score: 0.950
     insns: 40
     how: direct
@@ -176,6 +247,9 @@ functions:
   - name: vTaskStartScheduler
     address: 0x7300c
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 40
+    divergence: "33 of 112 bytes differ outside the 40 a relocation owns, first at +0x1c"
     score: 0.750
     insns: 36
     how: direct
@@ -185,6 +259,8 @@ functions:
   - name: vTaskSuspendAll
     address: 0x73084
     variant: O2_a0
+    verdict: masked
+    masked_bytes: 4
     score: 1.000
     insns: 6
     how: direct
@@ -194,6 +270,9 @@ functions:
   - name: xTaskResumeAll
     address: 0x731dc
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 60
+    divergence: "133 of 220 bytes differ outside the 60 a relocation owns, first at +0x2"
     score: 0.737
     insns: 76
     how: direct
@@ -203,6 +282,9 @@ functions:
   - name: vTaskDelayUntil
     address: 0x732b0
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 16
+    divergence: "46 of 80 bytes differ outside the 16 a relocation owns, first at +0x6"
     score: 0.800
     insns: 30
     how: direct
@@ -212,6 +294,8 @@ functions:
   - name: vTaskSetApplicationTaskTag
     address: 0x73300
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 12
     score: 1.000
     insns: 11
     how: direct
@@ -221,6 +305,9 @@ functions:
   - name: vTaskSwitchContext
     address: 0x7333c
     variant: Os_a3
+    verdict: token_only
+    masked_bytes: 32
+    divergence: "70 of 160 bytes differ outside the 32 a relocation owns, first at +0x0"
     score: 0.655
     insns: 58
     how: direct
@@ -230,6 +317,8 @@ functions:
   - name: vTaskPlaceOnEventList
     address: 0x733cc
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 12
     score: 1.000
     insns: 11
     how: direct
@@ -240,6 +329,8 @@ functions:
   - name: vTaskInternalSetTimeOutState
     address: 0x7345c
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 8
     score: 1.000
     insns: 8
     how: direct
@@ -249,6 +340,8 @@ functions:
   - name: xTaskCheckForTimeOut
     address: 0x73474
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 20
     score: 1.000
     insns: 33
     how: direct
@@ -258,6 +351,9 @@ functions:
   - name: eTaskConfirmSleepModeStatus
     address: 0x734d0
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 16
+    divergence: "3 of 52 bytes differ outside the 16 a relocation owns, first at +0x18"
     score: 0.889
     insns: 18
     how: direct
@@ -267,6 +363,9 @@ functions:
   - name: vTaskGetInfo
     address: 0x73504
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 16
+    divergence: "76 of 124 bytes differ outside the 16 a relocation owns, first at +0x1e"
     score: 0.800
     insns: 55
     how: direct
@@ -277,6 +376,8 @@ functions:
   - name: uxTaskGetStackHighWaterMark
     address: 0x73614
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 4
     score: 1.000
     insns: 13
     how: direct
@@ -286,6 +387,8 @@ functions:
   - name: pvTaskIncrementMutexHeldCount
     address: 0x737b0
     variant: O2_a0
+    verdict: masked
+    masked_bytes: 4
     score: 1.000
     insns: 10
     how: direct
@@ -295,6 +398,9 @@ functions:
   - name: ulTaskNotifyTake
     address: 0x737c8
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 24
+    divergence: "56 of 104 bytes differ outside the 24 a relocation owns, first at +0x10"
     score: 0.895
     insns: 38
     how: direct
@@ -306,6 +412,9 @@ functions:
   - name: xTaskNotifyWait
     address: 0x7382c
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 24
+    divergence: "72 of 140 bytes differ outside the 24 a relocation owns, first at +0x4"
     score: 0.940
     insns: 50
     how: direct
@@ -316,6 +425,9 @@ functions:
   - name: xQueueReceive
     address: 0x73c64
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 80
+    divergence: "160 of 244 bytes differ outside the 80 a relocation owns, first at +0x2"
     score: 0.702
     insns: 84
     how: direct
@@ -327,6 +439,8 @@ functions:
   - name: vPortStartFirstTask
     address: 0x73dd0
     variant: O2_a0
+    verdict: token_only
+    divergence: "23 of 32 bytes differ outside the 0 a relocation owns, first at +0x0"
     score: 0.818
     insns: 11
     how: direct
@@ -334,6 +448,9 @@ functions:
   - name: vPortEnterCritical
     address: 0x73e3c
     variant: Os_a0+graph
+    verdict: token_only
+    masked_bytes: 4
+    divergence: "16 of 20 bytes differ outside the 4 a relocation owns, first at +0x0"
     score: 0.714
     insns: 7
     how: propagated from vTaskSetApplicationTaskTag
@@ -343,6 +460,8 @@ functions:
   - name: vPortExitCritical
     address: 0x73e5c
     variant: O2_a0
+    verdict: masked
+    masked_bytes: 4
     score: 1.000
     insns: 7
     how: direct
@@ -352,6 +471,8 @@ functions:
   - name: saadc_busy_check
     address: 0x7db08
     variant: n2_0_0_Os
+    verdict: masked
+    masked_bytes: 4
     score: 1.000
     insns: 11
     how: direct
@@ -359,6 +480,9 @@ functions:
   - name: saadc_event_limits_handle
     address: 0x7dc2c
     variant: n2_0_0_Os
+    verdict: token_only
+    masked_bytes: 8
+    divergence: "57 of 92 bytes differ outside the 8 a relocation owns, first at +0x1a"
     score: 0.812
     insns: 32
     how: direct
@@ -366,6 +490,9 @@ functions:
   - name: nrfx_saadc_buffer_set
     address: 0x7df40
     variant: n2_1_0_Os
+    verdict: token_only
+    masked_bytes: 4
+    divergence: "106 of 116 bytes differ outside the 4 a relocation owns, first at +0x2"
     score: 0.891
     insns: 46
     how: direct
@@ -375,6 +502,8 @@ functions:
   - name: nrfx_saadc_uninit
     address: 0x7e138
     variant: n2_0_0_Os
+    verdict: masked
+    masked_bytes: 8
     score: 1.000
     insns: 14
     how: direct
@@ -384,6 +513,9 @@ functions:
   - name: nrf_drv_clock_uninit
     address: 0x81220
     variant: O2_a0
+    verdict: token_only
+    masked_bytes: 12
+    divergence: "10 of 24 bytes differ outside the 12 a relocation owns, first at +0xa"
     score: 0.875
     insns: 8
     how: direct
@@ -393,6 +525,9 @@ functions:
   - name: nrf_drv_power_uninit
     address: 0x812a8
     variant: O2_a0
+    verdict: token_only
+    masked_bytes: 20
+    divergence: "9 of 32 bytes differ outside the 20 a relocation owns, first at +0x13"
     score: 0.700
     insns: 10
     how: direct
@@ -402,6 +537,8 @@ functions:
   - name: pow
     address: 0x8c8fc
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 60
     score: 1.000
     insns: 79
     how: direct
@@ -409,6 +546,8 @@ functions:
   - name: expf
     address: 0x8c9dc
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 16
     score: 1.000
     insns: 28
     how: direct
@@ -416,6 +555,8 @@ functions:
   - name: sqrtf
     address: 0x8ca48
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 8
     score: 0.941
     insns: 17
     how: direct
@@ -424,6 +565,7 @@ functions:
   - name: __fpclassifyd
     address: 0x8ca84
     variant: libm_nano-big
+    verdict: exact
     score: 1.000
     insns: 28
     how: direct
@@ -431,6 +573,8 @@ functions:
   - name: expm1f
     address: 0x8cacc
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 4
     score: 0.994
     insns: 161
     how: direct
@@ -438,6 +582,7 @@ functions:
   - name: __fpclassifyf
     address: 0x8cd1c
     variant: libm_nano-big
+    verdict: exact
     score: 0.952
     insns: 21
     how: direct
@@ -445,6 +590,9 @@ functions:
   - name: __ieee754_sqrt
     address: 0x8cd6c
     variant: libm_nano-big
+    verdict: token_only
+    masked_bytes: 40
+    divergence: "104 of 428 bytes differ outside the 40 a relocation owns, first at +0x2"
     score: 0.968
     insns: 158
     how: direct
@@ -452,6 +600,8 @@ functions:
   - name: round
     address: 0x8cf10
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 4
     score: 1.000
     insns: 51
     how: direct
@@ -459,6 +609,7 @@ functions:
   - name: roundf
     address: 0x8cf9c
     variant: libm_nano-big
+    verdict: exact
     score: 1.000
     insns: 26
     how: direct
@@ -466,6 +617,9 @@ functions:
   - name: __ieee754_expf
     address: 0x8cfe4
     variant: libm_nano-big
+    verdict: token_only
+    masked_bytes: 20
+    divergence: "283 of 412 bytes differ outside the 20 a relocation owns, first at +0x1c"
     score: 0.783
     insns: 106
     how: direct
@@ -473,6 +627,9 @@ functions:
   - name: __ieee754_powf
     address: 0x8d170
     variant: libm_nano-big
+    verdict: token_only
+    masked_bytes: 32
+    divergence: "754 of 1436 bytes differ outside the 32 a relocation owns, first at +0x2a"
     score: 0.663
     insns: 386
     how: direct
@@ -480,6 +637,7 @@ functions:
   - name: scalbnf
     address: 0x8d6f8
     variant: libm_nano-big
+    verdict: exact
     score: 0.983
     insns: 58
     how: direct
@@ -487,6 +645,9 @@ functions:
   - name: nrf_fprintf
     address: 0x8f42c
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 4
+    divergence: "18 of 28 bytes differ outside the 4 a relocation owns, first at +0x4"
     score: 0.667
     insns: 12
     how: direct
@@ -496,6 +657,8 @@ functions:
   - name: prvDeleteTCB
     address: 0x9e32c
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 8
     score: 1.000
     insns: 12
     how: direct
@@ -503,6 +666,9 @@ functions:
   - name: prvInitialiseNewTask.isra.0
     address: 0x9e34c
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 16
+    divergence: "82 of 146 bytes differ outside the 16 a relocation owns, first at +0x1a"
     score: 0.865
     insns: 52
     how: direct
@@ -510,6 +676,8 @@ functions:
   - name: xTaskCreateStatic
     address: 0x9e3dc
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 8
     score: 1.000
     insns: 22
     how: direct
@@ -519,6 +687,9 @@ functions:
   - name: xTaskCreate
     address: 0x9e410
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 20
+    divergence: "51 of 90 bytes differ outside the 20 a relocation owns, first at +0x16"
     score: 0.833
     insns: 36
     how: direct
@@ -529,6 +700,7 @@ functions:
   - name: vListInitialise
     address: 0x9e4fa
     variant: Os_a0
+    verdict: exact
     score: 1.000
     insns: 8
     how: direct
@@ -538,6 +710,8 @@ functions:
   - name: vListInsertEnd
     address: 0x9e516
     variant: Os_a0
+    verdict: token_only
+    divergence: "4 of 22 bytes differ outside the 0 a relocation owns, first at +0xc"
     score: 0.818
     insns: 11
     how: direct
@@ -547,6 +721,8 @@ functions:
   - name: vListInsert
     address: 0x9e52c
     variant: Os_a0
+    verdict: token_only
+    divergence: "4 of 46 bytes differ outside the 0 a relocation owns, first at +0x14"
     score: 0.909
     insns: 22
     how: direct
@@ -556,6 +732,8 @@ functions:
   - name: uxListRemove
     address: 0x9e55a
     variant: O2_a0
+    verdict: token_only
+    divergence: "27 of 36 bytes differ outside the 0 a relocation owns, first at +0x8"
     score: 0.706
     insns: 17
     how: direct
@@ -565,6 +743,8 @@ functions:
   - name: prvIsQueueEmpty
     address: 0x9e57a
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 8
     score: 1.000
     insns: 8
     how: direct
@@ -572,6 +752,9 @@ functions:
   - name: prvCopyDataToQueue
     address: 0x9e590
     variant: Os_a0+graph
+    verdict: token_only
+    masked_bytes: 12
+    divergence: "81 of 106 bytes differ outside the 12 a relocation owns, first at +0x0"
     score: 0.600
     insns: 50
     how: propagated from prvNotifyQueueSetContainer
@@ -579,6 +762,8 @@ functions:
   - name: prvNotifyQueueSetContainer
     address: 0x9e5f6
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 8
     score: 0.969
     insns: 32
     how: direct
@@ -586,6 +771,8 @@ functions:
   - name: prvCopyDataFromQueue
     address: 0x9e640
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 4
     score: 1.000
     insns: 19
     how: direct
@@ -593,6 +780,9 @@ functions:
   - name: prvUnlockQueue
     address: 0x9e66c
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 36
+    divergence: "55 of 126 bytes differ outside the 36 a relocation owns, first at +0x14"
     score: 0.894
     insns: 47
     how: direct
@@ -600,6 +790,9 @@ functions:
   - name: xQueueGenericReset
     address: 0x9e6e8
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 20
+    divergence: "46 of 108 bytes differ outside the 20 a relocation owns, first at +0x18"
     score: 0.816
     insns: 38
     how: direct
@@ -610,6 +803,8 @@ functions:
   - name: xQueueCreateMutexStatic
     address: 0x9e782
     variant: Os_a0
+    verdict: masked
+    masked_bytes: 8
     score: 1.000
     insns: 18
     how: direct
@@ -620,6 +815,9 @@ functions:
   - name: xQueueGenericSendFromISR
     address: 0x9e7ac
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 12
+    divergence: "93 of 118 bytes differ outside the 12 a relocation owns, first at +0x6"
     score: 0.674
     insns: 46
     how: direct
@@ -629,6 +827,9 @@ functions:
   - name: xQueueGiveFromISR
     address: 0x9e828
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 8
+    divergence: "71 of 94 bytes differ outside the 8 a relocation owns, first at +0x8"
     score: 0.825
     insns: 40
     how: direct
@@ -639,6 +840,9 @@ functions:
   - name: xQueueSemaphoreTake
     address: 0x9e890
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 100
+    divergence: "192 of 300 bytes differ outside the 100 a relocation owns, first at +0x0"
     score: 0.856
     insns: 104
     how: direct
@@ -649,6 +853,9 @@ functions:
   - name: xQueueReceiveFromISR
     address: 0x9e9ac
     variant: Os_a0
+    verdict: token_only
+    masked_bytes: 8
+    divergence: "74 of 94 bytes differ outside the 8 a relocation owns, first at +0xc"
     score: 0.743
     insns: 35
     how: direct
@@ -658,6 +865,7 @@ functions:
   - name: xQueueIsQueueFullFromISR
     address: 0x9ea2e
     variant: Os_a0
+    verdict: exact
     score: 1.000
     insns: 6
     how: direct
@@ -667,6 +875,7 @@ functions:
   - name: nrf_saadc_event_clear
     address: 0xa4e3a
     variant: Os_a0
+    verdict: exact
     score: 1.000
     insns: 10
     how: direct
@@ -677,6 +886,8 @@ functions:
   - name: sqrt
     address: 0xa7c6e
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 20
     score: 1.000
     insns: 31
     how: direct
@@ -685,6 +896,8 @@ functions:
   - name: powf
     address: 0xa7cc6
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 36
     score: 0.981
     insns: 54
     how: direct
@@ -692,6 +905,7 @@ functions:
   - name: finite
     address: 0xa7d74
     variant: libm_nano-big
+    verdict: exact
     score: 1.000
     insns: 8
     how: direct
@@ -699,6 +913,8 @@ functions:
   - name: fmax
     address: 0xa7d8a
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 12
     score: 1.000
     insns: 25
     how: direct
@@ -707,6 +923,7 @@ functions:
   - name: finitef
     address: 0xa7dde
     variant: libm_nano-big
+    verdict: exact
     score: 1.000
     insns: 7
     how: direct
@@ -714,6 +931,8 @@ functions:
   - name: fmaxf
     address: 0xa7df2
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 8
     score: 1.000
     insns: 18
     how: direct
@@ -721,6 +940,8 @@ functions:
   - name: fminf
     address: 0xa7e2c
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 8
     score: 1.000
     insns: 18
     how: direct
@@ -728,6 +949,8 @@ functions:
   - name: with_errnof
     address: 0xa7e66
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 4
     score: 1.000
     insns: 9
     how: direct
@@ -735,6 +958,7 @@ functions:
   - name: __ieee754_sqrtf
     address: 0xa7e98
     variant: libm_nano-big+graph
+    verdict: exact
     score: 1.000
     insns: 2
     how: propagated from __ieee754_powf
@@ -742,6 +966,7 @@ functions:
   - name: fabs
     address: 0xa7e9e
     variant: libm_nano-big+graph
+    verdict: exact
     score: 1.000
     insns: 5
     how: propagated from __ieee754_rem_pio2
@@ -749,6 +974,8 @@ functions:
   - name: xflow
     address: 0xa7ee0
     variant: libm_nano-big
+    verdict: masked
+    masked_bytes: 8
     score: 1.000
     insns: 17
     how: direct
@@ -784,7 +1011,6 @@ unmatched_image:  # call targets inside those spans with no symbol
   - 0x2c216
   - 0x2c26a
   - 0x2c286
-  - 0x2c308
   - 0x2c38c
   - 0x2c3a6
   - 0x2c4ce
