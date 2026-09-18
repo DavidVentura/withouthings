@@ -72,7 +72,7 @@ class Section(object):
 MIN_STRING = 2
 
 
-def string_runs(blob, instruction_bytes):
+def string_runs(blob, instruction_bytes, stops=()):
     """Every run of non-NUL bytes the disassembly does not cover.
 
     A string is delimited by NULs, so that is what the partition has to keep
@@ -81,7 +81,16 @@ def string_runs(blob, instruction_bytes):
     printable and whose pointer names that byte. Bytes an instruction covers end
     a run and disqualify it, which is what keeps this away from code that
     happens to read as text.
+
+    `stops` are the bounds of the tables the manifest declares, and a run is cut
+    at every one of them inside it rather than ended there, because the bytes on
+    both sides are still whatever they were. The string at 0xbe2e7 runs two
+    bytes into ble_conn_params_table, whose first record's two u16 fields happen
+    to be non-zero, and without the cut the declaration and the string are one
+    section. Only a declaration is a stop: a pointer into the middle of a run is
+    the shared string tail this rule exists to keep whole.
     """
+    stops = sorted(stops)
     runs, i = [], 0
     while i < len(blob):
         if blob[i] == 0 or instruction_bytes[i]:
@@ -93,8 +102,15 @@ def string_runs(blob, instruction_bytes):
         # The NUL belongs to the object: a pointer to the run is a pointer to
         # everything up to and including its terminator.
         end = j + 1 if j < len(blob) and blob[j] == 0 else j
-        if end - i >= MIN_STRING:
-            runs.append((APP_BASE + i, APP_BASE + end))
+        cuts = [i]
+        at = bisect.bisect_right(stops, APP_BASE + i)
+        while at < len(stops) and stops[at] < APP_BASE + end:
+            cuts.append(stops[at] - APP_BASE)
+            at += 1
+        cuts.append(end)
+        for lo, hi in zip(cuts, cuts[1:]):
+            if hi - lo >= MIN_STRING:
+                runs.append((APP_BASE + lo, APP_BASE + hi))
         i = j + 1
     return runs
 

@@ -18,7 +18,16 @@ GCC=$ROOT/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi
 OUT=../out/relink
 mkdir -p "$OUT"
 
-python3 blobify.py -o "$OUT/appl-blob.o" --layout "$LAYOUT"
+# DATA=1 moves the same layout with the app's data linked from the source
+# abi/datagen.py writes, so the scan covers that half of the object too.
+DATA_OBJ=""
+DATA_ARGS=""
+if [ -n "${DATA:-}" ]; then
+    DATA_ARGS="--data-source $(cd ..; pwd)/out/data"
+    DATA_OBJ="$OUT/appl-data.o"
+fi
+python3 blobify.py -o "$OUT/appl-blob.o" --layout "$LAYOUT" $DATA_ARGS
+if [ -n "${DATA:-}" ]; then ./datagen.sh; fi
 "$GCC-ld" -L ../out -T identity.ld --emit-relocs -e 0 \
-    -o "$OUT/moved.elf" "$OUT/appl-blob.o" "$OUT/stock-defs.o"
+    -o "$OUT/moved.elf" "$OUT/appl-blob.o" $DATA_OBJ "$OUT/stock-defs.o"
 python3 stale_scan.py --elf "$OUT/moved.elf"

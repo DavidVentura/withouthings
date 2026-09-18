@@ -29,6 +29,10 @@ DATA_OBJ=""
 if [ -n "${DATA:-}" ]; then
     DATA_ARGS="--data-source $(cd ..; pwd)/out/data"
     DATA_OBJ="$OUT/appl-data.o"
+    # The typed tables include out/hwa10.h and are only declared where it
+    # declares them, so it is generated before the tables are written and not
+    # after, which is where the rest of the new code needs it.
+    python3 gen.py --out ../out > /dev/null
 fi
 python3 blobify.py -o "$OUT/appl-blob.o" ${REPLACE_ARGS:-} ${DATA_ARGS:-}
 if [ -n "${DATA:-}" ]; then ./datagen.sh; fi

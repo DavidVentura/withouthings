@@ -204,8 +204,27 @@ def build(sections, blob, symbols, path):
 DATA_OBJECT = "*appl-data.o"
 
 
+def declared_tables(manifest, header):
+    """Every table hwa10.yaml declares, keyed by its address, with its fields.
+
+    The struct is gen.py's, so the fields come out of the same manifest entry
+    the header was generated from; `entry_fields` returns None where a C
+    compiler would lay the struct out differently from the stride the image
+    has, and that table stays bytes.
+    """
+    datagen.read_header(header)
+    structs = dict((t["name"], t["fields"]) for t in manifest["table_structs"])
+    typedefs = set(t["name"] for t in manifest.get("typedefs", []))
+    out = {}
+    for t in manifest["tables"]:
+        fields = datagen.entry_fields(structs[t["entry"]], typedefs)
+        out[t["address"]] = ((t["address"], t["stride"], t["count"], t["name"],
+                              t["entry"]), fields)
+    return out
+
+
 def emit_data(directory, sources, delegated, blob, section_names, forced,
-              reached_from, reserved):
+              reached_from, reserved, tables):
     """Write each delegated data section as source, and say which names it publishes.
 
     A name is published where something outside the section reaches it, and only
@@ -215,7 +234,7 @@ def emit_data(directory, sources, delegated, blob, section_names, forced,
     the replacements ask for by hand are published whether anything in the
     object reaches them or not, because their caller is outside this link.
     """
-    emitted = []
+    emitted, untyped = [], []
     for s in sorted(delegated, key=lambda s: s.start):
         s.object = DATA_OBJECT
         publish = list(forced.get(id(s), ()))
@@ -233,6 +252,14 @@ def emit_data(directory, sources, delegated, blob, section_names, forced,
             names.append((off, name, True, False))
         body = bytes(blob[s.start - APP_BASE:s.end - APP_BASE])
         words = dict((off, sym) for off, sym, t in s.relocs if t == R_ARM_ABS32)
+        if s.start in tables:
+            table, fields = tables[s.start]
+            text, why = datagen.render_table(s, body, table, fields, words,
+                                             names)
+            if text is not None:
+                emitted.append((s, text, "typed"))
+                continue
+            untyped.append((table[3], why))
         # The partition calls a component data when no function entry point
         # opens it, and a few such components still hold instructions the
         # boundary scan found a call in. Those relocations sit on the
@@ -242,7 +269,7 @@ def emit_data(directory, sources, delegated, blob, section_names, forced,
                         for off, sym, t in s.relocs if t != R_ARM_ABS32)
         emitted.append((s, datagen.render_bytes(s, body, names, words, branches),
                         "bytes"))
-    return datagen.write(directory, emitted, sources)
+    return datagen.write(directory, emitted, sources), untyped
 
 
 def boundary_relocations(blob, boundary, layout):
@@ -776,6 +803,9 @@ def main():
                     help="write every data section to DIR as assembler or C"
                          " source and leave it out of the object, so the link"
                          " takes the app's data from source like its kernel")
+    ap.add_argument("--header", default=os.path.join(SIM, "out", "hwa10.h"),
+                    help="gen.py's header, which the typed tables include and"
+                         " which says which names are already declared")
     ap.add_argument("--data-sources",
                     default=os.path.join(SIM, "out", "data-sources.txt"),
                     help="where to list the C files --data-source wrote, for"
@@ -854,7 +884,6 @@ def main():
              for r in refs["pool_reads"] + refs["pc_addresses"]]
     bits = bytes.fromhex(items["instruction_bytes"]["bits"])
     covered = bytes((bits[i >> 3] >> (i & 7)) & 1 for i in range(len(blob)))
-    strings = objectify.string_runs(blob, covered)
     # What a data tile has to be its own section for: a word may hold its
     # address, an `adr` computes it, a pc-relative load reads it from too far
     # away for the reader to be known, the boundary or a fixed point needs the
@@ -867,6 +896,27 @@ def main():
     named |= set(a for a in reserved.values() if a >= 0)
     named |= set(int(str(f["addr"]), 0) for f in manifest["fixed_points"])
     named |= set(f["start"] for f in items["functions"])
+    # A table the manifest declares is an object whatever the run around it
+    # looks like, and both its ends are points: the declaration is what says
+    # where the rows stop, and a table that shares a section with the bytes
+    # after it cannot be emitted as the array it is.
+    for table in manifest["tables"]:
+        lo = table["address"]
+        hi = lo + table["stride"] * table["count"]
+        # A declaration is stronger than the generic rule: the rows are one
+        # object, so a word naming row 17 of the asset table is a label inside
+        # it and not a second section. Both ends are points, and nothing
+        # between them is.
+        named -= set(a for a in named if lo < a < hi)
+        named.add(lo)
+        named.add(hi)
+
+    # Only the declared tables stop a string run: see objectify.string_runs.
+    table_bounds = set()
+    for table in manifest["tables"]:
+        table_bounds.add(table["address"])
+        table_bounds.add(table["address"] + table["stride"] * table["count"])
+    strings = objectify.string_runs(blob, covered, table_bounds)
     sections, shared, slivers, distant = objectify.build_sections(
         items, refs["calls"], reads, refs["fallthrough"],
         [w["addr"] for w in words if w["class"] == "pointer"], strings, reserved,
@@ -1034,11 +1084,12 @@ def main():
         sys.exit("no section named %s" % ", ".join(sorted(unknown)))
     for path in (args.o, args.place, args.stock):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-    data_files = []
+    data_files, untyped = [], []
     if args.data_source:
-        data_files = emit_data(args.data_source, args.data_sources, delegated,
-                               blob, section_names, forced, reached_from,
-                               reserved)
+        data_files, untyped = emit_data(
+            args.data_source, args.data_sources, delegated, blob, section_names,
+            forced, reached_from, reserved,
+            declared_tables(manifest, args.header))
     build(in_blob, blob, symbols, args.o)
     obj = "*" + os.path.basename(args.o)
     if args.gc:
@@ -1109,6 +1160,15 @@ def main():
               % (", ".join(sorted(set(e["group"] for e in replacements.entries))),
                  len(replacements.by_start),
                  sum(layout.at(a).end - a for a in replacements.by_start)))
+    if args.data_source:
+        typed = [f for f in data_files if f.kind == "typed"]
+        raw = [f for f in data_files if f.kind == "bytes"]
+        print("  data from source: %d sections (%d bytes) as bytes, %d (%d bytes)"
+              " as typed tables, in %s"
+              % (len(raw), sum(f.bytes for f in raw), len(typed),
+                 sum(f.bytes for f in typed), args.data_source))
+        for name, why in untyped:
+            print("      %-28s stays bytes: %s" % (name, why))
     print("  %s, %s (%d stand-in definitions)"
           % (args.place, args.stock, stock))
 

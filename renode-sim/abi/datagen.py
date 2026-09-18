@@ -181,3 +181,164 @@ def write(directory, emitted, sources):
     for name in sorted(stale):
         os.remove(os.path.join(directory, name))
     return files
+
+WIDTHS = {"u8": 1, "i8": 1, "u16": 2, "i16": 2, "u32": 4, "i32": 4}
+C_SCALARS = {"u8": "unsigned char", "i8": "signed char", "u16": "unsigned short",
+             "i16": "short", "u32": "unsigned int", "i32": "int"}
+
+
+class Field(object):
+    def __init__(self, offset, width, name, ctype, kind, count):
+        self.offset, self.width, self.name = offset, width, name
+        self.ctype, self.kind, self.count = ctype, kind, count
+
+
+def c_type(kind, typedefs):
+    """The text gen.py's header gives a manifest field type."""
+    kind = str(kind)
+    if kind in typedefs:
+        return kind, 4
+    if kind.endswith("*"):
+        head = kind[:-1].strip()
+        for short, long in sorted(C_SCALARS.items()):
+            if head.endswith(short):
+                head = head[:-len(short)] + long
+                break
+        return head + " *", 4
+    return C_SCALARS[kind], WIDTHS[kind]
+
+
+def entry_fields(fields, typedefs):
+    """The struct's fields with their offsets, or None where C would not agree.
+
+    The manifest packs a struct: each field follows the one before it with no
+    padding, which is what the image's strides say. A C compiler aligns each
+    field to its own width, and where the two disagree the initialiser would
+    write the rows somewhere else, so the table stays bytes rather than being
+    declared packed behind gen.py's back.
+    """
+    out, at, natural = [], 0, 0
+    for kind, name in fields:
+        kind, name = str(kind), str(name)
+        if "[" in kind:
+            base, _, count = kind.partition("[")
+            count = int(count.rstrip("]"))
+            ctype, width = c_type(base, typedefs)
+            shape, unit = "array", width
+            width *= count
+        else:
+            ctype, width = c_type(kind, typedefs)
+            shape, unit, count = ("pointer" if width == 4 and
+                                  (kind.endswith("*") or kind in typedefs)
+                                  else "scalar"), width, 1
+        natural = (natural + unit - 1) // unit * unit
+        if natural != at:
+            return None
+        out.append(Field(at, width, name, ctype, shape, count))
+        at += width
+        natural += width
+    return out
+
+
+def render_table(section, body, table, fields, words, names):
+    """One declared table as a C initialiser, or (None, why) if it cannot be.
+
+    The pointer fields name the symbols rather than holding addresses, so the
+    compiler emits the relocations the blob object held and the linker resolves
+    them; the integers are literals read straight out of the image. The section
+    is named by hand rather than left to -fdata-sections, because the placement
+    fragment puts every section at its own address by name and gen.py declares
+    these tables without `const`.
+    """
+    start, stride, count, name, entry = table
+    if section.start != start or section.end != start + stride * count:
+        return None, ("the section is 0x%x..0x%x, the declaration 0x%x..0x%x"
+                      % (section.start, section.end, start, start + stride * count))
+    if fields is None:
+        return None, "the C layout of %s is not the packed one" % entry
+    pointer_at = dict((f.offset, f) for f in fields if f.kind == "pointer")
+    for row in range(count):
+        for off in words:
+            if off // stride == row and (off % stride) not in pointer_at:
+                return None, ("a relocation at +0x%x is not on a pointer field"
+                              % off)
+
+    def literal(off, width):
+        return "0x%0*xu" % (width * 2,
+                            int.from_bytes(body[off:off + width], "little"))
+
+    rows = []
+    for row in range(count):
+        base = row * stride
+        parts = []
+        for f in fields:
+            at = base + f.offset
+            if f.kind == "array":
+                unit = f.width // f.count
+                parts.append(".%s = { %s }"
+                             % (f.name, ", ".join(literal(at + i * unit, unit)
+                                                  for i in range(f.count))))
+            elif f.kind == "pointer":
+                if at in words:
+                    parts.append(".%s = (%s)%s" % (f.name, f.ctype, words[at]))
+                else:
+                    parts.append(".%s = (%s)%s" % (f.name, f.ctype,
+                                                   literal(at, 4)))
+            else:
+                parts.append(".%s = %s" % (f.name, literal(at, f.width)))
+        rows.append("    { %s },   /* 0x%08x */" % (", ".join(parts),
+                                                    start + base))
+
+    used = sorted(set(words.values()))
+    # A name the object gives a point inside the table: C cannot put a label at
+    # an offset in an array, but the assembler the compiler is writing for can,
+    # and file-scope asm lands in the same translation unit as the definition,
+    # so the assignment resolves against it.
+    interior = []
+    for off, sym, exported, is_func in names:
+        if off == 0 and not is_func:
+            continue
+        interior.append((sym, off | 1 if is_func else off, exported))
+    out = ["/* Generated by abi/datagen.py, do not edit: %s at 0x%x as the array\n"
+           "   abi/hwa10.yaml declares it, one initialiser per row. */"
+           % (name, start),
+           '#include "hwa10.h"', ""]
+    # Every target is declared as bytes rather than by its real prototype: the
+    # header already declares some of them and a second declaration of a
+    # different shape would not compile, while an address is an address whatever
+    # the cast says. Thumb-ness is bit 0 of the defining symbol's value and the
+    # relocation carries it either way.
+    out.extend("extern const char %s[];" % sym for sym in used
+               if not declared_in_header(sym))
+    out.append("")
+    out.append("struct %s %s[%d]" % (entry, name, count))
+    out.append("        __attribute__((section(\"%s\"), aligned(%d))) = {"
+               % (section.name, alignment(start)))
+    out.extend(rows)
+    out.append("};")
+    for sym, value, exported in interior:
+        if sym == name:
+            continue
+        out.append('__asm__("%s.set %s, %s + %d");'
+                   % (".global %s\\n" % sym if exported else "", sym, name, value))
+    out.append("")
+    return "\n".join(out), None
+
+
+HEADER_NAMES = set()
+
+
+def declared_in_header(name):
+    return name in HEADER_NAMES
+
+
+def read_header(path):
+    """The identifiers gen.py's header already declares, so they are not redeclared."""
+    import re
+    HEADER_NAMES.clear()
+    for line in open(path):
+        if not line.startswith("extern") and not line.startswith("typedef"):
+            continue
+        HEADER_NAMES.update(re.findall(r"[A-Za-z_][A-Za-z_0-9]*", line))
+    return HEADER_NAMES
+
