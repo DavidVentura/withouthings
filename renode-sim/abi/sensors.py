@@ -220,6 +220,38 @@ ROWS = [
                   " and r2 the row count. Dropping the oldest row of a history"
                   " matrix is the whole body"),
 
+    # --- motion detection, whose two rates the motion run separates ---------
+    dict(address=0x9EC72, name="ewma_fixed_step", kind="function",
+         evidence="the fixed-point sibling of ewma_step, which sits directly"
+                  " after it at 0x9ecae: the 64-bit coefficient in r2:r3 is"
+                  " negated into its own complement at 0x9ec74..0x9ec7a, and"
+                  " the two 64-bit products state * alpha and x * (1 - alpha)"
+                  " are summed with `umull`/`mla`/`adc` and rounded"
+                  " (0x9ec86..0x9eca8). One coefficient, one state, one"
+                  " sample"),
+    dict(address=0xA073A, name="motion_energy_step", kind="function",
+         calls=[0x9EC72, 0x9EDC8],
+         evidence="the per-sample half of motion detection. Each axis is"
+                  " smoothed by its own ewma_fixed_step at +4, +8 and +0xc"
+                  " (0xa0762, 0xa0770, 0xa077e), and the distance between the"
+                  " raw sample and the smoothed one is stored at +0x10 and"
+                  " added to the 64-bit accumulator at +0x18 -- as the sum of"
+                  " the three squared differences (0xa0796..0xa07a2) or, when"
+                  " the byte at +0x2d is set, as the sum of their magnitudes"
+                  " (0xa07b2 onwards). The halfword at +0 seeds the three"
+                  " filters with the first sample instead of smoothing it"),
+    dict(address=0xA071C, name="motion_window_decide", kind="function",
+         calls=[0x9EDE8],
+         evidence="the window half, and the only writer of the moving flag:"
+                  " accum_i64_mean_reset drains the accumulator"
+                  " motion_energy_step filled, the mean goes to +0x28 and +0x2c"
+                  " becomes 1 when it is above the threshold argument and 0"
+                  " when it is not (0xa0724..0xa0734)."
+                  " motion_detection_algo_step calls it with 300 once every 25"
+                  " samples, off the counter that wraps at 0x18 (0x2a00e,"
+                  " 0x2a022), so the two rates are one per sample and one per"
+                  " second of accelerometer at 25 Hz"),
+
     # --- the beat detector under ppg_heart_beats_algo_step ------------------
     dict(address=0x9EE42, name="ring_index_advance", kind="function",
          evidence="(i + step + capacity) modulo capacity, with the `blt` at"

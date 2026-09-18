@@ -297,7 +297,88 @@ struct spectrotrack_slot {
     struct spectrotrack track;
 };
 
+/* the running sum and count accum_i64_add fills and accum_i64_mean_reset
+   drains: both are 64-bit and the drain is one __aeabi_ldivmod followed by
+   zeroing all sixteen bytes (0x9edfc, 0x9ee00), so a mean can never be taken
+   twice over the same samples.
+   */
+struct accum_i64 {
+    long long sum;
+    long long count;
+};
+
+/* motion detection's whole state, at +8 of its algorithm object. The three
+   axis filters are ewma_fixed_step states seeded from the first sample, and
+   `energy` is the distance between the raw sample and the smoothed one, summed
+   into `window` once per sample by motion_energy_step and turned into `mean`
+   and `moving` once per 25 samples by motion_window_decide.
+   */
+struct motion_detect {
+    unsigned short seed;
+    unsigned char pad_2[0x2];
+    int ewma_x;
+    int ewma_y;
+    int ewma_z;
+    int energy;
+    unsigned char pad_14[0x4];
+    struct accum_i64 window;
+    int mean;
+    unsigned char moving;
+    unsigned char use_abs;
+    unsigned char pad_2e[0x2];
+};
+
+/* the beat detector's state, the 0xb0 bytes beat_peak_detect owns.
+   ppg_heart_beats_algo_step keeps two of them, at +0x84 and +0x134 of its own
+   object, and the 0xb0 between those two is what fixes the size; the second is
+   fed the same four values negated, so it is the trough detector.
+   `ring` is 0x24 floats indexed by `head` through ring_index_advance, and the
+   position is in quarter samples because the four values are four interleaved
+   sub-samples.
+   */
+struct beat_detect {
+    float ring[0x24];
+    int head;
+    int channel;
+    int value;
+    int samples;
+    int position;
+    int prev_position;
+    int fill;
+    float rate;
+};
+
 /* functions */
+/* state * alpha + x * (1 - alpha) in 64-bit fixed point, the coefficient
+   arriving as the two halves of one 64-bit value.
+   */
+extern int ewma_fixed_step(int state, int x, unsigned int alpha_lo, int alpha_hi);
+/* one accelerometer sample into the three axis filters and the energy
+   accumulator.
+   */
+extern int motion_energy_step(struct motion_detect *m, int x, int y, int z, unsigned int alpha_lo, int alpha_hi);
+/* drains the window, stores its mean and decides the moving flag against the
+   threshold.
+   */
+extern int motion_window_decide(struct motion_detect *m, int threshold);
+/* (i + step + capacity) modulo capacity, kept non-negative so a negative step
+   walks the ring backwards.
+   */
+extern int ring_index_advance(int i, int capacity, int step);
+/* pushes four values into the ring and, once it has filled, declares a beat at
+   the element sixteen back when it is above all sixteen before it and all
+   fifteen after it.
+   */
+extern int beat_peak_detect(struct beat_detect *d, const void *values);
+/* the constant at 0x4ff78 divided by the gap since the previous beat, left in
+   `rate`.
+   */
+extern int beat_rate_from_interval(struct beat_detect *d);
+/* the running sum and count, one sample at a time. */
+extern int accum_i64_add(struct accum_i64 *a, int x);
+/* the mean of what has been accumulated, and the accumulator back to zero. */
+extern long long accum_i64_mean_reset(struct accum_i64 *a);
+
 /* the complex FFT fft_real_split is built on: radix butterflies over the
    plan's twiddle table, reached from nothing else in the image.
    */
