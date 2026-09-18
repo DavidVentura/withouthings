@@ -11,6 +11,7 @@
 #include "withings/boot.h"
 #include "withings/crown.h"
 #include "withings/dblib.h"
+#include "withings/stores.h"
 #include "withings/ecg.h"
 #include "withings/flash.h"
 #include "withings/freertos.h"

@@ -585,11 +585,6 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x2f05c (shell_cmd_hwa10) calls 0x32960; 176 bytes
-- address: 0x32d38
-  name: wftl_up_cleanup_in_progress__1
-  kind: function
-  class: helper
-  evidence: only 0x6a28c (wftl_up_cleanup_in_progress) calls 0x32d38; 82 bytes
 - address: 0x334bc
   name: WPP_CMD_WAM_VASISTAS_GET__2__1
   kind: function
@@ -1860,24 +1855,45 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x27178: command ''calibration'', run slot (+4)'
+- address: 0x4414c
+  name: cfs_factory_reset
+  kind: function
+  class: store
+  module: CFS
+  evidence: logs "[%s] Factory reset" with "CIRCULARFS" (0xd4f1a) as the %s and
+    writes the layer's dblib id 0x178
 - address: 0x44178
-  name: cfs_warn_post_update_erase_needed
+  name: cfs_post_update_check
   kind: function
-  class: logline
-  evidence: the only line 0x44178 logs, wlog('[CFS][WARN] Post update erase needed')
-    at 0x44198
+  class: store
+  module: CFS
+  evidence: reads dblib id 0x178 and, when it is missing or not 1, raises the flag
+    at 0x2002528e with "[CFS][WARN] Post update erase needed"
+- address: 0x441ac
+  name: cfs_post_update_mark
+  kind: function
+  class: store
+  module: CFS
+  evidence: 'the writer half of the 0x178 pair cfs_post_update_check reads: stores
+    1 and clears 0x2002528e. Named for what it writes and not for when, because
+    the flag it clears reads both ways'
 - address: 0x441d4
-  name: cfs_warn_init_force_erase_type
+  name: cfs_init
   kind: function
-  class: logline
-  evidence: the only line 0x441d4 logs, wlog('[CFS][WARN] Init force erase type=%hu')
-    at 0x441f2
+  class: store
+  module: CFS
+  evidence: initialises both cursors to {block 0, offset 4} (the strd of 0x40000
+    at 0x441d4), erases the whole type on the force path with "[CFS][WARN] Init
+    force erase type=%hu", then reads the 4-byte sequence number at offset 0 of
+    every block to find the oldest and the newest
 - address: 0x442c0
-  name: cfs_warn_corrupted_el_blk_off
+  name: cfs_next
   kind: function
-  class: logline
-  evidence: the only line 0x442c0 logs, wlog('[CFS][WARN] Corrupted el blk=%lu off=%lu
-    (skipping)') at 0x44338
+  class: store
+  module: CFS
+  evidence: advances the read cursor to the next element that loads and passes its
+    CRC, skipping the rest with "[CFS][WARN] Corrupted el blk=%lu off=%lu (skipping)";
+    -1 at the end of the log
 - address: 0x44650
   name: friction_long_test_continue__1
   kind: function
@@ -2108,27 +2124,49 @@ symbols:
   class: helper
   evidence: only 0x48ae8 (dblib_flash_usage_rom_user) calls 0x485f0; 58 bytes
 - address: 0x48918
-  name: dblib_port_cant_open_external_flash
+  name: dblib_port_open
   kind: function
-  class: logline
-  evidence: the only line 0x48918 logs, wlog("[DBLIB_PORT] Can't open External Flash")
-    at 0x48924
+  class: store
+  module: DBLIB_PORT
+  evidence: flash_open(spi_flash_handle) with the udf at 0x48928 as the assert;
+    the line it logs first is "[DBLIB_PORT] can't open external flash"
+- address: 0x48934
+  name: dblib_port_close
+  kind: function
+  class: store
+  module: DBLIB_PORT
+  evidence: the matching close
 - address: 0x48940
-  name: dblib_erasebank_bank
+  name: dblib_bank_erase
   kind: function
-  class: logline
-  evidence: the only line 0x48940 logs, wlog('[DBLIB][ERASEBANK] Bank %d') at 0x48948
+  class: store
+  module: DBLIB_PORT
+  evidence: spi_flash_erase_range(bank->base, bank->erase_len) for a bank whose
+    medium byte at +0x14 is 0, then rewinds the cursor at +0x10; the log is "[DBLIB]
+    erasebank bank %d"
 - address: 0x4896c
-  name: dblib_port_w_addr_oor
+  name: dblib_bank_write
   kind: function
-  class: logline
-  evidence: the only line 0x4896c logs, wlog('[DBLIB_PORT][W] Addr OOR') at 0x48982
+  class: store
+  module: DBLIB_PORT
+  evidence: programs len bytes at bank->base + bank->cursor and advances the cursor;
+    0 and the "[DBLIB_PORT] w addr oor" line when cursor + len would pass bank->size
 - address: 0x489ac
-  name: dblib_port_r_addr_oor
+  name: dblib_bank_read
   kind: function
-  class: logline
-  evidence: 'the only line 0x489ac logs, wlog(''[DBLIB_PORT][R] Addr OOR : %i %i
-    %i '') at 0x489c2'
+  class: store
+  module: DBLIB_PORT
+  evidence: reads len bytes from bank->base + bank->cursor, through spi_flash_read
+    for medium 0 and memcpy for medium 1, which is how the same bank type serves
+    the in-RAM copy; the refusal is "[DBLIB_PORT] r addr oor"
+- address: 0x489f4
+  name: dblib_bank_copy
+  kind: function
+  class: store
+  module: DBLIB_PORT
+  evidence: erases the destination bank and moves the source bank into it in 0x20-byte
+    reads and writes, which is the compaction behind "[DBLIB] defaultbank old doublon
+    ie id"
 - address: 0x48ae8
   name: dblib_flash_usage_rom_user
   kind: function
@@ -2521,18 +2559,53 @@ symbols:
   class: wppcmd
   evidence: 'wpp_cmd_table row 0x276a0: key 2439, label ''WPP_CMD_FEATURE_TAGS_SET_DEPRECATED_V2'',
     CMD_FEATURE_TAGS_SET_DEPRECATED_V2 in wpp/src/commands.rs'
+- address: 0x4c32c
+  name: flash_cache_post_update_check
+  kind: function
+  class: store
+  module: FLASH_CACHE
+  evidence: logs "[FLASH CACHE] Post Update" and raises the global force-format
+    flag at 0x2001a3ac when dblib id 0x107 is not 2, which is the layer's format
+    version
+- address: 0x4c360
+  name: flash_cache_post_update_mark
+  kind: function
+  class: store
+  module: FLASH_CACHE
+  evidence: writes dblib id 0x107 = 2 and clears the force-format flag its check
+    raised
 - address: 0x4c390
-  name: flash_cache_tried_to_insert_already_existing
+  name: flash_cache_insert
   kind: function
-  class: logline
-  evidence: the only line 0x4c390 logs, wlog('[FLASH CACHE] Tried to insert already
-    existing item %lu') at 0x4c3de
+  class: store
+  module: FLASH_CACHE
+  evidence: '(ctx, id, nseg, lens, bufs): refuses a duplicate with "[FLASH CACHE]
+    Tried to insert already existing item %lu", then begins one circularfs element,
+    writes the u32 id and every segment into it and commits it'
+- address: 0x4c470
+  name: flash_cache_read
+  kind: function
+  class: store
+  module: FLASH_CACHE
+  evidence: '(ctx, id, out_len, buf, buf_size): the RAM table first, then a walk
+    comparing the element''s leading u32 against the id; the user length is the
+    element''s less the four bytes of that id, and the miss logs "[FLASH CACHE]
+    Could not read data"'
+- address: 0x4c53c
+  name: flash_cache_item_read
+  kind: function
+  class: store
+  module: FLASH_CACHE
+  evidence: reads on through the handle flash_cache_foreach hands its callback,
+    clamping to what is left of the element
 - address: 0x4c594
-  name: flash_cache_init_ctx_type
+  name: flash_cache_init
   kind: function
-  class: logline
-  evidence: the only line 0x4c594 logs, wlog('[FLASH CACHE] Init ctx type %lu')
-    at 0x4c5a6
+  class: store
+  module: FLASH_CACHE
+  evidence: '(ctx, wftl_type, nb_blocks, table, table_capacity, force): logs "[FLASH
+    CACHE] Init ctx type %lu", zeroes the RAM lookup table sixteen bytes at a time,
+    makes the context''s mutex and mounts the circularfs behind it'
 - address: 0x4c624
   name: shell_help_flash_cache_test
   kind: function
@@ -2619,6 +2692,14 @@ symbols:
   kind: label
   class: prose
   evidence: 'TLV: u16 id,u16 size,data'
+- address: 0x4cc08
+  name: spi_flash_region_crc32
+  kind: function
+  class: store
+  module: FLASH
+  evidence: CRC-32s a raw external-flash range in 0x200-byte reads. It is addressed
+    in SPI-NOR bytes and not in WFTL blocks, so it belongs to the driver and not
+    to any store; its only caller compares the answer against an expected CRC
 - address: 0x4cca8
   name: fwblk_bank_info
   kind: label
@@ -2636,11 +2717,35 @@ symbols:
   class: wppcmd
   evidence: 'wpp_cmd_table row 0x276c4: key 2427, label ''GLANCE_GET'', CMD_GLANCE_GET
     in wpp/src/commands.rs'
-- address: 0x4d370
-  name: glyph_cache_post_update
+- address: 0x4d33c
+  name: glyph_cache_ctx
   kind: function
-  class: logline
-  evidence: the only line 0x4d370 logs, wlog('[GLYPH CACHE] Post Update') at 0x4d37a
+  class: store
+  module: GLYPH_CACHE
+  evidence: selector 0 is the context at 0x2001a554 and 1 the one at 0x2001a574;
+    anything else is NULL
+- address: 0x4d354
+  name: glyph_cache_factory_reset
+  kind: function
+  class: store
+  module: GLYPH_CACHE
+  evidence: the "[%s] Factory reset" line with "GLYPH CACHE" as the %s, then the
+    version write
+- address: 0x4d370
+  name: glyph_cache_post_update_check
+  kind: function
+  class: store
+  module: GLYPH_CACHE
+  evidence: logs "[GLYPH CACHE] Post Update" and formats both glyph contexts unless
+    dblib id 0x130 reads back {0x22, 0x22, font version}, the two 0x22 being the
+    glyph dimension ceiling glyph_cache_insert enforces
+- address: 0x4d3d4
+  name: glyph_cache_init
+  kind: function
+  class: store
+  module: GLYPH_CACHE
+  evidence: 'two flash_cache_init calls: WFTL type 6 over 2 blocks with no RAM table,
+    and WFTL type 7 over 3 blocks with a twelve-entry table at 0x2001a494'
 - address: 0x4d410
   name: shell_help_gpio
   kind: function
@@ -4587,20 +4692,91 @@ symbols:
   class: wppcmd
   evidence: 'wpp_cmd_table row 0x27850: key 2480, label ''WPP_CMD_FLUX_SENSOR_MEASURE'',
     CMD_FLUX_SENSOR_MEASURE in wpp/src/commands.rs'
-- address: 0x5b7e4
-  name: shell_cmd_spiflash__1
+- address: 0x5b6a4
+  name: spi_flash_unlock
   kind: function
-  class: helper
-  evidence: only 0x5bec4 (shell_cmd_spiflash) calls 0x5b7e4; 70 bytes
+  class: store
+  module: FLASH
+  evidence: gives back the mutex at *0x2001f8e8 with xQueueGenericSend; the udf
+    at 0x5b6aa is the assert that it exists
+- address: 0x5b6bc
+  name: spi_flash_wake
+  kind: function
+  class: store
+  module: FLASH
+  evidence: toggles chip select with no command at all and waits the chip row's
+    bytes at +1 and +2 around it, which is how a NOR part leaves deep power down
+- address: 0x5b6ec
+  name: spi_flash_deep_power_down
+  kind: function
+  class: store
+  module: FLASH
+  evidence: the one-byte command 0xb9 (movs r1,#0xb9 at 0x5b6f6), then the tDP delay
+    the chip row gives at +0
+- address: 0x5b718
+  name: spi_flash_release
+  kind: function
+  class: store
+  module: FLASH
+  evidence: decrements the open count at +4 of the device and, on the last release,
+    powers the chip down and drops the SPI device; -1 when the count is already
+    zero
+- address: 0x5b748
+  name: spi_flash_lock
+  kind: function
+  class: store
+  module: FLASH
+  evidence: takes the same mutex with an infinite timeout (mov.w r1,#0xffffffff
+    at 0x5b750)
+- address: 0x5b75c
+  name: spi_flash_erase_unit
+  kind: label
+  class: store
+  module: FLASH
+  evidence: command 0x20 when the erase shift at +0x10 of the device is 0xc (4 KB
+    sector) and 0xd8 when it is 0x10 or 0x12 (0x5b76e..0x5b772 against 0x5b7ac),
+    then waits WIP for the chip row's erase budget
+- address: 0x5b7bc
+  name: spi_flash_erase_unit_if_dirty
+  kind: function
+  class: store
+  module: FLASH
+  evidence: blank-checks the unit first and only erases when spi_flash_is_erased
+    says no; this is what keeps a rewrite of an already-blank WFTL block off the
+    erase counter
+- address: 0x5b7e4
+  name: spi_flash_erase_chip
+  kind: function
+  class: store
+  module: FLASH
+  evidence: the one-byte command 0xc7 (movs r1,#0xc7 at 0x5b7f8) and a WIP wait
+    of the chip row's whole-chip seconds times 1000
 - address: 0x5b830
   name: flash_open
   kind: label
   class: prose
-- address: 0x5b96c
-  name: shell_cmd_spiflash__2
+- address: 0x5b884
+  name: spi_flash_erase_range
   kind: function
-  class: helper
-  evidence: only 0x5bec4 (shell_cmd_spiflash) calls 0x5b96c; 10 bytes
+  class: store
+  module: FLASH
+  evidence: '(handle, addr, len): -1 unless addr is erase-unit aligned and the range
+    ends inside the chip (0x5b8ac..0x5b8c2), then walks it taking the block erase
+    (0x52 for the 32 KB shift 0xf, 0xd8 for the 64 KB shift 0x10) where a whole
+    block is covered and blank and the sector erase otherwise'
+- address: 0x5b96c
+  name: spi_flash_total_size
+  kind: function
+  class: store
+  module: FLASH
+  evidence: 1 << the chip-size shift at +0x12 of the device descriptor
+- address: 0x5b97c
+  name: spi_flash_erase_unit_size
+  kind: function
+  class: store
+  module: FLASH
+  evidence: 1 << the erase shift at +0x10 of the device descriptor, the same field
+    spi_flash_erase_unit branches on
 - address: 0x5b98c
   name: flash_detect_loop_head
   kind: label
@@ -4653,7 +4829,7 @@ symbols:
   evidence: 'the only line 0x5bdf0 logs, wlog(''offset 0x%08x: 0x%08x != 0x%08x'')
     at 0x5be30'
 - address: 0x5be58
-  name: shell_cmd_spiflash__3
+  name: shell_cmd_spiflash__1
   kind: function
   class: helper
   evidence: only 0x5bec4 (shell_cmd_spiflash) calls 0x5be58; 82 bytes
@@ -5373,12 +5549,6 @@ symbols:
   kind: label
   class: prose
   evidence: streams image, memcmp 20B vs stored digest
-- address: 0x64bc8
-  name: chunked_update_not_aligned
-  kind: function
-  class: logline
-  evidence: the only line 0x64bc8 logs, wlog('[CHUNKED_UPDATE] not aligned') at
-    0x64bf2
 - address: 0x64cf8
   name: FW_AVAILABLE__1
   kind: function
@@ -5470,23 +5640,75 @@ symbols:
   kind: function
   class: logline
   evidence: the only line 0x656d0 logs, wlog('invalid utf8 sequence') at 0x65704
-- address: 0x65884
-  name: vas_cant_get_coords_for_bank
+- address: 0x657d0
+  name: vasistas_banks_init
   kind: function
-  class: logline
-  evidence: the only line 0x65884 logs, wlog("[VAS] Can't get coords for bank %d")
-    at 0x658aa
+  class: store
+  module: VASISTAS
+  evidence: fills the fourteen 0x18-byte bank descriptors at 0x20020250 with their
+    WFTL type and their ring length; the pairs are (0,65) (1,6) (2,2) (0xb,3) (4,3)
+    (3,47) (5,20) (0x10,10) (0x11,4) (0x12,19) (0x13,28) (0x14,4) (0x15,3) (0x16,2)
+- address: 0x65864
+  name: vasistas_bank_reset
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: zeroes a bank's tail, head, write offset and last record size and leaves
+    its type and ring length, which is what says those two are configuration and
+    the rest is state
+- address: 0x65884
+  name: vasistas_bank_for_type
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: 'the linear scan over the fourteen descriptors for the one whose WFTL
+    type byte matches; the miss is the "vas: can''t get coords for bank" line, so
+    a bank is addressed by its WFTL type and not by its ordinal'
+- address: 0x65970
+  name: vasistas_erase_bank
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: erases one WFTL type and resets every bank descriptor carrying it
+- address: 0x659a4
+  name: vasistas_erase_all
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: 'the shell''s `vasistas erase_all`: wftl_erase_type and a reset for
+    each of the fourteen banks'
+- address: 0x659e4
+  name: vasistas_init
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: 'the shell''s `vasistas init`: rebuilds every bank''s head and tail
+    by scanning its blocks and raises the initialised flag the store checks'
+- address: 0x65b38
+  name: vasistas_store
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: bank_for_type, then vasistas_append, then the first and last timestamp
+    globals; the "[vasistas][%d][ bank %d ]" line is its own
+- address: 0x65b70
+  name: vasistas_store_if_initialised
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: the same store behind the initialised flag
 - address: 0x65b84
   name: shell_cmd_vasistas__1
   kind: function
   class: helper
   evidence: only 0x65d28 (shell_cmd_vasistas) calls 0x65b84; 58 bytes
 - address: 0x65c48
-  name: vas_store_bkp
+  name: vasistas_write_bkp
   kind: function
-  class: logtag
-  evidence: wlog('[vas_store_bkp] reason=%d has_vib=%d') at 0x65d00, tag is a C
-    identifier
+  class: store
+  module: VASISTAS
+  evidence: builds the sixteen-byte record whose type field is 0xa (movs r3,#0xa
+    at 0x65c5e) and stores it in bank 2
 - address: 0x65d18
   name: shell_help_vasistas
   kind: function
@@ -5498,33 +5720,51 @@ symbols:
   class: shell
   evidence: 'shell_cmd_table row 0x2746c: command ''vasistas'', run slot (+4)'
 - address: 0x66524
-  name: vasistas_error_unknown_vasistas_size
+  name: vasistas_record_size
   kind: function
-  class: logline
-  evidence: 'the only line 0x66524 logs, wlog(''[VASISTAS] Error: unknown vasistas
-    size'') at 0x6659e'
+  class: store
+  module: VASISTAS
+  evidence: 'the tbb table at 0x66534, 63 entries indexed by the 6-bit record type,
+    giving the record''s whole byte count; types 0xf and 0x13 add the header (0x10
+    and 8) to the length the record carries. The refusal above 0x3e is "[VASISTAS]
+    Error: unknown vasistas size"'
 - address: 0x665b4
-  name: vasistas_error_unknown_vasistas_payload_size
+  name: vasistas_append
   kind: function
-  class: logline
-  evidence: 'the only line 0x665b4 logs, wlog(''[VASISTAS] Error: unknown vasistas
-    payload size'') at 0x66680'
+  class: store
+  module: VASISTAS
+  evidence: writes the previous record's size into bits 6..13 of the header (the
+    bfi at 0x665c0 out of the bank's +0x10) and the type's payload size into bits
+    14..21 with bit 22 set, then wftl_writes the record and advances the bank's
+    write offset, taking the next ring index when the block fills
 - address: 0x666e4
-  name: vasistas_error_get_size_unknown_activity
+  name: vasistas_size_from_header
   kind: function
-  class: logline
-  evidence: 'the only line 0x666e4 logs, wlog(''[VASISTAS] ERROR: get size unknown
-    activity=%d'') at 0x66704'
+  class: store
+  module: VASISTAS
+  evidence: the same total size taken out of the record's own bits 14..21 instead
+    of the table; vasistas_read_record computes both and refuses the record when
+    they differ, which is the only integrity check the format has
 - address: 0x6673c
-  name: vas_unexpected_read_size
+  name: vasistas_read_record
   kind: function
-  class: logline
-  evidence: the only line 0x6673c logs, wlog('[VAS] Unexpected read size') at 0x667a0
+  class: store
+  module: VASISTAS
+  evidence: reads the 8-byte header first, agrees the two sizes, then reads the
+    whole record; -4 on the size disagreement at 0x66788 and a type of 0x3f written
+    back on a read error
 - address: 0x667cc
   name: shell_cmd_vasistas__2
   kind: function
   class: helper
   evidence: only 0x65d28 (shell_cmd_vasistas) calls 0x667cc; 546 bytes
+- address: 0x66b98
+  name: vasistas_bank_for_record
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: the tbb at 0x66bae maps record types 9..0x14 to the WFTL type of the
+    bank they belong in, and 0xff is the answer every caller checks before it stores
 - address: 0x66d84
   name: vib_ignore_vib_request_current_vib__1
   kind: function
@@ -5671,58 +5911,189 @@ symbols:
   kind: function
   class: logline
   evidence: the only line 0x69464 logs, wlog('[WFTL] Post Update') at 0x69474
+- address: 0x694e0
+  name: wftl_init
+  kind: function
+  class: store
+  module: WFTL
+  evidence: the `wftl init` shell branch at 0x69176, and what 0x2e1d8 calls at boot
+    before any other store opens
 - address: 0x69540
-  name: shell_cmd_flash_cache_test__1
+  name: wftl_type_index_count
   kind: function
-  class: helper
-  evidence: only 0x4c634 (shell_cmd_flash_cache_test) calls 0x69540; 32 bytes
+  class: store
+  module: WFTL
+  evidence: bounds the type against wftl_type_count and hands back the index count
+    at +0 of its state; the only reader outside WFTL is the flash cache's shell
+    test
 - address: 0x69564
-  name: wftl_type_not_requesting_last_block
+  name: wftl_write
   kind: function
-  class: logline
-  evidence: the only line 0x69564 logs, wlog('[WFTL] Type %d not requesting last
-    block + 1\n\tRequesting index = %d (range = %d | %d)') at 0x695da
+  class: store
+  module: WFTL
+  evidence: the `wftl write <type> <index> <offset> <len>` shell branch at 0x69236
+    calls it with exactly those four and the buffer; 3 unless the type is below
+    wftl_type_count, the type's index count is non-zero, the index is below it and
+    offset + len is within wftl_block_payload_size
+- address: 0x69608
+  name: wftl_read
+  kind: function
+  class: store
+  module: WFTL
+  evidence: the `wftl read <type> <index> <offset> <len>` shell branch at 0x692ac,
+    with the same four bounds checks as wftl_write and no flags argument
 - address: 0x69680
-  name: wftl_type_not_erasing_first_block
+  name: wftl_erase_index
   kind: function
-  class: logline
-  evidence: the only line 0x69680 logs, wlog('[WFTL] Type %d not erasing first block
-    (%d instead of %d)\n\tLogic index = %d (range = %d | %d)') at 0x696de
+  class: store
+  module: WFTL
+  evidence: the `wftl erase <type> <index>` shell branch at 0x691aa; the refusal
+    it logs is "[WFTL] Type %d not erasing first block (%d instead of %d)", which
+    is the layer's rule that only the head of the ring may go
+- address: 0x6970c
+  name: wftl_erase_type
+  kind: function
+  class: store
+  module: WFTL
+  evidence: the `wftl erase <type>` shell branch at 0x691b6, one argument
+- address: 0x6979c
+  name: wftl_request_block
+  kind: function
+  class: store
+  module: WFTL
+  evidence: the only caller of wftl_reserve_blocks; the log its callee reaches is
+    "[WFTL] Could not request block"
+- address: 0x697cc
+  name: wftl_release_reservation
+  kind: function
+  class: store
+  module: WFTL
+  evidence: zeroes the reserved count at +0x15 of wftl_reservation; both the success
+    and the failure path of wftl_reserve_blocks end in it
 - address: 0x697ec
-  name: wftl_error_should_have_found_index
+  name: wftl_find_block
   kind: function
-  class: logline
-  evidence: 'the only line 0x697ec logs, wlog(''[WFTL] Error : Should have found
-    index %d for type %d (%d)'') at 0x69920'
+  class: store
+  module: WFTL
+  evidence: '(type, index) -> block, or 0x5c8. Rejects an index outside the live
+    ring [first_index, last_index], answers from the last/write/read cursors when
+    one of them holds the index, and otherwise walks the block chain from the nearest
+    cursor following the next-block half of the header; the miss is the "[WFTL]
+    Error : Should have found index %d for type %d (%d)" line'
+- address: 0x69934
+  name: wftl_type_state_reset
+  kind: function
+  class: store
+  module: WFTL
+  evidence: writes the type's index count over all four (index, block) cursors of
+    its 18-byte state and 0x5c8 -- no block -- over all four block halves
+- address: 0x69958
+  name: wftl_mount
+  kind: function
+  class: store
+  module: WFTL
+  evidence: 'the scan wftl_init runs: reads every block header, drops the uninitialised
+    ones, counts the blocks per type against the configured count -- "[WFTL] Found
+    %d / %d blocks for type %d" -- and rebuilds each type''s first and last cursors
+    from the chain ends; a type that fails is reset and its blocks erased'
 - address: 0x69ca8
-  name: wftl_type_not_requesting_last_block__1
+  name: wftl_write_locked
   kind: function
-  class: helper
-  evidence: only 0x69564 (wftl_type_not_requesting_last_block) calls 0x69ca8; 536
-    bytes
+  class: store
+  module: WFTL
+  evidence: wftl_write under the mutex; 5 is the not-found its caller turns into
+    the "[WFTL] Type %d not requesting last block + 1" line
+- address: 0x69ec0
+  name: wftl_read_locked
+  kind: function
+  class: store
+  module: WFTL
+  evidence: 'wftl_read under the mutex: finds the block, caches (index, block) in
+    the read cursor at +0xe/+0x10 of the type state, and tail-calls wftl_block_read;
+    2 when the index has no block'
 - address: 0x69f00
-  name: wftl_type_not_erasing_first_block__1
+  name: wftl_erase_index_locked
   kind: function
-  class: helper
-  evidence: only 0x69680 (wftl_type_not_erasing_first_block) calls 0x69f00; 180
-    bytes
+  class: store
+  module: WFTL
+  evidence: 5 unless the index's block is the type's first block; otherwise invalidates
+    whichever cursors pointed at it, erases it, and advances first_index by one
+    modulo the index count and first_block to the header's next block
+- address: 0x69fb8
+  name: wftl_erase_type_locked
+  kind: function
+  class: store
+  module: WFTL
+  evidence: walks the chain from first_block erasing each block and following the
+    header's next-block half until it leaves the 0x5c8 range, then resets the type
+    state
 - address: 0x6a000
-  name: wftl_could_not_reserve_blocks
+  name: wftl_reserve_blocks
   kind: function
-  class: logline
-  evidence: the only line 0x6a000 logs, wlog('[WFTL] Could not reserve %u blocks')
-    at 0x6a06e
+  class: store
+  module: WFTL
+  evidence: scans all 0x5c8 blocks for erased ones and keeps the n with the lowest
+    erase counts, memmove-inserting each into a sorted run; refuses above ten and
+    logs "[WFTL] Could not reserve %u blocks". This is the whole wear levelling
+    the layer has
 - address: 0x6a130
   name: shell_cmd_wftl__1
   kind: function
   class: helper
   evidence: only 0x69160 (shell_cmd_wftl) calls 0x6a130; 90 bytes
-- address: 0x6a28c
-  name: wftl_up_cleanup_in_progress
+- address: 0x6a1a4
+  name: wftl_port_open
   kind: function
-  class: logline
-  evidence: 'the only line 0x6a28c logs, wlog(''[WFTL_UP] Cleanup in progress (%d/%d)
-    : %d -> %d'') at 0x6a2a6'
+  class: store
+  module: WFTL
+  evidence: flash_open(spi_flash_handle) and nothing else
+- address: 0x6a1b0
+  name: wftl_port_close
+  kind: function
+  class: store
+  module: WFTL
+  evidence: the matching close of wftl_port_open
+- address: 0x6a1bc
+  name: wftl_port_program
+  kind: function
+  class: store
+  module: WFTL
+  evidence: open, spi_flash_program(addr, buf, len), close; -1 when the open fails
+- address: 0x6a1f0
+  name: wftl_port_read
+  kind: function
+  class: store
+  module: WFTL
+  evidence: open, spi_flash_read(dest, addr, len), close
+- address: 0x6a224
+  name: wftl_port_erase_block
+  kind: function
+  class: store
+  module: WFTL
+  evidence: open, spi_flash_erase_unit_if_dirty(addr), close -- the erase unit and
+    the WFTL block are both 4096 bytes, which is the equality the "[WFTL] Critical
+    error! The flash have a sector size of %i while WFTL expects a size of %i" line
+    checks
+- address: 0x6a250
+  name: wftl_port_erase_range
+  kind: function
+  class: store
+  module: WFTL
+  evidence: open, spi_flash_erase_range(addr, len), close
+- address: 0x6a280
+  name: wftl_port_erase_unit_size
+  kind: function
+  class: store
+  module: WFTL
+  evidence: spi_flash_erase_unit_size of the same handle
+- address: 0x6a28c
+  name: wftl_post_update_cleanup
+  kind: function
+  class: store
+  module: WFTL
+  evidence: 'erases the whole WFTL region in twenty passes of 0x4a000 bytes from
+    0x238000 -- 20 * 0x4a000 is 0x5c8000, which is the 0x5c8 blocks of 4096 -- logging
+    "[WFTL_UP] Cleanup in progress (%d/%d) : %d -> %d" for each'
 - address: 0x6a2d0
   name: wftl_update_releasing_type
   kind: function
@@ -5832,15 +6203,68 @@ symbols:
   class: helper
   evidence: only 0x6ab54 (wpp_workout_alwyas_on_set_unpack) calls 0x6ae38; 60 bytes
 - address: 0x6ae78
-  name: workout_cache_post_update__1
+  name: workout_cache_write_version
   kind: function
-  class: helper
-  evidence: only 0x6aeb8 (workout_cache_post_update) calls 0x6ae78; 32 bytes
+  class: store
+  module: WORKOUT_CACHE
+  evidence: writes those six bytes to dblib id 0x137
+- address: 0x6ae9c
+  name: workout_cache_factory_reset
+  kind: function
+  class: store
+  module: WORKOUT_CACHE
+  evidence: the "[%s] Factory reset" line with "WORKOUT CACHE" as the %s, then the
+    version write
 - address: 0x6aeb8
-  name: workout_cache_post_update
+  name: workout_cache_post_update_check
   kind: function
-  class: logline
-  evidence: the only line 0x6aeb8 logs, wlog('[WORKOUT CACHE] Post Update') at 0x6aebc
+  class: store
+  module: WORKOUT_CACHE
+  evidence: logs "[WORKOUT CACHE] Post Update" and formats the cache unless dblib
+    id 0x137 reads back {1, 0x20, 0x14, 0x14, 0x22, 0x22} -- the format version
+    and the four dimension ceilings workout_cache_store enforces
+- address: 0x6af2c
+  name: workout_cache_init
+  kind: function
+  class: store
+  module: WORKOUT_CACHE
+  evidence: flash_cache_init of the context at 0x200208d4 over WFTL type 0xa, one
+    block, no RAM table
+- address: 0x6af48
+  name: workout_cache_store
+  kind: function
+  class: store
+  module: WORKOUT_CACHE
+  evidence: the key's top nibble is the record kind (0 the 0x24-byte info, 1 the
+    small icon bounded at 20x20, 2 the big icon bounded at 34x34) and the rest is
+    the workout id
+- address: 0x6afdc
+  name: workout_cache_get
+  kind: function
+  class: store
+  module: WORKOUT_CACHE
+  evidence: reads one key back as either the info bytes or a glyph, by the same
+    top-nibble kind workout_cache_store writes
+- address: 0x6b034
+  name: workout_cache_list_ids
+  kind: function
+  class: store
+  module: WORKOUT_CACHE
+  evidence: flash_cache_list_ids filtered on the key's top nibble, so it answers
+    "which workouts have an icon of this kind"
+- address: 0x6b09c
+  name: workout_cache_format
+  kind: function
+  class: store
+  module: WORKOUT_CACHE
+  evidence: flash_cache_format of the workout context
+- address: 0x6b0a8
+  name: workout_cache_wpp_reset
+  kind: function
+  class: store
+  module: WORKOUT_CACHE_WPP
+  evidence: zeroes the WPP staging state at 0x20006448 and the 36-byte info buffer
+    at 0x20006450
 - address: 0x6b0e4
   name: WPP_CMD_WORKOUT_SCREEN_LIST_GET
   kind: function
@@ -5848,10 +6272,12 @@ symbols:
   evidence: 'wpp_cmd_table row 0x279dc: key 315, label ''WPP_CMD_WORKOUT_SCREEN_LIST_GET'',
     CMD_WORKOUT_SCREEN_LIST_GET in wpp/src/commands.rs'
 - address: 0x6b1b0
-  name: WPP_CMD_WORKOUT_SCREEN_SET__2
+  name: workout_cache_wpp_store_icon
   kind: function
-  class: helper
-  evidence: only 0x6b224 (WPP_CMD_WORKOUT_SCREEN_SET) calls 0x6b1b0; 100 bytes
+  class: store
+  module: WORKOUT_CACHE_WPP
+  evidence: the "[WORKOUT CACHE WPP] [WPP] Store small icon" and "Store big icon"
+    lines, which pick the 1 and 2 kind nibbles workout_cache_store keys on
 - address: 0x6b224
   name: WPP_CMD_WORKOUT_SCREEN_SET
   kind: function
@@ -7139,6 +7565,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x08 is wui_view_carousel_clocks's
+- address: 0x812e4
+  name: carousel_sport
+  kind: function
+  class: logtag
+  evidence: wlog('[carousel_sport] face mode screen %d unknown') at 0x81320, tag
+    is a C identifier
 - address: 0x8163c
   name: on_background_sport
   kind: function
@@ -9688,39 +10120,122 @@ symbols:
   class: helper
   evidence: only 0x43fdc (type_id_ref_val) calls 0x94c56; 6 bytes
 - address: 0x94c5c
-  name: flash_cache_tried_to_insert_already_existing__2__1
+  name: cfs_locate_offset
   kind: function
-  class: helper
-  evidence: only 0x94f90 (flash_cache_tried_to_insert_already_existing__2) calls
-    0x94c5c; 84 bytes
+  class: store
+  module: CFS
+  evidence: turns a logical offset inside an element into the (block, offset) it
+    lands at, taking the first chunk's shorter run (payload - first_off - 0xc) off
+    before dividing by payload - 8; -1 asks for the append point
 - address: 0x94cb0
-  name: cfs_warn_corrupted_el_blk_off__1
+  name: cfs_cursor_wrap
   kind: function
-  class: helper
-  evidence: only 0x442c0 (cfs_warn_corrupted_el_blk_off) calls 0x94cb0; 40 bytes
+  class: store
+  module: CFS
+  evidence: moves a (block, offset) cursor to {next block modulo the ring, offset
+    4} once the offset passes payload_size - 0x18, which is the layer's definition
+    of a full block
+- address: 0x94cd8
+  name: cfs_block_read
+  kind: function
+  class: store
+  module: CFS
+  evidence: bounds offset + len against wftl_block_payload_size and tail-calls wftl_read
+    with the context's type as the WFTL type and the CFS block as the WFTL index
+- address: 0x94d0a
+  name: cfs_find_oldest_block
+  kind: function
+  class: store
+  module: CFS
+  evidence: the block whose sequence number is the smallest of the ring
+- address: 0x94d4a
+  name: cfs_element_crc
+  kind: function
+  class: store
+  module: CFS
+  evidence: walks the element's chunks in reads of at most 0x80 bytes through the
+    CRC-32 the image carries at 0xb2614 (poly 0xedb88320, init and final 0xffffffff)
+- address: 0x94e16
+  name: cfs_element_load
+  kind: function
+  class: store
+  module: CFS
+  evidence: reads the 12-byte head header, refuses a state other than 0, fills the
+    descriptor from its total length, and is valid only when the recomputed CRC
+    equals the word at header+8
+- address: 0x94e6c
+  name: cfs_block_write
+  kind: function
+  class: store
+  module: CFS
+  evidence: the same bound into wftl_write
+- address: 0x94e9a
+  name: cfs_seal_chunk_length
+  kind: function
+  class: store
+  module: CFS
+  evidence: programs the u16 length of a header already on flash and nothing else
+    -- the flags byte it writes is 0xff, which clears no bit. Named for the write
+    and not for the intent, because its two callers use it both to close a chunk
+    and to pad a block out
+- address: 0x94eb6
+  name: cfs_recycle_block
+  kind: function
+  class: store
+  module: CFS
+  evidence: erases the ring's next index and stamps ++last_seq at offset 0 of it,
+    pushing the read cursor off the block it just dropped; this is where the log
+    turns over
 - address: 0x94f00
-  name: cfs_warn_corrupted_el_blk_off__2
+  name: cfs_block_seq_read
   kind: function
-  class: helper
-  evidence: only 0x442c0 (cfs_warn_corrupted_el_blk_off) calls 0x94f00; 30 bytes
+  class: store
+  module: CFS
+  evidence: the u32 at offset 0 of a block, 0xffffffff when the read fails -- which
+    is also what an erased block holds
 - address: 0x94f1e
-  name: flash_cache_tried_to_insert_already_existing__1
+  name: cfs_element_begin
   kind: function
-  class: helper
-  evidence: only 0x4c390 (flash_cache_tried_to_insert_already_existing) calls 0x94f1e;
-    114 bytes
+  class: store
+  module: CFS
+  evidence: recycles the next block when the append cursor is past payload_size
+    - 0x18, writes an open head header and leaves the descriptor at offset+0xc with
+    length 0
 - address: 0x94f90
-  name: flash_cache_tried_to_insert_already_existing__2
+  name: cfs_element_write
   kind: function
-  class: helper
-  evidence: only 0x4c390 (flash_cache_tried_to_insert_already_existing) calls 0x94f90;
-    370 bytes
+  class: store
+  module: CFS
+  evidence: appends (or overwrites at a logical offset) into the element, opening
+    a 4-byte continuation header in the next block each time one fills, and grows
+    the descriptor's length
 - address: 0x95102
-  name: flash_cache_tried_to_insert_already_existing__3
+  name: cfs_element_commit
   kind: function
-  class: helper
-  evidence: only 0x4c390 (flash_cache_tried_to_insert_already_existing) calls 0x95102;
-    106 bytes
+  class: store
+  module: CFS
+  evidence: seals the last chunk, then programs the head header's total length and
+    CRC, which is what makes the element loadable
+- address: 0x9516c
+  name: cfs_element_size
+  kind: function
+  class: store
+  module: CFS
+  evidence: the descriptor's length field
+- address: 0x95170
+  name: cfs_element_read
+  kind: function
+  class: store
+  module: CFS
+  evidence: walks the chunk headers from the element's first block, skips the logical
+    offset and copies out of the payload
+- address: 0x9523a
+  name: cfs_first
+  kind: function
+  class: store
+  module: CFS
+  evidence: points the read cursor at {oldest block, offset 4} and yields the element
+    there, falling through to cfs_next when that one does not load
 - address: 0x9544a
   name: WPP_CMD_FRICTION_TEST__1
   kind: function
@@ -9857,16 +10372,86 @@ symbols:
   class: svc
   evidence: 'svc #0x43; bx lr at 0x97b48; second copy of sd_clock_hfclk_release
     (0x91f48)'
+- address: 0x97c06
+  name: flash_cache_table_clear
+  kind: function
+  class: store
+  module: FLASH_CACHE
+  evidence: memsets the RAM table to zero; a zero id is the empty slot the lookup
+    skips
+- address: 0x97c1e
+  name: flash_cache_table_lookup
+  kind: function
+  class: store
+  module: FLASH_CACHE
+  evidence: the linear scan of the RAM table for an id, copying out the twelve-byte
+    element descriptor it caches
+- address: 0x97c4e
+  name: flash_cache_table_insert
+  kind: function
+  class: store
+  module: FLASH_CACHE
+  evidence: the ring insert at the table's next slot, replacing an entry that already
+    holds the id
+- address: 0x97c96
+  name: flash_cache_contains_ids
+  kind: function
+  class: store
+  module: FLASH_CACHE
+  evidence: walks the log once marking which of n ids it met; 1 only when every
+    one is present
+- address: 0x97d10
+  name: flash_cache_unlock
+  kind: function
+  class: store
+  module: FLASH_CACHE
+  evidence: gives it back
+- address: 0x97d1a
+  name: flash_cache_lock
+  kind: function
+  class: store
+  module: FLASH_CACHE
+  evidence: takes the context's own mutex with an infinite timeout
+- address: 0x97d22
+  name: flash_cache_deinit
+  kind: function
+  class: store
+  module: FLASH_CACHE
+  evidence: destroys the mutex and memsets the whole 0x20-byte context
+- address: 0x97d40
+  name: flash_cache_contains_ids_locked
+  kind: label
+  class: store
+  module: FLASH_CACHE
+  evidence: flash_cache_contains_ids between the lock and the unlock
+- address: 0x97d68
+  name: flash_cache_list_ids
+  kind: function
+  class: store
+  module: FLASH_CACHE
+  evidence: walks the log reading the leading u32 of each element into the caller's
+    array
 - address: 0x97dc8
-  name: NOTIFICATION_APP_ENABLED_GET__1__1
+  name: flash_cache_walk
   kind: function
-  class: helper
-  evidence: only 0x55a00 (NOTIFICATION_APP_ENABLED_GET__1) calls 0x97dc8; 146 bytes
-- address: 0x97f22
-  name: flash_cache_init_ctx_type__1
+  class: store
+  module: FLASH_CACHE
+  evidence: builds the {context, descriptor, consumed} handle flash_cache_item_read
+    takes and calls the callback once per element with its id and length
+- address: 0x97e5a
+  name: flash_cache_format
   kind: function
-  class: helper
-  evidence: only 0x4c594 (flash_cache_init_ctx_type) calls 0x97f22; 2 bytes
+  class: store
+  module: FLASH_CACHE
+  evidence: clears the RAM table and remounts the circularfs with the force-erase
+    argument set
+- address: 0x97e7c
+  name: flash_cache_preload_ids
+  kind: label
+  class: store
+  module: FLASH_CACHE
+  evidence: fills the RAM table from one walk for a given set of ids, which is what
+    keeps a glyph lookup off the flash
 - address: 0x97f26
   name: _read
   kind: function
@@ -9959,16 +10544,43 @@ symbols:
   evidence: hands back body+4 and the u16 length the header holds at body+2, i.e.
     the IE stream fwblk_get_ie (0x4cb90) walks
 - address: 0x980ba
-  name: glyph_cache_post_update__1
+  name: glyph_cache_write_version
   kind: function
-  class: helper
-  evidence: only 0x4d370 (glyph_cache_post_update) calls 0x980ba; 36 bytes
+  class: store
+  module: GLYPH_CACHE
+  evidence: writes dblib id 0x130 as {0x22, 0x22, the current font version}
 - address: 0x980de
-  name: wam_gui_resource_data_size_mismatch__1
+  name: glyph_cache_insert
   kind: function
-  class: helper
-  evidence: only 0x56558 (wam_gui_resource_data_size_mismatch) calls 0x980de; 76
-    bytes
+  class: store
+  module: GLYPH_CACHE
+  evidence: refuses a width or height above 0x22 and inserts the glyph as two segments,
+    {u8 width; u8 height} and the width * ((height + 7) >> 3) bitmap bytes
+- address: 0x9812a
+  name: glyph_cache_get
+  kind: function
+  class: store
+  module: GLYPH_CACHE
+  evidence: reads the record back into the caller's buffer and fills the in-RAM
+    glyph with its width, height and a pointer two bytes in
+- address: 0x9815a
+  name: glyph_cache_contains_ids
+  kind: function
+  class: store
+  module: GLYPH_CACHE
+  evidence: the selector's context into flash_cache_contains_ids_locked
+- address: 0x9816e
+  name: glyph_cache_format
+  kind: function
+  class: store
+  module: GLYPH_CACHE
+  evidence: the selector's context into flash_cache_format
+- address: 0x9817c
+  name: glyph_cache_preload_ids
+  kind: function
+  class: store
+  module: GLYPH_CACHE
+  evidence: the selector's context into flash_cache_preload_ids
 - address: 0x981f8
   name: GREENTEG_SENSITIVITY_BIN_DEL
   kind: function
@@ -12130,18 +12742,78 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x271fc: command ''exit'', run slot (+4)'
+- address: 0x9ba20
+  name: spi_flash_select
+  kind: function
+  class: store
+  module: FLASH
+  evidence: the tCS spin (movs 0x80, subs 3, bpl at 0x9ba20..0x9ba24) then the bus
+    grab at 0x9bd74; every command body starts with it
+- address: 0x9ba2a
+  name: spi_flash_write_enable
+  kind: function
+  class: store
+  module: FLASH
+  evidence: sends the one-byte command 0x06 (movs r1,#6 at 0x9ba34), which is WREN,
+    and waits the transfer out
+- address: 0x9ba44
+  name: spi_flash_wait_wip_clear
+  kind: function
+  class: store
+  module: FLASH
+  evidence: sends command 0x05 (RDSR, movs r1,#5 at 0x9ba4e) and loops at 0x9ba76
+    while bit 0 of the byte read back is set, which is WIP; the r1 argument is the
+    millisecond budget the chip table gives for the operation
 - address: 0x9ba84
   name: flash_read_jedec_id
   kind: label
   class: prose
   evidence: builds cmd 0x9F, reads 3 ID bytes over spi2
+- address: 0x9baca
+  name: spi_flash_read_status
+  kind: function
+  class: store
+  module: FLASH
+  evidence: command 0x05 (movs r3,#5 at 0x9bacc), one byte back
+- address: 0x9baf6
+  name: spi_flash_read_config
+  kind: function
+  class: store
+  module: FLASH
+  evidence: command 0x15 (movs r3,#0x15 at 0x9baf8), two bytes back byte-swapped
+    with rev16; 0x15 is Read Configuration Register on the MX25R the detect table
+    matches
+- address: 0x9bb2c
+  name: spi_flash_send_cmd_addr
+  kind: function
+  class: store
+  module: FLASH
+  evidence: 'builds {u8 cmd; u24 addr big-endian} on the stack (rev16 at 0x9bb30
+    plus the lsr #16 byte at 0x9bb2e) and sends the four bytes; the three-byte address
+    is why the driver cannot reach past 16 MB'
+- address: 0x9bb54
+  name: spi_flash_is_erased
+  kind: function
+  class: store
+  module: FLASH
+  evidence: 'reads the range with command 0x03 in 0x64-byte chunks and returns 0
+    as soon as a word is not 0xffffffff (ldr, adds #1, beq at 0x9bba8), 1 when the
+    whole range is blank'
+- address: 0x9bbb6
+  name: spi_flash_program
+  kind: function
+  class: store
+  module: FLASH
+  evidence: '(handle, buf, addr, len): write-enable, command 0x02 (movs r1,#2 at
+    0x9bbf2), data, wait WIP, repeated per page because 0x9bbd0..0x9bbe4 clamps
+    each pass to 0x100 - (addr & 0xff)'
 - address: 0x9bc1c
   name: flash_read_prim
   kind: label
   class: prose
   evidence: SPI NOR read(handle,dest,addr,len)
 - address: 0x9bc52
-  name: shell_cmd_spiflash__4
+  name: shell_cmd_spiflash__2
   kind: function
   class: helper
   evidence: only 0x5bec4 (shell_cmd_spiflash) calls 0x9bc52; 24 bytes
@@ -12151,17 +12823,17 @@ symbols:
   class: helper
   evidence: only 0x307b8 (go_to_system_off) calls 0x9bc84; 26 bytes
 - address: 0x9bc9e
-  name: shell_cmd_spiflash__5
+  name: shell_cmd_spiflash__3
   kind: function
   class: helper
   evidence: only 0x5bec4 (shell_cmd_spiflash) calls 0x9bc9e; 24 bytes
 - address: 0x9bcb6
-  name: shell_cmd_spiflash__6
+  name: shell_cmd_spiflash__4
   kind: function
   class: helper
   evidence: only 0x5bec4 (shell_cmd_spiflash) calls 0x9bcb6; 24 bytes
 - address: 0x9bcda
-  name: shell_cmd_spiflash__7
+  name: shell_cmd_spiflash__5
   kind: function
   class: helper
   evidence: only 0x5bec4 (shell_cmd_spiflash) calls 0x9bcda; 24 bytes
@@ -12183,12 +12855,12 @@ symbols:
     does with it. Naming it here is what keeps the relink from replacing a flash
     lock with tzset, where only the shell would have run the difference.'
 - address: 0x9bd22
-  name: shell_cmd_spiflash__8
+  name: shell_cmd_spiflash__6
   kind: function
   class: helper
   evidence: only 0x5bec4 (shell_cmd_spiflash) calls 0x9bd22; 22 bytes
 - address: 0x9bd38
-  name: shell_cmd_spiflash__9
+  name: shell_cmd_spiflash__7
   kind: function
   class: helper
   evidence: only 0x5bec4 (shell_cmd_spiflash) calls 0x9bd38; 22 bytes
@@ -12251,34 +12923,120 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x64cf8 (FW_AVAILABLE__1) calls 0x9c324; 74 bytes
+- address: 0x9c41c
+  name: vasistas_walk_open
+  kind: label
+  class: store
+  module: VASISTAS
+  evidence: seeds a read cursor at the first record at or after a timestamp, scanning
+    forward from the bank's tail
+- address: 0x9c558
+  name: vasistas_walk_step
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: one record, then the advance, then the timestamp stop condition; -3
+    once the walk is past the requested range
 - address: 0x9c602
-  name: shell_cmd_vasistas__3
+  name: vasistas_bank_count
   kind: function
-  class: helper
-  evidence: only 0x65d28 (shell_cmd_vasistas) calls 0x9c602; 4 bytes
+  class: store
+  module: VASISTAS
+  evidence: movs r0,#0xe; bx lr -- the fourteen banks vasistas_banks_init writes
+- address: 0x9c606
+  name: vasistas_store_enabled
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: 'the gate every sensor writer goes through: refuses the 0xff bank vasistas_bank_for_record
+    returns and tail-calls vasistas_store'
+- address: 0x9c62c
+  name: vasistas_count_from
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: walks to exhaustion returning the count the "%d vasistas in bank %d"
+    line prints
 - address: 0x9c686
-  name: shell_cmd_vasistas__4
+  name: vasistas_count_bank
   kind: function
-  class: helper
-  evidence: only 0x65d28 (shell_cmd_vasistas) calls 0x9c686; 30 bytes
+  class: store
+  module: VASISTAS
+  evidence: 'the shell''s `vasistas num <type>`: a cursor from timestamp zero drained
+    by vasistas_count_from'
+- address: 0x9c6dc
+  name: vasistas_read_last
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: the newest record of one bank
+- address: 0x9c746
+  name: vasistas_read_last_bkp
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: vasistas_read_last of bank 2 into sixteen bytes, the record vasistas_write_bkp
+    writes; the shell's `vasistas last bkp`
 - address: 0x9c7a8
-  name: vasistas_error_unknown_vasistas_payload_size__1
+  name: vasistas_advance_block
   kind: function
-  class: helper
-  evidence: only 0x665b4 (vasistas_error_unknown_vasistas_payload_size) calls 0x9c7a8;
-    68 bytes
+  class: store
+  module: VASISTAS
+  evidence: erases the next ring index and takes it as the new head, pushing the
+    tail one on when the head caught it; this is where the oldest measurements go
+- address: 0x9c7ec
+  name: vasistas_cursor_advance
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: adds n to a cursor's offset and takes the next ring index at the block
+    capacity
+- address: 0x9c81c
+  name: vasistas_cursor_invalidate
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: zeroes the cursor and sets the record type to 0x3f, the six-bit all-ones
+    the format uses for no record
+- address: 0x9c832
+  name: vasistas_walk_next
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: reads at the cursor and, at the end of a block, takes the next ring
+    index and retries
+- address: 0x9c8ca
+  name: vasistas_walk_prev
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: steps back by the previous-record size the header carries in bits 6..13,
+    which is the only reason a backwards walk is possible in a format with no index
 - address: 0x9c9a4
-  name: vasistas_error_unknown_vasistas_payload_size__2
+  name: vasistas_block_write_record
   kind: function
-  class: helper
-  evidence: only 0x665b4 (vasistas_error_unknown_vasistas_payload_size) calls 0x9c9a4;
-    38 bytes
+  class: store
+  module: VASISTAS
+  evidence: wftl_write of vasistas_record_size bytes at the bank's (index, offset)
+- address: 0x9c9ca
+  name: vasistas_block_write_header
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: the same write of 8 bytes only, which is how a header is amended in
+    place
 - address: 0x9c9de
-  name: vasistas_error_unknown_vasistas_payload_size__1__1
+  name: vasistas_block_erase
   kind: function
-  class: helper
-  evidence: only 0x9c7a8 (vasistas_error_unknown_vasistas_payload_size__1) calls
-    0x9c9de; 8 bytes
+  class: store
+  module: VASISTAS
+  evidence: wftl_erase_index of the bank's head block
+- address: 0x9c9e6
+  name: vasistas_bank_erase
+  kind: function
+  class: store
+  module: VASISTAS
+  evidence: wftl_erase_type of the bank's whole type
 - address: 0x9ca18
   name: shell_cmd_symptoms__3
   kind: function
@@ -12299,17 +13057,76 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x67bc4 (shell_cmd_oled__1) calls 0x9cf98; 4 bytes
+- address: 0x9d042
+  name: wftl_block_read
+  kind: label
+  class: store
+  module: WFTL
+  evidence: (block, offset, buf, len) -> WFTL_ORIGIN + 8 + offset + (block << 12);
+    the +8 at 0x9d04a is the header the payload starts after
+- address: 0x9d05c
+  name: wftl_block_write
+  kind: label
+  class: store
+  module: WFTL
+  evidence: the same address arithmetic as wftl_block_read into the port's program
+    call
+- address: 0x9d07e
+  name: wftl_block_payload_size
+  kind: function
+  class: store
+  module: WFTL
+  evidence: movw r0,#0xff8; bx lr -- the 4096-byte block less its 8-byte header,
+    and the bound wftl_read and wftl_write put on offset + len
 - address: 0x9d084
-  name: wftl_error_should_have_found_index__1
+  name: wftl_cursor_nearer
   kind: function
-  class: helper
-  evidence: only 0x697ec (wftl_error_should_have_found_index) calls 0x9d084; 72
-    bytes
+  class: store
+  module: WFTL
+  evidence: keeps whichever of two (index, block) cursors is the fewer ring steps
+    before the wanted index, the modulus being the type's index count; wftl_find_block
+    calls it once per cached cursor before it walks
+- address: 0x9d0cc
+  name: wftl_type_count
+  kind: function
+  class: store
+  module: WFTL
+  evidence: movs r0,#0x17; bx lr -- 23, and every entry point bounds its type argument
+    against it
+- address: 0x9d0d0
+  name: wftl_block_header_read
+  kind: function
+  class: store
+  module: WFTL
+  evidence: 'reads the 8 bytes at WFTL_ORIGIN + (block << 12) and decodes struct
+    wftl_block_header: 2 when the 6-bit type is 0x3f (erased), 1 when the released
+    bit or either index sentinel 0x7fff says the block is not live, else 0 with
+    *out_type and *out_index filled; the shell''s `wftl list` prints BLOCK_STATE_EMPTY
+    for 2 and BLOCK_STATE_CORRUPTED for the rest'
+- address: 0x9d15c
+  name: wftl_block_erase
+  kind: function
+  class: store
+  module: WFTL
+  evidence: erases the block, then programs the header word back with the 24-bit
+    erase count -- the caller's when it supplies one at 0x9d17c, the old one plus
+    one at 0x9d1b6 -- and clears bit 30 with the second program of 0xbfffffff at
+    0x9d19e, which is what marks the block initialised
+- address: 0x9d1ba
+  name: wftl_format
+  kind: function
+  class: store
+  module: WFTL
+  evidence: erases every block whose type is not 0x3f over the whole 0x5c8 range,
+    then resets all 23 per-type states
 - address: 0x9d1fc
-  name: wftl_post_update__3__1
+  name: wftl_erase_addr_range
   kind: function
-  class: helper
-  evidence: only 0x9d23c (wftl_post_update__3) calls 0x9d1fc; 60 bytes
+  class: store
+  module: WFTL
+  evidence: takes a {u32 addr; u32 len} descriptor, turns it into the block numbers
+    it covers by subtracting WFTL_ORIGIN and shifting by 12, and erases each block
+    that is not already empty
 - address: 0x9d238
   name: wftl_post_update__2
   kind: function

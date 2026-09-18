@@ -266,6 +266,13 @@ def _object(die, cus):
 
 
 def _field(member, cus):
+    # A bit-field has no byte offset of its own: DWARF gives it a bit offset
+    # into a storage unit it shares with its neighbours. Nothing downstream
+    # can place such a member, and two of them would claim the same byte, so
+    # the struct contributes its byte-addressable members and the header's
+    # comment carries the bit layout.
+    if "DW_AT_data_member_location" not in member.attributes:
+        return None
     at = member.attributes["DW_AT_data_member_location"].value
     name = _die_name(member)
     declared = _type_of(member, cus)
@@ -332,8 +339,9 @@ def load(include=INCLUDE, out=None):
             if die.tag == "DW_TAG_structure_type" and _die_name(die):
                 structs[_die_name(die)] = Struct(
                     _die_name(die), die.attributes["DW_AT_byte_size"].value,
-                    [_field(m, cus) for m in die.iter_children()
-                     if m.tag == "DW_TAG_member"])
+                    [f for f in (_field(m, cus) for m in die.iter_children()
+                                 if m.tag == "DW_TAG_member")
+                     if f is not None])
             elif die.tag == "DW_TAG_enumeration_type" and _die_name(die):
                 enums[_die_name(die)] = [_die_name(e) for e in die.iter_children()]
             elif die.tag == "DW_TAG_variable" and _die_name(die):

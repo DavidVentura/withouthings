@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 0, helper: 416, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 332, logtag: 8, module_functions: 1782, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {bleevt: 28, extlib: 0, helper: 391, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1786, modules: 184, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 202, disagree: 1}
 
 functions:
@@ -320,11 +320,6 @@ functions:
     class: helper
     evidence: "only 0x2f05c (shell_cmd_hwa10) calls 0x32960; 176 bytes"
     module: PPG_AFIB_STORE
-  - name: wftl_up_cleanup_in_progress__1
-    address: 0x32d38
-    class: helper
-    evidence: "only 0x6a28c (wftl_up_cleanup_in_progress) calls 0x32d38; 82 bytes"
-    module: WFTL_UP
   - name: WPP_CMD_WAM_VASISTAS_GET__2__1
     address: 0x334bc
     class: helper
@@ -1193,21 +1188,6 @@ functions:
     class: shell
     evidence: "shell_cmd_table row 0x27178: command 'calibration', run slot (+4)"
     also_named: [type_id_ref_val (logline)]
-  - name: cfs_warn_post_update_erase_needed
-    address: 0x44178
-    class: logline
-    evidence: "the only line 0x44178 logs, wlog('[CFS][WARN] Post update erase needed') at 0x44198"
-    module: CFS
-  - name: cfs_warn_init_force_erase_type
-    address: 0x441d4
-    class: logline
-    evidence: "the only line 0x441d4 logs, wlog('[CFS][WARN] Init force erase type=%hu') at 0x441f2"
-    module: CFS
-  - name: cfs_warn_corrupted_el_blk_off
-    address: 0x442c0
-    class: logline
-    evidence: "the only line 0x442c0 logs, wlog('[CFS][WARN] Corrupted el blk=%lu off=%lu (skipping)') at 0x44338"
-    module: CFS
   - name: friction_long_test_continue__1
     address: 0x44650
     class: helper
@@ -1362,28 +1342,6 @@ functions:
     class: helper
     evidence: "only 0x48ae8 (dblib_flash_usage_rom_user) calls 0x485f0; 58 bytes"
     module: DBLIB
-  - name: dblib_port_cant_open_external_flash
-    address: 0x48918
-    class: logline
-    evidence: "the only line 0x48918 logs, wlog(\"[DBLIB_PORT] Can't open External Flash\") at 0x48924"
-    module: DBLIB_PORT
-  - name: dblib_erasebank_bank
-    address: 0x48940
-    class: logline
-    evidence: "the only line 0x48940 logs, wlog('[DBLIB][ERASEBANK] Bank %d') at 0x48948"
-    module: DBLIB
-  - name: dblib_port_w_addr_oor
-    address: 0x4896c
-    class: logline
-    evidence: "the only line 0x4896c logs, wlog('[DBLIB_PORT][W] Addr OOR') at 0x48982"
-    module: DBLIB_PORT
-  - name: dblib_port_r_addr_oor
-    address: 0x489ac
-    class: logline
-    evidence: "the only line 0x489ac logs, wlog('[DBLIB_PORT][R] Addr OOR : %i %i %i ') at 0x489c2"
-    module: DBLIB_PORT
-    proto: "uint32_t dblib_port_r_addr_oor(void *);"
-    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: dblib_flash_usage_rom_user
     address: 0x48ae8
     class: logline
@@ -1516,6 +1474,8 @@ functions:
     class: helper
     evidence: "only 0x85e68 (ecg_err_no_sample_queue) calls 0x4b034; 146 bytes"
     module: ECG
+    proto: "uint32_t ecg_err_no_sample_queue__2(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: shell_help_ecg
     address: 0x4b0ec
     class: shell
@@ -1596,16 +1556,6 @@ functions:
     evidence: "wpp_cmd_table row 0x276a0: key 2439, label 'WPP_CMD_FEATURE_TAGS_SET_DEPRECATED_V2', CMD_FEATURE_TAGS_SET_DEPRECATED_V2 in wpp/src/commands.rs"
     module: FEATURE_TAGS
     also_named: [feature_tags_skip_userid_no_slot_left (logline)]
-  - name: flash_cache_tried_to_insert_already_existing
-    address: 0x4c390
-    class: logline
-    evidence: "the only line 0x4c390 logs, wlog('[FLASH CACHE] Tried to insert already existing item %lu') at 0x4c3de"
-    module: FLASH_CACHE
-  - name: flash_cache_init_ctx_type
-    address: 0x4c594
-    class: logline
-    evidence: "the only line 0x4c594 logs, wlog('[FLASH CACHE] Init ctx type %lu') at 0x4c5a6"
-    module: FLASH_CACHE
   - name: shell_help_flash_cache_test
     address: 0x4c624
     class: shell
@@ -1673,11 +1623,6 @@ functions:
     class: wppcmd
     command: 2427
     evidence: "wpp_cmd_table row 0x276c4: key 2427, label 'GLANCE_GET', CMD_GLANCE_GET in wpp/src/commands.rs"
-  - name: glyph_cache_post_update
-    address: 0x4d370
-    class: logline
-    evidence: "the only line 0x4d370 logs, wlog('[GLYPH CACHE] Post Update') at 0x4d37a"
-    module: GLYPH_CACHE
   - name: shell_help_gpio
     address: 0x4d410
     class: shell
@@ -2634,14 +2579,6 @@ functions:
     command: 2480
     evidence: "wpp_cmd_table row 0x27850: key 2480, label 'WPP_CMD_FLUX_SENSOR_MEASURE', CMD_FLUX_SENSOR_MEASURE in wpp/src/commands.rs"
     also_named: [start_flux_sensor_measure (logline)]
-  - name: shell_cmd_spiflash__1
-    address: 0x5b7e4
-    class: helper
-    evidence: "only 0x5bec4 (shell_cmd_spiflash) calls 0x5b7e4; 70 bytes"
-  - name: shell_cmd_spiflash__2
-    address: 0x5b96c
-    class: helper
-    evidence: "only 0x5bec4 (shell_cmd_spiflash) calls 0x5b96c; 10 bytes"
   - name: WPP_CMD_SPI_FLASH
     address: 0x5bda4
     class: wppcmd
@@ -2655,7 +2592,7 @@ functions:
     address: 0x5bdf0
     class: logline
     evidence: "the only line 0x5bdf0 logs, wlog('offset 0x%08x: 0x%08x != 0x%08x') at 0x5be30"
-  - name: shell_cmd_spiflash__3
+  - name: shell_cmd_spiflash__1
     address: 0x5be58
     class: helper
     evidence: "only 0x5bec4 (shell_cmd_spiflash) calls 0x5be58; 82 bytes"
@@ -3213,11 +3150,6 @@ functions:
     class: helper
     evidence: "only 0x64cf8 (FW_AVAILABLE__1) calls 0x64a0c; 38 bytes"
     module: CHUNKED_UPDATE
-  - name: chunked_update_not_aligned
-    address: 0x64bc8
-    class: logline
-    evidence: "the only line 0x64bc8 logs, wlog('[CHUNKED_UPDATE] not aligned') at 0x64bf2"
-    module: CHUNKED_UPDATE
   - name: FW_AVAILABLE__1
     address: 0x64cf8
     class: helper
@@ -3283,11 +3215,6 @@ functions:
     address: 0x656d0
     class: logline
     evidence: "the only line 0x656d0 logs, wlog('invalid utf8 sequence') at 0x65704"
-  - name: vas_cant_get_coords_for_bank
-    address: 0x65884
-    class: logline
-    evidence: "the only line 0x65884 logs, wlog(\"[VAS] Can't get coords for bank %d\") at 0x658aa"
-    module: VAS
   - name: shell_cmd_vasistas__1
     address: 0x65b84
     class: helper
@@ -3297,7 +3224,6 @@ functions:
     class: logtag
     evidence: "wlog('[vas_store_bkp] reason=%d has_vib=%d') at 0x65d00, tag is a C identifier"
     module: VAS_STORE_BKP
-    also_named: [vas_store_bkp_reason_has_vib (logline)]
   - name: shell_help_vasistas
     address: 0x65d18
     class: shell
@@ -3306,26 +3232,6 @@ functions:
     address: 0x65d28
     class: shell
     evidence: "shell_cmd_table row 0x2746c: command 'vasistas', run slot (+4)"
-  - name: vasistas_error_unknown_vasistas_size
-    address: 0x66524
-    class: logline
-    evidence: "the only line 0x66524 logs, wlog('[VASISTAS] Error: unknown vasistas size') at 0x6659e"
-    module: VASISTAS
-  - name: vasistas_error_unknown_vasistas_payload_size
-    address: 0x665b4
-    class: logline
-    evidence: "the only line 0x665b4 logs, wlog('[VASISTAS] Error: unknown vasistas payload size') at 0x66680"
-    module: VASISTAS
-  - name: vasistas_error_get_size_unknown_activity
-    address: 0x666e4
-    class: logline
-    evidence: "the only line 0x666e4 logs, wlog('[VASISTAS] ERROR: get size unknown activity=%d') at 0x66704"
-    module: VASISTAS
-  - name: vas_unexpected_read_size
-    address: 0x6673c
-    class: logline
-    evidence: "the only line 0x6673c logs, wlog('[VAS] Unexpected read size') at 0x667a0"
-    module: VAS
   - name: shell_cmd_vasistas__2
     address: 0x667cc
     class: helper
@@ -3456,50 +3362,10 @@ functions:
     class: logline
     evidence: "the only line 0x69464 logs, wlog('[WFTL] Post Update') at 0x69474"
     module: WFTL
-  - name: shell_cmd_flash_cache_test__1
-    address: 0x69540
-    class: helper
-    evidence: "only 0x4c634 (shell_cmd_flash_cache_test) calls 0x69540; 32 bytes"
-    module: FLASH_CACHE_TEST
-  - name: wftl_type_not_requesting_last_block
-    address: 0x69564
-    class: logline
-    evidence: "the only line 0x69564 logs, wlog('[WFTL] Type %d not requesting last block + 1\\n\\tRequesting index = %d (range = %d | %d)') at 0x695da"
-    module: WFTL
-  - name: wftl_type_not_erasing_first_block
-    address: 0x69680
-    class: logline
-    evidence: "the only line 0x69680 logs, wlog('[WFTL] Type %d not erasing first block (%d instead of %d)\\n\\tLogic index = %d (range = %d | %d)') at 0x696de"
-    module: WFTL
-  - name: wftl_error_should_have_found_index
-    address: 0x697ec
-    class: logline
-    evidence: "the only line 0x697ec logs, wlog('[WFTL] Error : Should have found index %d for type %d (%d)') at 0x69920"
-    module: WFTL
-  - name: wftl_type_not_requesting_last_block__1
-    address: 0x69ca8
-    class: helper
-    evidence: "only 0x69564 (wftl_type_not_requesting_last_block) calls 0x69ca8; 536 bytes"
-    module: WFTL
-  - name: wftl_type_not_erasing_first_block__1
-    address: 0x69f00
-    class: helper
-    evidence: "only 0x69680 (wftl_type_not_erasing_first_block) calls 0x69f00; 180 bytes"
-    module: WFTL
-  - name: wftl_could_not_reserve_blocks
-    address: 0x6a000
-    class: logline
-    evidence: "the only line 0x6a000 logs, wlog('[WFTL] Could not reserve %u blocks') at 0x6a06e"
-    module: WFTL
   - name: shell_cmd_wftl__1
     address: 0x6a130
     class: helper
     evidence: "only 0x69160 (shell_cmd_wftl) calls 0x6a130; 90 bytes"
-  - name: wftl_up_cleanup_in_progress
-    address: 0x6a28c
-    class: logline
-    evidence: "the only line 0x6a28c logs, wlog('[WFTL_UP] Cleanup in progress (%d/%d) : %d -> %d') at 0x6a2a6"
-    module: WFTL_UP
   - name: wftl_update_releasing_type
     address: 0x6a2d0
     class: logline
@@ -3598,26 +3464,11 @@ functions:
     class: helper
     evidence: "only 0x6ab54 (wpp_workout_alwyas_on_set_unpack) calls 0x6ae38; 60 bytes"
     module: WPP
-  - name: workout_cache_post_update__1
-    address: 0x6ae78
-    class: helper
-    evidence: "only 0x6aeb8 (workout_cache_post_update) calls 0x6ae78; 32 bytes"
-    module: WORKOUT_CACHE
-  - name: workout_cache_post_update
-    address: 0x6aeb8
-    class: logline
-    evidence: "the only line 0x6aeb8 logs, wlog('[WORKOUT CACHE] Post Update') at 0x6aebc"
-    module: WORKOUT_CACHE
   - name: WPP_CMD_WORKOUT_SCREEN_LIST_GET
     address: 0x6b0e4
     class: wppcmd
     command: 315
     evidence: "wpp_cmd_table row 0x279dc: key 315, label 'WPP_CMD_WORKOUT_SCREEN_LIST_GET', CMD_WORKOUT_SCREEN_LIST_GET in wpp/src/commands.rs"
-  - name: WPP_CMD_WORKOUT_SCREEN_SET__2
-    address: 0x6b1b0
-    class: helper
-    evidence: "only 0x6b224 (WPP_CMD_WORKOUT_SCREEN_SET) calls 0x6b1b0; 100 bytes"
-    module: WORKOUT_CACHE_WPP
   - name: WPP_CMD_WORKOUT_SCREEN_SET
     address: 0x6b224
     class: wppcmd
@@ -4077,6 +3928,12 @@ functions:
     class: logline
     evidence: "the only line 0x80ed4 logs, wlog(\"[load_screen_list] Let's switch to preview screen!\") at 0x80efe"
     module: LOAD_SCREEN_LIST
+  - name: carousel_sport
+    address: 0x812e4
+    class: logtag
+    evidence: "wlog('[carousel_sport] face mode screen %d unknown') at 0x81320, tag is a C identifier"
+    module: CAROUSEL_SPORT
+    also_named: [carousel_sport_face_mode_screen_unknown (logline)]
   - name: toggle_alarm
     address: 0x82a58
     class: logline
@@ -5342,36 +5199,6 @@ functions:
     address: 0x94c56
     class: helper
     evidence: "only 0x43fdc (type_id_ref_val) calls 0x94c56; 6 bytes"
-  - name: flash_cache_tried_to_insert_already_existing__2__1
-    address: 0x94c5c
-    class: helper
-    evidence: "only 0x94f90 (flash_cache_tried_to_insert_already_existing__2) calls 0x94c5c; 84 bytes"
-    module: FLASH_CACHE
-  - name: cfs_warn_corrupted_el_blk_off__1
-    address: 0x94cb0
-    class: helper
-    evidence: "only 0x442c0 (cfs_warn_corrupted_el_blk_off) calls 0x94cb0; 40 bytes"
-    module: CFS
-  - name: cfs_warn_corrupted_el_blk_off__2
-    address: 0x94f00
-    class: helper
-    evidence: "only 0x442c0 (cfs_warn_corrupted_el_blk_off) calls 0x94f00; 30 bytes"
-    module: CFS
-  - name: flash_cache_tried_to_insert_already_existing__1
-    address: 0x94f1e
-    class: helper
-    evidence: "only 0x4c390 (flash_cache_tried_to_insert_already_existing) calls 0x94f1e; 114 bytes"
-    module: FLASH_CACHE
-  - name: flash_cache_tried_to_insert_already_existing__2
-    address: 0x94f90
-    class: helper
-    evidence: "only 0x4c390 (flash_cache_tried_to_insert_already_existing) calls 0x94f90; 370 bytes"
-    module: FLASH_CACHE
-  - name: flash_cache_tried_to_insert_already_existing__3
-    address: 0x95102
-    class: helper
-    evidence: "only 0x4c390 (flash_cache_tried_to_insert_already_existing) calls 0x95102; 106 bytes"
-    module: FLASH_CACHE
   - name: WPP_CMD_FRICTION_TEST__1
     address: 0x9544a
     class: helper
@@ -5463,15 +5290,6 @@ functions:
     module: DBT
     header: s140/headers/nrf_soc.h
     proto: "uint32_t sd_clock_hfclk_release(void);"
-  - name: NOTIFICATION_APP_ENABLED_GET__1__1
-    address: 0x97dc8
-    class: helper
-    evidence: "only 0x55a00 (NOTIFICATION_APP_ENABLED_GET__1) calls 0x97dc8; 146 bytes"
-  - name: flash_cache_init_ctx_type__1
-    address: 0x97f22
-    class: helper
-    evidence: "only 0x4c594 (flash_cache_init_ctx_type) calls 0x97f22; 2 bytes"
-    module: FLASH_CACHE
   - name: _read
     address: 0x97f26
     class: syscall
@@ -5509,16 +5327,6 @@ functions:
     address: 0x97ff4
     class: syscall
     evidence: "called by the reentrant wrapper _isatty_r at 0x91d1c, which the relinked newlib binds to _isatty; newlib syscall stub: returns 1 for fd 0..2 and 0 above; the body is an errno stub every such stub in libc_nano.a matches, so the archive's own name cannot be taken here"
-  - name: glyph_cache_post_update__1
-    address: 0x980ba
-    class: helper
-    evidence: "only 0x4d370 (glyph_cache_post_update) calls 0x980ba; 36 bytes"
-    module: GLYPH_CACHE
-  - name: wam_gui_resource_data_size_mismatch__1
-    address: 0x980de
-    class: helper
-    evidence: "only 0x56558 (wam_gui_resource_data_size_mismatch) calls 0x980de; 76 bytes"
-    module: WAM_GUI_RESOURCE
   - name: GREENTEG_SENSITIVITY_BIN_DEL
     address: 0x981f8
     class: wppcmd
@@ -5705,7 +5513,7 @@ functions:
     address: 0x9b9f0
     class: shell
     evidence: "shell_cmd_table row 0x271fc: command 'exit', run slot (+4)"
-  - name: shell_cmd_spiflash__4
+  - name: shell_cmd_spiflash__2
     address: 0x9bc52
     class: helper
     evidence: "only 0x5bec4 (shell_cmd_spiflash) calls 0x9bc52; 24 bytes"
@@ -5713,31 +5521,31 @@ functions:
     address: 0x9bc84
     class: helper
     evidence: "only 0x307b8 (go_to_system_off) calls 0x9bc84; 26 bytes"
-  - name: shell_cmd_spiflash__5
+  - name: shell_cmd_spiflash__3
     address: 0x9bc9e
     class: helper
     evidence: "only 0x5bec4 (shell_cmd_spiflash) calls 0x9bc9e; 24 bytes"
-  - name: shell_cmd_spiflash__6
+  - name: shell_cmd_spiflash__4
     address: 0x9bcb6
     class: helper
     evidence: "only 0x5bec4 (shell_cmd_spiflash) calls 0x9bcb6; 24 bytes"
-  - name: shell_cmd_spiflash__7
+  - name: shell_cmd_spiflash__5
     address: 0x9bcda
     class: helper
     evidence: "only 0x5bec4 (shell_cmd_spiflash) calls 0x9bcda; 24 bytes"
-    proto: "uint32_t shell_cmd_spiflash__7(void *);"
+    proto: "uint32_t shell_cmd_spiflash__5(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
-  - name: shell_cmd_spiflash__8
+  - name: shell_cmd_spiflash__6
     address: 0x9bd22
     class: helper
     evidence: "only 0x5bec4 (shell_cmd_spiflash) calls 0x9bd22; 22 bytes"
-    proto: "uint32_t shell_cmd_spiflash__8(void *);"
+    proto: "uint32_t shell_cmd_spiflash__6(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
-  - name: shell_cmd_spiflash__9
+  - name: shell_cmd_spiflash__7
     address: 0x9bd38
     class: helper
     evidence: "only 0x5bec4 (shell_cmd_spiflash) calls 0x9bd38; 22 bytes"
-    proto: "uint32_t shell_cmd_spiflash__9(void *);"
+    proto: "uint32_t shell_cmd_spiflash__7(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: max86173_spi_could_not_allocate_buf__1
     address: 0x9be72
@@ -5780,29 +5588,6 @@ functions:
     class: helper
     evidence: "only 0x64cf8 (FW_AVAILABLE__1) calls 0x9c324; 74 bytes"
     module: CHUNKED_UPDATE
-  - name: shell_cmd_vasistas__3
-    address: 0x9c602
-    class: helper
-    evidence: "only 0x65d28 (shell_cmd_vasistas) calls 0x9c602; 4 bytes"
-  - name: shell_cmd_vasistas__4
-    address: 0x9c686
-    class: helper
-    evidence: "only 0x65d28 (shell_cmd_vasistas) calls 0x9c686; 30 bytes"
-  - name: vasistas_error_unknown_vasistas_payload_size__1
-    address: 0x9c7a8
-    class: helper
-    evidence: "only 0x665b4 (vasistas_error_unknown_vasistas_payload_size) calls 0x9c7a8; 68 bytes"
-    module: VASISTAS
-  - name: vasistas_error_unknown_vasistas_payload_size__2
-    address: 0x9c9a4
-    class: helper
-    evidence: "only 0x665b4 (vasistas_error_unknown_vasistas_payload_size) calls 0x9c9a4; 38 bytes"
-    module: VASISTAS
-  - name: vasistas_error_unknown_vasistas_payload_size__1__1
-    address: 0x9c9de
-    class: helper
-    evidence: "only 0x9c7a8 (vasistas_error_unknown_vasistas_payload_size__1) calls 0x9c9de; 8 bytes"
-    module: VASISTAS
   - name: shell_cmd_symptoms__3
     address: 0x9ca18
     class: helper
@@ -5820,16 +5605,6 @@ functions:
     address: 0x9cf98
     class: helper
     evidence: "only 0x67bc4 (shell_cmd_oled__1) calls 0x9cf98; 4 bytes"
-  - name: wftl_error_should_have_found_index__1
-    address: 0x9d084
-    class: helper
-    evidence: "only 0x697ec (wftl_error_should_have_found_index) calls 0x9d084; 72 bytes"
-    module: WFTL
-  - name: wftl_post_update__3__1
-    address: 0x9d1fc
-    class: helper
-    evidence: "only 0x9d23c (wftl_post_update__3) calls 0x9d1fc; 60 bytes"
-    module: WFTL
   - name: wftl_post_update__2
     address: 0x9d238
     class: helper
