@@ -139,6 +139,8 @@ functions:
     insns: 88
     how: direct
     links: [vTaskSuspendAll@0x73084]
+    header: external/freertos/source/include/portable.h
+    proto: "void *pvPortMalloc( size_t xSize );"
   - name: vPortFree
     address: 0x51afc
     variant: Os_a0
@@ -146,6 +148,8 @@ functions:
     insns: 24
     how: direct
     links: [vTaskSuspendAll@0x73084, xTaskResumeAll@0x731dc]
+    header: external/freertos/source/include/portable.h
+    proto: "void vPortFree( void *pv );"
   - name: prvGetExpectedIdleTime
     address: 0x72eb0
     variant: Os_a0
@@ -167,6 +171,8 @@ functions:
     insns: 40
     how: direct
     links: [vPortEnterCritical@0x73e3c, vPortExitCritical@0x73e5c]
+    header: external/freertos/source/include/task.h
+    proto: "eTaskState eTaskGetState( TaskHandle_t xTask );"
   - name: vTaskStartScheduler
     address: 0x7300c
     variant: Os_a0
@@ -174,6 +180,8 @@ functions:
     insns: 36
     how: direct
     links: [xTaskCreateStatic@0x9e3dc]
+    header: external/freertos/source/include/task.h
+    proto: "void vTaskStartScheduler( void );"
   - name: vTaskSuspendAll
     address: 0x73084
     variant: O2_a0
@@ -181,6 +189,8 @@ functions:
     insns: 6
     how: direct
     links: []
+    header: external/freertos/source/include/task.h
+    proto: "void vTaskSuspendAll( void );"
   - name: xTaskResumeAll
     address: 0x731dc
     variant: Os_a0
@@ -188,6 +198,8 @@ functions:
     insns: 76
     how: direct
     links: [vPortEnterCritical@0x73e3c, vPortExitCritical@0x73e5c, uxListRemove@0x9e55a]
+    header: external/freertos/source/include/task.h
+    proto: "BaseType_t xTaskResumeAll( void );"
   - name: vTaskDelayUntil
     address: 0x732b0
     variant: Os_a0
@@ -195,6 +207,8 @@ functions:
     insns: 30
     how: direct
     links: [vTaskSuspendAll@0x73084, xTaskResumeAll@0x731dc]
+    header: external/freertos/source/include/task.h
+    proto: "void vTaskDelayUntil( TickType_t * const pxPreviousWakeTime, const TickType_t xTimeIncrement );"
   - name: vTaskSetApplicationTaskTag
     address: 0x73300
     variant: Os_a0
@@ -202,6 +216,8 @@ functions:
     insns: 11
     how: direct
     links: [vPortEnterCritical@0x73e3c, vPortExitCritical@0x73e5c]
+    header: external/freertos/source/include/task.h
+    proto: "void vTaskSetApplicationTaskTag( TaskHandle_t xTask, TaskHookFunction_t pxHookFunction );"
   - name: vTaskSwitchContext
     address: 0x7333c
     variant: Os_a3
@@ -209,6 +225,8 @@ functions:
     insns: 58
     how: direct
     links: []
+    header: external/freertos/source/include/task.h
+    proto: "void vTaskSwitchContext( void );"
   - name: vTaskPlaceOnEventList
     address: 0x733cc
     variant: Os_a0
@@ -217,6 +235,8 @@ functions:
     how: direct
     links: [vListInsert@0x9e52c]
     ambiguous_with: [vTaskPlaceOnUnorderedEventList]
+    header: external/freertos/source/include/task.h
+    proto: "void vTaskPlaceOnEventList( List_t * const pxEventList, const TickType_t xTicksToWait );"
   - name: vTaskInternalSetTimeOutState
     address: 0x7345c
     variant: Os_a0
@@ -224,6 +244,8 @@ functions:
     insns: 8
     how: direct
     links: []
+    header: external/freertos/source/include/task.h
+    proto: "void vTaskInternalSetTimeOutState( TimeOut_t * const pxTimeOut );"
   - name: xTaskCheckForTimeOut
     address: 0x73474
     variant: Os_a0
@@ -231,6 +253,8 @@ functions:
     insns: 33
     how: direct
     links: [vPortEnterCritical@0x73e3c, vTaskInternalSetTimeOutState@0x7345c, vPortExitCritical@0x73e5c]
+    header: external/freertos/source/include/task.h
+    proto: "BaseType_t xTaskCheckForTimeOut( TimeOut_t * const pxTimeOut, TickType_t * const pxTicksToWait );"
   - name: eTaskConfirmSleepModeStatus
     address: 0x734d0
     variant: Os_a0
@@ -238,6 +262,8 @@ functions:
     insns: 18
     how: direct
     links: []
+    header: external/freertos/source/include/task.h
+    proto: "eSleepModeStatus eTaskConfirmSleepModeStatus( void );"
   - name: vTaskGetInfo
     address: 0x73504
     variant: Os_a0
@@ -246,6 +272,8 @@ functions:
     how: direct
     links: []
     broken_links: 1
+    header: external/freertos/source/include/task.h
+    proto: "void vTaskGetInfo( TaskHandle_t xTask, TaskStatus_t *pxTaskStatus, BaseType_t xGetFreeStackSpace, eTaskState eState );"
   - name: uxTaskGetStackHighWaterMark
     address: 0x73614
     variant: Os_a0
@@ -253,6 +281,8 @@ functions:
     insns: 13
     how: direct
     links: []
+    header: external/freertos/source/include/task.h
+    proto: "UBaseType_t uxTaskGetStackHighWaterMark( TaskHandle_t xTask );"
   - name: pvTaskIncrementMutexHeldCount
     address: 0x737b0
     variant: O2_a0
@@ -260,6 +290,8 @@ functions:
     insns: 10
     how: direct
     links: []
+    header: external/freertos/source/include/task.h
+    proto: "void *pvTaskIncrementMutexHeldCount( void );"
   - name: ulTaskNotifyTake
     address: 0x737c8
     variant: Os_a0
@@ -269,6 +301,8 @@ functions:
     links: [vPortEnterCritical@0x73e3c]
     broken_links: 1
     ambiguous_with: [ulTaskGenericNotifyTake]
+    header: external/freertos/source/include/task.h
+    proto: "uint32_t ulTaskNotifyTake( BaseType_t xClearCountOnExit, TickType_t xTicksToWait );"
   - name: xTaskNotifyWait
     address: 0x7382c
     variant: Os_a0
@@ -277,6 +311,8 @@ functions:
     how: direct
     links: [vPortEnterCritical@0x73e3c]
     broken_links: 2
+    header: external/freertos/source/include/task.h
+    proto: "BaseType_t xTaskNotifyWait( uint32_t ulBitsToClearOnEntry, uint32_t ulBitsToClearOnExit, uint32_t *pulNotificationValue, TickType_t xTicksToWait );"
   - name: xQueueReceive
     address: 0x73c64
     variant: Os_a0
@@ -286,6 +322,8 @@ functions:
     links: []
     broken_links: 3
     ambiguous_with: [xQueuePeek]
+    header: external/freertos/source/include/queue.h
+    proto: "BaseType_t xQueueReceive( QueueHandle_t xQueue, void * const pvBuffer, TickType_t xTicksToWait );"
   - name: vPortStartFirstTask
     address: 0x73dd0
     variant: O2_a0
@@ -476,6 +514,8 @@ functions:
     insns: 22
     how: direct
     links: [prvInitialiseNewTask.isra.0@0x9e34c]
+    header: external/freertos/source/include/task.h
+    proto: "TaskHandle_t xTaskCreateStatic( TaskFunction_t pxTaskCode, const char * const pcName, const uint32_t ulStackDepth, void * const pvParameters, UBaseType_t uxPriority, StackType_t * const puxStackBuffer, StaticTask_t * const pxTaskBuffer );"
   - name: xTaskCreate
     address: 0x9e410
     variant: Os_a0
@@ -484,6 +524,8 @@ functions:
     how: direct
     links: [pvPortMalloc@0x51a04]
     broken_links: 1
+    header: external/freertos/source/include/task.h
+    proto: "BaseType_t xTaskCreate( TaskFunction_t pxTaskCode, const char * const pcName, const configSTACK_DEPTH_TYPE usStackDepth, void * const pvParameters, UBaseType_t uxPriority, TaskHandle_t * const pxCreatedTask );"
   - name: vListInitialise
     address: 0x9e4fa
     variant: Os_a0
@@ -491,6 +533,8 @@ functions:
     insns: 8
     how: direct
     links: []
+    header: external/freertos/source/include/list.h
+    proto: "void vListInitialise( List_t * const pxList );"
   - name: vListInsertEnd
     address: 0x9e516
     variant: Os_a0
@@ -498,6 +542,8 @@ functions:
     insns: 11
     how: direct
     links: []
+    header: external/freertos/source/include/list.h
+    proto: "void vListInsertEnd( List_t * const pxList, ListItem_t * const pxNewListItem );"
   - name: vListInsert
     address: 0x9e52c
     variant: Os_a0
@@ -505,6 +551,8 @@ functions:
     insns: 22
     how: direct
     links: []
+    header: external/freertos/source/include/list.h
+    proto: "void vListInsert( List_t * const pxList, ListItem_t * const pxNewListItem );"
   - name: uxListRemove
     address: 0x9e55a
     variant: O2_a0
@@ -512,6 +560,8 @@ functions:
     insns: 17
     how: direct
     links: []
+    header: external/freertos/source/include/list.h
+    proto: "UBaseType_t uxListRemove( ListItem_t * const pxItemToRemove );"
   - name: prvIsQueueEmpty
     address: 0x9e57a
     variant: Os_a0
@@ -555,6 +605,8 @@ functions:
     how: direct
     links: [vPortEnterCritical@0x73e3c]
     broken_links: 1
+    header: external/freertos/source/include/queue.h
+    proto: "BaseType_t xQueueGenericReset( QueueHandle_t xQueue, BaseType_t xNewQueue );"
   - name: xQueueCreateMutexStatic
     address: 0x9e782
     variant: Os_a0
@@ -563,6 +615,8 @@ functions:
     how: direct
     links: []
     ambiguous_with: [xQueueCreateMutex]
+    header: external/freertos/source/include/queue.h
+    proto: "QueueHandle_t xQueueCreateMutexStatic( const uint8_t ucQueueType, StaticQueue_t *pxStaticQueue );"
   - name: xQueueGenericSendFromISR
     address: 0x9e7ac
     variant: Os_a0
@@ -570,6 +624,8 @@ functions:
     insns: 46
     how: direct
     links: []
+    header: external/freertos/source/include/queue.h
+    proto: "BaseType_t xQueueGenericSendFromISR( QueueHandle_t xQueue, const void * const pvItemToQueue, BaseType_t * const pxHigherPriorityTaskWoken, const BaseType_t xCopyPosition );"
   - name: xQueueGiveFromISR
     address: 0x9e828
     variant: Os_a0
@@ -578,6 +634,8 @@ functions:
     how: direct
     links: []
     broken_links: 1
+    header: external/freertos/source/include/queue.h
+    proto: "BaseType_t xQueueGiveFromISR( QueueHandle_t xQueue, BaseType_t * const pxHigherPriorityTaskWoken );"
   - name: xQueueSemaphoreTake
     address: 0x9e890
     variant: Os_a0
@@ -586,6 +644,8 @@ functions:
     how: direct
     links: [prvUnlockQueue@0x9e66c, xTaskResumeAll@0x731dc]
     broken_links: 7
+    header: external/freertos/source/include/queue.h
+    proto: "BaseType_t xQueueSemaphoreTake( QueueHandle_t xQueue, TickType_t xTicksToWait );"
   - name: xQueueReceiveFromISR
     address: 0x9e9ac
     variant: Os_a0
@@ -593,6 +653,8 @@ functions:
     insns: 35
     how: direct
     links: []
+    header: external/freertos/source/include/queue.h
+    proto: "BaseType_t xQueueReceiveFromISR( QueueHandle_t xQueue, void * const pvBuffer, BaseType_t * const pxHigherPriorityTaskWoken );"
   - name: xQueueIsQueueFullFromISR
     address: 0x9ea2e
     variant: Os_a0
@@ -600,6 +662,8 @@ functions:
     insns: 6
     how: direct
     links: []
+    header: external/freertos/source/include/queue.h
+    proto: "BaseType_t xQueueIsQueueFullFromISR( const QueueHandle_t xQueue );"
   - name: nrf_saadc_event_clear
     address: 0xa4e3a
     variant: Os_a0

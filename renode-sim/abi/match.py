@@ -277,7 +277,13 @@ def main():
                     help="score a call-graph-supplied address must still reach")
     ap.add_argument("--min-insns", type=int, default=4)
     ap.add_argument("--check", action="store_true", help="print accuracy only")
+    ap.add_argument("--prototypes", action="store_true",
+                    help="only refresh the declarations of the matches already"
+                         " recorded, without re-running the matcher")
     args = ap.parse_args()
+
+    if args.prototypes:
+        return refresh_prototypes(args.out)
 
     if not args.variants:
         # The mbedtls_* variants belong to abi/autonames.py's extlib class, not
@@ -418,7 +424,12 @@ def main():
     print("wrote %s" % args.out)
 
 
-DECL = re.compile(r"(?:^|[;{}]|\n)\s*((?:[A-Za-z_][\w \t\*]*?)\b(%s)\s*\([^;{]*?\))\s*;", re.S)
+# A declaration, with the attribute macros a header puts between the closing
+# parenthesis and the semicolon left out of the capture: every kernel prototype
+# in the SDK's FreeRTOS ends `) PRIVILEGED_FUNCTION;`, and a pattern that wants
+# the semicolon next found none of them.
+DECL = re.compile(r"([A-Za-z_][\w \t\*\(\)]*?\b(\w+)\s*\([^;{)]*\))"
+                  r"(?:\s+[A-Z_][A-Z0-9_]*)*\s*;")
 
 
 def load_prototypes(names):
@@ -446,7 +457,7 @@ def load_prototypes(names):
                 continue
             src = re.sub(r"/\*.*?\*/", " ", src, flags=re.S)
             src = re.sub(r"//[^\n]*", " ", src)
-            for m in re.finditer(r"([A-Za-z_][\w \t\*\(\)]*?\b(\w+)\s*\([^;{)]*\))\s*;", src):
+            for m in DECL.finditer(src):
                 name = m.group(2)
                 if name in wanted and name not in protos:
                     decl = " ".join(m.group(1).split())
@@ -457,6 +468,50 @@ def load_prototypes(names):
                     protos[name] = {"proto": decl + ";",
                                     "header": os.path.relpath(path, sdk)}
     return protos
+
+
+def refresh_prototypes(path):
+    """Fill in the declaration of every match already recorded, in place.
+
+    A prototype is a property of the name and not of the measurement, so it can
+    be refreshed without re-running the matcher -- which matters, because a
+    re-run is only comparable against the same set of reference builds and
+    ~/ref-build grows one whenever anybody recovers a driver. Only the `header`
+    and `proto` lines of each entry are rewritten; every address, score and link
+    stays exactly as it was measured.
+    """
+    with open(path) as fh:
+        lines = fh.read().splitlines()
+    names = [ln.split(":", 1)[1].strip() for ln in lines if ln.startswith("  - name: ")]
+    protos = load_prototypes(set(names))
+    out, i, added = [], 0, 0
+    while i < len(lines):
+        line = lines[i]
+        if not line.startswith("  - name: "):
+            out.append(line)
+            i += 1
+            continue
+        name = line.split(":", 1)[1].strip()
+        body = [line]
+        i += 1
+        while i < len(lines) and lines[i].startswith("    ") and \
+                not lines[i].startswith(("    header:", "    proto:")):
+            body.append(lines[i])
+            i += 1
+        while i < len(lines) and lines[i].startswith(("    header:", "    proto:")):
+            i += 1
+        p = protos.get(name)
+        if p:
+            body.append("    header: %s" % p["header"])
+            body.append("    proto: \"%s\"" % p["proto"].replace('"', '\\"'))
+            added += 1
+        out += body
+    with open(path, "w") as fh:
+        fh.write("\n".join(out) + "\n")
+    print("%s: %d of %d matches carry a declaration" % (path, added, len(names)))
+    for name in sorted(set(names) - set(protos)):
+        print("  no header declares %s" % name)
+    return 0
 
 
 def write_matches(path, accepted, best, streams, protos, threshold, acc):
