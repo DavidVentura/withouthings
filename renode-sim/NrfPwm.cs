@@ -1,9 +1,15 @@
 //
 // nRF52840 PWM. Renode 1.17 ships no model, so the SVD stub never raised
 // EVENTS_SEQEND and the nrfx_pwm playback calls (vibration motor, display
-// backlight) never finished. This is a completion model: a SEQSTART plays the
-// whole sequence and all LOOP repetitions in zero time, so SEQSTARTED, SEQEND
-// and LOOPSDONE all fire on the write.
+// backlight, the three step motors) never finished.
+//
+// A playback consumes the virtual time its sequence describes: a period is
+// COUNTERTOP ticks of the prescaled 16 MHz clock, an entry is played REFRESH+1
+// times, and a playback walks SEQ0 then SEQ1 once per LOOP. SEQEND[n],
+// LOOPSDONE and the STOPPED the shortcuts ask for fall at the times they fall.
+// With the completion model that raised all of them on the SEQSTART write the
+// step rate of a hand was set by how many instructions the CPU retired between
+// steps, so any change to the code in between moved every later deadline.
 //
 using System;
 using System.Collections.Generic;
@@ -12,6 +18,7 @@ using Antmicro.Renode.Core.Structure;
 using Antmicro.Renode.Logging;
 using Antmicro.Renode.Peripherals;
 using Antmicro.Renode.Peripherals.Bus;
+using Antmicro.Renode.Time;
 
 namespace Antmicro.Renode.Peripherals.Miscellaneous
 {
@@ -64,6 +71,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             switch((Reg)offset)
             {
             case Reg.TasksStop:
+                StopPlayback();
                 regs[(long)Reg.EventsStopped] = 1;
                 UpdateIrq();
                 break;
@@ -95,22 +103,77 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             }
         }
 
+        // Every milestone of the playback is booked here, at the virtual time
+        // it falls: a booking made from inside another booking's callback never
+        // comes due, and the times are all known from the registers anyway. A
+        // booking that comes due after TASKS_STOP, or after a shortcut ended
+        // the playback early, is a booking of an older generation and does
+        // nothing.
         private void PlaySequence(int sequence)
         {
+            StopPlayback();
             LogFirstDutyValue(sequence);
-            if(Hands != null && sequence == 0)
-            {
-                DecodeStep();
-            }
+            step = ReadStep();
             regs[(long)Reg.EventsSeqStarted0 + 4 * sequence] = 1;
-            regs[(long)Reg.EventsSeqEnd0 + 4 * sequence] = 1;
-            regs[(long)Reg.EventsLoopsDone] = 1;
-            // The playback that ends in zero time still has to end the way the
-            // shortcuts say it does: nrfx asks for LOOPSDONE_STOP and takes the
-            // STOPPED interrupt as the completion, so a model that leaves the
-            // shortcuts out stops the step motor driver dead on its first step.
+            UpdateIrq();
+
+            var loop = Get((long)Reg.Loop) & 0xFFFF;
+            var plays = loop == 0 ? 1 : 2 * (int)loop;
+            var played = new List<Milestone>();
+            ulong at = 0;
+            for(var i = 0; i < plays; i++)
+            {
+                var seq = (sequence + i) % SequenceCount;
+                var duration = SequenceDuration(seq);
+                if(duration == 0)
+                {
+                    continue;
+                }
+                at += duration;
+                var hands = played.Count == 0 && seq == 0 && step != null;
+                played.Add(new Milestone(at, seq, hands));
+            }
+            if(played.Count == 0)
+            {
+                Reach(new Milestone(0, LoopsDoneOnly, step != null).AsLast());
+                return;
+            }
+            played[played.Count - 1] = played[played.Count - 1].AsLast();
+            var booked = generation;
+            foreach(var milestone in played)
+            {
+                var due = milestone;
+                machine.ScheduleAction(TimeInterval.FromMicroseconds(Math.Max(1, due.At / 1000)),
+                                       _ => { if(booked == generation) Reach(due); });
+            }
+        }
+
+        private void Reach(Milestone milestone)
+        {
+            if(milestone.DeliversStep)
+            {
+                DeliverStep();
+            }
             var shorts = Get((long)Reg.Shorts);
-            if((shorts & (SeqEndStop0 | SeqEndStop1 | LoopsDoneStop)) != 0)
+            if(milestone.Sequence != LoopsDoneOnly)
+            {
+                regs[(long)Reg.EventsSeqEnd0 + 4 * milestone.Sequence] = 1;
+                var stop = milestone.Sequence == 0 ? SeqEndStop0 : SeqEndStop1;
+                if((shorts & stop) != 0)
+                {
+                    StopPlayback();
+                    regs[(long)Reg.EventsStopped] = 1;
+                    UpdateIrq();
+                    return;
+                }
+            }
+            if(!milestone.Last)
+            {
+                UpdateIrq();
+                return;
+            }
+            regs[(long)Reg.EventsLoopsDone] = 1;
+            if((shorts & LoopsDoneStop) != 0)
             {
                 regs[(long)Reg.EventsStopped] = 1;
             }
@@ -121,9 +184,43 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             UpdateIrq();
         }
 
-        // The only observable output of a model that simulates no timing: which
-        // pins a sequence drives and how hard, so a run can tell the vibration
-        // motor apart from the backlight.
+        private void StopPlayback()
+        {
+            generation++;
+            step = null;
+        }
+
+        // In nanoseconds, because a period is COUNTERTOP ticks of
+        // 16 MHz / 2^PRESCALER, which is 62.5 ns a tick at PRESCALER 0.
+        private ulong SequenceDuration(int seq)
+        {
+            var pointer = Get(SeqBase + SeqStride * seq);
+            var count = Get(SeqBase + SeqStride * seq + 4);
+            if(pointer == 0 || count == 0)
+            {
+                return 0;
+            }
+            var refresh = (Get(SeqBase + SeqStride * seq + 8) & 0xFFFFFF) + 1;
+            var prescaler = Get((long)Reg.Prescaler) & 0x7;
+            var load = Get((long)Reg.Decoder) & DecoderLoadMask;
+            var waveForm = load == DecoderLoadWaveForm;
+            // DECODER.LOAD says how many of the halfwords SEQ.CNT counts make
+            // one period: one in Common, two in Grouped, four in Individual
+            // and WaveForm.
+            var perPeriod = load == DecoderLoadGrouped ? 2u : load >= DecoderLoadIndividual ? 4u : 1u;
+            var entries = count / perPeriod;
+            ulong ticks = 0;
+            for(var entry = 0u; entry < entries; entry++)
+            {
+                ticks += waveForm
+                    ? sysbus.ReadWord(pointer + 2 * (entry * perPeriod + 3))
+                    : Get((long)Reg.CounterTop);
+            }
+            return ticks * refresh * (1ul << (int)prescaler) * 125 / 2;
+        }
+
+        // Which pins a sequence drives and how hard, so a run can tell the
+        // vibration motor apart from the backlight.
         private void LogFirstDutyValue(int sequence)
         {
             var pointer = Get(SeqBase + SeqStride * sequence);
@@ -140,17 +237,29 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         // DECODER.LOAD = WaveForm: an entry is four halfwords, three channel
         // compares and a COUNTERTOP that replaces the register for the period.
-        private void DecodeStep()
+        // The entry is read when the playback starts and handed over when the
+        // drive pulse it describes has been played.
+        private ushort[] ReadStep()
         {
             var pointer = Get(SeqBase);
-            if(pointer == 0 || Get(SeqBase + 4) != WaveFormEntryLength
-               || (Get((long)Reg.Decoder) & DecoderLoadMask) != (uint)DecoderLoadWaveForm)
+            if(Hands == null || pointer == 0 || Get(SeqBase + 4) != WaveFormEntryLength
+               || (Get((long)Reg.Decoder) & DecoderLoadMask) != DecoderLoadWaveForm)
             {
-                return;
+                return null;
             }
+            return new[]
+            {
+                sysbus.ReadWord(pointer), sysbus.ReadWord(pointer + 2),
+                sysbus.ReadWord(pointer + 4), sysbus.ReadWord(pointer + 6),
+            };
+        }
+
+        private void DeliverStep()
+        {
+            var played = step;
+            step = null;
             Hands.PlayedSequence(Get((long)Reg.PselOut0), Get((long)Reg.PselOut0 + 4), Get((long)Reg.PselOut0 + 8),
-                                 sysbus.ReadWord(pointer), sysbus.ReadWord(pointer + 2),
-                                 sysbus.ReadWord(pointer + 4), sysbus.ReadWord(pointer + 6));
+                                 played[0], played[1], played[2], played[3]);
         }
 
         private void UpdateIrq()
@@ -190,6 +299,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         public void Reset()
         {
+            StopPlayback();
             regs.Clear();
             inten = 0;
             IRQ.Set(false);
@@ -203,6 +313,35 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         public long Size { get { return 0x1000; } }
 
+        private struct Milestone
+        {
+            public Milestone(ulong at, int sequence, bool deliversStep)
+                : this(at, sequence, deliversStep, false)
+            {
+            }
+
+            private Milestone(ulong at, int sequence, bool deliversStep, bool last)
+            {
+                At = at;
+                Sequence = sequence;
+                DeliversStep = deliversStep;
+                Last = last;
+            }
+
+            // The last milestone of a playback is also its LOOPSDONE.
+            public Milestone AsLast()
+            {
+                return new Milestone(At, Sequence, DeliversStep, true);
+            }
+
+            public readonly ulong At;
+            public readonly int Sequence;
+            public readonly bool DeliversStep;
+            public readonly bool Last;
+        }
+
+        // A playback whose sequences are all empty is LOOPSDONE and nothing else.
+        private const int LoopsDoneOnly = -1;
         private const uint SeqEndStop0 = 1u << 0;
         private const uint SeqEndStop1 = 1u << 1;
         private const uint LoopsDoneSeqStart0 = 1u << 2;
@@ -210,6 +349,8 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private const uint LoopsDoneStop = 1u << 4;
         private const uint WaveFormEntryLength = 4;
         private const uint DecoderLoadMask = 0x7;
+        private const uint DecoderLoadGrouped = 1;
+        private const uint DecoderLoadIndividual = 2;
         private const uint DecoderLoadWaveForm = 3;
         private const long SeqBase = 0x520;
         private const long SeqStride = 0x20;
@@ -242,6 +383,8 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         }
 
         private uint inten;
+        private int generation;
+        private ushort[] step;
         private readonly Dictionary<long, uint> regs;
         private readonly IBusController sysbus;
         private readonly IMachine machine;
