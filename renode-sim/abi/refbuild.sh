@@ -516,6 +516,23 @@ if [ ! -d "$NEWLIB_LL_SRC" ]; then
 fi
 NEWLIB_SRC=$NEWLIB_LL_SRC
 build_newlib newlib-nano-ll --enable-newlib-io-long-long
+
+# Single-thread, tried and refused. abi/libc_check.py reports that the image's
+# __swbuf_r calls the 36-byte unlocked fflush at 0xa8fd0 where this build's
+# __swbuf_r calls the 74-byte locking _fflush_r, and the 74-byte body is
+# nowhere in the image at all, which reads like --disable-newlib-multithread.
+# It is not: that option takes the _lock member out of FILE, every fake FILE a
+# stdio wrapper builds on its own stack loses a word, and sprintf, snprintf and
+# sscanf stop reproducing on nothing but stack offsets shifted by four
+# (sprintf's eleven differing bytes are `str r0,[sp,#8]` against `[sp,#4]`, and
+# so on through the body). The image's frames are the wide ones, so its FILE
+# carries the lock and the library is multithread, the same structural argument
+# that settled _REENT_SMALL. Measured: 83 of 115 libc bodies reproduce under
+# --disable-newlib-multithread against 87 under the default, it fixes neither
+# __swbuf_r nor __assert_func, and it breaks four bodies that reproduced. What
+# the image does with fflush is narrower than a configure switch and is still
+# open; abi/out/relink/libc-bodies.yaml carries it as __swbuf_r's verdict.
+build_newlib newlib-nano-ll-st --enable-newlib-io-long-long --disable-newlib-multithread
 NEWLIB_SRC=$ROOT/src/$NEWLIB
 
 # ---- the Withings SAADC driver ---------------------------------------------
