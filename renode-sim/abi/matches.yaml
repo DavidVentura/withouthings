@@ -117,7 +117,7 @@ functions:
     how: direct
     links: []
   - name: __kernel_rem_pio2
-    address: 0x2c320
+    address: 0x2c308
     variant: libm_nano-big
     score: 0.951
     insns: 577

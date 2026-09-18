@@ -148,8 +148,18 @@ def main():
     wanted = sorted(((f["address"], f["name"]) for f in names["functions"]
                      if f["class"] == args.cls))
 
+    # GCC clones a function it specialises and gives the clone a name with a dot
+    # in it, which is not an identifier the rest of the repo can carry, so the
+    # name in abi/autonames.yaml is the base one. The body is still the clone's.
+    clones = {}
+    for sym in archive.bodies:
+        base = sym.split(".")[0]
+        if base != sym and base not in archive.bodies:
+            clones.setdefault(base, sym)
+
     exact, masked, differing, absent, local, verdicts = 0, 0, [], [], [], []
     for addr, name in wanted:
+        name = clones.get(name, name)
         if name not in archive.bodies:
             absent.append(name)
             verdicts.append((addr, name, "absent", "no symbol in the build"))

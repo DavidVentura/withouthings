@@ -12,8 +12,8 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 4, helper: 415, libc: 97, libm: 32, logcb: 3, logline: 331, logtag: 8, module_functions: 1797, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
-  known_addresses: {agree: 202, disagree: 15}
+  counts: {bleevt: 28, extlib: 4, helper: 417, libc: 122, libm: 37, logcb: 3, logline: 331, logtag: 8, module_functions: 1780, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  known_addresses: {agree: 204, disagree: 14}
 
 functions:
   - name: memchr
@@ -52,6 +52,12 @@ functions:
     evidence: "newlib nano-big libm, score 1.00 over 51 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "double sin (double);"
+  - name: nan
+    address: 0x2aa40
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 16 bytes of the built body reproduced at 0x2aa40"
+    header: arm-none-eabi/include/math.h
+    proto: "double nan (const char *);"
   - name: __kernel_cos
     address: 0x2aa50
     class: libm
@@ -71,7 +77,7 @@ functions:
   - name: pow__1
     address: 0x2b3b0
     class: helper
-    evidence: "only 0x8c8fc (pow) calls 0x2b3b0; 2378 bytes"
+    evidence: "only 0x8c8fc (pow) calls 0x2b3b0; 2326 bytes"
   - name: __ieee754_rem_pio2
     address: 0x2bdf8
     class: libm
@@ -82,20 +88,28 @@ functions:
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 77 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "double scalbn (double, int);"
-  - name: __ieee754_rem_pio2__1
-    address: 0x2c308
-    class: helper
-    evidence: "only 0x2bdf8 (__ieee754_rem_pio2) calls 0x2c308; 24 bytes"
-  - name: __kernel_rem_pio2
-    address: 0x2c320
+  - name: __math_uflow
+    address: 0x2c2e8
     class: libm
-    evidence: "newlib nano-big libm, score 0.95 over 577 insns, direct"
+    evidence: "newlib-nano-ll libm.a, 16 bytes of the built body reproduced at 0x2c2e8 with the 4 bytes a relocation owns masked"
+  - name: __math_oflow
+    address: 0x2c2f8
+    class: libm
+    evidence: "newlib-nano-ll libm.a, 16 bytes of the built body reproduced at 0x2c2f8 with the 4 bytes a relocation owns masked"
+  - name: __kernel_rem_pio2
+    address: 0x2c308
+    class: libm
+    evidence: "newlib-nano-ll libm.a, 1694 bytes of the built body reproduced at 0x2c308 with the 216 bytes a relocation owns masked"
   - name: floor
     address: 0x2c9a8
     class: libm
     evidence: "newlib nano-big libm, score 0.99 over 90 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "double floor (double);"
+  - name: _strtod_l
+    address: 0x2caa0
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 3016 bytes of the built body reproduced at 0x2caa0 with the 336 bytes a relocation owns masked"
   - name: light_sensor_light_value__1
     address: 0x2f040
     class: helper
@@ -4251,6 +4265,10 @@ functions:
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.98 over 58 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "float scalbnf (float, int);"
+  - name: __subdf3
+    address: 0x8d7cc
+    class: libc
+    evidence: "newlib-nano-ll libgcc.a, 634 bytes of the built body reproduced at 0x8d7cc; the same body is also __aeabi_dsub"
   - name: __aeabi_dadd
     address: 0x8d7d0
     class: libc
@@ -4271,7 +4289,6 @@ functions:
     address: 0x8dae0
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 29 insns, direct"
-    module: SHELL
   - name: __muldf3
     address: 0x8db3c
     class: libc
@@ -4288,6 +4305,14 @@ functions:
     address: 0x8defe
     class: helper
     evidence: "only 0x8dd90 (__divdf3) calls 0x8defe; 98 bytes"
+  - name: __gedf2
+    address: 0x8df60
+    class: libc
+    evidence: "newlib-nano-ll libgcc.a, 138 bytes of the built body reproduced at 0x8df60; the same body is also __gtdf2"
+  - name: __ledf2
+    address: 0x8df68
+    class: libc
+    evidence: "newlib-nano-ll libgcc.a, 130 bytes of the built body reproduced at 0x8df68; the same body is also __ltdf2"
   - name: __nedf2
     address: 0x8df70
     class: libc
@@ -4317,14 +4342,26 @@ functions:
     address: 0x8e12c
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 47 insns, direct"
+  - name: __subsf3
+    address: 0x8e1d4
+    class: libc
+    evidence: "newlib-nano-ll libgcc.a, 356 bytes of the built body reproduced at 0x8e1d4; the same body is also __aeabi_fsub"
   - name: __aeabi_fadd
     address: 0x8e1d8
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 0.97 over 120 insns, direct"
+  - name: __aeabi_ui2f
+    address: 0x8e338
+    class: libc
+    evidence: "newlib-nano-ll libgcc.a, 36 bytes of the built body reproduced at 0x8e338; the same body is also __floatunsisf"
   - name: __floatsisf
     address: 0x8e340
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 10 insns, direct"
+  - name: __aeabi_ul2f
+    address: 0x8e35c
+    class: libc
+    evidence: "newlib-nano-ll libgcc.a, 140 bytes of the built body reproduced at 0x8e35c; the same body is also __floatundisf"
   - name: __floatdisf
     address: 0x8e36c
     class: libc
@@ -4356,6 +4393,18 @@ functions:
     class: helper
     evidence: "only 0x610d4 (shell_cmd_calib_test__2) calls 0x8e810; 16 bytes"
     module: SHELL
+  - name: _strtol_l
+    address: 0x8e874
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 244 bytes of the built body reproduced at 0x8e874 with the 8 bytes a relocation owns masked"
+  - name: _strtoul_l
+    address: 0x8e97c
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 220 bytes of the built body reproduced at 0x8e97c with the 4 bytes a relocation owns masked"
+  - name: _strtoll_l
+    address: 0x8ea6c
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 284 bytes of the built body reproduced at 0x8ea6c with the 8 bytes a relocation owns masked"
   - name: _printf_float
     address: 0x8ece0
     class: libc
@@ -4368,6 +4417,10 @@ functions:
     address: 0x8f638
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 24 insns, direct"
+  - name: sscanf
+    address: 0x8f678
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 84 bytes of the built body reproduced at 0x8f678 with the 16 bytes a relocation owns masked; the same body is also siscanf"
   - name: __swsetup_r
     address: 0x8f6e0
     class: libc
@@ -4386,11 +4439,14 @@ functions:
     address: 0x903d0
     class: helper
     evidence: "only 0x8ece0 (_printf_float) calls 0x903d0; 4 bytes"
+  - name: __sread__1
+    address: 0x9041c
+    class: helper
+    evidence: "only 0xa8568 (__sread) calls 0x9041c; 32 bytes"
   - name: __gethex
     address: 0x90480
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.99 over 415 insns, direct"
-    module: SHELL
   - name: _findenv_r
     address: 0x908a0
     class: libc
@@ -4405,7 +4461,6 @@ functions:
     address: 0x909a4
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 58 insns, direct"
-    module: SHELL
   - name: __i2b
     address: 0x90a38
     class: libc
@@ -4414,6 +4469,10 @@ functions:
     address: 0x90a64
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.99 over 116 insns, direct"
+  - name: __pow5mult
+    address: 0x90ba8
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 128 bytes of the built body reproduced at 0x90ba8 with the 24 bytes a relocation owns masked"
   - name: __lshift
     address: 0x90c28
     class: libc
@@ -4426,12 +4485,10 @@ functions:
     address: 0x90e28
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 28 insns, direct"
-    module: SHELL
   - name: __b2d
     address: 0x90e74
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 50 insns, direct"
-    module: SHELL
   - name: __d2b
     address: 0x90f08
     class: libc
@@ -4440,6 +4497,10 @@ functions:
     address: 0x90fb8
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.95 over 198 insns, direct"
+  - name: sscanf__1
+    address: 0x911c4
+    class: helper
+    evidence: "only 0x8f678 (sscanf) calls 0x911c4; 608 bytes"
   - name: _scanf_chars
     address: 0x916cc
     class: libc
@@ -4448,6 +4509,10 @@ functions:
     address: 0x91780
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.91 over 191 insns, direct"
+  - name: __sflush_r
+    address: 0x91998
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 264 bytes of the built body reproduced at 0x91998 with the 4 bytes a relocation owns masked"
   - name: cleanup_stdio
     address: 0x91b00
     class: libc
@@ -4460,6 +4525,10 @@ functions:
     address: 0x91d3c
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 19 insns, direct"
+  - name: _strtoull_l
+    address: 0x91d78
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 300 bytes of the built body reproduced at 0x91d78 with the 12 bytes a relocation owns masked"
   - name: __assert_func__1__1
     address: 0x91ea4
     class: helper
@@ -5432,6 +5501,10 @@ functions:
     address: 0x97f68
     class: syscall
     evidence: "no caller in the image; newlib syscall stub: `movs r0,#1; bx lr`, the stub's constant 1; the body is an errno stub every such stub in libc_nano.a matches, so the archive's own name cannot be taken here"
+  - name: _Balloc__1
+    address: 0x97fb4
+    class: helper
+    evidence: "only 0xa8be4 (_Balloc) calls 0x97fb4; 28 bytes"
   - name: _fstat
     address: 0x97fd0
     class: syscall
@@ -5965,10 +6038,24 @@ functions:
     address: 0xa7e66
     class: libm
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libm.a, score 1.00 over 9 insns, direct"
+  - name: xflowf
+    address: 0xa7e82
+    class: libm
+    evidence: "newlib-nano-ll libm.a, 22 bytes of the built body reproduced at 0xa7e82 with the 4 bytes a relocation owns masked"
+  - name: fabs
+    address: 0xa7e9e
+    class: libm
+    evidence: "newlib-nano-ll libm.a, 16 bytes of the built body reproduced at 0xa7e9e"
+    header: arm-none-eabi/include/math.h
+    proto: "double fabs (double);"
   - name: __ieee754_powf__1
     address: 0xa7eae
     class: helper
     evidence: "only 0x8d170 (__ieee754_powf) calls 0xa7eae; 14 bytes"
+  - name: with_errno
+    address: 0xa7ebc
+    class: libm
+    evidence: "newlib-nano-ll libm.a, 36 bytes of the built body reproduced at 0xa7ebc with the 4 bytes a relocation owns masked"
   - name: xflow
     address: 0xa7ee0
     class: libm
@@ -5976,13 +6063,12 @@ functions:
   - name: shell_cmd_calib_test__3
     address: 0xa7f12
     class: helper
-    evidence: "only 0x613a0 (shell_cmd_calib_test) calls 0xa7f12; 2874 bytes"
+    evidence: "only 0x613a0 (shell_cmd_calib_test) calls 0xa7f12; 20 bytes"
     module: SHELL
   - name: sulp
     address: 0xa7f20
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 21 insns, direct"
-    module: SHELL
   - name: _scanf_i__1
     address: 0xa7f5c
     class: helper
@@ -5996,10 +6082,10 @@ functions:
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 21 insns, direct"
     module: ECG
-  - name: qsort__1
+  - name: med3
     address: 0xa7f9a
-    class: helper
-    evidence: "only 0xa7fda (qsort) calls 0xa7f9a; 64 bytes"
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 64 bytes of the built body reproduced at 0xa7f9a"
     module: ECG
   - name: qsort
     address: 0xa7fda
@@ -6026,6 +6112,10 @@ functions:
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.98 over 46 insns, direct"
     header: arm-none-eabi/include/stdio.h
     proto: "int _fputs_unlocked_r (struct _reent *, const char *__restrict, FILE *__restrict);"
+  - name: __sread
+    address: 0xa8568
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 34 bytes of the built body reproduced at 0xa8568 with the 4 bytes a relocation owns masked"
   - name: __swrite
     address: 0xa858e
     class: libc
@@ -6138,27 +6228,34 @@ functions:
     address: 0xa8962
     class: helper
     evidence: "only 0x90480 (__gethex) calls 0xa8962; 164 bytes"
-    module: SHELL
   - name: __hexdig_fun
     address: 0xa8a06
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 18 insns, direct"
-    module: SHELL
   - name: L_shift
     address: 0xa8a30
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.93 over 14 insns, direct"
-    module: SHELL
   - name: __match
     address: 0xa8a54
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 17 insns, direct"
-    module: SHELL
   - name: __hexnan
     address: 0xa8a7c
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.97 over 129 insns, direct"
-    module: SHELL
+  - name: __ascii_mbtowc
+    address: 0xa8bc0
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 36 bytes of the built body reproduced at 0xa8bc0"
+  - name: _Balloc
+    address: 0xa8be4
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 74 bytes of the built body reproduced at 0xa8be4 with the 8 bytes a relocation owns masked"
+  - name: _Bfree
+    address: 0xa8c2e
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 18 bytes of the built body reproduced at 0xa8c2e"
   - name: __hi0bits
     address: 0xa8c40
     class: libc
@@ -6175,21 +6272,30 @@ functions:
     address: 0xa8d0e
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 36 insns, direct"
-    module: SHELL
   - name: __copybits
     address: 0xa8d72
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.93 over 28 insns, direct"
-    module: SHELL
   - name: __any_on
     address: 0xa8db8
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 26 insns, direct"
-    module: SHELL
+  - name: __ascii_wctomb
+    address: 0xa8dfa
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 26 bytes of the built body reproduced at 0xa8dfa"
   - name: __ssputs_r
     address: 0xa8e14
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 73 insns, direct"
+  - name: _sungetc_r
+    address: 0xa8eca
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 122 bytes of the built body reproduced at 0xa8eca with the 4 bytes a relocation owns masked"
+  - name: __ssrefill_r
+    address: 0xa8f44
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 58 bytes of the built body reproduced at 0xa8f44 with the 4 bytes a relocation owns masked"
   - name: __sfputc_r
     address: 0xa8f7e
     class: libc
@@ -6198,6 +6304,10 @@ functions:
     address: 0xa8fac
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 16 insns, direct"
+  - name: _fflush_unlocked_r
+    address: 0xa8fd0
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 36 bytes of the built body reproduced at 0xa8fd0 with the 8 bytes a relocation owns masked"
   - name: _fwalk_sglue
     address: 0xa8ff4
     class: libc
@@ -6210,6 +6320,10 @@ functions:
     address: 0xa912c
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 53 insns, direct"
+  - name: _sungetc_r__1
+    address: 0xa919e
+    class: helper
+    evidence: "only 0xa8eca (_sungetc_r) calls 0xa919e; 108 bytes"
   - name: _scanf_i__3
     address: 0xa920a
     class: helper
@@ -6226,6 +6340,7 @@ functions:
 # Addresses symbols.txt or hwa10.yaml already names, and what this run
 # derived for them. A disagreement is a finding: one of the two is wrong.
 agrees_with_hand_map:
+  - {address: 0x2d668, name: _dtoa_r, class: libc}
   - {address: 0x3baf0, name: adxl367_power_check, class: string}
   - {address: 0x3ff1c, name: WPP_CMD_SYNC_REQUEST, class: wppcmd}
   - {address: 0x400b4, name: battery_adc_value_gain_adaptation, class: string}
@@ -6293,6 +6408,7 @@ agrees_with_hand_map:
   - {address: 0x50434, name: wpp_obj_GreentegIntegrationFactor_parse, class: wppobj}
   - {address: 0x6c84c, name: WPP_CMD_PROBE, class: wppcmd}
   - {address: 0x6d2e0, name: WPP_CMD_MTU_EXCH, class: wppcmd}
+  - {address: 0x8ebb0, name: _setenv_r, class: libc}
   - {address: 0x91ed8, name: __fixdfdi, class: libc}
   - {address: 0x91f08, name: __fixunsdfdi, class: libc}
   - {address: 0x9917a, name: wpp_obj_Null_encode, class: wppobj}
@@ -6440,7 +6556,6 @@ disagrees_with_hand_map:
   - {address: 0x6ca44, hand: cmd_restart_to_update, derived: WPP_CMD_RESTART_TO_UPDATE, class: wppcmd}
   - {address: 0x6ca90, hand: wpp_cmd_battery_status, derived: WPP_CMD_BATTERY_STATUS, class: wppcmd}
   - {address: 0x6d50c, hand: wpp_device_challenge, derived: WPP_CMD_DEVICE_CHALLENGE, class: wppcmd}
-  - {address: 0x8eb9c, hand: setenv, derived: _setenv_r, class: libc}
   - {address: 0x9301e, hand: sd_mbr_command_thunk, derived: sd_mbr_command, class: svc}
   - {address: 0x93022, hand: sd_vector_table_base_set, derived: sd_softdevice_vector_table_base_set, class: svc}
   - {address: 0x935b4, hand: sd_ble_gatts_hvx_thunk, derived: sd_ble_gatts_hvx, class: svc}

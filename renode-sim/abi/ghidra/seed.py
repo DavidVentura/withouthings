@@ -84,11 +84,21 @@ def main():
     # bytes apart would make the body's own prologue a separate item.
     corrected = set(fn["corrects"] & ~1 for fn in manifest["functions"]
                     if "corrects" in fn)
+    # abi/match.py settles a body by its normalised disassembly, which cannot see
+    # the first instructions of a body whose prologue the alignment swallowed, so
+    # it can place a symbol a few bytes into itself. abi/autonames.py's
+    # archive-side search compares the bytes, and where the two put one name at
+    # two addresses the bytes decide: seeding both would cut the body in half at
+    # the matcher's address and leave the head its own function.
+    byte_evidence = {fn["name"]: fn["address"] & ~1
+                     for fn in load("autonames.yaml").get("functions", [])}
     for src in ("matches.yaml", "autonames.yaml"):
         doc = load(src)
         for fn in doc.get("functions", []):
             addr = fn["address"] & ~1
             if not in_app(addr) or addr in functions or addr in corrected:
+                continue
+            if byte_evidence.get(fn["name"], addr) != addr:
                 continue
             functions[addr] = {"name": fn["name"], "source": src.split(".")[0]}
 

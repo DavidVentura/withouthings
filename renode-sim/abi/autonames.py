@@ -53,6 +53,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import match  # noqa: E402  (same directory; the normaliser and matcher live there)
+import libc_find  # noqa: E402  (the archive-side body search)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIM = os.path.dirname(HERE)
@@ -1586,6 +1587,9 @@ def main():
     ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"),
                     help="abi/ghidra/analyze.sh's export; the partition and call graph")
     ap.add_argument("--modules", default=os.path.join(HERE, "out", "ghidra", "modules.json"))
+    ap.add_argument("--libc-build", default="newlib-nano-ll",
+                    help="the abi/refbuild.sh newlib whose archives the"
+                         " archive-side body search walks")
     ap.add_argument("--threshold", type=float, default=0.90)
     ap.add_argument("--propagate-threshold", type=float, default=0.60)
     ap.add_argument("--min-insns", type=int, default=6)
@@ -1648,6 +1652,22 @@ def main():
                         for v in LIBM_VARIANTS]
         found = library_names(img, sources, cls, args.threshold,
                               args.propagate_threshold, args.min_insns)
+        # The matcher only ever asks where a reference symbol went, so it names
+        # nothing the k-grams miss and nothing shorter than min_insns. The
+        # archive-side search asks the image the opposite question -- for every
+        # body the built archives define, is it here byte for byte -- and that
+        # reaches the closure the relink has to bring its own copies of. Byte
+        # evidence beats normalised evidence, so where the two disagree about
+        # where a symbol lives the search wins and the matcher's entry goes.
+        bodies = libc_find.entries(argparse.Namespace(
+            build=args.libc_build, root=ROOT, scratch="/tmp/libc_find",
+            export=args.export), cls)
+        moved = {e["name"] for e in bodies}
+        at = {e["address"] for e in bodies}
+        found = [e for e in found
+                 if e["address"] in at or e["name"] not in moved]
+        found += [e for e in bodies if e["address"] not in
+                  {f["address"] for f in found}]
         protos = prototypes([e["name"] for e in found],
                             [("arm-none-eabi/include",
                               os.path.join(LIBC_TC, "arm-none-eabi/include"))])
