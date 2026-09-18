@@ -37,6 +37,7 @@ import sys
 
 import yaml
 
+import datagen
 import objectify
 from objectify import (APP_BASE, APP_END, R_ARM_ABS32, R_ARM_THM_CALL,
                        R_ARM_THM_JUMP24, R_ARM_THM_JUMP19, SELF_BL, SELF_B)
@@ -193,6 +194,55 @@ def build(sections, blob, symbols, path):
         f.write(b"\0" * (shoff - f.tell()))
         for h in headers:
             f.write(h if isinstance(h, bytes) else struct.pack("<10I", *h))
+
+
+
+# The object the delegated data sections are linked from: abi/relink.sh
+# assembles out/data/all.s and compiles the typed tables beside it, then folds
+# the result into one relocatable so the placement fragment has a single name to
+# put in front of every data section.
+DATA_OBJECT = "*appl-data.o"
+
+
+def emit_data(directory, sources, delegated, blob, section_names, forced,
+              reached_from, reserved):
+    """Write each delegated data section as source, and say which names it publishes.
+
+    A name is published where something outside the section reaches it, and only
+    there: the partition gives the blob's own copy of a library object the
+    library's name, and a global definition of one of those would answer the
+    link that the source build is supposed to answer. The names the boundary and
+    the replacements ask for by hand are published whether anything in the
+    object reaches them or not, because their caller is outside this link.
+    """
+    emitted = []
+    for s in sorted(delegated, key=lambda s: s.start):
+        s.object = DATA_OBJECT
+        publish = list(forced.get(id(s), ()))
+        by_name = dict((name, off) for off, name in publish)
+        names = []
+        for off, name, is_func in section_names(s):
+            exported = name in by_name or any(other != id(s) for other
+                                              in reached_from.get(name, ()))
+            if exported and reserved.get(name, 0) < 0:
+                sys.exit("%s would publish %s, which the boundary reserves for"
+                         " the library" % (s.sym, name))
+            names.append((off, name, exported, is_func))
+            by_name.pop(name, None)
+        for name, off in sorted(by_name.items()):
+            names.append((off, name, True, False))
+        body = bytes(blob[s.start - APP_BASE:s.end - APP_BASE])
+        words = dict((off, sym) for off, sym, t in s.relocs if t == R_ARM_ABS32)
+        # The partition calls a component data when no function entry point
+        # opens it, and a few such components still hold instructions the
+        # boundary scan found a call in. Those relocations sit on the
+        # instruction's own bytes rather than on a blank word, so they go out as
+        # `.reloc` against the bytes the assembler has already emitted.
+        branches = dict((off, (sym, datagen.RELOC_NAMES[t]))
+                        for off, sym, t in s.relocs if t != R_ARM_ABS32)
+        emitted.append((s, datagen.render_bytes(s, body, names, words, branches),
+                        "bytes"))
+    return datagen.write(directory, emitted, sources)
 
 
 def boundary_relocations(blob, boundary, layout):
@@ -722,6 +772,14 @@ def main():
                          " source defines, and rename the original orig_<symbol>")
     ap.add_argument("--replacements", default=os.path.join(HERE, "replacements.yaml"))
     ap.add_argument("--replace-header", default=os.path.join(SIM, "out", "replace.h"))
+    ap.add_argument("--data-source", metavar="DIR",
+                    help="write every data section to DIR as assembler or C"
+                         " source and leave it out of the object, so the link"
+                         " takes the app's data from source like its kernel")
+    ap.add_argument("--data-sources",
+                    default=os.path.join(SIM, "out", "data-sources.txt"),
+                    help="where to list the C files --data-source wrote, for"
+                         " the build script to compile")
     ap.add_argument("--keep-also", help="a file of section names to add to the"
                     " --gc KEEP list; bisecting a gc link that does not boot"
                     " over the sections it dropped is what this is for")
@@ -831,8 +889,43 @@ def main():
         sys.exit("%d branches cross a section boundary without a relocation;"
                  " the partition has to put them back together" % len(unrelocatable))
 
-    symbols = Symbols()
+    # --data-source hands the data sections to abi/datagen.py: they leave this
+    # object entirely and are assembled or compiled from the files it writes,
+    # which means every name that crosses between the two halves has to become
+    # global. The reference sets decide which: a symbol is exported only where
+    # something in the other object reaches it, because the partition hands the
+    # blob's own copy of a library body the library's own name and a global one
+    # would swallow the link meant for the source build.
+    delegated = [s for s in sections if s.kind == "data"] if args.data_source else []
+    in_blob = [s for s in sections if s.kind != "data"] if args.data_source else sections
+    for i, s in enumerate(in_blob):
+        s.index = i
+    delegated_set = set(id(s) for s in delegated)
+
+    def section_names(s):
+        """Every name the object gives this section, as (offset, name, is_func)."""
+        rows = [(0, s.sym, s.kind == "code"), (0, address_alias(s.start),
+                                               s.kind == "code")]
+        for addr in s.functions:
+            rows.append((addr - s.start, address_alias(addr), True))
+        for (addr, is_func), label in sorted(s.labels.items()):
+            rows.append((addr - s.start, label, is_func))
+            rows.append((addr - s.start, address_alias(addr), is_func))
+        seen, out = set(), []
+        for off, name, is_func in rows:
+            if name not in seen:
+                seen.add(name)
+                out.append((off, name, is_func))
+        return out
+
+    reached_from = collections.defaultdict(set)
     for s in sections:
+        for _, sym, _ in s.relocs:
+            reached_from[sym].add(id(s))
+    forced = {}
+
+    symbols = Symbols()
+    for s in in_blob:
         styp = STT_FUNC if s.kind == "code" else STT_OBJECT
         # ARM ELF carries Thumb-ness in bit 0 of a function symbol's value.
         symbols.add(s.sym, 1 if styp == STT_FUNC else 0, s.index + 1, STB_LOCAL, styp)
@@ -847,7 +940,7 @@ def main():
     # one coordinate nothing renames, and this is it as a symbol: sim.yaml,
     # prunes.yaml and replacements.yaml resolve through these, so a link that
     # moved the body still answers where it went.
-    for s in sections:
+    for s in in_blob:
         styp = STT_FUNC if s.kind == "code" else STT_OBJECT
         symbols.add(address_alias(s.start), 1 if styp == STT_FUNC else 0,
                     s.index + 1, STB_LOCAL, styp)
@@ -862,6 +955,15 @@ def main():
         section = layout.at(addr)
         if section is None:
             sys.exit("cannot export %s: 0x%x is outside the app" % (name, addr))
+        if id(section) in delegated_set:
+            # The definition is in datagen's file, so this object only declares
+            # the name and the fragment there publishes it.
+            if styp == STT_FUNC:
+                sys.exit("cannot export %s: 0x%x is in the data section %s"
+                         % (name, addr, section.sym))
+            forced.setdefault(id(section), []).append((addr - section.start, name))
+            symbols.undefined(name)
+            return
         thumb = 1 if styp == STT_FUNC else 0
         symbols.globalise(name, (addr - section.start) | thumb, section.index + 1, styp)
 
@@ -888,8 +990,16 @@ def main():
     export("appl_blob_start", APP_BASE, STT_NOTYPE)
     symbols.globalise("appl_blob_end", APP_END, SHN_ABS, STT_NOTYPE)
 
+    # A name datagen's half reaches has to be global here, and the other way
+    # round is the `exported` flag below.
+    for s in delegated:
+        for _, sym, _ in s.relocs:
+            row = symbols.rows[symbols.index[sym]] if sym in symbols.index else None
+            if row is not None and row[2] != 0:
+                symbols.globalise(sym, row[1], row[2], row[4])
+
     used = set()
-    for s in sections:
+    for s in in_blob:
         used.update(sym for _, sym, _ in s.relocs)
     for sym in sorted(used - set(symbols.index)):
         symbols.undefined(sym)
@@ -924,7 +1034,12 @@ def main():
         sys.exit("no section named %s" % ", ".join(sorted(unknown)))
     for path in (args.o, args.place, args.stock):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-    build(sections, blob, symbols, args.o)
+    data_files = []
+    if args.data_source:
+        data_files = emit_data(args.data_source, args.data_sources, delegated,
+                               blob, section_names, forced, reached_from,
+                               reserved)
+    build(in_blob, blob, symbols, args.o)
     obj = "*" + os.path.basename(args.o)
     if args.gc:
         pinned = pinned_addresses(manifest, layout)

@@ -93,6 +93,14 @@ esac
 # The objectified blob must link back to the stock image before it is worth
 # linking against anything else; this writes $OUT/appl-blob.o and the two
 # generated fragments the real link then reuses.
+# DATA=1 links the app's data from the source abi/datagen.py writes rather than
+# from the blob object; identity.sh proves that half byte for byte first.
+DATA_OBJ=""
+DATA_ARGS=""
+if [ -n "${DATA:-}" ]; then
+    DATA_ARGS="--data-source $(cd ..; pwd)/out/data"
+    DATA_OBJ="$OUT/appl-data.o"
+fi
 REPLACE_ARGS="$REPLACE_ARGS" ./identity.sh
 # LAYOUT=shift|reverse re-cuts the same object with every text section moved;
 # the identity link above still ran first, so the cutting is proven either way.
@@ -103,10 +111,11 @@ REPLACE_ARGS="$REPLACE_ARGS" ./identity.sh
 # means anything together with GC=1: the edits make the feature unreachable and
 # --gc-sections is what removes it.
 if [ -n "${GC:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" --gc ${LAYOUT:+--layout "$LAYOUT"} ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS
-elif [ -n "${LAYOUT:-}" ] || [ -n "$REPLACE_ARGS" ] || [ -n "${PRUNE:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" ${LAYOUT:+--layout "$LAYOUT"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS
+    python3 blobify.py -o "$OUT/appl-blob.o" --gc ${LAYOUT:+--layout "$LAYOUT"} ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
+elif [ -n "${LAYOUT:-}" ] || [ -n "$REPLACE_ARGS" ] || [ -n "${PRUNE:-}" ] || [ -n "${DATA:-}" ]; then
+    python3 blobify.py -o "$OUT/appl-blob.o" ${LAYOUT:+--layout "$LAYOUT"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
 fi
+if [ -n "${DATA:-}" ]; then ./datagen.sh; fi
 
 # The replacement sources, compiled against the same generated header the rest
 # of the new code uses (out/hwa10.h) plus out/replace.h, which blobify writes
@@ -122,7 +131,7 @@ done < ../out/replace-sources.txt
 # to check a gc link: where each surviving section ended up, and which ranges
 # are gone, so a word still holding one of those addresses can be found.
 "$GCC-ld" -L ../out -T relink.ld --gc-sections --print-gc-sections -M \
-    --emit-relocs -o "$OUT/relinked.elf" "$OUT/appl-blob.o" $objs $LIBS \
+    --emit-relocs -o "$OUT/relinked.elf" "$OUT/appl-blob.o" $DATA_OBJ $objs $LIBS \
     > "$OUT/relinked.map" 2> "$OUT/relinked.gc"
 cat "$OUT/relinked.gc" >&2
 "$GCC-objcopy" -O binary --gap-fill 0xff "$OUT/relinked.elf" "$OUT/appl.bin"

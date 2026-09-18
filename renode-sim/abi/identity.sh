@@ -21,12 +21,22 @@ GCC=$ROOT/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi
 OUT=../out/relink
 mkdir -p "$OUT"
 
-python3 blobify.py -o "$OUT/appl-blob.o" ${REPLACE_ARGS:-}
+# DATA=1 takes the app's data out of the object as well and links it from the
+# source abi/datagen.py writes: the same sections, the same relocations, the
+# same symbols, expressed as assembler and as typed C initialisers. The
+# byte-identical link is what says the source reproduces the image's data.
+DATA_OBJ=""
+if [ -n "${DATA:-}" ]; then
+    DATA_ARGS="--data-source $(cd ..; pwd)/out/data"
+    DATA_OBJ="$OUT/appl-data.o"
+fi
+python3 blobify.py -o "$OUT/appl-blob.o" ${REPLACE_ARGS:-} ${DATA_ARGS:-}
+if [ -n "${DATA:-}" ]; then ./datagen.sh; fi
 "$GCC-ld" -L ../out -T identity.ld --emit-relocs -e 0 \
-    -o "$OUT/identity.elf" "$OUT/appl-blob.o" "$OUT/stock-defs.o"
+    -o "$OUT/identity.elf" "$OUT/appl-blob.o" $DATA_OBJ "$OUT/stock-defs.o"
 "$GCC-objcopy" -O binary --only-section=.blob "$OUT/identity.elf" "$OUT/identity.bin"
 
-python3 - "$OUT/identity.bin" ../flash.bin "$OUT/identity.elf" "$OUT/appl-blob.o" <<'PY'
+python3 - "$OUT/identity.bin" ../flash.bin "$OUT/identity.elf" "$OUT/appl-blob.o" $DATA_OBJ <<'PY'
 import struct
 import sys
 linked = open(sys.argv[1], "rb").read()
@@ -64,9 +74,9 @@ def relocations(path, kind):
 # would leave the blanked word behind, and a word blobify never blanked would
 # agree for the wrong reason. --emit-relocs hands back what was really applied.
 emitted = [a for a in relocations(sys.argv[3], "linked") if 0x27000 <= a < 0xf117c]
-declared = relocations(sys.argv[4], "object")
+declared = [a for path in sys.argv[4:] for a in relocations(path, "object")]
 if len(emitted) != len(declared):
-    sys.exit("the object declares %d absolute relocations, the link emitted %d"
+    sys.exit("the objects declare %d absolute relocations, the link emitted %d"
              % (len(declared), len(emitted)))
 bad = [a for a in emitted
        if linked[a - 0x27000:a - 0x27000 + 4] != stock[a - 0x27000:a - 0x27000 + 4]]
