@@ -266,13 +266,24 @@ impl Case {
 /// one at a time.
 static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-fn mkpkg(repository: &Path, case: &Case, source: &Path, package: &Path) {
+/// Build the package and return where the image in it reads its own version.
+///
+/// The trailer is a movable section, so mkpkg.py resolves it against the linked
+/// ELF of the part it is packaging and prints the address it wrote to; the
+/// client is told the same address so that what it checks the package against
+/// and what the watch will report are the same word.
+fn mkpkg(repository: &Path, case: &Case, source: &Path, package: &Path) -> String {
     let mut command = Command::new("python3");
     command
         .arg(repository.join("tools/mkpkg.py"))
         .args(["--version", &case.target_version.to_string()]);
     if let Some(appl) = &case.appl {
         command.arg("--appl").arg(appl);
+        assert_ne!(
+            case.target.symbols, "partition",
+            "a package with its own appl part needs the ELF that part was linked from"
+        );
+        command.arg("--symbols").arg(&case.target.symbols);
     }
     let built = command
         .arg(source)
@@ -284,7 +295,14 @@ fn mkpkg(repository: &Path, case: &Case, source: &Path, package: &Path) {
         "mkpkg.py failed: {}",
         String::from_utf8_lossy(&built.stderr)
     );
-    print!("{}", String::from_utf8_lossy(&built.stdout));
+    let output = String::from_utf8_lossy(&built.stdout).to_string();
+    print!("{output}");
+    output
+        .lines()
+        .find_map(|line| line.strip_prefix("appl_version_address "))
+        .expect("mkpkg.py prints where it wrote the version trailer")
+        .trim()
+        .to_string()
 }
 
 /// Push `case`'s package into a watch booted from `case`'s image and return the
@@ -305,7 +323,7 @@ fn run_update(case: &Case) -> Option<(Renode, PathBuf)> {
     case.boot.generate(&directory, "rig");
     case.target.generate(&directory, "rig-updated");
     let package = directory.join(format!("hwa10_{}.bin", case.target_version));
-    mkpkg(&repository, case, &source, &package);
+    let version_address = mkpkg(&repository, case, &source, &package);
     if case.appl.is_none() {
         assert_eq!(
             fs::metadata(&package).unwrap().len(),
@@ -337,7 +355,10 @@ fn run_update(case: &Case) -> Option<(Renode, PathBuf)> {
     assert!(probed, "the first probe failed:\n{}", tail(&output, 30));
     assert_eq!(reported_version(&output), case.installed_version);
 
-    let (updated, output) = client(&directory, &["--update", package.to_str().unwrap()]);
+    let (updated, output) = client(
+        &directory,
+        &["--update", package.to_str().unwrap(), "--version-address", &version_address],
+    );
     assert!(updated, "the update failed:\n{}", tail(&output, 30));
     assert!(
         renode.log().contains("[CHUNKED_UPDATE] chksum ok"),
@@ -377,6 +398,15 @@ fn run_update(case: &Case) -> Option<(Renode, PathBuf)> {
     println!("bank 2 appl version: {}", renode.monitor("sysbus.spi2 ReadImageWord 0x11f014"));
     let protected = renode.monitor("sysbus.nvmc VerifyProtectedRegion");
     assert_eq!(protected, "0x00000000", "the MBR and SoftDevice took a stray store");
+    // The word the running image's getter reads, wherever the layout put it:
+    // the version the probe already reported has to be in flash at that address
+    // and not at whatever address the stock image used.
+    let trailer = word(renode.monitor(&format!("sysbus ReadDoubleWord {version_address}")));
+    assert_eq!(
+        trailer, case.target_version as u64,
+        "the version trailer at {version_address} holds {trailer}, not the version the watch reports"
+    );
+    println!("appl version word in flash at {version_address}: {trailer}");
     Some((renode, directory))
 }
 
@@ -385,10 +415,9 @@ fn an_update_pushed_over_wpp_boots_and_reports_its_new_version() {
     let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let started = Instant::now();
     let case = Case::from_environment();
-    let Some((renode, _directory)) = run_update(&case) else {
+    let Some((_renode, _directory)) = run_update(&case) else {
         return;
     };
-    println!("appl version word in flash: {}", renode.monitor("sysbus ReadDoubleWord 0xf1178"));
     println!("wall time: {:.1}s", started.elapsed().as_secs_f64());
 }
 
@@ -451,6 +480,5 @@ fn the_relinked_image_installs_through_the_update_path() {
     let second = renode.monitor("sysbus ReadDoubleWord 0x20034108");
     assert_ne!(first, second, "the source kernel's tick is not advancing ({first})");
     println!("source kernel tick {first} -> {second}");
-    println!("appl version word in flash: {}", renode.monitor("sysbus ReadDoubleWord 0xf1178"));
     println!("wall time: {:.1}s", started.elapsed().as_secs_f64());
 }

@@ -1132,12 +1132,38 @@ def main():
 
     hole, dead = None, set()
     if args.layout:
+        # A layout moves the app's data as well as its text, and the data can
+        # only be linked where it has been taken out of the blob object: the
+        # placement has to name the object each section comes from, and the
+        # proof that the source reproduces the image's data is the byte-identical
+        # identity link with --data-source on. Moving it without that would be
+        # testing the cut and the move at once.
+        if not args.data_source:
+            sys.exit("--layout %s moves the app's data as well as its text, and"
+                     " the data has to be linked from abi/datagen.py's source"
+                     " for that: rerun with DATA=1 (--data-source <dir>)"
+                     % args.layout)
         pinned = pinned_addresses(manifest, layout)
         anchors = dict((w["value"] & ~1, "review") for w in words
                        if w["class"] == "review")
         for d in classified["displacements"]:
             anchors[d["site"]] = "displacement"
             anchors[d["target"]] = "displacement"
+        # A run that is copied out in one go is one object to the code that
+        # reads it and many items to the partition: the copy's length comes
+        # from two RAM addresses and only the run's first byte is ever named,
+        # so every byte behind it is reached by still being where it was. The
+        # RAM initialiser image at 0xefe58 is 4836 bytes over 79 items, and
+        # scattering them leaves the copy reading whatever the layout put after
+        # the first one -- which is the app's whole .data, so the watch comes up
+        # with its device tables full of the wrong words. Holding the run is the
+        # honest fix while the cut has no way to say "these items move together".
+        for w in words:
+            if not w.get("span"):
+                continue
+            for s in sections:
+                if s.start < w["target"] + w["span"] and w["target"] < s.end:
+                    anchors[s.start] = "block a single copy reads"
         if args.layout == "pack":
             dead = set(replacements.by_start)
             if keep is not None:
@@ -1146,21 +1172,35 @@ def main():
                 dead |= set(s.start for s in sections if s.start not in survives)
         else:
             dead = set()
-        moves, spare, held = objectify.relayout(sections, args.layout, pinned,
-                                                anchors, dead)
+        moves, spare, held, dead = objectify.relayout(
+            sections, args.layout, pinned, anchors, dead, data=True)
+        by_kind = collections.Counter(s.kind for s in sections if s.sym in moves)
         if args.layout == "pack":
             hole, spare = spare, objectify.SPARE_BASE
-            print("  layout pack: %d text sections packed over %d replaced"
-                  " bodies, leaving 0x%x..0x%x, %d bytes, for %s"
-                  % (len(moves), len(dead), hole[0], hole[1], hole[1] - hole[0],
+            print("  layout pack: %d sections (%d text, %d data) packed over %d"
+                  " dropped, leaving 0x%x..0x%x, %d bytes, for %s"
+                  % (len(moves), by_kind["code"], by_kind["data"], len(dead),
+                     hole[0], hole[1], hole[1] - hole[0],
                      ", ".join(args.spill) or "nothing"))
         else:
-            print("  layout %s: %d text sections moved, %d bytes of spare flash used"
-                  % (args.layout, len(moves), spare - objectify.SPARE_BASE))
+            print("  layout %s: %d sections moved (%d text, %d data), %d bytes"
+                  " of spare flash used"
+                  % (args.layout, len(moves), by_kind["code"], by_kind["data"],
+                     spare - objectify.SPARE_BASE))
         for why in sorted(set(held.values())):
-            kept = [s for s in sections if held.get(s.start) == why]
-            print("  %d text sections held in place by a %s (%d bytes)"
-                  % (len(kept), why, sum(s.end - s.start for s in kept)))
+            for kind in ("code", "data"):
+                kept = [s for s in sections
+                        if held.get(s.start) == why and s.kind == kind]
+                if kept:
+                    print("  %d %s sections held in place by a %s (%d bytes)"
+                          % (len(kept), "text" if kind == "code" else "data",
+                             why, sum(s.end - s.start for s in kept)))
+        for kind in ("code", "data"):
+            pins = [s for s in sections if s.start in pinned and s.kind == kind]
+            if pins:
+                print("  %d %s sections pinned by a fixed point: %s"
+                      % (len(pins), "text" if kind == "code" else "data",
+                         ", ".join(s.sym for s in pins)))
     unknown = set(moves) - set(s.sym for s in sections)
     if unknown:
         sys.exit("no section named %s" % ", ".join(sorted(unknown)))

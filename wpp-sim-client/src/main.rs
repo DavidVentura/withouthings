@@ -379,6 +379,7 @@ fn main() -> ExitCode {
     // the phone sees is the other half, and nothing else here can send a
     // command the scenario does not already use.
     let mut send_commands: Vec<u16> = Vec::new();
+    let mut version_trailer = update::VersionTrailer::STOCK;
     let mut arguments = env::args().skip(1);
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
@@ -398,6 +399,16 @@ fn main() -> ExitCode {
             "--update" => {
                 package_path = Some(arguments.next().expect("--update takes a package path"))
             }
+            // Where the image in the package reads its own version. It is the
+            // stock address unless a layout moved the trailer's section, and
+            // tools/mkpkg.py prints the one it wrote to.
+            "--version-address" => {
+                let text = arguments.next().expect("--version-address takes an address");
+                let parsed = usize::from_str_radix(text.trim_start_matches("0x"), 16)
+                    .expect("--version-address takes a hexadecimal address");
+                version_trailer = update::VersionTrailer::at(parsed)
+                    .unwrap_or_else(|reason| panic!("--version-address {text}: {reason}"));
+            }
             "--probe-only" => probe_only = true,
             "--ecg" => {
                 ecg_seconds = Some(
@@ -416,7 +427,7 @@ fn main() -> ExitCode {
                     .expect("--send takes a command number"),
             ),
             other => {
-                eprintln!("usage: wpp-sim-client [--endpoint host:port] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--send <command>] [--update <package>]");
+                eprintln!("usage: wpp-sim-client [--endpoint host:port] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--send <command>] [--update <package> [--version-address <hex>]]");
                 eprintln!("unknown argument {other}");
                 return ExitCode::FAILURE;
             }
@@ -432,7 +443,7 @@ fn main() -> ExitCode {
 
     let package = package_path.map(|path| {
         let bytes = std::fs::read(&path).expect("the package is readable");
-        match update::Package::parse(bytes) {
+        match update::Package::parse(bytes, version_trailer) {
             Ok(package) => package,
             Err(reason) => panic!("{path} is not a usable package: {reason}"),
         }

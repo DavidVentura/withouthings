@@ -608,25 +608,84 @@ def residue(section):
     well as its distance. Preserving the section's own address modulo 4 is what
     makes that true for everything inside it at once, and it costs at most three
     bytes per section.
+
+    A data section has no pc-relative reader, so that argument does not reach
+    it; the rule stands anyway because the export records where each item starts
+    and how long it is and nothing about what alignment the item needs. A word
+    array read with `ldr` and a record table indexed by a scaled offset both
+    require their own alignment and neither declares it, so the only alignment
+    that can be preserved is the one the image already had.
     """
     return section.start % 4
 
 
-def first_fit(order, free):
-    """Place each section in the lowest free interval it fits, or fail.
+class Unit(object):
+    """Sections that have to move together, as one thing the layout places.
 
-    `free` is consumed: each interval's start is the cursor. A section keeps its
+    An item boundary is not an object boundary. The partition cuts data at every
+    address something names, and a struct whose fields are each named by their
+    own pool word comes out as one item per field: the SPI device descriptor at
+    0xb2404 is eight words and eight items, and the driver reads its name at
+    +0x10 off the one pointer it is given. The RAM initialiser image at 0xefe58
+    is the same shape the other way round -- 79 items, one memcpy, a length
+    nothing in flash names. Neither is visible as an extent anywhere in the
+    export, so the only safe reading of a run of adjacent data sections is that
+    it is one object, and a data unit is a maximal run of them.
+
+    That is conservative and it is what the evidence supports: naming a section
+    start says something reaches it by name, never that nothing reaches it by
+    offset from below. Relocations are unaffected either way -- each section
+    keeps its own symbol and its own relocations, and the unit only decides that
+    their addresses move together.
+
+    Code is one section per unit. A function's entry points are all named, and a
+    fall-through between two of them is exported as a reference and relocated,
+    so there is nothing holding a code section to its neighbour.
+    """
+
+    def __init__(self, sections):
+        self.sections = sections
+        self.start, self.end = sections[0].start, sections[-1].end
+        self.sym = sections[0].sym
+
+    def place(self, at, moves):
+        for s in self.sections:
+            moves[s.sym] = at + (s.start - self.start)
+
+
+def units(sections):
+    """`sections` grouped into the blocks a layout may move, in address order.
+
+    Adjacency is what joins: two data sections with a code section between them
+    are not one run, and a gap the partition left is not something anything
+    indexes across.
+    """
+    out = []
+    for s in sorted(sections, key=lambda s: s.start):
+        joins = (out and s.kind == "data" and out[-1][-1].kind == "data"
+                 and out[-1][-1].end == s.start)
+        if joins:
+            out[-1].append(s)
+        else:
+            out.append([s])
+    return [Unit(g) for g in out]
+
+
+def first_fit(order, free):
+    """Place each unit in the lowest free interval it fits, or fail.
+
+    `free` is consumed: each interval's start is the cursor. A unit keeps its
     address modulo 4, because a literal pool is read with a pc-relative load
     that rounds the program counter down to a word.
     """
     free = [list(i) for i in free]
     moves = {}
-    for s in order:
-        size, want = s.end - s.start, residue(s)
+    for u in order:
+        size, want = u.end - u.start, residue(u)
         for interval in free:
             at = interval[0] + (want - interval[0]) % 4
             if at + size <= interval[1]:
-                moves[s.sym] = at
+                u.place(at, moves)
                 interval[0] = at + size
                 break
         else:
@@ -635,20 +694,22 @@ def first_fit(order, free):
 
 
 def pack(movable, free):
-    """Pack the text down and leave the space it saved as one contiguous hole.
+    """Pack the image down and leave the space it saved as one contiguous hole.
 
-    The saving is real but it is scattered: the text is cut into runs by the
-    data between them, so packing each run leaves its own small tail and the
-    largest of them here is twelve bytes. A hole a library can be linked into
-    has to be asked for instead of hoped for, so the biggest run's tail is
-    reserved before anything is placed and the rest of the text is packed into
-    what is left; the reservation is the largest one a first fit still fits, and
-    what bounds it is the alignment each section's own address modulo 4 costs.
+    The saving is real but it is scattered: the movable units are cut into runs
+    by the held ones between them, so packing each run leaves its own small
+    tail. A hole a library can be linked into has to be asked for instead of
+    hoped for, so the biggest run's tail is reserved before anything is placed
+    and the rest is packed into what is left; the reservation is the largest one
+    a first fit still fits, and what bounds it is the alignment each unit's own
+    address modulo 4 costs. With the data movable as well the runs are far
+    longer -- the data between two stretches of text used to end both of them --
+    so the hole is the image's own slack rather than one run's tail.
     """
-    order = sorted(movable, key=lambda s: s.start)
+    order = sorted(movable, key=lambda u: u.start)
     host = max(range(len(free)), key=lambda i: free[i][1] - free[i][0])
     if first_fit(order, free) is None:
-        raise SystemExit("the text does not fit in its own space")
+        raise SystemExit("the image does not fit in its own space")
 
     def attempt(want):
         trimmed = [list(i) for i in free]
@@ -664,102 +725,125 @@ def pack(movable, free):
         else:
             low = mid
     moves = attempt(low) if low else first_fit(order, free)
-    return moves, (free[host][1] - low, free[host][1]), {}
+    return moves, (free[host][1] - low, free[host][1])
 
 
-def relayout(sections, mode, pinned, anchors, dead=()):
-    """Give every text section a new address, and prove none keeps its old one.
+def relayout(sections, mode, pinned, anchors, dead=(), data=False):
+    """Give every section a new address, and prove none keeps its old one.
 
-    Data does not move in this step, so the space the text may use is exactly
-    the space it uses now: the intervals the text sections cover, plus the free
-    flash after the image for whatever alignment costs. The two modes are the
-    two ways of being sure a stale address cannot survive by luck: `shift` keeps
-    the order and starts one word further in, so every section slides; `reverse`
-    puts the last function first, so nothing is near where it was.
+    `data` says the app's data is linked from the source abi/datagen.py writes
+    (blobify's --data-source, DATA=1 on the scripts), which is the condition for
+    moving it: the data half is only known to be independently linkable where
+    the byte-identical identity link with it in has been run, and a layout that
+    moved it without that proof would be testing the cut and the move at once.
+    Without it the data stays where it is and the space it covers is not free.
+
+    With it, data moves under the text's rules plus one of its own. A unit keeps
+    its address modulo 4 (see `residue`), a unit a review word might name is
+    held whatever its kind, and only the fixed points are pinned. Everything the
+    export found inside a data section -- an interior label, the tail a second
+    string pointer names, a typed table's rows -- is a label or an initialiser
+    of that section and moves with it, because it is the section's own offset
+    and not an address of its own. The rule of its own is `units`: what the
+    layout places is a run of sections nothing names the interior of, because
+    the partition cuts data finer than the code reads it.
+
+    The space a layout may use is the space its movable units cover, plus the
+    free flash after the image for whatever alignment costs. The two
+    stale-address modes are the two ways of being sure an old address cannot
+    survive by luck: `shift` keeps the order and starts one word further in, so
+    every unit slides; `reverse` puts the last unit first, so nothing is near
+    where it was.
 
     `pack` is the third, and it is not a stale-address test: it closes the image
     up. `dead` is the sections a replacement has already made unreferenced --
     their names are undefined in the object and every call to them binds to the
     source's symbol -- so their bytes are free whatever --gc-sections decides,
-    and packing the rest over them leaves one contiguous hole at the top of the
-    text. That hole is flash the library can be linked into, which is the only
-    way it grows: the library region runs from the end of the app image to the
-    bootloader and there is nothing above it to take.
+    and packing the rest over them leaves one contiguous hole at the top. That
+    hole is flash the library can be linked into, which is the only way it grows:
+    the library region runs from the end of the app image to the bootloader and
+    there is nothing above it to take. A section the link would drop out of the
+    middle of a unit is not dropped: the sections above it in the unit are
+    reached by offset from its head, and taking bytes out of the run would move
+    them. The set that really is dropped comes back with the moves.
     """
     # A section a word points into that the classification could not decide is
     # not moved: the word is either a pointer that would be left stale or a
     # constant that must not be rewritten, and there is no way to be right about
-    # both while the target moves. Untyped record tables end up inside code
-    # sections when the span between two code tiles is one component, which is
-    # how they come to be movable at all. The other anchor is a pc-relative
+    # both while the target moves. The other anchor is a pc-relative
     # displacement, whose two ends have to keep their distance.
     held = {}
     for s in sections:
         for v, why in anchors.items():
             if s.start <= v < s.end:
                 held.setdefault(s.start, why)
+    if not data:
+        for s in sections:
+            if s.kind == "data" and s.start not in pinned:
+                held.setdefault(s.start, "data source that is switched off")
     dead = set(dead)
-    movable = [s for s in sections
-               if s.kind == "code" and s.start not in pinned and s.start not in held
-               and s.start not in dead]
+    kinds = ("code", "data") if data else ("code",)
+    all_units = units(sections)
+    dead = set(u.sections[0].start for u in all_units
+               if len(u.sections) == 1 and u.sections[0].start in dead)
+    stuck = pinned | set(held)
+    movable = [u for u in all_units
+               if all(s.kind in kinds for s in u.sections)
+               and not any(s.start in stuck or s.start in dead for s in u.sections)]
     held = dict(held)
     if not movable:
-        raise SystemExit("no text section to move")
-    # The free list is the space the movable text covers, and under `pack` the
-    # replaced bodies' space as well, since nothing will link them in.
+        raise SystemExit("no section to move")
+    # The free list is the space the movable units cover, and under `pack` the
+    # space of the sections the link will drop as well, since nothing will link
+    # those in.
     free = []
-    for s in sorted([s for s in sections if s.kind == "code" and s.start in dead]
-                    + movable, key=lambda s: s.start):
-        if free and free[-1][1] == s.start:
-            free[-1][1] = s.end
+    for u in sorted([u for u in all_units if u.start in dead] + movable,
+                    key=lambda u: u.start):
+        if free and free[-1][1] == u.start:
+            free[-1][1] = u.end
         else:
-            free.append([s.start, s.end])
+            free.append([u.start, u.end])
     if mode == "shift":
         free.append([SPARE_BASE, SPARE_END])
-        order, free[0][0] = sorted(movable, key=lambda s: s.start), free[0][0] + 4
+        order, free[0][0] = sorted(movable, key=lambda u: u.start), free[0][0] + 4
     elif mode == "reverse":
         free.append([SPARE_BASE, SPARE_END])
-        order = sorted(movable, key=lambda s: -s.start)
+        order = sorted(movable, key=lambda u: -u.start)
     elif mode == "pack":
-        return pack(movable, free)
+        moves, hole = pack(movable, free)
+        return moves, hole, held, dead
     else:
         raise SystemExit("unknown layout %r" % mode)
 
-    # First fit over the whole free list rather than a single cursor: the text
-    # is cut into intervals by the data between them, and a cursor that gives up
-    # on an interval as soon as one section does not fit wastes its tail. The
-    # spare flash is last in the list, so it is only used for what the image's
-    # own space cannot hold.
+    # First fit over the whole free list rather than a single cursor: the
+    # movable units are cut into intervals by the held ones between them, and a
+    # cursor that gives up on an interval as soon as one does not fit wastes its
+    # tail. The spare flash is last in the list, so it is only used for what the
+    # image's own space cannot hold.
     moves = {}
-    for s in order:
-        size, want = s.end - s.start, residue(s)
+    for u in order:
+        size, want = u.end - u.start, residue(u)
         for interval in free:
             at = interval[0] + (want - interval[0]) % 4
-            if at == s.start and mode != "pack":
-                # The point of the layout is that no function keeps its
-                # address, so the one address this section may not have is its
-                # own; the next slot up is still in the same interval.
+            if at == u.start:
+                # The point of the layout is that no section keeps its address,
+                # so the one address this unit may not have is its own; the next
+                # slot up is still in the same interval.
                 at += 4
             if at + size <= interval[1]:
-                moves[s.sym] = at
+                u.place(at, moves)
                 interval[0] = at + size
                 break
         else:
-            raise SystemExit("the text does not fit: %s needs %d bytes"
-                             % (s.sym, size))
-    if mode == "pack":
-        # Everything fitted below, so the hole is the tail of the last interval:
-        # what the packing squeezed out of every interval below it lands here,
-        # and that is exactly the bytes the replacements freed.
-        return moves, tuple(free[-1]), held
-    kept = [s.sym for s in movable if moves[s.sym] == s.start]
+            raise SystemExit("the image does not fit: %s needs %d bytes"
+                             % (u.sym, size))
+    kept = [u.sym for u in movable if moves[u.sym] == u.start]
     if kept:
-        raise SystemExit("%d text sections keep their address under %s: %s"
+        raise SystemExit("%d units keep their address under %s: %s"
                          % (len(kept), mode, ", ".join(kept[:5])))
-    spare = max((a + (s.end - s.start) for s, a in
-                 ((s, moves[s.sym]) for s in movable) if a >= SPARE_BASE),
-                default=SPARE_BASE)
-    return moves, spare, held
+    spare = max((moves[u.sym] + (u.end - u.start) for u in movable
+                 if moves[u.sym] >= SPARE_BASE), default=SPARE_BASE)
+    return moves, spare, held, dead
 
 
 def reclaim_placement(sections, pinned, path, obj):

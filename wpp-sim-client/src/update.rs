@@ -22,13 +22,41 @@ use crate::{report, Link, QUIET};
 const HEADER_VERSION: u16 = 1;
 const IE_APPL: u16 = 1;
 const IE_ENTRY_LEN: u16 = 16;
-/// `get_fw_version` (0x36e70) loads this absolute address -- the u32 after the
-/// build string -- and the probe reply carries what it returns. The appl part is
-/// flashed at 0x27000, so the version sits at a fixed offset into the part and
-/// not at its end: a part that carries more than the stock app image is longer
-/// without moving it.
 const APPL_BASE: usize = 0x27000;
-const APPL_VERSION_ADDRESS: usize = 0xf1178;
+/// UICR.NRFFW[0] points the MBR at the bootloader here, so this is where the
+/// flash the appl part may occupy ends.
+const BOOTLOADER_BASE: usize = 0xfc000;
+
+/// Where `get_fw_version` (0x36e70) reads the u32 the probe reply carries.
+///
+/// The appl part is flashed at 0x27000, so the trailer is at an offset into the
+/// part and not at its end: a part that carries more than the stock app image is
+/// longer without moving it. Which offset is a property of the image being
+/// packaged rather than a constant -- nothing outside the app reads the word,
+/// so a layout moves its section like any other -- and the packager is what
+/// knows: `tools/mkpkg.py --symbols` resolves it against the linked ELF and
+/// prints it, and this carries it as far as the check.
+#[derive(Clone, Copy, Debug)]
+pub struct VersionTrailer(usize);
+
+impl VersionTrailer {
+    /// Where the stock image has it, which is also where a relink that did not
+    /// move the data leaves it.
+    pub const STOCK: VersionTrailer = VersionTrailer(0xf1178);
+
+    pub fn at(address: usize) -> Result<VersionTrailer, String> {
+        if address % 4 != 0 || !(APPL_BASE..BOOTLOADER_BASE).contains(&address) {
+            return Err(format!(
+                "{address:#x} is not a word inside the appl part, so it cannot be the version trailer"
+            ));
+        }
+        Ok(VersionTrailer(address))
+    }
+
+    fn offset_into_part(self) -> usize {
+        self.0 - APPL_BASE
+    }
+}
 /// Beyond the protocol's own cap the watch has no say in the split, so the
 /// largest chunk that leaves room for the frame and object headers is the one
 /// that costs the fewest round trips.
@@ -46,7 +74,7 @@ pub struct Package {
 }
 
 impl Package {
-    pub fn parse(bytes: Vec<u8>) -> Result<Package, String> {
+    pub fn parse(bytes: Vec<u8>, trailer: VersionTrailer) -> Result<Package, String> {
         if bytes.len() < 8 {
             return Err(format!("{} bytes is not a package", bytes.len()));
         }
@@ -84,11 +112,11 @@ impl Package {
                 return Err(format!("entry ie={ie} CRC {crc:#010x} != computed {computed:#010x}"));
             }
             if ie == IE_APPL {
-                let trailer = address + (APPL_VERSION_ADDRESS - APPL_BASE);
-                let embedded = read_u32(&bytes, trailer)?;
+                let at = address + trailer.offset_into_part();
+                let embedded = read_u32(&bytes, at)?;
                 if embedded != component_version {
                     return Err(format!(
-                        "the appl trailer at {trailer:#x} holds {embedded}, not the header's {component_version}"
+                        "the appl trailer at {at:#x} holds {embedded}, not the header's {component_version}"
                     ));
                 }
                 appl_version = Some(component_version);

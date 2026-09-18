@@ -3,7 +3,7 @@
 
     python3 tools/mkpkg.py --version 9999 hwa10_3411_Tf4fD4.bin out.bin
     python3 tools/mkpkg.py --version 9998 --appl out/appl-relinked.bin \
-        hwa10_3411_Tf4fD4.bin out.bin
+        --symbols renode-sim/out/relink/relinked.elf hwa10_3411_Tf4fD4.bin out.bin
 
 The package is `[header 0x44][appl][bl][sd]`; the header is the same structure
 the watch's `fwblk` table carries, so the bank the watch writes is the package
@@ -15,9 +15,15 @@ size would exercise the bank layout rather than the hashing and bank logic.
 
 `--appl` replaces the whole appl part with a binary that starts at 0x27000, the
 relinked image's app+library block (abi/relink_image.py). The part grows, `bl`
-and `sd` slide up behind it and their header addresses follow. The version
-trailer is at the fixed address get_fw_version reads, not at the end of the
-part, so it stays put as the part grows.
+and `sd` slide up behind it and their header addresses follow.
+
+The trailer is not at the end of the part and it is no longer at a fixed
+address: nothing outside the app reads it (hwa10.yaml records the scan of the
+bootloader and the SoftDevice that says so), so a layout moves its section like
+any other. `--symbols` is the linked ELF of the image being packaged and the
+only thing that knows where it went. It is required with `--appl`, because the
+alternative is writing a version into whatever the relink put at 0x27000 +
+0xca178 and shipping a package the watch would accept and then misreport.
 """
 
 import argparse
@@ -30,9 +36,15 @@ HEADER_VERSION = 1
 IE_APPL = 1
 IE_NAMES = {1: "appl", 4: "bl", 8: "sd", 10: "sig"}
 APPL_BASE = 0x27000
-# get_fw_version (0x36e70) loads the absolute address 0xf1178 -- the u32 after
-# the build string -- rather than anything derived from the part length.
-APPL_VERSION_ADDRESS = 0xF1178
+# Where get_fw_version (0x36e70) reads the version in the stock image: the u32
+# after the build string. A relinked part's is wherever its section was placed,
+# which --symbols reads out of the ELF.
+STOCK_VERSION_ADDRESS = 0xF1178
+# The names the trailer's section carries in a link of the objectified app, in
+# the order they are looked for: the symbol abi/replacements.yaml exports for
+# the C reimplementation of get_fw_version, the partition's name for the item,
+# and abi/blobify.py's address alias, which is the one no renaming moves.
+VERSION_SYMBOLS = ("appl_fw_version", "fw_version_trailer", "a_000f1178")
 # The appl image ends with [build string][u32 version]; the getter at 0x36e70
 # returns that last word.
 APPL_VERSION_TRAILER = 4
@@ -56,6 +68,53 @@ class Entry:
     @property
     def name(self):
         return IE_NAMES.get(self.ie, f"ie{self.ie}")
+
+
+def elf_symbols(path):
+    """{name: value} of an ELF32 little-endian file's symbol tables."""
+    data = path.read_bytes()
+    if data[:4] != b"\x7fELF" or data[4] != 1 or data[5] != 1:
+        raise SystemExit(f"{path} is not an ELF32 little-endian file")
+    shoff, = struct.unpack_from("<I", data, 0x20)
+    shentsize, shnum, _ = struct.unpack_from("<HHH", data, 0x2E)
+    headers = [struct.unpack_from("<10I", data, shoff + i * shentsize)
+               for i in range(shnum)]
+    table = {}
+    for _, styp, _, _, off, size, link, _, _, entsize in headers:
+        if styp != 2 or not entsize:            # SHT_SYMTAB
+            continue
+        stroff = headers[link][4]
+        for at in range(entsize, size, entsize):
+            name, value = struct.unpack_from("<II", data, off + at)
+            if not name:
+                continue
+            end = data.index(b"\0", stroff + name)
+            table.setdefault(data[stroff + name:end].decode(), value)
+    return table
+
+
+def version_address(symbols_path, relinked):
+    """Where the version trailer is in the part being packaged.
+
+    A stock part's is the address the stock image has it at, and there is
+    nothing to resolve. A part built by a relink carries it wherever the layout
+    put its section, so the ELF is asked and the absence of one is refused: a
+    guess here writes a version the watch would never report and leaves the real
+    trailer holding the old one, which the header CRC and the SHA-1 would both
+    happily cover.
+    """
+    if symbols_path is None:
+        if relinked:
+            raise SystemExit(
+                "--appl needs --symbols <linked ELF>: the version trailer is a"
+                " movable section and only the link knows where it went")
+        return STOCK_VERSION_ADDRESS
+    symbols = elf_symbols(symbols_path)
+    for name in VERSION_SYMBOLS:
+        if name in symbols:
+            return symbols[name]
+    raise SystemExit(f"{symbols_path} defines none of {', '.join(VERSION_SYMBOLS)},"
+                     " so it is not a link of the objectified app")
 
 
 def parse_header(data):
@@ -94,6 +153,10 @@ def main():
     parser.add_argument("--version", type=int, required=True)
     parser.add_argument("--appl", type=Path,
                         help="replace the appl part with this binary, which starts at 0x27000")
+    parser.add_argument("--symbols", type=Path,
+                        help="the linked ELF of the image being packaged, which is"
+                             " where the version trailer's address comes from;"
+                             " required with --appl")
     parser.add_argument("source", type=Path)
     parser.add_argument("destination", type=Path)
     arguments = parser.parse_args()
@@ -115,7 +178,11 @@ def main():
         if stored != entry.crc:
             raise SystemExit(f"{entry.name} CRC {entry.crc:#010x} != computed {stored:#010x}")
 
-    trailer_offset = APPL_VERSION_ADDRESS - APPL_BASE
+    address = version_address(arguments.symbols, arguments.appl is not None)
+    if address % 4 or not APPL_BASE <= address < BOOTLOADER_BASE:
+        raise SystemExit(f"the version trailer resolves to {address:#x}, which is"
+                         " not a word inside the appl part")
+    trailer_offset = address - APPL_BASE
     replacement = arguments.appl.read_bytes() if arguments.appl else None
     if replacement is None:
         parts = {}
@@ -129,7 +196,7 @@ def main():
         if len(replacement) < trailer_offset + APPL_VERSION_TRAILER:
             raise SystemExit(
                 f"the appl image is {len(replacement):#x} bytes, too short to hold the version"
-                f" trailer get_fw_version reads at {APPL_VERSION_ADDRESS:#x}")
+                f" trailer get_fw_version reads at {address:#x}")
         if APPL_BASE + len(replacement) > BOOTLOADER_BASE:
             raise SystemExit(
                 f"the appl image ends at {APPL_BASE + len(replacement):#x}, past the bootloader"
@@ -176,6 +243,8 @@ def main():
               f" crc32 {entry.crc:#010x}")
     print(f"appl version {embedded} -> {arguments.version},"
           f" trailer at {appl.addr + trailer_offset:#x}")
+    # The line the update test reads: where the running image's getter will look.
+    print(f"appl_version_address {address:#x}")
     print(f"header crc32 {header_crc:#010x}")
     print(f"sha1         {hashlib.sha1(bytes(out)).hexdigest()}")
 

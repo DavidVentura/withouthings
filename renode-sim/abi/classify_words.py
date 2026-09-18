@@ -501,7 +501,21 @@ def classify(items, refs, blob, contracts, overrides, manifest):
                      "in_code": klass == "pointer" and part.in_code(target),
                      "thumb_target": signal.startswith("thumb_")
                                      or (klass == "pointer" and target % 2 == 1),
-                     "uses": word.get("uses") or []})
+                     "uses": word.get("uses") or [],
+                     # How many bytes past the target are read as one block.
+                     # A RAM initialiser image is copied in a single memcpy
+                     # whose length is computed from two RAM addresses, so only
+                     # its first byte is named and everything behind it is
+                     # reached by being where it was: the run has to stay one
+                     # piece however its items are cut up. Only where the copy
+                     # shape is the deciding signal, which is the case its
+                     # docstring argues for -- a word another rule decided is
+                     # named by something else, and the two RAM addresses its
+                     # function happens to hold measure out a length nothing
+                     # says is this word's (0x50e8c and 0x50e94 both come out
+                     # at 78904 bytes, which they cannot both be).
+                     "span": part.copy_sources[word["addr"]][2]
+                             if signal == "ram_initialiser_source" else 0})
         for site in word.get("pc_sites") or ():
             displacements.append({"word": word["addr"], "site": site,
                                   "target": (word["value"] + site + 4) & 0xFFFFFFFF})

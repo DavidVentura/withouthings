@@ -76,6 +76,12 @@ REPLACE_ARGS=""
 LIBS=""
 for g in $(echo "${REPLACE:-}" | tr , ' '); do REPLACE_ARGS="$REPLACE_ARGS --replace $g"; done
 
+# SPILL is a list of linker input-file patterns, one --spill each: the flash
+# --layout pack frees is inside the app's own span and an archive named here
+# goes there instead of into the library region after the image.
+SPILL_ARGS=""
+for pattern in ${SPILL:-}; do SPILL_ARGS="$SPILL_ARGS --spill $pattern"; done
+
 # The newlib group swaps the image's libc for the source build's, so the link
 # needs the archives it swapped them for. abi/libc_check.py's verdicts are what
 # the group derives its entries from, so they are measured here rather than
@@ -119,9 +125,9 @@ REPLACE_ARGS="$REPLACE_ARGS" ./identity.sh
 # means anything together with GC=1: the edits make the feature unreachable and
 # --gc-sections is what removes it.
 if [ -n "${GC:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" --gc ${LAYOUT:+--layout "$LAYOUT"} ${SPILL:+--spill "$SPILL"} ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
+    python3 blobify.py -o "$OUT/appl-blob.o" --gc ${LAYOUT:+--layout "$LAYOUT"} $SPILL_ARGS ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
 elif [ -n "${LAYOUT:-}" ] || [ -n "$REPLACE_ARGS" ] || [ -n "${PRUNE:-}" ] || [ -n "${DATA:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" ${LAYOUT:+--layout "$LAYOUT"} ${SPILL:+--spill "$SPILL"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
+    python3 blobify.py -o "$OUT/appl-blob.o" ${LAYOUT:+--layout "$LAYOUT"} $SPILL_ARGS ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
 fi
 if [ -n "${DATA:-}" ]; then ./datagen.sh; fi
 
