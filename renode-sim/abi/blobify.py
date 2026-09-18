@@ -37,6 +37,8 @@ import sys
 
 import yaml
 
+import archive_cost
+
 import datagen
 import objectify
 from objectify import (APP_BASE, APP_END, R_ARM_ABS32, R_ARM_THM_CALL,
@@ -446,6 +448,89 @@ def derive(spec, relative_to):
             if b["verdict"] in wanted and b["symbol"] not in excepted]
 
 
+# The toolchain the archives were built with, and so the one whose `nm` and
+# `size` read them; the same prefix abi/relink.sh links them with.
+REF_TOOLS = ("{root}/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi"
+             "/bin/arm-none-eabi-")
+
+
+def archive_paths(spec, build):
+    """The `cost:` block's archives and tool prefix, with the variables filled in."""
+    root = os.path.expanduser(spec.get("root", "~/ref-build"))
+    fill = lambda p: os.path.expanduser(p.format(root=root, build=build))
+    return [fill(p) for p in spec["archives"]], fill(spec.get("tools", REF_TOOLS))
+
+
+def marginal_refusals(group, entries, layout):
+    """The derived entries whose archive closure costs more than they free.
+
+    Taking a body from the archive is only a win while the members the linker
+    pulls in behind it weigh less than the blob bytes the body returns. The
+    ratio the group states is that trade, and the measurement is
+    abi/archive_cost.py's: the archive text a root adds that no other root in
+    the group already pays for, against the size of the section it replaces.
+
+    A refusal is not a judgement about the body. `_tzset_r` was 15 KB of
+    closure for 22 bytes because the name was wrong -- the image's 0x9bd0c is a
+    Withings SPI-flash wrapper whose masked bytes happen to match newlib's --
+    and a ratio this far out is worth reading as a question about the name
+    before it is read as a cost.
+    """
+    spec = group.get("derive", {}).get("cost")
+    if not spec:
+        return []
+    paths, tools = archive_paths(spec, group["derive"]["build"])
+    archives = archive_cost.Archives(paths, tools)
+    freed = {}
+    for e in entries:
+        section = layout.at(e["at"])
+        freed[e["symbol"]] = section.end - section.start if section else 0
+    cost = archives.marginal(freed)
+    limit = float(spec["max_ratio"])
+    refused = []
+    for symbol, (size, members) in sorted(cost.items(), key=lambda kv: -kv[1][0]):
+        if not freed[symbol] or size <= limit * freed[symbol]:
+            continue
+        refused.append((symbol,
+                        "%d B of archive closure for %d B of blob freed"
+                        " (%.0fx, the group allows %.0fx): %s"
+                        % (size, freed[symbol], size / float(freed[symbol]),
+                           limit, ", ".join(members[:4]))))
+    return refused
+
+
+def unbound_callees(replacements, boundary, refs, layout):
+    """Replaced bodies that call a body the link still takes from the blob.
+
+    A replacement is a claim that the source defines the same function, and the
+    function it calls is part of that claim: if the archive's body calls the
+    archive's `strlen` and the image's calls a Withings one at the same address,
+    the two are not the same function and the byte comparison that said they
+    were was reading a coincidence. Every callee of a replaced body should
+    itself be replaced, exported to the source, or relocated by the boundary;
+    anything else is worth looking at before the link is trusted.
+    """
+    bound = set(e["at"] for e in replacements.entries)
+    bound |= set(e["at"] for e in replacements.exports)
+    bound |= set(int(e["addr"]) for e in boundary["app_to_lib"]
+                 if not e.get("keep") and e["symbol"])
+    calls = collections.defaultdict(set)
+    for row in refs["calls"]:
+        section = layout.at(row["from"])
+        if section is not None:
+            calls[section.start].add(row["to"])
+    loose = []
+    for e in sorted(replacements.entries, key=lambda e: e["at"]):
+        section = layout.at(e["at"])
+        if section is None:
+            continue
+        out = sorted(t for t in calls[section.start]
+                     if not section.start <= t < section.end and t not in bound)
+        if out:
+            loose.append((e, out))
+    return loose
+
+
 class ReferenceIndex(object):
     """Every reference the partition holds, keyed by the address it names.
 
@@ -497,6 +582,7 @@ class Replacements(object):
             sys.exit("%s names no group of %s" % (", ".join(unknown), path))
         self.entries, self.exports, self.sources = [], [], []
         self.globals, self.refused = [], []
+        self.groups = {name: groups[name] for name in wanted}
         for name in wanted:
             group = groups[name]
             self.sources += group.get("sources", [])
@@ -546,6 +632,16 @@ class Replacements(object):
         happens to have cut that body.
         """
         index = ReferenceIndex(refs, reads, words)
+        for name, group in self.groups.items():
+            derived = [e for e in self.entries
+                       if e["group"] == name and e.get("derived")]
+            over = dict(marginal_refusals(group, derived, layout))
+            if not over:
+                continue
+            self.refused += [(e, over[e["symbol"]]) for e in derived
+                             if e["symbol"] in over]
+            self.entries = [e for e in self.entries
+                            if not (e["group"] == name and e["symbol"] in over)]
         retarget = {}
         for e in self.entries:
             why = self.refusal(e, layout, index)
@@ -915,6 +1011,10 @@ def main():
                          " the library region after the image; the library"
                          " region ends at the bootloader and cannot grow, so"
                          " this is the only place a bigger library fits")
+    ap.add_argument("--tools", default=os.path.join(
+        os.path.expanduser("~/ref-build"), "tc",
+        "arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi", "bin",
+        "arm-none-eabi-"), help="the binutils prefix that reads --also-linked")
     ap.add_argument("--also-linked", action="append", default=[], metavar="OBJECT",
                     help="another object on the link line, whose undefined"
                          " symbols are roots for the --gc walk; without them the"
@@ -1007,6 +1107,20 @@ def main():
         reserved[e["symbol"]] = NOWHERE
     for e in replacements.exports:
         reserved[e["as"]] = e["at"]
+    # Every name the rest of the link line already defines. The partition gives
+    # the blob's own copy of a library body the library's name, and two
+    # definitions of one name is a link error the moment an archive member that
+    # carries it is pulled in for something else: the blob's `__subdf3` section
+    # holds __aeabi_dadd, __floatunsidf and __muldf3 as interior labels, and
+    # libgcc's soft-float members define all three. Reserving them makes the
+    # partition call its copy `__aeabi_dadd__8d7d0`, which is what it is. A
+    # name the boundary or a replacement already reserved keeps that
+    # reservation, because that one says where the body is rather than only
+    # that the name is taken.
+    if args.also_linked:
+        for name in archive_cost.Archives(args.also_linked,
+                                          args.tools).defines:
+            reserved.setdefault(name, NOWHERE)
     # A RAM global has no section of its own in the object -- the object is only
     # flash -- so there is nothing to rename, but the name still has to stay
     # undefined or a partition section that happens to carry it would swallow
@@ -1386,6 +1500,15 @@ def main():
               % len(replacements.refused))
         for e, why in replacements.refused:
             print("      %-22s 0x%05x  %s" % (e["symbol"], e["at"], why))
+    loose = unbound_callees(replacements, boundary, refs, layout)
+    if loose:
+        print("  %d replaced bodies call a body the link still takes from the"
+              " blob:" % len(loose))
+        for e, targets in loose:
+            print("      %-22s 0x%05x -> %s" % (e["symbol"], e["at"],
+                  ", ".join("0x%05x %s" % (t, layout.at(t).sym
+                                           if layout.at(t) else "?")
+                            for t in targets[:4])))
     if replacements.entries:
         print("  replaced %s: %d sections (%d bytes) renamed orig_* and left"
               " referenced by nothing"

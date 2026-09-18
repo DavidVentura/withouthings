@@ -129,6 +129,30 @@ groups:
       build: newlib-nano-ll
       class: libc
       reproduces: [exact, masked]
+      # Marginal cost. A verdict says the source reproduces the body; it does
+      # not say the link can afford it. Taking a body from the archive pulls in
+      # the member that defines it and everything that member's undefined
+      # symbols reach, and that closure is flash the image never carried.
+      # abi/archive_cost.py measures it as the archive text a root adds that no
+      # other root in the group already pays for, and abi/blobify.py refuses the
+      # root when that exceeds `max_ratio` times the blob bytes the body frees,
+      # printing both numbers.
+      #
+      # Four is where the measurement puts the gap: with the image's own names
+      # every body worth taking comes in under 2.1x (sprintf 120 B for 56,
+      # snprintf 198 for 98, qsort 768 for 654, and 70-odd at 1.0x, which is a
+      # body and nothing else), and the refusals are an order of magnitude out.
+      # A ratio that far out is worth reading as a question about the name
+      # before it is read as a cost: 0x9bd0c came back as `_tzset_r` at 15 KB
+      # for 22 B, and it is not tzset -- it is a Withings SPI-flash
+      # lock/operate/unlock wrapper whose masked bytes have newlib's wrapper
+      # shape, and whose three callees are Withings semaphore and flash-op
+      # bodies. The link's own sanity print lists that.
+      cost:
+        archives:
+          - "{root}/build/{build}/arm-none-eabi/newlib/libc.a"
+          - "{root}/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/lib/gcc/arm-none-eabi/13.2.1/thumb/v7e-m+fp/hard/libgcc.a"
+        max_ratio: 4
       why: >
         abi/libc_check.py compares every body abi/autonames.yaml classes `libc`
         against the same body in the build, with the fields a relocation owns
@@ -290,6 +314,15 @@ groups:
       build: newlib-nano-ll
       class: libm
       reproduces: [exact, masked]
+      # The same rule and the same ratio as the `newlib` group, over libm.a. It
+      # is what refuses `pow`: 2.7 KB of closure for 220 B of blob freed,
+      # because the image has no __ieee754_pow twin for the kernel the
+      # archive's pow drags in behind it.
+      cost:
+        archives:
+          - "{root}/build/{build}/arm-none-eabi/newlib/libm.a"
+          - "{root}/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/lib/gcc/arm-none-eabi/13.2.1/thumb/v7e-m+fp/hard/libgcc.a"
+        max_ratio: 4
       why: >
         The same measurement as the `newlib` group's, over the bodies
         abi/autonames.yaml classes `libm`. `local` is the verdict that keeps
