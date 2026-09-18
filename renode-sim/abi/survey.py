@@ -113,9 +113,15 @@ class Graph(object):
         return f.start if addr < f.end else None
 
 
-def load_partition(items_path, smap):
-    """Every function the partition knows, keyed by start, with its map entry."""
-    named = {s.address: s for s in smap.of_kind("function")}
+def load_partition(items_path, smap, ignore=()):
+    """Every function the partition knows, keyed by start, with its map entry.
+
+    A class this run rewrites is dropped: a record this tool wrote last time is
+    not evidence about the image, so leaving it in would make the closure shrink
+    to nothing on the second run.
+    """
+    named = {s.address: s for s in smap.of_kind("function")
+             if s.klass not in ignore}
     fns = {}
     for f in items_path["functions"]:
         size = (f["bytes"] if "bytes" in f else
@@ -563,7 +569,11 @@ def verdict(d):
 VENDOR = "vendor"
 
 
-def vendor_records(graph, decls, library_ranges):
+def vendor_records(graph, decls, library_ranges, smap):
+    # The map as it is without this tool's own last run, which is not evidence
+    # about the image and would make the second run name nothing.
+    held_by_name = dict((sym.name, sym) for sym in smap.symbols
+                        if sym.klass != VENDOR)
     """One map record per function of every declared component.
 
     The entries carry the name and the evidence the declaration gives them;
@@ -603,12 +613,17 @@ def vendor_records(graph, decls, library_ranges):
         # has nothing.
         kept = 0
         for e in comp["entries"]:
-            held = graph.fns[e["address"]].symbol
+            # The map holds an entry either at its address as a function or
+            # under its name as anything at all -- picotls' entries are labels
+            # a hand wrote prose against -- and in both cases the image already
+            # explains it, so the declaration only cuts the closure there.
+            held = graph.fns[e["address"]].symbol or held_by_name.get(e["name"])
             if held is not None:
-                if held.name != e["name"]:
+                if held.name != e["name"] or held.address != e["address"]:
                     raise symmap.Refusal(
-                        "0x%x is %s in %s and %s in the map"
-                        % (e["address"], e["name"], comp["name"], held.name))
+                        "0x%x is %s in %s and %s at 0x%x in the map"
+                        % (e["address"], e["name"], comp["name"], held.name,
+                           held.address))
                 kept += 1
                 continue
             records.append({"address": e["address"], "name": e["name"],
@@ -653,7 +668,7 @@ def main():
 
     items = json.load(open(os.path.join(args.export, "items.json")))
     smap = symmap.load()
-    fns = load_partition(items, smap)
+    fns = load_partition(items, smap, ignore={VENDOR} if args.emit else ())
     graph = load_graph(args.object, args.place, fns)
     with open(os.path.join(HERE, "boundary.yaml")) as fh:
         library_ranges = [tuple(r) for r in yaml.safe_load(fh)["library_ranges"]]
@@ -661,7 +676,7 @@ def main():
     if args.emit:
         with open(os.path.join(HERE, "vendor.yaml")) as fh:
             decls = yaml.safe_load(fh)
-        records, report = vendor_records(graph, decls, library_ranges)
+        records, report = vendor_records(graph, decls, library_ranges, smap)
         for name, entries, interior, size, leaks, stdio in report:
             print("%-16s %2d entries named here, %3d interior bodies, %6d bytes%s%s"
                   % (name, entries, interior, size,

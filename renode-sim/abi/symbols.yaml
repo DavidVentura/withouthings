@@ -6706,15 +6706,215 @@ symbols:
   class: logline
   evidence: the only line 0x6eed8 logs, wlog('[WUI] Failed to push event 0x%08x')
     at 0x6eefe
+- address: 0x6f19c
+  name: picotls__6f19c
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f1c8
+  name: picotls__6f1c8
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f1fc
+  name: picotls__6f1fc
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f230
+  name: picotls__6f230
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f240
+  name: picotls__6f240
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f350
+  name: picotls__6f350
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f3a4
+  name: picotls__6f3a4
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f460
+  name: picotls__6f460
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x6f490
   name: mbedtls_x509_get_serial
   kind: function
   class: extlib
   evidence: mbedtls_Os, score 0.97 over 30 insns, direct
+- address: 0x6f4e0
+  name: picotls__6f4e0
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f5d4
+  name: picotls__6f5d4
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f734
+  name: picotls__6f734
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f76c
+  name: picotls__6f76c
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f7ac
+  name: picotls__6f7ac
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x7022c
+  name: ptls_verify_certificate
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 1616 bytes entered from verify_cert__1 0x468b8 and perso_crt_verify
+    0x5abbc and from nothing else; the certificate callback picotls takes, which
+    is why the entry is on this side of the boundary.
+- address: 0x7032c
+  name: picotls__7032c
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70394
+  name: picotls__70394
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x703d4
+  name: picotls__703d4
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70574
+  name: picotls__70574
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x705ac
+  name: picotls__705ac
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70600
+  name: picotls__70600
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x707c0
+  name: picotls__707c0
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x708a8
+  name: picotls__708a8
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70934
+  name: picotls__70934
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70990
+  name: picotls__70990
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70a28
+  name: picotls__70a28
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70a68
+  name: picotls__70a68
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70b28
+  name: picotls__70b28
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70be8
+  name: picotls__70be8
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70c70
+  name: picotls__70c70
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x7159c
+  name: picotls__7159c
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x717bc
   name: ptls_send_alert
   kind: label
   class: prose
+- address: 0x71ca0
+  name: picotls__71ca0
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x7272c
+  name: picotls__7272c
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x72834
+  name: picotls__72834
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x72ac0
   name: ptls_handshake
   kind: label
@@ -7322,6 +7522,18 @@ symbols:
   evidence: the call under algo_enabled(0xe) (0x7d6ba, 0x7d71e); id 14 is SLEEP_WAKE.
     The four HRV getters feed it on the stack (0x7d6ea..0x7d706). 1279 calls in
     the trace, one per popped slot.
+- address: 0x7a12c
+  name: arm_radix8_butterfly_f32
+  kind: function
+  class: hand
+  evidence: 'CMSIS-DSP. The archive-side search of abi/libc_find.py, run against
+    ARM-software/CMSIS-DSP built for this target at -Os, reproduces this body byte
+    for byte: 1260 bytes, no relocated field anywhere in it, zero differing bytes,
+    so every byte is evidence. It is the only CMSIS-DSP body the image carries --
+    arm_cfft_f32 and arm_rfft_fast_f32 do not reproduce at any optimisation level
+    -- so what is linked is the radix-8 butterfly and not the library''s own drivers.
+    Its sole caller is 0xa17f8, under hr_algo_process_sample 0xa22fc by way of 0x7b058,
+    which is the PPG chain''s FFT.'
 - address: 0x7aa60
   name: hr_algo_step
   kind: function
@@ -13433,6 +13645,12 @@ symbols:
   class: wppcmd
   evidence: 'wpp_cmd_table row 0x27b80: key 2452, label ''WPP_CMD_EVENTS_DEL'',
     CMD_EVENTS_DEL in wpp/src/commands.rs'
+- address: 0x9d76a
+  name: picotls__9d76a
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x9d7ac
   name: mbedtls_pk_can_do
   kind: function
@@ -13443,15 +13661,87 @@ symbols:
   kind: function
   class: extlib
   evidence: mbedtls_Os, score 1.00 over 17 insns, direct
+- address: 0x9d8f8
+  name: picotls__9d8f8
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9d928
+  name: picotls__9d928
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9d96a
+  name: picotls__9d96a
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x9d9aa
   name: mbedtls_asn1_get_bitstring_null
   kind: function
   class: extlib
   evidence: mbedtls_Os, score 1.00 over 18 insns, direct
+- address: 0x9d9d2
+  name: picotls__9d9d2
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9da48
+  name: picotls__9da48
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9dae4
+  name: picotls__9dae4
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9df52
+  name: picotls__9df52
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9dfb8
+  name: picotls__9dfb8
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9dfd0
+  name: picotls__9dfd0
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9dffa
+  name: picotls__9dffa
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9e014
+  name: picotls__9e014
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x9e05e
   name: ptls_set_server_name
   kind: label
   class: prose
+- address: 0x9e1be
+  name: picotls__9e1be
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x9e284
   name: ptls_receive
   kind: label

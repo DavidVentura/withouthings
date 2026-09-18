@@ -204,3 +204,56 @@ components:
       - address: 0xa0d9e
         name: ecg_algo_output_ready
         evidence: "already named ecg_algo_output_ready in the map"
+
+  # ------------------------------------------------------------- picotls
+  # Not a vendor drop but an open-source one: picotls, the TLS 1.3 library.
+  # The image names it itself -- ptls_handshake, ptls_receive, ptls_send,
+  # ptls_new, ptls_send_alert and ptls_set_server_name were already in the map
+  # -- and it carries picotls' own string
+  # "ptls_init_ed25519_client_certificate_dynamic" (0x974fc) together with the
+  # TLS 1.3 key-schedule labels verbatim: "tls13 ", "derived", "finished",
+  # "traffic upd", "c ap traffic", "s ap traffic", "exp master" and
+  # "EXPORTER_SECRET" (0x71ca0, 0x70c70). It passes the same test as the two
+  # drops: no wlog call anywhere in the closure and nothing of Withings'
+  # called out of it.
+  #
+  # It is only bounded here, not reproduced. What would finish it is the
+  # archive-side search of abi/libc_find.py run against a picotls built for
+  # this target, which would name the interiors rather than leave them a
+  # component; the SHA-1, Ed25519 and certificate code below it (0x955ac
+  # upwards, reached from the still-unnamed 0x450fc block) is the same job and
+  # has too wide an entry surface to be cut this way yet.
+  - name: picotls
+    what: >
+      The TLS 1.3 client the WPPS tunnel runs over: the record layer, the
+      handshake and the key schedule.
+    evidence: >
+      Entered only from the tunnel -- wpps_tls_driver 0x38d68 drives the
+      handshake and the receive side, 0x38d28 sends the alert, 0x6bf04 sends,
+      and perso_crt_verify 0x5abbc and verify_cert__1 0x468b8 run the
+      certificate check.
+    entries:
+      - address: 0x72ac0
+        name: ptls_handshake
+        evidence: "wpps_tls_driver 0x38d68 and 0x38c28"
+      - address: 0x9e284
+        name: ptls_receive
+        evidence: "wpps_tls_driver 0x38d68"
+      - address: 0x72c50
+        name: ptls_send
+        evidence: "0x6bf04, the tunnel's send side"
+      - address: 0x72bdc
+        name: ptls_new
+        evidence: "wpps_tls_driver 0x38d68"
+      - address: 0x717bc
+        name: ptls_send_alert
+        evidence: "0x38d28"
+      - address: 0x9e05e
+        name: ptls_set_server_name
+        evidence: "already named in the map; the tunnel's only configuration call"
+      - address: 0x7022c
+        name: ptls_verify_certificate
+        evidence: >
+          1616 bytes entered from verify_cert__1 0x468b8 and perso_crt_verify
+          0x5abbc and from nothing else; the certificate callback picotls
+          takes, which is why the entry is on this side of the boundary.
