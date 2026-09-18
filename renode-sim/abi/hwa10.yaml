@@ -3356,6 +3356,53 @@ functions:
       same object delay_f32_push_pop writes. ppg_hrv_peak_detect is its only
       caller and walks the whole line with it.
 
+  # --- library bodies the partition or the name derivation got wrong ---
+  - name: setenv
+    address: 0x8eb9c
+    supersedes: _setenv_r
+    ret: i32
+    args: [[const char *, name], [const char *, value], [i32, overwrite]]
+    notes: >
+      twenty bytes, not the 316 the export gave it: it shifts its three
+      arguments up one register, loads _impure_ptr through the pool word at
+      0x8ebac and tail-calls _setenv_r with `b.w`. close_partition followed
+      that tail call across the pool word instead of cutting on it, so the two
+      bodies read as one function starting at 0x8eb9c and abi/autonames.py
+      scored _setenv_r against the wrong start. Declared here so the boundary
+      is pinned; both bodies then reproduce from the newlib build byte for byte
+      at their own addresses.
+  - name: _setenv_r
+    address: 0x8ebb0
+    ret: i32
+    args: [[void *, reent], [const char *, name], [const char *, value],
+           [i32, overwrite]]
+    notes: the body setenv tail-calls, which is where the newlib match belongs
+  - name: _dtoa_r
+    address: 0x2d668
+    supersedes: __cvt__1
+    ret: char *
+    args: [[void *, reent], [f64, value], [i32, mode], [i32, ndigits],
+           [i32 *, decpt], [i32 *, sign], [char **, rve]]
+    notes: >
+      2884 bytes that reproduce exactly from the newlib archive. The derivation
+      could only call it __cvt__1, because __cvt at 0xa8268 is its only caller
+      and a single-caller helper is all the call graph says; naming it puts it
+      and its static quorem in the libc class instead of the helper one.
+  - name: __fixdfdi
+    address: 0x91ed8
+    ret: i64
+    args: [[f64, value]]
+    notes: >
+      a libgcc body with its own archive section, declared so the partition
+      pins its bounds: it and __fixunsdfdi sit inside the second tile of the
+      split __assert_func__1__1 at 0x91ea4, which keeps both of them inside a
+      tile that cannot be replaced.
+  - name: __fixunsdfdi
+    address: 0x91f08
+    ret: u64
+    args: [[f64, value]]
+    notes: the second of the two libgcc bodies interleaved into 0x91ea4's tile
+
 globals:
   - name: xTickCount
     address: 0x20021920
@@ -3488,6 +3535,18 @@ globals:
     address: 0x2001fff4
     type: struct hr_screen_data
 
+  - name: ui_bitmap_pool
+    address: 0xc299c
+    type: u8[4695]
+    notes: >
+      a third pool of encoded bitmap bodies, paired the way rre_asset_table
+      pairs a blob with its offsets: FUN_0007c260 zeroes a 0x198-byte object
+      and installs fourteen addresses inside this run into it as seven pairs,
+      the two of a pair eight bytes apart, and the three 0x30-byte descriptors
+      at 0xb8e28 pair six more with sizes 12 by 14, 12 by 12 and 10 by 12.
+      Declared as bytes because two of the twenty-one addresses the image holds
+      into it are 2 mod 4 (0xc29fa and 0xc2d6a), so a word window over it reads
+      halves of two fields.
   - name: font_glyph_pool
     address: 0xcadaa
     type: u8[20058]

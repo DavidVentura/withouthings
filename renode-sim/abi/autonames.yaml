@@ -12,8 +12,8 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 4, helper: 416, libc: 97, libm: 32, logcb: 3, logline: 332, logtag: 8, module_functions: 1799, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
-  known_addresses: {agree: 200, disagree: 14}
+  counts: {bleevt: 28, extlib: 4, helper: 415, libc: 97, libm: 32, logcb: 3, logline: 331, logtag: 8, module_functions: 1797, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  known_addresses: {agree: 202, disagree: 15}
 
 functions:
   - name: memchr
@@ -96,10 +96,6 @@ functions:
     evidence: "newlib nano-big libm, score 0.99 over 90 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "double floor (double);"
-  - name: __cvt__1
-    address: 0x2d668
-    class: helper
-    evidence: "only 0xa8268 (__cvt) calls 0x2d668; 2776 bytes"
   - name: light_sensor_light_value__1
     address: 0x2f040
     class: helper
@@ -3203,11 +3199,6 @@ functions:
     class: helper
     evidence: "only 0x64cf8 (FW_AVAILABLE__1) calls 0x64a0c; 38 bytes"
     module: CHUNKED_UPDATE
-  - name: chunked_update_not_aligned
-    address: 0x64bc8
-    class: logline
-    evidence: "the only line 0x64bc8 logs, wlog('[CHUNKED_UPDATE] not aligned') at 0x64bf2"
-    module: CHUNKED_UPDATE
   - name: FW_AVAILABLE__1
     address: 0x64cf8
     class: helper
@@ -4365,12 +4356,6 @@ functions:
     class: helper
     evidence: "only 0x610d4 (shell_cmd_calib_test__2) calls 0x8e810; 16 bytes"
     module: SHELL
-  - name: _setenv_r
-    address: 0x8eb9c
-    class: libc
-    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.92 over 111 insns, direct"
-    header: arm-none-eabi/include/stdlib.h
-    proto: "int _setenv_r (struct _reent *, const char *__string, const char *__value, int __overwrite);"
   - name: _printf_float
     address: 0x8ece0
     class: libc
@@ -4479,16 +4464,6 @@ functions:
     address: 0x91ea4
     class: helper
     evidence: "only 0xa920e (__assert_func__1) calls 0x91ea4; 40 bytes"
-  - name: __fixdfdi
-    address: 0x91ed8
-    class: libc
-    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 18 insns, direct"
-    module: SHELL
-  - name: __fixunsdfdi
-    address: 0x91f08
-    class: libc
-    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 20 insns, direct"
-    module: SHELL
   - name: sd_power_mode_set
     address: 0x91f44
     class: svc
@@ -6318,6 +6293,8 @@ agrees_with_hand_map:
   - {address: 0x50434, name: wpp_obj_GreentegIntegrationFactor_parse, class: wppobj}
   - {address: 0x6c84c, name: WPP_CMD_PROBE, class: wppcmd}
   - {address: 0x6d2e0, name: WPP_CMD_MTU_EXCH, class: wppcmd}
+  - {address: 0x91ed8, name: __fixdfdi, class: libc}
+  - {address: 0x91f08, name: __fixunsdfdi, class: libc}
   - {address: 0x9917a, name: wpp_obj_Null_encode, class: wppobj}
   - {address: 0x99216, name: wpp_obj_BatteryPercent_encode, class: wppobj}
   - {address: 0x9923a, name: wpp_obj_Cmderror_encode, class: wppobj}
@@ -6463,6 +6440,7 @@ disagrees_with_hand_map:
   - {address: 0x6ca44, hand: cmd_restart_to_update, derived: WPP_CMD_RESTART_TO_UPDATE, class: wppcmd}
   - {address: 0x6ca90, hand: wpp_cmd_battery_status, derived: WPP_CMD_BATTERY_STATUS, class: wppcmd}
   - {address: 0x6d50c, hand: wpp_device_challenge, derived: WPP_CMD_DEVICE_CHALLENGE, class: wppcmd}
+  - {address: 0x8eb9c, hand: setenv, derived: _setenv_r, class: libc}
   - {address: 0x9301e, hand: sd_mbr_command_thunk, derived: sd_mbr_command, class: svc}
   - {address: 0x93022, hand: sd_vector_table_base_set, derived: sd_softdevice_vector_table_base_set, class: svc}
   - {address: 0x935b4, hand: sd_ble_gatts_hvx_thunk, derived: sd_ble_gatts_hvx, class: svc}

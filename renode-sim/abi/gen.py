@@ -33,6 +33,7 @@ SCALARS = {
     "u64": "unsigned long long",
     "char": "char",
     "float": "float",
+    "f64": "double",
 }
 
 ARRAY = re.compile(r"^(?P<base>[A-Za-z_][A-Za-z0-9_ *]*?)\[(?P<n>0x[0-9a-fA-F]+|\d+)\]$")
