@@ -27,6 +27,13 @@ So each row here carries a scenario and a rate. The scenarios are
 each run against a copy of the sim with `calltrace.py --order --addresses`
 hooks over the 398, the algorithm steps and the WUI slot bodies, the counters
 zeroed once the firmware is up so a count is the scenario's and not the boot's.
+The hooks cost about a sevenfold slowdown, so the 120 s workout is 18.6 s of
+watch time and not two minutes of it. Wall time does not buy that back: the
+same scenario run for 900 s reached the same 104 bodies, address for address,
+over 10.8 s of watch time, because a contended host is what sets the pace. A
+window an algorithm needs minutes to close will not close by running the
+client longer; it needs the algorithm started.
+
 A count is evidence about rate and never about role, so a `rate` line says the
 ratio and the scenario and stops; the role comes from the body, by the same
 shape rules abi/sensors.py reads. Where the two do not agree the address is
