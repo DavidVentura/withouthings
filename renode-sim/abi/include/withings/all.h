@@ -1,7 +1,8 @@
 /* Every module of the HWA10 application ABI.
  *
- * Written by abi/migrate.py. A consumer that wants one module includes it
- * directly; this is for the generated sources, which cut across all of them. */
+ * Written by abi/migrate.py and hand-maintained since. A consumer that wants
+ * one module includes it directly; this is for the generated sources, which
+ * cut across all of them. */
 #ifndef WITHINGS_ALL_H
 #define WITHINGS_ALL_H
 

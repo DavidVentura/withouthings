@@ -35,7 +35,7 @@ meta:
   # reached no candidate position at all. The libm that does match is
   # newlib 4.3.0.20230120 built by abi/refbuild.sh with the image's own
   # flags, and none of its bodies lands in either block.
-  # accuracy against the addresses already established in symbols.txt
+  # accuracy against the addresses abi/symbols.yaml already establishes by hand
   known_set: {correct: 8, wrong: 0, missing: 10, precision: 1.00, recall: 0.44}
 
 functions:

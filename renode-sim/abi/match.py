@@ -2,6 +2,7 @@
 """Map HWA10 image addresses to open-source symbols by instruction matching.
 
     python3 abi/match.py                     # the recorded variant set, rewrites matches.yaml
+                                             # and the `match` class of abi/symbols.yaml
     python3 abi/match.py --check             # only score against the known symbols
     python3 abi/match.py --variants Os,O2    # restrict the reference builds used
     python3 abi/match.py --all-variants      # every build under ~/ref-build/build
@@ -23,6 +24,10 @@ compared against the image byte for byte with relocated fields masked, plus
 agreement of every call the reference resolves inside its own link. The token
 matcher only proposes candidates; a verdict is a fact about one body and one
 build, so a reference added tomorrow can add candidates and cannot unsettle one.
+
+matches.yaml is the measurement and abi/symbols.yaml is the map: the name and
+the address go there, under the precedence the map enforces, and the score, the
+variant and the links stay here.
 """
 
 import argparse
@@ -34,6 +39,7 @@ import subprocess
 import sys
 
 import body_check
+import symbols as symmap
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIM = os.path.dirname(HERE)
@@ -663,6 +669,17 @@ def main():
                   variants, ties, counts)
     print("wrote %s" % args.out)
 
+    # The record above is the measurement; the map is where a name goes. A
+    # matched name the map already carries at another address, or an address it
+    # already calls something else, is a refusal rather than a second entry:
+    # this run and the map disagree and which of the two is wrong is not the
+    # matcher's to decide.
+    try:
+        added = symmap.load().rewrite(map_entries(resolved), {MAP_CLASS})
+    except symmap.Refusal as e:
+        sys.exit("abi/match.py: abi/symbols.yaml: %s" % e)
+    print("wrote %d %s entries to abi/symbols.yaml" % (added, MAP_CLASS))
+
 
 # A declaration, with the attribute macros a header puts between the closing
 # parenthesis and the semicolon left out of the capture: every kernel prototype
@@ -754,6 +771,27 @@ def refresh_prototypes(path):
     return 0
 
 
+# The class the matcher owns in abi/symbols.yaml, and the only one it rewrites.
+MAP_CLASS = "match"
+
+
+def map_entries(accepted):
+    """Every settled match as an abi/symbols.yaml row.
+
+    The map carries the name, the address and what established them; the score,
+    the variant and the links stay in abi/matches.yaml, which is the
+    measurement and not the map.
+    """
+    rows = []
+    for name, m in sorted(accepted.items(), key=lambda kv: kv[1]["address"]):
+        rows.append({"address": m["address"], "name": name, "kind": "function",
+                     "class": MAP_CLASS,
+                     "evidence": "%s, score %.2f over %d insns, %s"
+                                 % (m["variant"], m["score"], m["insns"],
+                                    m["how"])})
+    return rows
+
+
 def write_matches(path, accepted, best, streams, protos, threshold, acc,
                   variants, ties, verdicts):
     lines = [
@@ -794,7 +832,7 @@ def write_matches(path, accepted, best, streams, protos, threshold, acc,
         "  # reached no candidate position at all. The libm that does match is",
         "  # newlib 4.3.0.20230120 built by abi/refbuild.sh with the image's own",
         "  # flags, and none of its bodies lands in either block.",
-        "  # accuracy against the addresses already established in symbols.txt",
+        "  # accuracy against the addresses abi/symbols.yaml already establishes by hand",
         "  known_set: {correct: %d, wrong: %d, missing: %d, precision: %.2f, recall: %.2f}"
         % (acc["ok"], acc["wrong"], acc["missing"], acc["precision"], acc["recall"]),
         "",

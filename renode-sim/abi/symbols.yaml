@@ -3,9 +3,10 @@
 # Where a thing is. What it is lives in abi/include/withings/*.h (C) and
 # abi/facts.yaml (everything that is neither C nor an address).
 #
-# Written by abi/migrate.py from abi/hwa10.yaml, abi/matches.yaml,
-# abi/autonames.yaml and symbols.txt. `class: hand` entries are edited
-# here; the derived classes are refreshed by re-running the converter.
+# Every entry is edited here. `class: hand` and `class: prose` are what a
+# hand wrote; the other classes are written by the tool that measured them
+# -- abi/match.py (match) and abi/autonames.py (the derived rules) -- which
+# rewrite their own classes and leave the rest of the file alone.
 # A hand entry that overrides a derivation names what it overrides in
 # `corrects` (the address a body match landed on) or `supersedes` (the
 # name a derivation produced), so the claim only holds against the
@@ -6250,7 +6251,7 @@ symbols:
   name: ulTaskNotifyTake
   kind: function
   class: match
-  evidence: Os_a0, score 0.90 over 38 insns, direct
+  evidence: Os_a0, score 0.89 over 38 insns, direct
 - address: 0x7382c
   name: xTaskNotifyWait
   kind: function
@@ -10825,7 +10826,7 @@ symbols:
   name: prvInitialiseNewTask.isra.0
   kind: function
   class: match
-  evidence: Os_a0, score 0.86 over 52 insns, direct
+  evidence: Os_a0, score 0.87 over 52 insns, direct
 - address: 0x9e3dc
   name: xTaskCreateStatic
   kind: function

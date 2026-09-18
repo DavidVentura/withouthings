@@ -13,7 +13,7 @@ meta:
   toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
   counts: {bleevt: 28, extlib: 4, helper: 418, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 331, logtag: 8, module_functions: 1780, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
-  known_addresses: {agree: 204, disagree: 14}
+  known_addresses: {agree: 202, disagree: 1}
 
 functions:
   - name: memchr
@@ -6331,11 +6331,10 @@ functions:
     class: helper
     evidence: "only 0xa920e (__assert_func__1) calls 0xa926e; 4 bytes"
 
-# Addresses symbols.txt or hwa10.yaml already names, and what this run
+# Addresses abi/symbols.yaml already names by hand, and what this run
 # derived for them. A disagreement is a finding: one of the two is wrong.
 agrees_with_hand_map:
   - {address: 0x2d668, name: _dtoa_r, class: libc}
-  - {address: 0x3baf0, name: adxl367_power_check, class: string}
   - {address: 0x3ff1c, name: WPP_CMD_SYNC_REQUEST, class: wppcmd}
   - {address: 0x400b4, name: battery_adc_value_gain_adaptation, class: string}
   - {address: 0x4ed90, name: wpp_obj_Null_parse, class: wppobj}
@@ -6537,19 +6536,5 @@ agrees_with_hand_map:
   - {address: 0x9a854, name: wpp_obj_VasistasRr_encode, class: wppobj}
   - {address: 0x9a878, name: wpp_obj_VasistasDbt_encode, class: wppobj}
   - {address: 0x9a918, name: wpp_obj_Null_encode_copy_0x9a918, class: wppobj}
-  - {address: 0xa866e, name: memcmp, class: libc}
 disagrees_with_hand_map:
-  - {address: 0x46980, hand: ptls_verify_certificate_cb, derived: verify_cert, class: logtag}
-  - {address: 0x554c8, hand: wpp_bootstrap_redirect, derived: WPP_CMD_BOOTSTRAP_REDIRECT, class: wppcmd}
-  - {address: 0x555e8, hand: wpp_bootstrap_reboot, derived: WPP_CMD_BOOTSTRAP_REBOOT, class: wppcmd}
-  - {address: 0x58b34, hand: cmd_raw_data, derived: WPP_CMD_RAW_DATA, class: wppcmd}
-  - {address: 0x5bda4, hand: cmd_spi_flash, derived: WPP_CMD_SPI_FLASH, class: wppcmd}
-  - {address: 0x624e4, hand: cmd_hr_measure, derived: WPP_CMD_HR_MEASURE, class: wppcmd}
-  - {address: 0x650e8, hand: cmd_fw_available, derived: FW_AVAILABLE, class: wppcmd}
-  - {address: 0x6530c, hand: cmd_request_fw_chunk, derived: WPP_CMD_REQUEST_FW_CHUNK, class: wppcmd}
-  - {address: 0x6ca44, hand: cmd_restart_to_update, derived: WPP_CMD_RESTART_TO_UPDATE, class: wppcmd}
   - {address: 0x6ca90, hand: wpp_cmd_battery_status, derived: WPP_CMD_BATTERY_STATUS, class: wppcmd}
-  - {address: 0x6d50c, hand: wpp_device_challenge, derived: WPP_CMD_DEVICE_CHALLENGE, class: wppcmd}
-  - {address: 0x9301e, hand: sd_mbr_command_thunk, derived: sd_mbr_command, class: svc}
-  - {address: 0x93022, hand: sd_vector_table_base_set, derived: sd_softdevice_vector_table_base_set, class: svc}
-  - {address: 0x935b4, hand: sd_ble_gatts_hvx_thunk, derived: sd_ble_gatts_hvx, class: svc}

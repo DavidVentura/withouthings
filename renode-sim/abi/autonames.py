@@ -39,8 +39,12 @@ The same log tags give a module partition (which file a function came from),
 which abi/out/ghidra/modules.json carries and every entry above records.
 
 Nothing here guesses: every entry carries the evidence that produced it, and
-abi/migrate.py refuses any name that contradicts a hand entry of
-abi/symbols.yaml or a body match.
+an entry that contradicts a hand entry of abi/symbols.yaml is reported under
+`disagrees_with_hand_map` rather than folded in.
+
+autonames.yaml is the measurement and abi/symbols.yaml is the map: each rule
+owns its class there and rewrites it, so the name and the address go to the map
+and the prototype, the module partition and the readings stay here.
 """
 
 import argparse
@@ -55,6 +59,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import match  # noqa: E402  (same directory; the normaliser and matcher live there)
 import libc_find  # noqa: E402  (the archive-side body search)
+import symbols as symmap  # noqa: E402  (the address map these names go into)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIM = os.path.dirname(HERE)
@@ -1483,8 +1488,6 @@ def cross_check(entries):
     an address without saying what kind of thing is there, so it is compared
     against but does not stop a derivation.
     """
-    sys.path.insert(0, HERE)
-    import symbols as symmap
     smap = symmap.load()
     by_hand = {s.address: s.name for s in smap.of_class(symmap.HAND)
                if s.kind == "function"}
@@ -1498,6 +1501,23 @@ def cross_check(entries):
         if e["address"] not in by_hand:
             emit.append(e)
     return agree, disagree, emit
+
+
+def map_entries(entries):
+    """Every derived name as an abi/symbols.yaml row.
+
+    The map carries the name, the address, the rule that produced it and the
+    evidence; the prototype, the module partition and the also_named readings
+    stay in abi/autonames.yaml, which is the measurement and not the map.
+    """
+    rows = []
+    for e in sorted(entries, key=lambda e: e["address"]):
+        row = {"address": e["address"], "name": e["name"], "kind": "function",
+               "class": e["class"]}
+        if e.get("evidence"):
+            row["evidence"] = " ".join(str(e["evidence"]).split())
+        rows.append(row)
+    return rows
 
 
 def write_yaml(path, entries, agree, disagree, stats):
@@ -1785,6 +1805,17 @@ def main():
           % (args.out, len(emit),
              ", ".join("%s %d" % kv for kv in sorted(stats.items())),
              len(agree), len(disagree)))
+
+    # The record above is the measurement; the map is where a name goes. Each
+    # rule owns its class there and rewrites it, so a rule that stops producing
+    # a name takes it out of the map too, and a name that collides with what the
+    # map already carries is a refusal rather than a second entry.
+    try:
+        added = symmap.load().rewrite(map_entries(emit),
+                                      set(e["class"] for e in emit))
+    except symmap.Refusal as err:
+        sys.exit("abi/autonames.py: abi/symbols.yaml: %s" % err)
+    print("wrote %d derived entries to abi/symbols.yaml" % added)
 
 
 if __name__ == "__main__":
