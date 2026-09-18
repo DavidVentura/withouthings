@@ -92,6 +92,48 @@ for target in pool_targets:
         pass
 
 
+# Where an object reached by index stops. word_uses keys a cell only when the
+# base resolves to one absolute address, so a record row reached by index had no
+# cell at all and every rule that reads a cell was blind to it. Giving the access
+# an extent needs a row count, and the count this image can be held to is the
+# spacing argument runs.py already makes for its tables: an object runs to the
+# next address the image names. The literal pool's own values are that set of
+# names for RAM, where no partition exists, and the partition's item starts are
+# it for flash.
+boundaries = sorted(set(pool_value.values()))
+try:
+    with open(os.path.join(out_dir, "items.json")) as fh:
+        _items = json.load(fh)
+    boundaries = sorted(set(boundaries)
+                        | set(d["start"] for d in _items["data"])
+                        | set(f["start"] for f in _items["functions"]))
+except Exception:
+    pass
+
+# A row count no bounds check could plausibly reach is the walk losing the base,
+# not a table; the summary would then claim every word of a whole region.
+MAX_ROWS = 512
+
+
+def rows_from(base, stride):
+    """How many rows of `stride` bytes the object at `base` has room for."""
+    if stride <= 0 or base <= 0:
+        return 1
+    lo, hi = 0, len(boundaries)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if boundaries[mid] <= base:
+            lo = mid + 1
+        else:
+            hi = mid
+    if lo >= len(boundaries):
+        return 1
+    span = boundaries[lo] - base
+    if span <= 0:
+        return 1
+    return min(max(span // stride, 1), MAX_ROWS)
+
+
 def in_app(v):
     return APP_BASE <= v < APP_END
 
@@ -177,30 +219,42 @@ def seeded(op):
     return None
 
 
-def cell_of(vn, cur, disp):
-    """The memory cell `vn` addresses: base object plus constant displacement.
+def cells_of(vn, cur, disp, span):
+    """The memory cells `vn` addresses: base object plus constant displacement.
 
     Only a base the walk can resolve to one absolute address counts -- a pool
     word's value, or a folded constant address -- because the point of the cell
     is that two functions reaching the same field name the same key.
+
+    Where the address is that base plus a register scaled by a stride the access
+    is one row of a record array and the displacement alone names row zero,
+    which is a claim about one row the code never made. Such an access has an
+    extent instead: the same use is recorded against the same field of every row
+    the object has room for, so a row reached by index carries the summary its
+    readers give it.
     """
     if vn.isConstant() or vn.isAddress():
         at = vn.getOffset()
-        return ("mem", at) if at else None
+        return [("mem", at)] if at else []
     at = disp.get(vnkey(vn))
     if at is None:
-        return None
+        return []
     bases = set()
     for taint in cur.get(vnkey(vn), ()):
         if taint[0] == "pool" and taint[1] in pool_value:
             bases.add(pool_value[taint[1]])
         elif taint[0] == "mem":
-            return None
+            return []
         else:
-            return None
+            return []
     if len(bases) != 1:
-        return None
-    return ("mem", (bases.pop() + at) & 0xFFFFFFFF)
+        return []
+    base = bases.pop()
+    stride = span.get(vnkey(vn))
+    if not stride:
+        return [("mem", (base + at) & 0xFFFFFFFF)]
+    return [("mem", (base + at + i * stride) & 0xFFFFFFFF)
+            for i in range(rows_from(base, stride))]
 
 
 def analyse(fn):
@@ -247,7 +301,7 @@ def analyse(fn):
     # constant a varnode's value has been multiplied by; None where the walk
     # lost track. These are not merged at a join: a field offset is only
     # believed where one path produced it.
-    disp, scale = {}, {}
+    disp, scale, span = {}, {}, {}
     work = [0]
     rounds = 0
     while work and rounds < MAX_ROUNDS * len(instrs):
@@ -277,7 +331,7 @@ def analyse(fn):
                     tainted.append((k, got))
             if code == PcodeOp.LOAD or code == PcodeOp.STORE:
                 base = 1
-                cell = cell_of(ins[base], cur, disp)
+                cells = cells_of(ins[base], cur, disp, span)
                 for k, got in tainted:
                     if k == base:
                         record(got, "load_base" if code == PcodeOp.LOAD
@@ -290,8 +344,9 @@ def analyse(fn):
                             record(got, "field%+d:%d" % (at, width))
                     elif k == 2:
                         record(got, "stored_value")
-                        if cell is not None and ins[2].getSize() == 4:
-                            pass_on(got, cell)
+                        if ins[2].getSize() == 4:
+                            for cell in cells:
+                                pass_on(got, cell)
             elif code in BRANCH:
                 for k, got in tainted:
                     if k == 0:
@@ -319,10 +374,12 @@ def analyse(fn):
                         if key in cur:
                             del cur[key]
                             disp.pop(key, None)
+                            span.pop(key, None)
                     if code == PcodeOp.CALL and in_app(ins[0].getOffset()):
                         cur[arg_keys[0]] = frozenset(
                             [("ret", ins[0].getOffset())])
                         disp[arg_keys[0]] = 0
+                        span.pop(arg_keys[0], None)
                 if code == PcodeOp.RETURN:
                     got = cur.get(arg_keys[0])
                     if got:
@@ -357,12 +414,14 @@ def analyse(fn):
             if seed is not None:
                 cur[key] = frozenset([("pool", seed)])
                 disp[key] = 0
+                span.pop(key, None)
                 continue
             if code == PcodeOp.LOAD and out.getSize() == 4:
-                cell = cell_of(ins[1], cur, disp)
-                if cell is not None:
-                    cur[key] = frozenset([cell])
+                cells = cells_of(ins[1], cur, disp, span)
+                if cells:
+                    cur[key] = frozenset(cells)
                     disp[key] = 0
+                    span.pop(key, None)
                     continue
             carried = set()
             if code in COPY_OPS or code in ADDR_ARITH:
@@ -371,6 +430,11 @@ def analyse(fn):
             if carried:
                 cur[key] = frozenset(carried)
                 here = disp.get(vnkey(ins[tainted[0][0]]))
+                carried_span = span.get(vnkey(ins[tainted[0][0]]))
+                if carried_span:
+                    span[key] = carried_span
+                else:
+                    span.pop(key, None)
                 if code in COPY_OPS:
                     disp[key] = here
                 elif code in (PcodeOp.INT_ADD, PcodeOp.INT_SUB):
@@ -384,6 +448,7 @@ def analyse(fn):
                         for _, got in tainted:
                             record(got, "stride:%d" % scale[vnkey(other)])
                         disp[key] = here
+                        span[key] = scale[vnkey(other)]
                     else:
                         disp[key] = None
                 else:
@@ -391,6 +456,7 @@ def analyse(fn):
             elif key in cur:
                 del cur[key]
                 disp.pop(key, None)
+                span.pop(key, None)
 
         for j in succ[i]:
             merged = cur if state[j] is None else None
