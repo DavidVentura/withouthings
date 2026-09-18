@@ -43,7 +43,8 @@ import symbols as symmap
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIM = os.path.dirname(HERE)
-REF_ROOT = os.path.expanduser("~/ref-build/build")
+REF_ROOT = os.path.join(os.environ.get("ROOT",
+                        os.path.expanduser("~/ref-build")), "build")
 APP_BASE = 0x27000
 KGRAM = 6
 # A k-gram this common is a generic prologue; using it as an anchor only costs time.

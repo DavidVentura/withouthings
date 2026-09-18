@@ -36,6 +36,13 @@
 #     image's own assert paths rule out, so 13.2 is the one.
 #     The SDK 17.1.0 armgcc makefiles name GCC 9 and every body in the image
 #     disagrees with it.
+#     "Withings built their own GCC" was the standing explanation for the bodies
+#     that still differ, and it is wrong. A vanilla GCC 13.2.0 was built from the
+#     FSF tarball over this toolchain's own assembler, linker and headers (so the
+#     compiler proper is the only thing that changes) and measured over all 86
+#     bodies: its output is byte for byte what 13.2.Rel1's is, verdict for
+#     verdict. GCC_PREFIX=<prefix> re-runs that measurement. Whatever is left is
+#     not the compiler's build.
 #     https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
 #
 # The config is abi/config-relink/FreeRTOSConfig.h; every value in it that is not
@@ -46,7 +53,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=${ROOT:-$HOME/ref-build}
 SDK=$ROOT/sdk/nRF5_SDK_17.1.0_ddde560
 TC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
-GCC=$TC/bin/arm-none-eabi
+GCC=${GCC_PREFIX:-$TC/bin/arm-none-eabi}
 OUT=$ROOT/build
 CFG=$ROOT/cfg
 
@@ -383,7 +390,11 @@ NEWLIB_SRC=$ROOT/src/$NEWLIB
 # is a source or compiler change and not a stale build directory. `--check`
 # stops at this report; the builds it passes through are no-ops on a tree that
 # is already populated.
-check_newlib
+# ONLY= skips the builds, so it would also report archives this run never had a
+# chance to rebuild; the check belongs to a run that builds them.
+if [ -z "${ONLY:-}" ] || [ "${1:-}" = --check ]; then
+    check_newlib
+fi
 if [ "${1:-}" = --check ]; then exit 0; fi
 
 
