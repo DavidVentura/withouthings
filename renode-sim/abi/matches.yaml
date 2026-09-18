@@ -18,14 +18,14 @@ meta:
   # set a re-run uses unless --variants or --all-variants says otherwise:
   # ~/ref-build grows a variant whenever anybody recovers a driver, and a
   # score is only a score against a fixed set of bodies.
-  variants: [O2_a0, O2_a2, O2_a3, O3_a0, O3_a2, O3_a3, Os_a0, Os_a2, Os_a3, fix_O2, fix_Os, k10_0_1_O2_a0, k10_0_1_O2_a3, k10_0_1_Os_a0, k10_0_1_Os_a3, k10_2_1_O2_a0, k10_2_1_O2_a3, k10_2_1_Os_a0, k10_2_1_Os_a3, k10_4_3_O2_a0, k10_4_3_O2_a3, k10_4_3_Os_a0, k10_4_3_Os_a3, k9_0_0_O2_a0, k9_0_0_O2_a3, k9_0_0_Os_a0, k9_0_0_Os_a3, libm_nano-big, libm_nano-small, n1_7_2_O2, n1_7_2_Os, n1_8_6_O2, n1_8_6_Os, n2_0_0_O2, n2_0_0_Os, n2_1_0_O2, n2_1_0_Os]
+  variants: [O2_a0, O2_a2, O2_a3, O3_a0, O3_a2, O3_a3, Os_a0, Os_a2, Os_a3, fix_O2, fix_Os, k10_0_1_O2_a0, k10_0_1_O2_a3, k10_0_1_Os_a0, k10_0_1_Os_a3, k10_2_1_O2_a0, k10_2_1_O2_a3, k10_2_1_Os_a0, k10_2_1_Os_a3, k10_4_3_O2_a0, k10_4_3_O2_a3, k10_4_3_Os_a0, k10_4_3_Os_a3, k9_0_0_O2_a0, k9_0_0_O2_a3, k9_0_0_Os_a0, k9_0_0_Os_a3, libm_nano-big, libm_nano-small, n1_7_2_O2, n1_7_2_Os, n1_8_6_O2, n1_8_6_Os, n2_0_0_O2, n2_0_0_Os, n2_1_0_O2, n2_1_0_Os, saadc_stock, saadc_withings]
   # `verdict` is the byte comparison of the recorded variant's body
   # against the image with relocated fields masked (abi/body_check.py),
   # plus agreement of every call the reference resolves itself. A verdict
   # is a fact about one body and one build, so adding references can add
   # candidates but cannot unsettle one. token_only entries are carried by
   # the alignment score alone and are not settled.
-  verdicts: {exact: 12, masked: 41, token_only: 38}
+  verdicts: {exact: 12, masked: 47, token_only: 38}
   ties: 0
   # Candidates tried against the hard-float blocks in SENSORS_SYNC and
   # ECG and rejected on bodies, not on constant tables: CMSIS-DSP 1.9.0
@@ -36,7 +36,7 @@ meta:
   # newlib 4.3.0.20230120 built by abi/refbuild.sh with the image's own
   # flags, and none of its bodies lands in either block.
   # accuracy against the addresses already established in symbols.txt
-  known_set: {correct: 7, wrong: 0, missing: 11, precision: 1.00, recall: 0.39}
+  known_set: {correct: 8, wrong: 0, missing: 10, precision: 1.00, recall: 0.44}
 
 functions:
   - name: prvIdleTask
@@ -477,6 +477,15 @@ functions:
     insns: 11
     how: direct
     links: []
+  - name: saadc_generic_mode_set
+    address: 0x7db24
+    variant: saadc_withings
+    verdict: masked
+    masked_bytes: 4
+    score: 1.000
+    insns: 85
+    how: direct
+    links: []
   - name: saadc_event_limits_handle
     address: 0x7dc2c
     variant: n2_0_0_Os
@@ -487,18 +496,59 @@ functions:
     insns: 32
     how: direct
     links: [nrf_saadc_event_clear.constprop.0@0xa4e3a]
+  - name: saadc_channel_count_get
+    address: 0x7dc88
+    variant: saadc_stock
+    verdict: masked
+    masked_bytes: 4
+    score: 1.000
+    insns: 24
+    how: direct
+    links: []
+  - name: nrfx_saadc_init
+    address: 0x7dcc0
+    variant: saadc_stock
+    verdict: masked
+    masked_bytes: 20
+    score: 1.000
+    insns: 24
+    how: direct
+    links: [nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a]
+    header: modules/nrfx/drivers/include/nrfx_saadc.h
+    proto: "nrfx_err_t nrfx_saadc_init(nrfx_saadc_config_t const * p_config, nrfx_saadc_event_handler_t event_handler);"
+  - name: nrfx_saadc_simple_mode_set
+    address: 0x7de34
+    variant: saadc_stock
+    verdict: masked
+    masked_bytes: 16
+    score: 1.000
+    insns: 35
+    how: direct
+    links: [saadc_busy_check@0x7db08, saadc_channel_count_get@0x7dc88, saadc_generic_mode_set@0x7db24]
+    header: modules/nrfx/drivers/include/nrfx_saadc_v2.h
+    proto: "nrfx_err_t nrfx_saadc_simple_mode_set(uint32_t channel_mask, nrf_saadc_resolution_t resolution, nrf_saadc_oversample_t oversampling, nrfx_saadc_event_handler_t event_handler);"
   - name: nrfx_saadc_buffer_set
     address: 0x7df40
-    variant: n2_1_0_Os
-    verdict: token_only
+    variant: saadc_stock
+    verdict: masked
     masked_bytes: 4
-    divergence: "106 of 116 bytes differ outside the 4 a relocation owns, first at +0x2"
-    score: 0.891
-    insns: 46
+    score: 1.000
+    insns: 48
     how: direct
     links: []
     header: modules/nrfx/drivers/include/nrfx_saadc_v2.h
     proto: "nrfx_err_t nrfx_saadc_buffer_set(nrf_saadc_value_t * p_buffer, uint16_t size);"
+  - name: nrfx_saadc_abort
+    address: 0x7e108
+    variant: saadc_stock
+    verdict: masked
+    masked_bytes: 4
+    score: 1.000
+    insns: 17
+    how: direct
+    links: []
+    header: modules/nrfx/drivers/include/nrfx_saadc.h
+    proto: "void nrfx_saadc_abort(void);"
   - name: nrfx_saadc_uninit
     address: 0x7e138
     variant: n2_0_0_Os
@@ -507,9 +557,19 @@ functions:
     score: 1.000
     insns: 14
     how: direct
-    links: []
+    links: [nrfx_saadc_abort@0x7e108]
     header: modules/nrfx/drivers/include/nrfx_saadc.h
     proto: "void nrfx_saadc_uninit(void);"
+  - name: SAADC_IRQHandler
+    address: 0x7e16c
+    variant: saadc_stock
+    verdict: token_only
+    masked_bytes: 28
+    divergence: "10 of 316 bytes differ outside the 28 a relocation owns, first at +0xbe"
+    score: 0.983
+    insns: 118
+    how: direct
+    links: [nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a, saadc_event_limits_handle@0x7dc2c, saadc_event_limits_handle@0x7dc2c, nrf_saadc_event_clear.constprop.0@0xa4e3a]
   - name: nrf_drv_clock_uninit
     address: 0x81220
     variant: O2_a0
@@ -987,7 +1047,7 @@ library_ranges:  # spans of the image the matches bracket
   - {start: 0x2bdf8, end: 0x2c9a8, matched: 4}
   - {start: 0x51a04, end: 0x51afc, matched: 2}
   - {start: 0x72eb0, end: 0x73e5c, matched: 22}
-  - {start: 0x7db08, end: 0x7e138, matched: 4}
+  - {start: 0x7db08, end: 0x7e16c, matched: 10}
   - {start: 0x81220, end: 0x812a8, matched: 2}
   - {start: 0x8c8fc, end: 0x8d6f8, matched: 12}
   - {start: 0x8f42c, end: 0x8f42c, matched: 1}
@@ -1051,15 +1111,10 @@ unmatched_image:  # call targets inside those spans with no symbol
   - 0x73dfc
   - 0x73e10
   - 0x7db1c
-  - 0x7db24
-  - 0x7dc88
-  - 0x7dcc0
   - 0x7dd10
-  - 0x7de34
   - 0x7de94
   - 0x7dfaa
   - 0x7dfb8
-  - 0x7e108
   - 0x8ca1c
   - 0x8cab8
   - 0x8caea
@@ -1101,7 +1156,6 @@ unmatched_image:  # call targets inside those spans with no symbol
   - 0xa7eae
 
 unmatched_reference:
-  - SAADC_IRQHandler  # best 0.36
   - __ieee754_acos  # best 0.25
   - __ieee754_acosh  # best 0.34
   - __ieee754_asin  # best 0.25
@@ -1197,9 +1251,8 @@ unmatched_reference:
   - nrf_drv_power_usbevt_init  # best 0.39
   - nrf_gpiote_event_clear  # best 0.90
   - nrf_saadc_event_clear.constprop.0  # best 1.00
-  - nrfx_saadc_advanced_mode_set  # best 0.45
-  - nrfx_saadc_init  # best 0.38
-  - nrfx_saadc_simple_mode_set  # best 0.50
+  - nrfx_saadc_advanced_mode_set  # best 0.52
+  - nrfx_saadc_mode_trigger  # best 0.60
   - pone  # best 0.24
   - prs_box_get  # best 0.37
   - prvAddCurrentTaskToDelayedList  # best 0.41
