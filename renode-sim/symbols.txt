@@ -322,3 +322,15 @@
 0x0006d50c  wpp_device_challenge         CMD_DEVICE_CHALLENGE 2482: signs [len][challenge][32-byte nonce] with IE 0x12c, returns 64-byte signature in chunks
 0x000554c8  wpp_bootstrap_redirect       CMD_BOOTSTRAP_REDIRECT 2443: BootstrapRedirect 2467 (ws_error_code 293 redirect/223/207), CertDer 2468 buffered, Null 256 finalises; persists subdomains to IE 0x141
 0x000555e8  wpp_bootstrap_reboot         CMD_BOOTSTRAP_REBOOT 2444: ack then reboot ~1 s later, reason 0x21
+
+# dblib, the settings store on the external MX25R. One API keyed on a u16
+# information element; abi/hwa10.yaml carries the 104 ids the image passes it
+# and the 25 entry layouts its readers determine.
+0x00048294  dblib_get                    (ie, buf, len); builds a 12-byte dblib_query on the stack and walks the store; 2 when dblib is not up
+0x00047df0  dblib_set                    (ie, buf, len); the blob setter, kind tag 0 into the common writer 0x475c4 (0x47e58/0x480f0 pass 1, 0x47f58/0x4814c pass 2)
+0x00047b00  dblib_query_init             (q, ie, len); opens a cursor over every entry stored under one id
+0x00047b8c  dblib_query_next             (q, buf); next entry, non-zero when the cursor runs out
+0x00047b64  dblib_query_end              (q)
+0x0009776e  dblib_get_first              (ie, buf, len); query_init + one next + end, nothing else
+0x00097746  dblib_count                  (ie); a cursor opened with length 0 and drained with a null buffer
+0x000b41ec  perso_ie_table               11 rows {const char *name, u32 ie, handler}, the shell's `perso <verb>_<name>`; mac 0x1, pubkey 0x98, secret 0x3, wstarget 0x2, mfgid 0xb, factory_fw 0x4c, bank_recover_cnt 0x32, battery_cal 0xb5, part_id 0xe3, csr 0x12c, crt 0x12b
