@@ -214,11 +214,21 @@ class Partition(object):
             return False
         end = at
         while end < len(self.blob) and self.blob[end]:
-            c = self.blob[end]
-            if not (0x20 <= c < 0x7F or c in (9, 10, 13)) or self.covered[end]:
+            if self.covered[end]:
                 return False
             end += 1
-        return end - at >= PRINTABLE_MIN and end < len(self.blob)
+        if end >= len(self.blob) or end - at < PRINTABLE_MIN:
+            return False
+        # The UI text is UTF-8 (accented French, the degree sign, a
+        # non-breaking space in one log line), so the run is decoded rather
+        # than tested byte by byte; a run that is not well-formed UTF-8 or
+        # holds a control character is not text.
+        try:
+            text = self.blob[at:end].decode("utf-8")
+        except UnicodeDecodeError:
+            return False
+        return all(ord(c) >= 0x20 and not 0x7F <= ord(c) <= 0x9F or c in "\t\n\r"
+                   for c in text)
 
     def is_slot(self, addr):
         return addr in self.slots

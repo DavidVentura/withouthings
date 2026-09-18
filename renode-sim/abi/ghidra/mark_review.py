@@ -58,6 +58,10 @@ def main():
         space = program.getAddressFactory().getDefaultAddressSpace()
         tx = program.startTransaction("word classification")
         try:
+            # A word decided since the last run must lose its Review bookmark,
+            # so both types are rebuilt from scratch rather than added to.
+            for kind in ("Review", "Pointer"):
+                bookmarks.removeBookmarks(kind, TaskMonitor.DUMMY)
             for r in rows:
                 if r["class"] not in counts:
                     continue
