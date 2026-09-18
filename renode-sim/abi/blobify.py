@@ -1020,6 +1020,11 @@ def main():
                          " symbols are roots for the --gc walk; without them the"
                          " walk enters the app alone and calls dead what the"
                          " source kernel, the glue or a replacement keeps")
+    ap.add_argument("--reserve-defs", action="append", default=[], metavar="OBJECT",
+                    help="an archive or object on the link line whose names the"
+                         " partition must not publish; --also-linked implies it,"
+                         " and it is given on its own where the walk is not"
+                         " wanted but the link line is the same")
     ap.add_argument("--gc", action="store_true",
                     help="place only the fixed points and KEEP only what the"
                          " linker cannot see, so --gc-sections drops the rest;"
@@ -1117,9 +1122,9 @@ def main():
     # name the boundary or a replacement already reserved keeps that
     # reservation, because that one says where the body is rather than only
     # that the name is taken.
-    if args.also_linked:
-        for name in archive_cost.Archives(args.also_linked,
-                                          args.tools).defines:
+    link_line = sorted(set(args.also_linked) | set(args.reserve_defs))
+    if link_line:
+        for name in archive_cost.Archives(link_line, args.tools).defines:
             reserved.setdefault(name, NOWHERE)
     # A RAM global has no section of its own in the object -- the object is only
     # flash -- so there is nothing to rename, but the name still has to stay

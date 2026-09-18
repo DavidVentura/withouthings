@@ -34,7 +34,7 @@ if [ -n "${DATA:-}" ]; then
     # after, which is where the rest of the new code needs it.
     python3 gen.py --out ../out > /dev/null
 fi
-python3 blobify.py -o "$OUT/appl-blob.o" ${REPLACE_ARGS:-} ${DATA_ARGS:-}
+python3 blobify.py -o "$OUT/appl-blob.o" ${REPLACE_ARGS:-} ${RESERVE_ARGS:-} ${DATA_ARGS:-}
 if [ -n "${DATA:-}" ]; then ./datagen.sh; fi
 "$GCC-ld" -L ../out -T identity.ld --emit-relocs -e 0 \
     -o "$OUT/identity.elf" "$OUT/appl-blob.o" $DATA_OBJ "$OUT/stock-defs.o"
@@ -89,3 +89,12 @@ if bad:
              % len(bad))
 print("%d absolute relocations resolve to the word they replaced" % len(emitted))
 PY
+
+# The reservation checked rather than assumed: LINK_ARCHIVES is the archives the
+# real link adds behind this one, and a name both they and the partition define
+# is a link error waiting for the member to be pulled in for something else.
+if [ -n "${LINK_ARCHIVES:-}" ]; then
+    ARCH_ARGS=""
+    for a in $LINK_ARCHIVES; do ARCH_ARGS="$ARCH_ARGS --archive $a"; done
+    python3 link_defs.py --tools "$GCC-" $ARCH_ARGS "$OUT/appl-blob.o" $DATA_OBJ
+fi

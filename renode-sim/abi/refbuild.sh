@@ -478,11 +478,38 @@ NANO_OPTS="--target=arm-none-eabi --disable-multilib --disable-nls
 # variant rather than a second function.
 NEWLIB_SRC=$ROOT/src/$NEWLIB
 
+# The recipe a build directory was made from, written into it. A variant is
+# named by its options, and the archive the relink takes bodies from has to be
+# the archive the verdicts were measured against, so a directory whose recipe
+# differs from the one the script now describes is rebuilt rather than reused.
+# This is not hypothetical: newlib-nano-ll was once left configured against a
+# scratch tree (~/ref-build/src/newlib-ll) that no longer exists, so nothing in
+# the repo said what the archive the link was taking libc out of had been built
+# from.
+newlib_recipe() {
+    printf 'src %s\ncc %s\ncflags %s\nopts %s\n' \
+        "$NEWLIB_SRC" "$NEWLIB_CC" "$NEWLIB_CFLAGS" "$(echo $NANO_OPTS "$@")"
+}
+
+# An archive's code, in bytes: the file size is not a measurement, because every
+# member carries the source path in its DWARF and a longer path is a bigger
+# archive with identical text. text+data+bss of every member is the number that
+# reproduces.
+newlib_code_bytes() {
+    PATH=$NEWLIB_CC:$PATH arm-none-eabi-size "$1" \
+        | awk 'NR > 1 && NF >= 4 { s += $1 + $2 + $3 } END { print s + 0 }'
+}
+
 build_newlib() {
     # $1 is the build name, $2... any extra configure options.
     local name=$1; shift
     local d=$OUT/$name
-    [ -f "$d/arm-none-eabi/newlib/libc.a" ] && return 0
+    if [ -f "$d/arm-none-eabi/newlib/libc.a" ]; then
+        if [ "$(cat "$d/.recipe" 2>/dev/null)" = "$(newlib_recipe "$@")" ]; then
+            return 0
+        fi
+        echo "newlib $name was built from another recipe; rebuilding"
+    fi
     rm -rf "$d"; mkdir -p "$d"
     (cd "$d" && PATH=$NEWLIB_CC:$PATH "$NEWLIB_SRC/configure" \
         --prefix="$ROOT/install/$name" $NANO_OPTS "$@" \
@@ -491,7 +518,29 @@ build_newlib() {
     # built; libc.a and libm.a are what this is for, and they are complete.
     (cd "$d" && PATH=$NEWLIB_CC:$PATH make -j"$(nproc)" > make.log 2>&1) || true
     [ -f "$d/arm-none-eabi/newlib/libc.a" ] || { echo "newlib $name did not build"; return 1; }
+    newlib_recipe "$@" > "$d/.recipe"
     printf '%-16s %s\n' "$name" "$d/arm-none-eabi/newlib/libc.a"
+}
+
+# abi/newlib-sizes.txt records each archive's code bytes, and --check reports
+# what is there against it. A variant whose recipe is pinned above and whose
+# code bytes match is the archive abi/libc_check.py's verdicts and the relink's
+# packed layout were measured against.
+SIZES=$HERE/newlib-sizes.txt
+check_newlib() {
+    local bad=0 name archive want have
+    while read -r name archive want; do
+        [ -n "${name:-}" ] || continue
+        case $name in \#*) continue ;; esac
+        have=$(newlib_code_bytes "$OUT/$name/arm-none-eabi/newlib/$archive" 2>/dev/null || echo missing)
+        if [ "$have" = "$want" ]; then
+            printf '%-20s %-8s %10s  ok\n' "$name" "$archive" "$have"
+        else
+            printf '%-20s %-8s %10s  recorded %s\n' "$name" "$archive" "$have" "$want"
+            bad=1
+        fi
+    done < "$SIZES"
+    return $bad
 }
 build_newlib newlib-nano-big
 build_newlib newlib-nano-small --enable-newlib-reent-small --enable-newlib-reent-check-verify
@@ -534,6 +583,14 @@ build_newlib newlib-nano-ll --enable-newlib-io-long-long
 # open; abi/out/relink/libc-bodies.yaml carries it as __swbuf_r's verdict.
 build_newlib newlib-nano-ll-st --enable-newlib-io-long-long --disable-newlib-multithread
 NEWLIB_SRC=$ROOT/src/$NEWLIB
+
+# Every newlib archive the tree now holds, against abi/newlib-sizes.txt. The
+# recipes above pin what each variant is configured from, so a difference here
+# is a source or compiler change and not a stale build directory. `--check`
+# stops at this report; the builds it passes through are no-ops on a tree that
+# is already populated.
+check_newlib
+if [ "${1:-}" = --check ]; then exit 0; fi
 
 # ---- the Withings SAADC driver ---------------------------------------------
 # The image's SAADC driver is nrfx 2.1.0, not the SDK's nrfx 1.9.0, built by a

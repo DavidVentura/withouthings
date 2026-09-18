@@ -94,6 +94,15 @@ objs="$objs $OUT/nrfx_saadc.o"
 REPLACE_ARGS=""
 LIBS=""
 for g in $(echo "${REPLACE:-}" | tr , ' '); do REPLACE_ARGS="$REPLACE_ARGS --replace $g"; done
+# A prune's own replacement groups belong here too. The identity run is what
+# writes out/replace.h and out/replace-sources.txt, and the replacement sources
+# are compiled from that list before the real cut; a group the identity run did
+# not know about is a source nothing compiles and a stub symbol the link cannot
+# find. The prune's byte edits stay out of the identity run, because a
+# replacement is byte-identical and an edit is not.
+for g in $(python3 -c "import blobify, sys; print(\" \".join(blobify.prune_replacements(\"prunes.yaml\", sys.argv[1:])))" ${PRUNE:-}); do
+    case " $REPLACE_ARGS " in *" $g "*) ;; *) REPLACE_ARGS="$REPLACE_ARGS --replace $g" ;; esac
+done
 
 # SPILL is a list of linker input-file patterns, one --spill each: the flash
 # --layout pack frees is inside the app's own span and an archive named here
@@ -138,7 +147,17 @@ if [ -n "${DATA:-}" ]; then
     DATA_ARGS="--data-source $(cd ..; pwd)/out/data"
     DATA_OBJ="$OUT/appl-data.o"
 fi
-REPLACE_ARGS="$REPLACE_ARGS" ./identity.sh
+# The archives are the only part of the link line whose names neither
+# abi/boundary.yaml nor abi/replacements.yaml owns, so they are what the
+# partition has to be stopped from publishing a second definition of: the
+# blob's `__subdf3` section carries __aeabi_dadd as an interior label and
+# libgcc's _arm_addsubdf3.o defines it too. Both cuts of the object -- the
+# identity one and the real one -- get the same reservation, so the object the
+# byte-identical link proves is the object the real link takes.
+RESERVE_ARGS=""
+for a in $LIBS; do RESERVE_ARGS="$RESERVE_ARGS --reserve-defs $a"; done
+
+REPLACE_ARGS="$REPLACE_ARGS" RESERVE_ARGS="$RESERVE_ARGS" LINK_ARCHIVES="$LIBS" ./identity.sh
 
 # The replacement sources, compiled against the same generated header the rest
 # of the new code uses (out/hwa10.h) plus out/replace.h, which the identity run
@@ -169,9 +188,9 @@ for o in $objs $LIBS; do ALSO_ARGS="$ALSO_ARGS --also-linked $o"; done
 # means anything together with GC=1: the edits make the feature unreachable and
 # --gc-sections is what removes it.
 if [ -n "${GC:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" --gc $ALSO_ARGS ${LAYOUT:+--layout "$LAYOUT"} $SPILL_ARGS ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
+    python3 blobify.py -o "$OUT/appl-blob.o" --gc $ALSO_ARGS $RESERVE_ARGS ${LAYOUT:+--layout "$LAYOUT"} $SPILL_ARGS ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
 elif [ -n "${LAYOUT:-}" ] || [ -n "$REPLACE_ARGS" ] || [ -n "${PRUNE:-}" ] || [ -n "${DATA:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" ${LAYOUT:+--layout "$LAYOUT"} $SPILL_ARGS ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
+    python3 blobify.py -o "$OUT/appl-blob.o" ${LAYOUT:+--layout "$LAYOUT"} $SPILL_ARGS ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $RESERVE_ARGS $DATA_ARGS
 fi
 if [ -n "${DATA:-}" ]; then ./datagen.sh; fi
 
