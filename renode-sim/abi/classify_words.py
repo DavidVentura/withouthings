@@ -165,6 +165,12 @@ class Partition(object):
                              for i in range(len(blob)))
         self.slots = None
         self.copy_sources = None
+        # The recovered copies as ranges, and the memory-cell use summaries
+        # abi/ghidra/word_uses.py writes; together they answer what the code
+        # does with a word that only exists in RAM.
+        self.copies = ()
+        self.cells = {}
+
         # A word inside a function body that an instruction reads is data the
         # compiler put between two basic blocks; something pointing at it is a
         # pointer, not a stray constant that happens to land in code.
@@ -172,6 +178,21 @@ class Partition(object):
         # between two basic blocks, whether or not a literal load reads it;
         # something pointing at one is a pointer, not a stray constant.
         self.in_body_words = set(w["addr"] for w in words if self.in_code(w["addr"]))
+
+    def decides(self, word, overrides):
+        """Whether the copy shape is what decides `word`, and so is evidence.
+
+        The shape's docstring argues only for the case where nothing else
+        speaks: a word another rule decides is named by something else, and the
+        two RAM addresses its function happens to hold measure out a length
+        nothing says is this word's -- 0x50e8c and 0x50e94 both come out at
+        78904 bytes, which they cannot both be. The rules that run before it are
+        the hand-written overrides and the forward-flow pointer use, so a copy
+        is evidence exactly where neither fires.
+        """
+        return (word["addr"] in self.copy_sources
+                and word["addr"] not in overrides
+                and not set(word.get("uses") or ()) & POINTER_USES)
 
     def names_a_string(self, value):
         """Is `value` the first byte of a printable NUL-terminated run?
@@ -358,7 +379,39 @@ def copy_initialisers(items, refs, blob, part):
             if len(spans) == 1:
                 (dest, length), = spans
                 found[word] = (names[fn], dest, length)
-    return found
+    # A byte belongs to one object, so two candidates whose source runs overlap
+    # cannot both be a copy and neither of them is evidence: the shape is two
+    # RAM addresses in a memcpy caller's pool and a difference that measures out
+    # an uncovered run, and a function holding a pair far apart produces a run
+    # tens of kilobytes long that swallows whatever is near it. 0xd944c..0xec884
+    # and 0xde23c..0xe6aec are that, and they are each other's refutation.
+    order = sorted(found, key=lambda w: (held(w), found[w][2]))
+    dropped = set()
+    for i, w in enumerate(order):
+        for other in order[i + 1:]:
+            if held(other) >= held(w) + found[w][2]:
+                break
+            dropped.add(w)
+            dropped.add(other)
+    return {w: v for w, v in found.items() if w not in dropped}
+
+
+def initialiser_cell(part, addr):
+    """The RAM cell a flash word inside a recovered copy ends up as.
+
+    A RAM initialiser image is copied wholesale and then read only through RAM:
+    no instruction in flash names any word of it but the first, so every
+    structural signal here is blind to it and every one of its words that is not
+    plainly a number ends up on the review list. What the copy gives is a map --
+    the word at `source + off` is the word at `destination + off` -- and
+    abi/ghidra/word_uses.py's memory cells say what the code does with the value
+    it loads from an absolute address. Composing the two decides the flash word
+    by what its RAM image is used as.
+    """
+    for source, length, dest in part.copies:
+        if source <= addr < source + length:
+            return part.cells.get(dest + (addr - source))
+    return None
 
 
 def decide(word, part, contracts, overrides):
@@ -406,6 +459,23 @@ def decide(word, part, contracts, overrides):
         # reason: a window over two fields would have to reproduce the whole
         # address of a string's first byte.
         return "pointer", "names_a_string_run", ""
+    cell = initialiser_cell(part, word["addr"])
+    if cell:
+        # Inside a copied image, and the RAM word this one becomes has a use
+        # summary. Dereferenced or called is a pointer on the same evidence
+        # execution gives; used and never dereferenced is a constant, and this
+        # is the one place that half is safe to apply. Elsewhere "only compared"
+        # was falsified because a sentinel test and a bound test are the same
+        # instruction on a pointer -- but that argument needs a pointer to test,
+        # and a word the code only ever compares or scales, reached through a
+        # cell whose every reader is accounted for, has no such reading here:
+        # the cell is keyed by the absolute address, so every load of it is in
+        # the summary, which is not true of a value passed around in registers.
+        if set(cell) & POINTER_USES:
+            return "pointer", "ram_initialiser_mapping", \
+                "the RAM word it becomes is used as %s" % ", ".join(sorted(set(cell) & POINTER_USES))
+        return "constant", "ram_initialiser_mapping", \
+            "the RAM word it becomes is only %s" % ", ".join(sorted(cell))
     if word["kind"] in ("data", "gap") and not part.is_slot(word["addr"]):
         # The word is a window over an object whose stride is not four, so what
         # it reads is two halves of two fields, not one value the compiler put
@@ -470,7 +540,7 @@ def owning_item(part, target):
     return target, 0
 
 
-def classify(items, refs, blob, contracts, overrides, manifest):
+def classify(items, refs, blob, contracts, overrides, manifest, cells=()):
     outside = sorted(set(overrides) - set(w["addr"] for w in refs["words"]))
     if outside:
         sys.exit("abi/words.yaml declares %d addresses the candidate set does"
@@ -478,6 +548,12 @@ def classify(items, refs, blob, contracts, overrides, manifest):
     part = Partition(items, refs["words"], blob)
     part.slots = slot_objects(items, blob, part)
     part.copy_sources = copy_initialisers(items, refs, blob, part)
+    part.cells = dict(cells)
+    by_addr = {w["addr"]: w for w in refs["words"]}
+    part.copies = tuple((int.from_bytes(blob[at - APP_BASE:at - APP_BASE + 4],
+                                        "little"), length, dest)
+                        for at, (_, dest, length) in part.copy_sources.items()
+                        if part.decides(by_addr[at], overrides))
     rows, buckets, review, displacements = [], {}, {}, []
     first = [dict(word, **dict(zip(("class", "signal", "note"),
                                   decide(word, part, contracts, overrides))))
@@ -515,7 +591,7 @@ def classify(items, refs, blob, contracts, overrides, manifest):
                      # says is this word's (0x50e8c and 0x50e94 both come out
                      # at 78904 bytes, which they cannot both be).
                      "span": part.copy_sources[word["addr"]][2]
-                             if signal == "ram_initialiser_source" else 0})
+                             if part.decides(word, overrides) else 0})
         for site in word.get("pc_sites") or ():
             displacements.append({"word": word["addr"], "site": site,
                                   "target": (word["value"] + site + 4) & 0xFFFFFFFF})
@@ -538,7 +614,9 @@ def main():
     with open(os.path.join(args.export, "references.json")) as fh:
         refs = json.load(fh)
     with open(os.path.join(args.export, "word_uses.json")) as fh:
-        flow = {r["addr"]: r for r in json.load(fh)["uses"]}
+        flow_file = json.load(fh)
+    flow = {r["addr"]: r for r in flow_file["uses"]}
+    cells = {c["addr"]: sorted(c["uses"]) for c in flow_file.get("cells", ())}
     for word in refs["words"]:
         seen = flow.get(word["addr"])
         word["uses"] = sorted(seen["uses"]) if seen else []
@@ -550,7 +628,7 @@ def main():
     with open(args.manifest) as fh:
         manifest = yaml.safe_load(fh)
     rows, buckets, review, displacements = classify(items, refs, blob, contracts,
-                                                    overrides, manifest)
+                                                    overrides, manifest, cells)
     pointers = [r for r in rows if r["class"] == "pointer"]
     summary = {
         "candidates": len(rows),

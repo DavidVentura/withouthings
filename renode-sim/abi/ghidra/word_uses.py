@@ -432,6 +432,19 @@ while changed:
                     got[name] = count
                     changed = True
 
+# The memory cells the same walk filled in, which are the other half of what it
+# knows: a value stored to an absolute address and loaded back from it is one
+# value, so the cell says what the code does with whatever lives there. A pool
+# word answers "what is done with this address"; a cell answers "what is done
+# with the word at this address", and that second question is the only way to
+# decide a word inside a RAM initialiser image, which no instruction in flash
+# ever names -- the copy puts it in RAM and the code reads it there.
+cells = []
+for taint in sorted(k for k in uses if k[0] == "mem"):
+    got = uses[taint]
+    if got:
+        cells.append({"addr": taint[1], "uses": {k: got[k] for k in sorted(got)}})
+
 rows = []
 for target in sorted(pool_targets):
     got = uses.get(("pool", target), {})
@@ -442,11 +455,11 @@ for target in sorted(pool_targets):
                                    for k in edges.get(("pool", target), ()))})
 
 with open(os.path.join(out_dir, "word_uses.json"), "w") as fh:
-    fh.write('{"_generated": %s,\n"functions": %d,\n"uses": ['
+    fh.write('{"_generated": %s,\n"functions": %d,\n"cells": %s,\n"uses": ['
              % (json.dumps("by abi/ghidra/word_uses.py, do not edit: forward"
                            " p-code data flow from every pc-relative load to"
                            " every operation that consumes the loaded value"),
-                done))
+                done, json.dumps(cells)))
     for i, row in enumerate(rows):
         fh.write("%s\n%s" % ("," if i else "", json.dumps(row)))
     fh.write("]}\n")
@@ -454,3 +467,4 @@ with open(os.path.join(out_dir, "word_uses.json"), "w") as fh:
 println("word uses: %d rounds to close the call graph" % rounds)
 println("word uses: %d functions, %d pool words, %d with a use"
         % (done, len(pool_targets), sum(1 for r in rows if r["uses"])))
+println("word uses: %d memory cells have a use summary" % len(cells))
