@@ -217,6 +217,15 @@ def _spell(die, cus):
     if die.tag == "DW_TAG_volatile_type":
         return "volatile " + _spell(_type_of(die, cus), cus)
     if die.tag == "DW_TAG_pointer_type":
+        target = _strip(_type_of(die, cus), cus)
+        if target is not None and target.tag == "DW_TAG_subroutine_type":
+            # A function pointer's type text is a declarator and not a name
+            # followed by a star, so it is the one pointer this cannot spell by
+            # appending to its target.
+            params = [_spell(_type_of(k, cus), cus) for k in target.iter_children()
+                      if k.tag == "DW_TAG_formal_parameter"]
+            return "%s (*)(%s)" % (_spell(_type_of(target, cus), cus),
+                                   ", ".join(params) or "void")
         inner = _spell(_type_of(die, cus), cus)
         return inner + ("*" if inner.endswith("*") else " *")
     if die.tag == "DW_TAG_structure_type":

@@ -92,8 +92,8 @@ HAND = "hand"
 # abi/protocol.py carries the type id, the byte count and the field layout it
 # recovered, so where both reach an address the measured one keeps it.
 RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "string",
-        "wppcmd", "codec", "wppobj", "shell", "logtag", "logcb", "bleevt",
-        "logline", "helper", "prose"]
+        "wppcmd", "codec", "wppobj", "wuiview", "shell", "logtag", "logcb",
+        "bleevt", "logline", "helper", "prose"]
 
 
 def outranks(klass, other):

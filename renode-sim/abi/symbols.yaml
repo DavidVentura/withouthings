@@ -7011,6 +7011,13 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x897ac (toggle_home_face) calls 0x7fdd4; 64 bytes
+- address: 0x7fe30
+  name: wui_view_default_on_background
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the 91 of 127 view vtables that share this slot implementation log "on_background"
+    through the "[WUI] %s %s" line, which is the firmware's own word for the slot
 - address: 0x7fe44
   name: adxl367_tap_handler
   kind: function
@@ -7038,6 +7045,19 @@ symbols:
   class: logline
   evidence: the only line 0x804c0 logs, wlog('[WUI] Postponed event %d dropped')
     at 0x804de
+- address: 0x80b68
+  name: wui_view_default_on_foreground
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the 64 of 127 view vtables that share this slot implementation log "on_foreground"
+    through the "[WUI] %s %s" line, which is the firmware's own word for the slot
+- address: 0x80bb8
+  name: on_exit_sport_summary
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_sport_summary's
 - address: 0x80c48
   name: cant_re_enter_composer
   kind: function
@@ -7049,32 +7069,382 @@ symbols:
   class: logline
   evidence: the only line 0x80ed4 logs, wlog("[load_screen_list] Let's switch to
     preview screen!") at 0x80efe
+- address: 0x80f34
+  name: on_enter_hidden_screens
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_hidden_screens's
+- address: 0x80fb8
+  name: on_event_hidden_screens
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_hidden_screens's
+- address: 0x8101c
+  name: on_exit_hidden_screens
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_hidden_screens's
+- address: 0x81054
+  name: on_exit_hidden_screens_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_hidden_screens_2's
+- address: 0x81140
+  name: on_enter_demo_carousel
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_demo_carousel's
+- address: 0x81194
+  name: on_foreground_demo_carousel
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_demo_carousel's
+- address: 0x811b8
+  name: on_event_demo_carousel
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_demo_carousel's
 - address: 0x81220
   name: nrf_drv_clock_uninit
   kind: function
   class: match
   evidence: app, score 0.88 over 8 insns, direct
+- address: 0x81294
+  name: on_foreground_carousel_clocks
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_carousel_clocks's
 - address: 0x812a8
   name: nrf_drv_power_uninit
   kind: function
   class: match
   evidence: app, score 0.70 over 10 insns, direct
+- address: 0x812bc
+  name: on_enter_carousel_clocks
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_carousel_clocks's
+- address: 0x812d0
+  name: on_exit_carousel_clocks
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_carousel_clocks's
+- address: 0x8163c
+  name: on_background_sport
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x10 is wui_view_sport's
+- address: 0x818e8
+  name: on_enter_sport
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_sport's
+- address: 0x81920
+  name: on_exit_sport
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_sport's
+- address: 0x81adc
+  name: on_foreground_sport
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_sport's
+- address: 0x81bac
+  name: on_enter_sport_summary
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_sport_summary's
+- address: 0x81bf0
+  name: on_event_sport_summary
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_sport_summary's
+- address: 0x81c54
+  name: refresh_timer
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_timer's
+- address: 0x81e2c
+  name: on_background_timer
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x10 is wui_view_timer's
+- address: 0x81e4c
+  name: on_exit_timer
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_timer's
+- address: 0x81fa0
+  name: on_enter_timer
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_timer's
+- address: 0x81fd0
+  name: on_foreground_timer
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_timer's
+- address: 0x8216c
+  name: on_event_timer
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_timer's
+- address: 0x822cc
+  name: on_exit_stopwatch
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_stopwatch's
+- address: 0x82310
+  name: wui_view_default_on_enter
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the 12 of 127 view vtables that share this slot implementation log "on_enter"
+    through the "[WUI] %s %s" line, which is the firmware's own word for the slot
+- address: 0x8233c
+  name: on_enter_stopwatch
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_stopwatch's
+- address: 0x82464
+  name: refresh_stopwatch
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_stopwatch's
+- address: 0x82538
+  name: refresh_stopwatch_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_stopwatch_menu's
+- address: 0x82598
+  name: refresh_timer_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_timer_menu's
+- address: 0x825f8
+  name: on_event_clock_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_clock_menu's
+- address: 0x82618
+  name: on_event_stopwatch_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_stopwatch_menu's
+- address: 0x82638
+  name: on_event_timer_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_timer_menu's
+- address: 0x82658
+  name: wui_view_default_on_exit
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the 54 of 127 view vtables that share this slot implementation log "on_exit"
+    through the "[WUI] %s %s" line, which is the firmware's own word for the slot
+- address: 0x8267c
+  name: on_exit_stopwatch_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_stopwatch_menu's
+- address: 0x82694
+  name: on_exit_timer_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_timer_menu's
+- address: 0x826ac
+  name: on_enter_stopwatch_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_stopwatch_menu's
+- address: 0x826cc
+  name: on_enter_timer_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_timer_menu's
+- address: 0x826ec
+  name: refresh_clock_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_clock_menu's
+- address: 0x82920
+  name: refresh_alarm_popup
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_alarm_popup's
+- address: 0x82960
+  name: refresh_alarm_ringing
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_alarm_ringing's
+- address: 0x829bc
+  name: on_event_alarm_ringing
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_alarm_ringing's
 - address: 0x82a58
   name: toggle_alarm
   kind: function
   class: logline
   evidence: the only line 0x82a58 logs, wlog('TOGGLE ALARM') at 0x82a7c
+- address: 0x82b18
+  name: on_enter_alarm_popup
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_alarm_popup's
+- address: 0x82b3c
+  name: on_enter_alarm_ringing
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_alarm_ringing's
+- address: 0x82b9c
+  name: on_foreground_alarm_ringing
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_alarm_ringing's
+- address: 0x82c10
+  name: on_enter_alarm
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_alarm's
+- address: 0x82c4c
+  name: refresh_alarm
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_alarm's
+- address: 0x82d5c
+  name: on_event_alarm
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_alarm's
+- address: 0x82dd8
+  name: refresh_cycle
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_cycle's
 - address: 0x82fc8
   name: symptoms_init
   kind: function
   class: logline
   evidence: 'the only line 0x82fc8 logs, wlog(''Symptoms init: %d'') at 0x82fee'
+- address: 0x830f8
+  name: on_exit_cycletrackingsymptomsmenu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_cycletrackingsymptomsmenu's
+- address: 0x83148
+  name: on_enter_cycle
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_cycle's
+- address: 0x831a0
+  name: on_event_cycle
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_cycle's
+- address: 0x83210
+  name: on_event_charge_station
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_charge_station's
+- address: 0x832ac
+  name: refresh_charge_station
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_charge_station's
+- address: 0x8335c
+  name: on_foreground_charge_station
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_charge_station's
+- address: 0x83384
+  name: on_enter_charge_station
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_charge_station's
 - address: 0x833b4
   name: light_sensor_light_value
   kind: function
   class: logline
   evidence: the only line 0x833b4 logs, wlog('[LIGHT_SENSOR] light value = %d')
     at 0x83530
+- address: 0x83610
+  name: on_exit_factory_check
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_factory_check's
+- address: 0x83644
+  name: on_enter_factory_check
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_factory_check's
+- address: 0x8370c
+  name: on_event_factory_check
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_factory_check's
+- address: 0x8386c
+  name: refresh_factory_test_temperature
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_factory_test_temperature's
 - address: 0x83a78
   name: factory_temperature_factory_test_reset
   kind: function
@@ -7087,6 +7457,12 @@ symbols:
   class: logline
   evidence: the only line 0x83aa8 logs, wlog('[FACTORY] Temperature Factory_test')
     at 0x83aae
+- address: 0x83ae4
+  name: on_event_factory_test_temperature
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_factory_test_temperature's
 - address: 0x83ba4
   name: factory_screen_factory_test_set_mode
   kind: function
@@ -7099,18 +7475,354 @@ symbols:
   class: logline
   evidence: the only line 0x83bc0 logs, wlog('[FACTORY] Screen Factory_test') at
     0x83bc6
+- address: 0x83bf8
+  name: refresh_factory_test_screen
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_factory_test_screen's
+- address: 0x83c04
+  name: on_event_factory_test_screen
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_factory_test_screen's
 - address: 0x83c64
   name: failed_to_start_lapping_test
   kind: function
   class: logline
   evidence: the only line 0x83c64 logs, wlog('Failed to start lapping test task')
     at 0x83d58
+- address: 0x83ee0
+  name: refresh_lapping_test
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_lapping_test's
+- address: 0x84084
+  name: on_exit_lapping_test
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_lapping_test's
+- address: 0x840ac
+  name: on_enter_lapping_test
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_lapping_test's
+- address: 0x84110
+  name: on_event_factory_charging
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_factory_charging's
+- address: 0x84230
+  name: refresh_factory_charging
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_factory_charging's
+- address: 0x84308
+  name: on_exit_factory_charging
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_factory_charging's
+- address: 0x84344
+  name: on_enter_factory_charging
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_factory_charging's
+- address: 0x84394
+  name: on_background_goal
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x10 is wui_view_goal's
+- address: 0x843b4
+  name: on_exit_goal
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_goal's
+- address: 0x843dc
+  name: on_enter_goal
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_goal's
+- address: 0x844a4
+  name: refresh_goal
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_goal's
+- address: 0x84790
+  name: refresh_certif
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_certif's
+- address: 0x847cc
+  name: on_enter_factory_reset_coutdown
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_factory_reset_coutdown's
+- address: 0x847e0
+  name: on_enter_factory_reset
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_factory_reset's
+- address: 0x847f8
+  name: on_enter_erase_cache
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_erase_cache's
+- address: 0x848e8
+  name: refresh_factory_reset
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_factory_reset's
+- address: 0x84908
+  name: refresh_erase_cache
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_erase_cache's
+- address: 0x84928
+  name: on_event_factory_reset_coutdown
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_factory_reset_coutdown's
+- address: 0x84958
+  name: refresh_factory_reset_coutdown
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_factory_reset_coutdown's
+- address: 0x8497c
+  name: on_event_temperature_sensors
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_temperature_sensors's
+- address: 0x849a8
+  name: on_enter_temperature_sensors
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_temperature_sensors's
+- address: 0x849cc
+  name: refresh_demo_exit
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_demo_exit's
+- address: 0x84a30
+  name: on_event_factory_reset
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_factory_reset's
+- address: 0x84a4c
+  name: refresh_info
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_info's
+- address: 0x84b20
+  name: refresh_demo_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_demo_menu's
+- address: 0x84b98
+  name: on_event_demo_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_demo_menu's
+- address: 0x84c10
+  name: on_event_erase_cache
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_erase_cache's
+- address: 0x84c40
+  name: refresh_version
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_version's
+- address: 0x84ce4
+  name: refresh_temperature_sensors
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_temperature_sensors's
+- address: 0x84e48
+  name: refresh_certif_japan
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_certif_japan's
+- address: 0x84f50
+  name: on_event_hold_the_watch
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_hold_the_watch's
+- address: 0x84f8c
+  name: refresh_hold_the_watch
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_hold_the_watch's
+- address: 0x85090
+  name: on_enter_hold_the_watch
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_hold_the_watch's
+- address: 0x850e8
+  name: refresh_home
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_home's
 - address: 0x85164
   name: init_home_screen
   kind: function
   class: string
   evidence: wlog('%s dnd_state = %d \t alarm_found = %d \t alarm_activated = %d',
     'init_home_screen') at 0x851e6
+- address: 0x85208
+  name: on_foreground_home
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_home's
+- address: 0x85230
+  name: on_enter_home
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_home's
+- address: 0x853ec
+  name: on_event_low_battery_screen
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_low_battery_screen's
+- address: 0x85420
+  name: on_event_power_reserve_screen
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_power_reserve_screen's
+- address: 0x85608
+  name: on_foreground_shortcut
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_shortcut's
+- address: 0x85668
+  name: on_foreground_shortcut_pause
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_shortcut_pause's
+- address: 0x85680
+  name: on_enter_shortcut
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_shortcut's
+- address: 0x8572c
+  name: on_enter_shortcut_pause
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_shortcut_pause's
+- address: 0x85744
+  name: on_event_tighten_the_watch
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_tighten_the_watch's
+- address: 0x8578c
+  name: refresh_tighten_the_watch
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_tighten_the_watch's
+- address: 0x857e4
+  name: on_enter_tighten_the_watch
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_tighten_the_watch's
+- address: 0x85850
+  name: refresh_sleep_duration
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sleep_duration's
+- address: 0x85970
+  name: on_event_sleep_duration
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_sleep_duration's
+- address: 0x85988
+  name: on_exit_sleep_duration
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_sleep_duration's
+- address: 0x859b8
+  name: on_enter_sleep_duration
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_sleep_duration's
+- address: 0x85a50
+  name: on_event_ecg_fake
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_ecg_fake's
+- address: 0x85afc
+  name: refresh_ecg_result
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_ecg_result's
+- address: 0x85b80
+  name: refresh_ecg_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_ecg_selection's
+- address: 0x85c10
+  name: on_event_ecg_result
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_ecg_result's
+- address: 0x85c50
+  name: refresh_ecg_live_app
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_ecg_live_app's
 - address: 0x85e3c
   name: ecg_err_no_sample_queue__3
   kind: function
@@ -7121,6 +7833,18 @@ symbols:
   kind: function
   class: logline
   evidence: the only line 0x85e68 logs, wlog('[ECG] Err no sample queue') at 0x86088
+- address: 0x861d4
+  name: on_enter_ecg_meas
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_ecg_meas's
+- address: 0x86280
+  name: on_enter_ecg_fake
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_ecg_fake's
 - address: 0x862b8
   name: ecg_unexpected_diagnosis
   kind: function
@@ -7144,50 +7868,512 @@ symbols:
   kind: function
   class: logline
   evidence: 'the only line 0x8666c logs, wlog(''Display mode: %s'') at 0x8668a'
+- address: 0x866ac
+  name: on_enter_body_temperature
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_body_temperature's
+- address: 0x86930
+  name: refresh_body_temperature
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_body_temperature's
+- address: 0x86a3c
+  name: refresh_spo2_error
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_spo2_error's
+- address: 0x86ae0
+  name: on_enter_spo2_error
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_spo2_error's
 - address: 0x86b2c
   name: spo2_measures_nb_days_since_last
   kind: function
   class: logline
   evidence: the only line 0x86b2c logs, wlog('[SPO2] %d/%d measures | nb_days_since_last_meas=%lu/%d
     -> Display tuto') at 0x86b72
+- address: 0x86e30
+  name: refresh_spo2_meas_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_spo2_meas_2's
+- address: 0x86f28
+  name: on_event_spo2_meas
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_spo2_meas's
+- address: 0x8709c
+  name: on_event_dbt
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_dbt's
+- address: 0x870c0
+  name: refresh_dbt_duration
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_dbt_duration's
+- address: 0x87154
+  name: on_event_dbt_meas
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_dbt_meas's
+- address: 0x87330
+  name: refresh_dbt_meas
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_dbt_meas's
+- address: 0x875d4
+  name: refresh_dbt_result
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_dbt_result's
+- address: 0x876b4
+  name: on_enter_dbt_meas
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_dbt_meas's
+- address: 0x87704
+  name: on_enter_dbt_result
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_dbt_result's
+- address: 0x87778
+  name: on_event_dbt_duration
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_dbt_duration's
+- address: 0x87834
+  name: on_enter_dbt_mode
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_dbt_mode's
+- address: 0x87c94
+  name: refresh_back
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_back's
+- address: 0x87f60
+  name: on_event_ppg_afib
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_ppg_afib's
+- address: 0x884a8
+  name: on_enter_ecg_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_ecg_selection's
+- address: 0x884f0
+  name: on_event_cycletrackingsymptomsmenu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_cycletrackingsymptomsmenu's
+- address: 0x886c8
+  name: on_event_cycletrackingmenu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_cycletrackingmenu's
 - address: 0x88868
   name: gui_notif_resources_available
   kind: function
   class: logline
   evidence: the only line 0x88868 logs, wlog('[GUI] On notif resources available')
     at 0x8886e
+- address: 0x889d4
+  name: on_event_notif
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_notif's
+- address: 0x88bec
+  name: on_enter_activity_reminder
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_activity_reminder's
+- address: 0x88cec
+  name: on_enter_battery
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_battery's
+- address: 0x88f60
+  name: on_event_battery_charging
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_battery_charging's
+- address: 0x89030
+  name: on_exit_battery_charging
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_battery_charging's
+- address: 0x8905c
+  name: on_foreground_battery_charging
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_battery_charging's
+- address: 0x8910c
+  name: refresh_quicklook_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_quicklook_selection's
+- address: 0x891ec
+  name: on_event_quicklook_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_quicklook_selection's
+- address: 0x89288
+  name: refresh_dnd_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_dnd_selection's
 - address: 0x89374
   name: toggle_notifications
   kind: function
   class: logline
   evidence: the only line 0x89374 logs, wlog('TOGGLE NOTIFICATIONS') at 0x8937e
+- address: 0x893c4
+  name: on_enter_dnd_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_dnd_selection's
+- address: 0x89408
+  name: on_event_dnd_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_dnd_selection's
+- address: 0x8945c
+  name: on_event_hands_calibration_tuto
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_hands_calibration_tuto's
+- address: 0x8947c
+  name: refresh_hands_calibration_tuto
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_hands_calibration_tuto's
+- address: 0x895e4
+  name: on_enter_hands_calibration_tuto
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_hands_calibration_tuto's
+- address: 0x89608
+  name: on_enter_hands_calibration_settings
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_hands_calibration_settings's
 - address: 0x89630
   name: screen_calibration_no_motor_id_availabe
   kind: function
   class: logline
   evidence: the only line 0x89630 logs, wlog('[SCREEN_CALIBRATION] NO motor_id availabe')
     at 0x89702
+- address: 0x89724
+  name: on_event_hands_calibration_settings
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_hands_calibration_settings's
 - address: 0x897ac
   name: toggle_home_face
   kind: function
   class: logline
   evidence: the only line 0x897ac logs, wlog('TOGGLE HOME FACE') at 0x897b6
+- address: 0x897dc
+  name: on_event_settings
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_settings's
+- address: 0x897fc
+  name: on_event_hands_calib_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_hands_calib_menu's
+- address: 0x8981c
+  name: refresh_settings
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_settings's
+- address: 0x898dc
+  name: on_enter_hands_calib_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_hands_calib_menu's
+- address: 0x8990c
+  name: on_enter_install_go
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_install_go's
+- address: 0x89974
+  name: refresh_install_ok
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_install_ok's
+- address: 0x89998
+  name: refresh_install_nok
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_install_nok's
+- address: 0x899bc
+  name: refresh_install_go
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_install_go's
+- address: 0x89ba0
+  name: on_event_install_go
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_install_go's
+- address: 0x89bcc
+  name: on_enter_install_bt_key
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_install_bt_key's
+- address: 0x89be0
+  name: refresh_install_bt_key
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_install_bt_key's
+- address: 0x89c64
+  name: refresh_install_connected
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_install_connected's
+- address: 0x89ca8
+  name: on_exit_setup_flow
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_setup_flow's
+- address: 0x89ce4
+  name: on_event_setup_flow
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_setup_flow's
+- address: 0x89de0
+  name: on_enter_setup_flow
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_setup_flow's
+- address: 0x89e0c
+  name: on_event_install_bt_key
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_install_bt_key's
 - address: 0x89e48
   name: ui_update_timeout
   kind: function
   class: logline
   evidence: the only line 0x89e48 logs, wlog('UI update timeout') at 0x89eca
+- address: 0x89f14
+  name: on_exit_screen_update
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_screen_update's
+- address: 0x89f40
+  name: on_enter_screen_update
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_screen_update's
+- address: 0x89f8c
+  name: on_event_workout
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_workout's
+- address: 0x8a058
+  name: on_event_sport_notif
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_sport_notif's
+- address: 0x8a0b0
+  name: on_event_workout_low_batt
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_workout_low_batt's
+- address: 0x8a0d8
+  name: refresh_sport_time
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_time's
+- address: 0x8a118
+  name: refresh_sport_calories
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_calories's
+- address: 0x8a1a4
+  name: refresh_sport_gps_distance
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_gps_distance's
+- address: 0x8a248
+  name: refresh_sport_gps_pace_summary
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_gps_pace_summary's
+- address: 0x8a2fc
+  name: refresh_sport_elevation
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_elevation's
+- address: 0x8a398
+  name: on_enter_sport_pause
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_sport_pause's
+- address: 0x8a3c4
+  name: on_foreground_sport_pause
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_sport_pause's
+- address: 0x8a3f0
+  name: refresh_sport_congrats
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_congrats's
 - address: 0x8a460
   name: sport_congrats_go_to_summary
   kind: function
   class: logline
   evidence: the only line 0x8a460 logs, wlog('[SPORT CONGRATS] => Go to summary')
     at 0x8a484
+- address: 0x8a4b8
+  name: refresh_sport_pause
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_pause's
+- address: 0x8a554
+  name: on_enter_sport_congrats
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_sport_congrats's
+- address: 0x8a70c
+  name: refresh_sport_chrono
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_chrono's
+- address: 0x8a790
+  name: refresh_sport_gps_pace
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_gps_pace's
+- address: 0x8a80c
+  name: refresh_sport_gps_speed
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_gps_speed's
+- address: 0x8a8c8
+  name: refresh_pause_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_pause_selection's
+- address: 0x8aa10
+  name: on_event_pause_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_pause_selection's
+- address: 0x8aa50
+  name: on_foreground_pause_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_pause_selection's
+- address: 0x8aa64
+  name: on_enter_pause_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_pause_selection's
+- address: 0x8aa78
+  name: refresh_sport_heart_rate
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_heart_rate's
 - address: 0x8ac04
   name: clear_info
   kind: function
   class: logline
   evidence: the only line 0x8ac04 logs, wlog('Clear Info') at 0x8ac0e
+- address: 0x8ac5c
+  name: refresh_workout_temperature
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_workout_temperature's
+- address: 0x8adb0
+  name: on_enter_workout_temperature
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_workout_temperature's
 - address: 0x8ae3c
   name: widget_scrolling_text_e_inactivity
   kind: function
@@ -11697,16 +12883,622 @@ symbols:
   kind: label
   class: prose
   evidence: r1=event id; event 7 -> 0x304d8 battery percent init + 0x3060c give
+- address: 0xa57ba
+  name: on_event_menu_carousel
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_menu_carousel's
+- address: 0xa594e
+  name: refresh_menu_carousel
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_menu_carousel's
+- address: 0xa5956
+  name: on_enter_menu_carousel
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_menu_carousel's
+- address: 0xa597c
+  name: on_foreground_menu_carousel
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_menu_carousel's
+- address: 0xa5a1c
+  name: on_event_carousel_clocks
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_carousel_clocks's
+- address: 0xa5a42
+  name: on_event_carousel_clocks_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_carousel_clocks_2's
+- address: 0xa5a98
+  name: refresh_carousel_clocks_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_carousel_clocks_2's
+- address: 0xa5ac2
+  name: on_enter_hidden_screens_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_hidden_screens_2's
+- address: 0xa5aca
+  name: refresh_hidden_screens_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_hidden_screens_2's
+- address: 0xa5ad2
+  name: on_event_hidden_screens_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_hidden_screens_2's
+- address: 0xa5ada
+  name: refresh_demo_carousel_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_demo_carousel_2's
+- address: 0xa5ae2
+  name: on_enter_demo_carousel_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_demo_carousel_2's
+- address: 0xa5aea
+  name: on_exit_demo_carousel
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_demo_carousel's
+- address: 0xa5b02
+  name: on_exit_demo_carousel_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_demo_carousel_2's
+- address: 0xa5b0a
+  name: on_foreground_demo_carousel_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_demo_carousel_2's
+- address: 0xa5b12
+  name: on_event_demo_carousel_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_demo_carousel_2's
+- address: 0xa5b3a
+  name: on_foreground_carousel_clocks_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_carousel_clocks_2's
+- address: 0xa5b42
+  name: on_background_carousel_clocks_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x10 is wui_view_carousel_clocks_2's
+- address: 0xa5b4a
+  name: on_enter_carousel_clocks_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_carousel_clocks_2's
+- address: 0xa5b52
+  name: on_exit_carousel_clocks_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_carousel_clocks_2's
+- address: 0xa5b5a
+  name: on_background_sport_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x10 is wui_view_sport_2's
+- address: 0xa5b62
+  name: on_enter_sport_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_sport_2's
+- address: 0xa5b6a
+  name: on_exit_sport_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_sport_2's
+- address: 0xa5b72
+  name: refresh_sport_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_2's
+- address: 0xa5b7a
+  name: on_event_sport
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_sport's
+- address: 0xa5b8a
+  name: on_event_sport_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_sport_2's
+- address: 0xa5b92
+  name: on_foreground_sport_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_sport_2's
+- address: 0xa5b9a
+  name: on_enter_sport_summary_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_sport_summary_2's
+- address: 0xa5ba2
+  name: on_foreground_sport_summary
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_sport_summary's
+- address: 0xa5bba
+  name: on_foreground_sport_summary_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_sport_summary_2's
+- address: 0xa5bd8
+  name: refresh_sport_summary_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_summary_2's
+- address: 0xa5be0
+  name: on_event_sport_summary_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_sport_summary_2's
 - address: 0xa5c52
   name: stopwatch_helper_pause
   kind: function
   class: string
   evidence: wlog('[STOPWATCH] %s', 'stopwatch_helper_pause') at 0x31942
+- address: 0xa5c88
+  name: on_event_stopwatch
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_stopwatch's
+- address: 0xa5d30
+  name: on_event_alarm_popup
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_alarm_popup's
+- address: 0xa5d48
+  name: on_foreground_alarm_popup
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_alarm_popup's
+- address: 0xa5d6e
+  name: on_foreground_alarm
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_alarm's
+- address: 0xa5d82
+  name: on_enter_cycletrackingmenu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_cycletrackingmenu's
+- address: 0xa5da0
+  name: on_exit_factory_test
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_factory_test's
+- address: 0xa5da2
+  name: refresh_factory_test
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_factory_test's
+- address: 0xa5da4
+  name: on_event_factory_test
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_factory_test's
+- address: 0xa5da8
+  name: on_exit_factory_test_temperature
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_factory_test_temperature's
+- address: 0xa5dc8
+  name: on_exit_factory_test_screen
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_factory_test_screen's
+- address: 0xa5dd0
+  name: on_enter_factory_test
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_factory_test's
+- address: 0xa5dda
+  name: on_foreground_goal
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_goal's
+- address: 0xa5dde
+  name: on_event_goal
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_goal's
 - address: 0xa5e04
   name: sd_ble_version_get_copy_0xa5e04
   kind: function
   class: svc
   evidence: 'svc #0x65; bx lr at 0xa5e04; second copy of sd_ble_version_get (0x9b9a6)'
+- address: 0xa5e28
+  name: on_enter_demo_menu
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_demo_menu's
+- address: 0xa5e3e
+  name: on_enter_demo_exit
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_demo_exit's
+- address: 0xa5ea2
+  name: on_event_demo_exit
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_demo_exit's
+- address: 0xa5ee6
+  name: on_enter_info
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_info's
+- address: 0xa5f66
+  name: on_event_home
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_home's
+- address: 0xa5fd8
+  name: refresh_power_reserve_screen
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_power_reserve_screen's
+- address: 0xa5ffe
+  name: refresh_low_battery_screen
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_low_battery_screen's
+- address: 0xa60ea
+  name: on_foreground_ecg_fake
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_ecg_fake's
+- address: 0xa60fc
+  name: on_enter_ecg_live_app
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_ecg_live_app's
+- address: 0xa610e
+  name: on_event_ecg
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_ecg's
+- address: 0xa6130
+  name: on_event_ecg_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_ecg_selection's
+- address: 0xa6182
+  name: on_exit_hr_demo
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_hr_demo's
+- address: 0xa618a
+  name: on_enter_hr_demo
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_hr_demo's
+- address: 0xa620a
+  name: on_enter_hr
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_hr's
+- address: 0xa6326
+  name: on_background_spo2_meas_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x10 is wui_view_spo2_meas_2's
+- address: 0xa6358
+  name: on_event_spo2_error
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_spo2_error's
+- address: 0xa636e
+  name: on_foreground_spo2_meas_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_spo2_meas_2's
+- address: 0xa6468
+  name: on_event_spo2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_spo2's
+- address: 0xa649a
+  name: refresh_spo2_meas
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_spo2_meas's
+- address: 0xa64ce
+  name: on_event_spo2_meas_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_spo2_meas_2's
+- address: 0xa6538
+  name: on_event_dbt_result
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_dbt_result's
+- address: 0xa654a
+  name: on_exit_dbt_duration
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_dbt_duration's
+- address: 0xa655a
+  name: on_exit_dbt_meas
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_dbt_meas's
+- address: 0xa656a
+  name: on_background_dbt_meas
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x10 is wui_view_dbt_meas's
+- address: 0xa657a
+  name: on_foreground_dbt_meas
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_dbt_meas's
+- address: 0xa6590
+  name: on_enter_dbt_duration
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_dbt_duration's
+- address: 0xa65e4
+  name: on_event_dbt_mode
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_dbt_mode's
+- address: 0xa6702
+  name: on_event_back
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_back's
+- address: 0xa6754
+  name: on_enter_workout_low_batt
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_workout_low_batt's
+- address: 0xa6768
+  name: on_enter_ppg_afib
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_ppg_afib's
+- address: 0xa67b4
+  name: refresh_ppg_afib
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_ppg_afib's
+- address: 0xa6b14
+  name: refresh_battery
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_battery's
+- address: 0xa6b28
+  name: refresh_battery_charging
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_battery_charging's
+- address: 0xa6b46
+  name: on_enter_battery_charging
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_battery_charging's
+- address: 0xa6b56
+  name: on_event_clock_mode
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_clock_mode's
+- address: 0xa6b8e
+  name: on_event_quick_look
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_quick_look's
+- address: 0xa6bb2
+  name: on_enter_quicklook_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_quicklook_selection's
+- address: 0xa6c3a
+  name: on_background_hands_calibration_settings
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x10 is wui_view_hands_calibration_settings's
+- address: 0xa6c4c
+  name: on_exit_hands_calibration_tuto
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_hands_calibration_tuto's
+- address: 0xa6c54
+  name: on_foreground_hands_calibration_settings
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_hands_calibration_settings's
+- address: 0xa6c6c
+  name: on_enter_install_connected
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_install_connected's
+- address: 0xa6c7c
+  name: on_foreground_install_go
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x0c is wui_view_install_go's
+- address: 0xa6c96
+  name: on_enter_install_ok
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_install_ok's
+- address: 0xa6cb6
+  name: refresh_setup_flow_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_setup_flow_2's
+- address: 0xa6cbe
+  name: on_exit_setup_flow_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_setup_flow_2's
+- address: 0xa6cc6
+  name: on_event_setup_flow_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_setup_flow_2's
+- address: 0xa6cce
+  name: on_enter_setup_flow_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_setup_flow_2's
+- address: 0xa6cd6
+  name: on_event_screen_update
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_screen_update's
+- address: 0xa6cfe
+  name: on_enter_workout_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_workout_2's
+- address: 0xa6e74
+  name: refresh_workout_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_workout_2's
+- address: 0xa6e78
+  name: on_event_workout_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x00 is wui_view_workout_2's
+- address: 0xa6e8e
+  name: on_exit_workout_2
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x08 is wui_view_workout_2's
+- address: 0xa6eb2
+  name: on_enter_sport_notif
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x04 is wui_view_sport_notif's
+- address: 0xa6edc
+  name: refresh_sport_notif
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_notif's
+- address: 0xa6f86
+  name: on_background_pause_selection
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x10 is wui_view_pause_selection's
+- address: 0xa6fc6
+  name: refresh_sport_chrono_summary
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x14 is wui_view_sport_chrono_summary's
 - address: 0xa70fc
   name: gui_notif_resources_available__1
   kind: function
@@ -12353,6 +14145,888 @@ symbols:
     and the eleventh row is not one: its name pointer lands on a lone "e". index
     is a permutation of 0..9 and is what the rest of the image indexes the set by,
     since the rows are not stored in that order.'
+- address: 0xb91cc
+  name: wui_view_factory_test_screen
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Factory Test Screen' at 0xe6cc8),
+    which the "[WUI] %s %s" line prints; its vtable is 0xba6d4
+- address: 0xb91e0
+  name: wui_view_factory_test_temperature
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Factory Test Temperature' at 0xe6cdc),
+    which the "[WUI] %s %s" line prints; its vtable is 0xba6ac
+- address: 0xb91f4
+  name: wui_view_factory_test
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Factory Test' at 0xe6cf5), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba684
+- address: 0xb9208
+  name: wui_view_cycletrackingsymptomsmenu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('CycleTrackingSymptomsMenu' at 0xe6d02),
+    which the "[WUI] %s %s" line prints; its vtable is 0xba60c
+- address: 0xb9220
+  name: wui_view_cycletrackingmenu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('CycleTrackingMenu' at 0xe6d1c), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba5d0
+- address: 0xb9238
+  name: wui_view_cycle
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Cycle' at 0xc750c), which the "[WUI]
+    %s %s" line prints; its vtable is 0xba5a8
+- address: 0xb924c
+  name: wui_view_hands_calibration
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Hands Calibration' at 0xe6d2e), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb15c
+- address: 0xb9260
+  name: wui_view_spo2_error
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Spo2 error' at 0xe6d40), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbad24
+- address: 0xb9274
+  name: wui_view_spo2_meas
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('SPO2 meas' at 0xe6d4b), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbac94
+- address: 0xb929c
+  name: wui_view_spo2_meas_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('SPO2 meas' at 0xe6d4b), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbacdc
+- address: 0xb92c8
+  name: wui_view_spo2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('SPO2' at 0xe6d55), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbac68
+- address: 0xb92e8
+  name: wui_view_demo_exit
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Demo exit' at 0xe6d5a), which the
+    "[WUI] %s %s" line prints; its vtable is 0xba8b0
+- address: 0xb9300
+  name: wui_view_demo_menu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Demo Menu' at 0xe6d64), which the
+    "[WUI] %s %s" line prints; its vtable is 0xba88c
+- address: 0xb9318
+  name: wui_view_fake_notif_3
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Fake Notif 3' at 0xe6d6e), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbaf90
+- address: 0xb9378
+  name: wui_view_fake_notif_1
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Fake Notif 1' at 0xe6d7b), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbaf90
+- address: 0xb93d8
+  name: wui_view_ecg_fake
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('ECG fake' at 0xe6d88), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbaae0
+- address: 0xb93ec
+  name: wui_view_hr_demo
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('HR Demo' at 0xe6d91), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbabcc
+- address: 0xb9418
+  name: wui_view_notif
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Notif' at 0xd0cd7), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbaf50
+- address: 0xb9470
+  name: wui_view_timer
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Timer' at 0xc70c3), which the "[WUI]
+    %s %s" line prints; its vtable is 0xba454
+- address: 0xb9488
+  name: wui_view_timer_menu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Timer Menu' at 0xe6d99), which the
+    "[WUI] %s %s" line prints; its vtable is 0xba4fc
+- address: 0xb949c
+  name: wui_view_stopwatch
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('StopWatch' at 0xe7433), which the
+    "[WUI] %s %s" line prints; its vtable is 0xba47c
+- address: 0xb94b4
+  name: wui_view_stopwatch_menu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Stopwatch Menu' at 0xe6da4), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba4d4
+- address: 0xb94c8
+  name: wui_view_alarm
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Alarm' at 0xc6ecc), which the "[WUI]
+    %s %s" line prints; its vtable is 0xba524
+- address: 0xb94e0
+  name: wui_view_clock_menu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Clock Menu' at 0xe6db3), which the
+    "[WUI] %s %s" line prints; its vtable is 0xba4a4
+- address: 0xb9500
+  name: wui_view_missing_medical_permissions
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Missing Medical Permissions' at 0xe6dbe),
+    which the "[WUI] %s %s" line prints; its vtable is 0xba924
+- address: 0xb9518
+  name: wui_view_missing_medical_permissions_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Missing Medical Permissions' at 0xe6dbe),
+    which the "[WUI] %s %s" line prints; its vtable is 0xba924
+- address: 0xb9530
+  name: wui_view_hold_the_watch
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Hold the watch' at 0xe6dda), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba8d4
+- address: 0xb9548
+  name: wui_view_ecg_selection
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('ECG selection' at 0xe6de9), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbab20
+- address: 0xb9564
+  name: wui_view_ecg_result
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('ECG result' at 0xe6df7), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbab00
+- address: 0xb9578
+  name: wui_view_ecg_live_app
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('ECG live app' at 0xe6e02), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbaac0
+- address: 0xb958c
+  name: wui_view_ecg_meas
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('ECG meas' at 0xe6e0f), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbaaa0
+- address: 0xb95a0
+  name: wui_view_screen_update
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Screen Update' at 0xe6e18), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb320
+- address: 0xb95b8
+  name: wui_view_hands_calibration_install
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Hands Calibration Install' at 0xe6e26),
+    which the "[WUI] %s %s" line prints; its vtable is 0xbb15c
+- address: 0xb95cc
+  name: wui_view_install_nok
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Install NOK' at 0xe6e40), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbb2bc
+- address: 0xb95e0
+  name: wui_view_install_ok
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Install OK' at 0xe6e4c), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbb29c
+- address: 0xb95f4
+  name: wui_view_install_connected
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Install connected' at 0xe6e57), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb27c
+- address: 0xb9608
+  name: wui_view_install_bt_key
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Install BT key' at 0xe6e69), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb25c
+- address: 0xb961c
+  name: wui_view_install_go
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Install go' at 0xe6e78), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbb23c
+- address: 0xb9634
+  name: wui_view_tighten_the_watch
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Tighten the watch' at 0xe6e83), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba9cc
+- address: 0xb964c
+  name: wui_view_workout_low_batt
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('workout low batt' at 0xe6e95), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb3c0
+- address: 0xb96a4
+  name: wui_view_sport_notif
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport notif' at 0xe6ea6), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbb3a0
+- address: 0xb96bc
+  name: wui_view_pause_selection
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Pause selection' at 0xe6eb2), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb5e8
+- address: 0xb96d8
+  name: wui_view_sport_pause
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport pause' at 0xe6ec2), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbb4f8
+- address: 0xb96ec
+  name: wui_view_workout_temperature
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Workout Temperature' at 0xe6ece),
+    which the "[WUI] %s %s" line prints; its vtable is 0xbb638
+- address: 0xb9700
+  name: wui_view_sport_congrats
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport congrats' at 0xe6ee2), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb4d8
+- address: 0xb9714
+  name: wui_view_sport_elevation
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport elevation' at 0xe6ef1), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb4a8
+- address: 0xb9728
+  name: wui_view_sport_gps_speed
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport GPS speed' at 0xe6f01), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb5b8
+- address: 0xb973c
+  name: wui_view_sport_gps_pace_summary
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport GPS pace summary' at 0xe6f11),
+    which the "[WUI] %s %s" line prints; its vtable is 0xbb478
+- address: 0xb9754
+  name: wui_view_sport_gps_pace
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport GPS pace' at 0xe6f28), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb588
+- address: 0xb9768
+  name: wui_view_sport_gps_distance
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport GPS distance' at 0xe6f37),
+    which the "[WUI] %s %s" line prints; its vtable is 0xbb448
+- address: 0xb977c
+  name: wui_view_sport_time
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport Time' at 0xe6f4a), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbb3e8
+- address: 0xb9790
+  name: wui_view_sport_chrono_summary
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport Chrono Summary' at 0xe6f55),
+    which the "[WUI] %s %s" line prints; its vtable is 0xbb558
+- address: 0xb97a4
+  name: wui_view_sport_chrono
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport Chrono' at 0xe6f6a), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb528
+- address: 0xb97b8
+  name: wui_view_sport_heart_rate
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport Heart Rate' at 0xe6f77), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb608
+- address: 0xb97cc
+  name: wui_view_sport_calories
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport Calories' at 0xe6f88), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb418
+- address: 0xb97e0
+  name: wui_view_workout_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Workout 2' at 0xe6f97), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbb36c
+- address: 0xb97fc
+  name: wui_view_workout
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Workout' at 0xc6f8c), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbb340
+- address: 0xb981c
+  name: wui_view_charge_station
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Charge Station' at 0xe6fa1), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba640
+- address: 0xb9830
+  name: wui_view_battery_charging
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Battery charging' at 0xe6fb0), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb07c
+- address: 0xb9844
+  name: wui_view_low_battery_screen
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Low battery screen' at 0xe6fc1),
+    which the "[WUI] %s %s" line prints; its vtable is 0xba964
+- address: 0xb985c
+  name: wui_view_power_reserve_screen
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Power reserve screen' at 0xe6fd4),
+    which the "[WUI] %s %s" line prints; its vtable is 0xba944
+- address: 0xb9874
+  name: wui_view_factory_charging
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Factory charging' at 0xe6fe9), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba720
+- address: 0xb9888
+  name: wui_view_lapping_test
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Lapping test' at 0xe6ffa), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba6fc
+- address: 0xb989c
+  name: wui_view_temperature_sensors
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Temperature sensors' at 0xe7007),
+    which the "[WUI] %s %s" line prints; its vtable is 0xba868
+- address: 0xb98b0
+  name: wui_view_erase_cache
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Erase Cache' at 0xe701b), which the
+    "[WUI] %s %s" line prints; its vtable is 0xba844
+- address: 0xb98c4
+  name: wui_view_factory_reset_coutdown
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Factory reset coutdown' at 0xe7027),
+    which the "[WUI] %s %s" line prints; its vtable is 0xba820
+- address: 0xb98d8
+  name: wui_view_factory_reset
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Factory reset' at 0xc6ebe), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba7fc
+- address: 0xb98ec
+  name: wui_view_factory_check
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Factory check' at 0xe703e), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba660
+- address: 0xb9900
+  name: wui_view_info
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Info' at 0xe81f6), which the "[WUI]
+    %s %s" line prints; its vtable is 0xba7d8
+- address: 0xb9918
+  name: wui_view_certif_japan
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Certif Japan' at 0xe704c), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba7b4
+- address: 0xb992c
+  name: wui_view_certif
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Certif' at 0xe7059), which the "[WUI]
+    %s %s" line prints; its vtable is 0xba790
+- address: 0xb9940
+  name: wui_view_version
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Version' at 0xe7060), which the "[WUI]
+    %s %s" line prints; its vtable is 0xba76c
+- address: 0xb9954
+  name: wui_view_goal
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Goal' at 0xc6eef), which the "[WUI]
+    %s %s" line prints; its vtable is 0xba744
+- address: 0xb996c
+  name: wui_view_alarm_popup
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Alarm Popup' at 0xe7068), which the
+    "[WUI] %s %s" line prints; its vtable is 0xba54c
+- address: 0xb9980
+  name: wui_view_alarm_ringing
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Alarm ringing' at 0xe7074), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba574
+- address: 0xb9994
+  name: wui_view_activity_reminder
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Activity Reminder' at 0xe7082), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbafd4
+- address: 0xb99e8
+  name: wui_view_ppg_afib
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Ppg afib' at 0xe7094), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbaed4
+- address: 0xb9a40
+  name: wui_view_high_hr_popup
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('High HR Popup' at 0xe709d), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbaba4
+- address: 0xb9a98
+  name: wui_view_low_hr_popup
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Low HR Popup' at 0xe70ab), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbaba4
+- address: 0xb9af0
+  name: wui_view_nok
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('nok' at 0xe70b8), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbaeb4
+- address: 0xb9b10
+  name: wui_view_ok
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('ok' at 0xe1950), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbaeb4
+- address: 0xb9b30
+  name: wui_view_back
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Back' at 0xc6ed7), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbae8c
+- address: 0xb9b44
+  name: wui_view_shortcut_pause
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Shortcut pause' at 0xe70bc), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba9a8
+- address: 0xb9b5c
+  name: wui_view_shortcut
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Shortcut' at 0xe70cb), which the
+    "[WUI] %s %s" line prints; its vtable is 0xba984
+- address: 0xb9b74
+  name: wui_view_hands_calibration_settings
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Hands Calibration Settings' at 0xe70d4),
+    which the "[WUI] %s %s" line prints; its vtable is 0xbb19c
+- address: 0xb9b88
+  name: wui_view_hands_calibration_tuto
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Hands Calibration Tuto' at 0xe70ef),
+    which the "[WUI] %s %s" line prints; its vtable is 0xbb17c
+- address: 0xb9b9c
+  name: wui_view_hands_calib_menu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Hands calib menu' at 0xe7106), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb214
+- address: 0xb9bb4
+  name: wui_view_clock_mode
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Clock Mode' at 0xe7122), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbb0a4
+- address: 0xb9bcc
+  name: wui_view_quicklook_selection
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Quicklook selection' at 0xe712d),
+    which the "[WUI] %s %s" line prints; its vtable is 0xbb0f4
+- address: 0xb9be8
+  name: wui_view_quick_look
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Quick Look' at 0xe7141), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbb0cc
+- address: 0xb9c00
+  name: wui_view_home_face_settings
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Home Face Settings' at 0xe714c),
+    which the "[WUI] %s %s" line prints; its vtable is 0xbb1bc
+- address: 0xb9c18
+  name: wui_view_dnd_selection
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('DND selection' at 0xe715f), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb13c
+- address: 0xb9c34
+  name: wui_view_dnd_settings
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('DND Settings' at 0xe716d), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbb114
+- address: 0xb9c4c
+  name: wui_view_battery
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Battery' at 0xc6edc), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbb054
+- address: 0xb9c60
+  name: wui_view_settings
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Settings' at 0xe7171), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbb1e4
+- address: 0xb9c80
+  name: wui_view_body_temperature
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Body Temperature' at 0xe717a), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbac34
+- address: 0xb9ca4
+  name: wui_view_ecg_hr
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('ECG HR' at 0xe718b), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbac00
+- address: 0xb9ccc
+  name: wui_view_spo2_hr
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('SpO2 HR' at 0xe7192), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbac00
+- address: 0xb9cf4
+  name: wui_view_dbt_result
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('DBT result' at 0xe719a), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbae14
+- address: 0xb9d08
+  name: wui_view_dbt_meas
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('DBT meas' at 0xe71a5), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbadf4
+- address: 0xb9d20
+  name: wui_view_dbt_duration
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('DBT duration' at 0xe71ae), which
+    the "[WUI] %s %s" line prints; its vtable is 0xbadd4
+- address: 0xb9d3c
+  name: wui_view_dbt_mode
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('DBT Mode' at 0xe71bb), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbada0
+- address: 0xb9d54
+  name: wui_view_dbt
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('DBT' at 0xe120b), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbad74
+- address: 0xb9d74
+  name: wui_view_sleep_duration
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sleep duration' at 0xe71c4), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba9ec
+- address: 0xb9d90
+  name: wui_view_custo_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Custo 2' at 0xe71d3), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbaefc
+- address: 0xb9da8
+  name: wui_view_custo_1
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Custo 1' at 0xe71db), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbaefc
+- address: 0xb9dc0
+  name: wui_view_hr
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('HR' at 0xe7197), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbab70
+- address: 0xb9de8
+  name: wui_view_elevation
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Elevation' at 0xe71e3), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbab40
+- address: 0xb9e00
+  name: wui_view_ecg
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('ECG' at 0xc724d), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbaa74
+- address: 0xb9e20
+  name: wui_view_distance
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Distance' at 0xe71ed), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbaa44
+- address: 0xb9e38
+  name: wui_view_steps
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Steps' at 0xc6ee9), which the "[WUI]
+    %s %s" line prints; its vtable is 0xbad44
+- address: 0xb9e50
+  name: wui_view_calories
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Calories' at 0xe6f8e), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbaa14
+- address: 0xb9e68
+  name: wui_view_home
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Home' at 0xe71f6), which the "[WUI]
+    %s %s" line prints; its vtable is 0xba8f4
+- address: 0xb9e7c
+  name: wui_view_carousel_clocks
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Carousel Clocks' at 0xe71fb), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba37c
+- address: 0xb9e90
+  name: wui_view_carousel_clocks_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Carousel Clocks' at 0xe71fb), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba3a4
+- address: 0xb9ee0
+  name: wui_view_demo_carousel
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Demo carousel' at 0xe720b), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba194
+- address: 0xb9ef4
+  name: wui_view_demo_carousel_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Demo carousel' at 0xe720b), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba1bc
+- address: 0xb9f10
+  name: wui_view_hidden_screens
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Hidden screens' at 0xe7219), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba0f8
+- address: 0xb9f24
+  name: wui_view_hidden_screens_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Hidden screens' at 0xe7219), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba11c
+- address: 0xb9f3c
+  name: wui_view_sport_summary
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport summary' at 0xe7228), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba40c
+- address: 0xb9f50
+  name: wui_view_sport_summary_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport summary' at 0xe7228), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba434
+- address: 0xb9f70
+  name: wui_view_sport
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport' at 0xc78b5), which the "[WUI]
+    %s %s" line prints; its vtable is 0xba3c4
+- address: 0xb9f84
+  name: wui_view_sport_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Sport' at 0xc78b5), which the "[WUI]
+    %s %s" line prints; its vtable is 0xba3ec
+- address: 0xb9fa4
+  name: wui_view_setup_flow
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Setup flow' at 0xe7243), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbb2dc
+- address: 0xb9fb8
+  name: wui_view_setup_flow_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Setup flow' at 0xe7243), which the
+    "[WUI] %s %s" line prints; its vtable is 0xbb300
+- address: 0xba048
+  name: wui_view_menu_carousel
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the descriptor's own name string ('Menu carousel' at 0xe7266), which
+    the "[WUI] %s %s" line prints; its vtable is 0xba01c
 - address: 0xba070
   name: wui_view_table
   kind: table

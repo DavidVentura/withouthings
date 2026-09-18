@@ -6,21 +6,89 @@
 #ifndef WITHINGS_WUI_H
 #define WITHINGS_WUI_H
 
-/* the head of a WUI view descriptor, which is all of it that is fixed: the
-   fifteen views wui_view_table names agree on these five words and then
-   differ, some 24 bytes long and some 32, so the whole descriptor is not a
-   table and is not declared as one. vtable is what wui_push_now calls
+/* the head of a WUI view descriptor, which is all of it that is fixed. The
+   fifteen wui_view_table names are a sixth of them: 126 descriptors run
+   0xb91cc..0xb9fcc and a 127th is at 0xba048, each starting with a pointer to
+   one of 105 vtables whose first three words are Thumb function starts, and
+   125 of the 126 carry a name string. They agree on these five words and then
+   differ -- 56 are 20 bytes and the rest run to 124 -- so the whole descriptor
+   is not a table and is not declared as one. vtable is what wui_push_now calls
    through (+4 on entering, +0x10 on being covered), name is the string the
-   "[WUI] %s %s" and "[WUI] Can't push %s cause %s is active" lines print,
-   timeout_ms is 6000 in eleven of them and 60000, 21000 and 15000 in the
-   rest, reserved is zero in all fifteen and flags is 0x14 in all fifteen.
+   "[WUI] %s %s" and "[WUI] Can't push %s cause %s is active" lines print.
+   timeout_ms, reserved and flags are one call and not three fields: the
+   default on_enter (0x82310) does `ldr r0,[r0,#8]` and `ldrd r1,r2,[r0,#12]`
+   and hands all three to the timeout timer at 0x6f04c, which is why reserved
+   is 0x3e8 on "Notif" and 0x384 on "Shortcut" and zero elsewhere, and why
+   flags is 0x14 in all but the six carousel wrappers, where it is a RAM
+   address.
    */
 struct wui_view {
-    const void *vtable;
+    const struct wui_view_vtable *vtable;
     const char *name;
     unsigned int timeout_ms;
     unsigned int reserved;
     unsigned int flags;
+};
+
+/* What wui_push_now, wui_replace, the pop path and the frame tick call through,
+   named by the firmware's own words: the four lifecycle slots each log
+   "[WUI] %s %s" with a role string and the view's name, and those strings
+   (0xe6c09 "on_enter", 0xe6c4a "on_exit", 0xe6b94 "on_foreground", 0xe6b62
+   "on_background") are what the slot is called, not a reading of it. The
+   shared defaults are the same four lines and nothing else: 0x82310 and
+   0x7ff44 print on_enter, 0x82658 and 0x8101c on_exit, 0x80b68 and 0x8105c
+   on_foreground, 0x7fe30 and 0x80f88 on_background.
+
+   The table is not this long in every view. All 105 distinct vtables the
+   descriptors point at hold these six slots; 70 hold a seventh and 53 an
+   eighth, and the longest holds sixteen. Only the six below have a
+   caller that fixes what they are, so only the six are declared: +0x18 (the
+   default 0xa5be8 is `return 0`, 37 of 70) and +0x1c (0xa5bec, 25 of 53) are
+   dispatched from 0x80f7a, 0x8013c, 0x80cea, 0xa580e and 0xa59c6 without any
+   of those sites saying what they are for, and above +0x20 the slot count
+   itself is per-view.
+   */
+struct wui_view_vtable {
+    /* The view is offered an event and says whether it took it. 0xa55de walks
+       the stack with this: it calls +0 on the top view, returns 1 if the call
+       returned non-zero, and otherwise pops and offers event 2 to whatever
+       came up. 0x80fc8 offers the event to a container's child before the
+       container looks at it itself. A 60 s display run sees the codes 0xd,
+       0x10 and 1 arrive here on "Menu carousel", and the 1 is followed
+       immediately by on_exit. */
+    int (*on_event)(struct wui_view *view, int event);
+    /* The view has become the top of the stack. wui_push_now tail-calls it at
+       0x7ffe0 after storing the view, wui_replace at 0x80252 after taking the
+       old one off, and 0xa5712 when the root is set. The default (0x82310)
+       starts the view's own timeout from timeout_ms, reserved and flags --
+       `ldrd r1,r2,[r0,#12]` with `ldr r0,[r0,#8]` into 0x6f04c -- so those
+       three words are one timer call and not three unrelated fields. */
+    void (*on_enter)(struct wui_view *view);
+    /* The view is coming off the stack. 0xa55b2 calls it from the pop before
+       the count is decremented, 0x8023a from the replace before the new view
+       is stored, 0xa5708 when the root is replaced. The default (0x82658)
+       cancels the timeout with 0x6f04c(0, 0, 0). */
+    void (*on_exit)(struct wui_view *view);
+    /* The view above this one went away and this one is on top again: the tail
+       call of the pop at 0xa55da, taken only when the pop was not told to stay
+       quiet. A container forwards it to its child (0x81082). */
+    void (*on_foreground)(struct wui_view *view);
+    /* A view is about to be pushed on top of this one: wui_push_now calls it
+       at 0x7ffae on the old top before the new one is stored. A container
+       forwards it to its child (0x80fa4). */
+    void (*on_background)(struct wui_view *view);
+    /* The frame. 0x806d4 calls it on the top of the stack once per display
+       frame -- 52 of them a second, 19.2 ms apart, through the whole of a 60 s
+       run -- with both arguments zero while nothing is moving, and during a
+       transition it is called twice, once on the incoming view and once on the
+       view at 0x20021ba8+0x28 that is sliding out (0x80736 and 0x80742), with
+       the pixel offset each is to be drawn at. The second argument is zero at
+       every one of those three sites. It is not `draw` as a leaf view would
+       mean it: 0x81002 calls the same slot on a carousel with a view pointer,
+       which is that class's way of saying which child to show, so the slot is
+       named for when it is called and not for one class's reading of the
+       argument. */
+    void (*refresh)(struct wui_view *view, int offset, int zero);
 };
 
 /* bits points at the 1-bit-per-pixel rows in the image itself: 0xbc02c's
@@ -158,6 +226,138 @@ extern unsigned char rre_asset_bodies_c[4771];
    begins.
    */
 extern unsigned char wui_push_args[40];
+
+/* The WUI view descriptors, named by abi/wui_views.py out of the name string
+   each one carries. Only the twenty-byte head is declared: the tail is
+   per-view -- 56 of the 126 descriptors are twenty bytes and the rest run to
+   124 -- and no two views agree on it, so a declaration past the head would
+   be a claim about one view written as if it held for all of them. */
+extern const struct wui_view wui_view_factory_test_screen;
+extern const struct wui_view wui_view_factory_test_temperature;
+extern const struct wui_view wui_view_factory_test;
+extern const struct wui_view wui_view_cycletrackingsymptomsmenu;
+extern const struct wui_view wui_view_cycletrackingmenu;
+extern const struct wui_view wui_view_cycle;
+extern const struct wui_view wui_view_hands_calibration;
+extern const struct wui_view wui_view_spo2_error;
+extern const struct wui_view wui_view_spo2_meas;
+extern const struct wui_view wui_view_spo2_meas_2;
+extern const struct wui_view wui_view_spo2;
+extern const struct wui_view wui_view_demo_exit;
+extern const struct wui_view wui_view_demo_menu;
+extern const struct wui_view wui_view_fake_notif_3;
+extern const struct wui_view wui_view_fake_notif_1;
+extern const struct wui_view wui_view_ecg_fake;
+extern const struct wui_view wui_view_hr_demo;
+extern const struct wui_view wui_view_notif;
+extern const struct wui_view wui_view_timer;
+extern const struct wui_view wui_view_timer_menu;
+extern const struct wui_view wui_view_stopwatch;
+extern const struct wui_view wui_view_stopwatch_menu;
+extern const struct wui_view wui_view_alarm;
+extern const struct wui_view wui_view_clock_menu;
+extern const struct wui_view wui_view_missing_medical_permissions;
+extern const struct wui_view wui_view_missing_medical_permissions_2;
+extern const struct wui_view wui_view_hold_the_watch;
+extern const struct wui_view wui_view_ecg_selection;
+extern const struct wui_view wui_view_ecg_result;
+extern const struct wui_view wui_view_ecg_live_app;
+extern const struct wui_view wui_view_ecg_meas;
+extern const struct wui_view wui_view_screen_update;
+extern const struct wui_view wui_view_hands_calibration_install;
+extern const struct wui_view wui_view_install_nok;
+extern const struct wui_view wui_view_install_ok;
+extern const struct wui_view wui_view_install_connected;
+extern const struct wui_view wui_view_install_bt_key;
+extern const struct wui_view wui_view_install_go;
+extern const struct wui_view wui_view_tighten_the_watch;
+extern const struct wui_view wui_view_workout_low_batt;
+extern const struct wui_view wui_view_sport_notif;
+extern const struct wui_view wui_view_pause_selection;
+extern const struct wui_view wui_view_sport_pause;
+extern const struct wui_view wui_view_workout_temperature;
+extern const struct wui_view wui_view_sport_congrats;
+extern const struct wui_view wui_view_sport_elevation;
+extern const struct wui_view wui_view_sport_gps_speed;
+extern const struct wui_view wui_view_sport_gps_pace_summary;
+extern const struct wui_view wui_view_sport_gps_pace;
+extern const struct wui_view wui_view_sport_gps_distance;
+extern const struct wui_view wui_view_sport_time;
+extern const struct wui_view wui_view_sport_chrono_summary;
+extern const struct wui_view wui_view_sport_chrono;
+extern const struct wui_view wui_view_sport_heart_rate;
+extern const struct wui_view wui_view_sport_calories;
+extern const struct wui_view wui_view_workout_2;
+extern const struct wui_view wui_view_workout;
+extern const struct wui_view wui_view_charge_station;
+extern const struct wui_view wui_view_battery_charging;
+extern const struct wui_view wui_view_low_battery_screen;
+extern const struct wui_view wui_view_power_reserve_screen;
+extern const struct wui_view wui_view_factory_charging;
+extern const struct wui_view wui_view_lapping_test;
+extern const struct wui_view wui_view_temperature_sensors;
+extern const struct wui_view wui_view_erase_cache;
+extern const struct wui_view wui_view_factory_reset_coutdown;
+extern const struct wui_view wui_view_factory_reset;
+extern const struct wui_view wui_view_factory_check;
+extern const struct wui_view wui_view_info;
+extern const struct wui_view wui_view_certif_japan;
+extern const struct wui_view wui_view_certif;
+extern const struct wui_view wui_view_version;
+extern const struct wui_view wui_view_goal;
+extern const struct wui_view wui_view_alarm_popup;
+extern const struct wui_view wui_view_alarm_ringing;
+extern const struct wui_view wui_view_activity_reminder;
+extern const struct wui_view wui_view_ppg_afib;
+extern const struct wui_view wui_view_high_hr_popup;
+extern const struct wui_view wui_view_low_hr_popup;
+extern const struct wui_view wui_view_nok;
+extern const struct wui_view wui_view_ok;
+extern const struct wui_view wui_view_back;
+extern const struct wui_view wui_view_shortcut_pause;
+extern const struct wui_view wui_view_shortcut;
+extern const struct wui_view wui_view_hands_calibration_settings;
+extern const struct wui_view wui_view_hands_calibration_tuto;
+extern const struct wui_view wui_view_hands_calib_menu;
+extern const struct wui_view wui_view_clock_mode;
+extern const struct wui_view wui_view_quicklook_selection;
+extern const struct wui_view wui_view_quick_look;
+extern const struct wui_view wui_view_home_face_settings;
+extern const struct wui_view wui_view_dnd_selection;
+extern const struct wui_view wui_view_dnd_settings;
+extern const struct wui_view wui_view_battery;
+extern const struct wui_view wui_view_settings;
+extern const struct wui_view wui_view_body_temperature;
+extern const struct wui_view wui_view_ecg_hr;
+extern const struct wui_view wui_view_spo2_hr;
+extern const struct wui_view wui_view_dbt_result;
+extern const struct wui_view wui_view_dbt_meas;
+extern const struct wui_view wui_view_dbt_duration;
+extern const struct wui_view wui_view_dbt_mode;
+extern const struct wui_view wui_view_dbt;
+extern const struct wui_view wui_view_sleep_duration;
+extern const struct wui_view wui_view_custo_2;
+extern const struct wui_view wui_view_custo_1;
+extern const struct wui_view wui_view_hr;
+extern const struct wui_view wui_view_elevation;
+extern const struct wui_view wui_view_ecg;
+extern const struct wui_view wui_view_distance;
+extern const struct wui_view wui_view_steps;
+extern const struct wui_view wui_view_calories;
+extern const struct wui_view wui_view_home;
+extern const struct wui_view wui_view_carousel_clocks;
+extern const struct wui_view wui_view_carousel_clocks_2;
+extern const struct wui_view wui_view_demo_carousel;
+extern const struct wui_view wui_view_demo_carousel_2;
+extern const struct wui_view wui_view_hidden_screens;
+extern const struct wui_view wui_view_hidden_screens_2;
+extern const struct wui_view wui_view_sport_summary;
+extern const struct wui_view wui_view_sport_summary_2;
+extern const struct wui_view wui_view_sport;
+extern const struct wui_view wui_view_sport_2;
+extern const struct wui_view wui_view_setup_flow;
+extern const struct wui_view wui_view_setup_flow_2;
+extern const struct wui_view wui_view_menu_carousel;
 
 /* tables */
 /* The image assets the UI draws. 70 rows of {u8 width, u8 height, u16 zero,
