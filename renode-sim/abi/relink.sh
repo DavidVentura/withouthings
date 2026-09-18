@@ -4,8 +4,8 @@
 #
 #   abi/relink.sh            # needs ~/ref-build populated by abi/refbuild.sh
 #
-# Only the kernel is built: the boundary (abi/boundary.yaml) crosses into nrfx
-# exactly once, the SAADC, and that driver is Withings-modified and kept.
+# The kernel and the SAADC driver: those are the two open-source pieces the
+# boundary (abi/boundary.yaml) crosses into.
 set -eu
 cd "$(dirname "$0")"
 ROOT=${ROOT:-$HOME/ref-build}
@@ -67,6 +67,25 @@ for s in "$PORT/GCC/nrf52/port.c" "$PORT/CMSIS/nrf52/port_cmsis.c" \
     "$GCC-gcc" $ARCH $COMMON $INC -DconfigUSE_TIMERS=0 -DREF_ASSERT=2 -c "$s" -o "$o"
     objs="$objs $o"
 done
+
+# The SAADC driver. It is nrfx 2.1.0 rather than the SDK's nrfx 1.9.0, with
+# abi/patches/nrfx/saadc-withings.patch applied (refbuild.sh stages the tree,
+# because the body check that established the patch builds from the same one),
+# and the patched tree's headers have to come before the SDK's so the driver and
+# the app agree on the 12-byte nrfx_saadc_channel_t. abi/config-relink/nrfx_glue.h
+# is already first on INC and supplies the two glue macros the image shows.
+# The driver reaches two app symbols, both named in abi/boundary.yaml's
+# lib_to_app: memset and withings_irq_priority_set.
+NRFX=$ROOT/nrfx/nrfx-2.1.0-withings
+if [ ! -d "$NRFX" ]; then
+    echo "$NRFX is missing; run abi/refbuild.sh" >&2
+    exit 1
+fi
+NRFX_INC="-I$NRFX -I$NRFX/hal -I$NRFX/drivers -I$NRFX/drivers/include -I$NRFX/soc"
+"$GCC-gcc" $ARCH $COMMON -Iconfig-relink $NRFX_INC $INC -DNRFX_SAADC_ENABLED=1 \
+    -DSAADC_ENABLED=1 -DNRF_LOG_ENABLED=0 \
+    -c "$NRFX/drivers/src/nrfx_saadc.c" -o "$OUT/nrfx_saadc.o"
+objs="$objs $OUT/nrfx_saadc.o"
 
 # REPLACE=<group>[,<group>] binds every reference into the sections
 # abi/replacements.yaml's group names to the symbol its source defines; a prune

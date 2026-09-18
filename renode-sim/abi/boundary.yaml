@@ -397,69 +397,73 @@ app_to_lib:
       The reference's portYIELD is inlined with __SEV(); the image's is out of
       line without it, which is why it never matched by body.
 
-  # nrfx SAADC: Withings-modified, matches no nrfx release. Kept as-is so the
-  # blob keeps calling its own copy (DEVELOPMENT.md says to recover the
-  # modification at source level later).
+  # nrfx SAADC. The driver is nrfx 2.1.0 with four source changes, recovered as
+  # abi/patches/nrfx/saadc-withings.patch and built into the library by
+  # abi/relink.sh, so these are relocated like the kernel. The two that stay are
+  # static in the source and so unnameable by a relocation; every site of both is
+  # inside the blob's own SAADC_IRQHandler, which the vector entry below no
+  # longer points at, so they are sites of dead code and --gc-sections drops them
+  # with it.
   - addr: 0x7dc2c
     sites: 2
     symbol: "saadc_event_limits_handle"
     keep: true
-    how: "reference 0.81"
-    confidence: "medium"
+    how: "static in nrfx_saadc.c; both sites are inside the blob's SAADC_IRQHandler"
+    confidence: "high"
   - addr: 0x7dcc0
     sites: 1
     symbol: "nrfx_saadc_init"
-    keep: true
-    how: "symbols.txt"
+    how: "body reproduces the image byte for byte (abi/body_check.py)"
     confidence: "high"
   - addr: 0x7dd10
     sites: 1
-    symbol: null
-    keep: true
-    confidence: "low"
-    how: "UNNAMED saadc entry; NRFX_ASSERT on cb+0x22 then a channel index compared against 8"
+    symbol: "nrfx_saadc_channels_config"
+    confidence: "high"
+    how: >
+      The NRFX_ASSERT on cb+0x22 and the channel count compared against 8 are
+      its two asserts; the caller at 0x7e374 passes the stack array of 12-byte
+      nrfx_saadc_channel_t it has just filled.
   - addr: 0x7de34
     sites: 1
-    symbol: "nrfx_saadc_channel_init"
-    keep: true
-    how: "symbols.txt"
+    symbol: "nrfx_saadc_simple_mode_set"
+    how: "body reproduces the image byte for byte; NOT nrfx_saadc_channel_init, which is the 1.x API"
     confidence: "high"
   - addr: 0x7de94
     sites: 1
     symbol: "nrfx_saadc_advanced_mode_set"
-    keep: true
-    how: "reference 0.45 (best)"
-    confidence: "low"
+    how: "instruction for instruction the nrfx 2.1.0 body; only its register allocation differs"
+    confidence: "high"
   - addr: 0x7df40
     sites: 3
     tail_sites: 1
-    symbol: "nrfx_saadc_buffer_convert"
-    keep: true
-    how: "symbols.txt (reference calls it nrfx_saadc_buffer_set, 0.89)"
+    symbol: "nrfx_saadc_buffer_set"
+    how: "body reproduces the image byte for byte"
     confidence: "high"
   - addr: 0x7dfb8
     sites: 2
-    symbol: "nrfx_saadc_sample_convert"
-    keep: true
-    how: "symbols.txt"
+    symbol: "nrfx_saadc_mode_trigger"
+    how: >
+      The blocking arm of the simple mode is what symbols.txt called
+      saadc_sample_blocking; the advanced arm below it is the one that moves the
+      secondary buffer into the primary.
     confidence: "high"
   - addr: 0x7e108
     sites: 2
     symbol: "nrfx_saadc_abort"
-    keep: true
-    how: "symbols.txt + reference 0.53"
-    confidence: "medium"
+    how: "body reproduces the image byte for byte"
+    confidence: "high"
   - addr: 0x7e138
     sites: 1
     symbol: "nrfx_saadc_uninit"
-    keep: true
-    how: "reference score 1.000"
+    how: "body reproduces the image byte for byte"
     confidence: "high"
   - addr: 0xa4e3a
     sites: 4
     symbol: "nrf_saadc_event_clear"
     keep: true
-    how: "matches.yaml 1.000 (constprop)"
+    how: >
+      nrf_saadc_event_clear.constprop.0, a static of the same object; all four
+      sites are inside the blob's SAADC_IRQHandler.
     confidence: "high"
 
   # nrf_fprintf: SDK code, but the image's copy is wired into Withings' own wlog
@@ -523,9 +527,14 @@ lib_to_app:
     how: "app callback out of the 0x81220 SDK-library span"
   - addr: 0x933c6
     sites: 1
-    symbol: null
-    confidence: "low"
-    how: "called from nrfx_saadc_init; inside the kept SAADC driver, so it never crosses the relink boundary"
+    symbol: "withings_irq_priority_set"
+    confidence: "high"
+    how: >
+      nrfx_saadc_init's NRFX_IRQ_PRIORITY_SET: (IRQn, priority), traps when
+      (0x13 >> priority) & 1 -- the three priorities the SoftDevice reserves --
+      and tail-calls the SVC wrapper at 0x37164. It is a real call in the image
+      where the SDK's glue writes NVIC IPR inline, which is the first thing the
+      body diff established; abi/config-relink/nrfx_glue.h declares it.
   - addr: 0xa86c2
     sites: 2
     symbol: "memset"
@@ -587,7 +596,7 @@ data_references:
   kernel_ram: [0x200218fc, 0x20021a84]
   heap4_ram: [0x2001ae04, 0x2001af9c]
   app_pool_words_into_kernel_ram: 0
-  app_pool_words_into_library_flash: 2   # 0x7e2a9 and 0xa4fa1, both SAADC, both kept
+  app_pool_words_into_library_flash: 2   # 0x7e2a9 and 0xa4fa1, both SAADC
   vector_table:
     # appl.bin's vector table at 0x27000. Three entries are kernel code and must
     # move with the relink, or the image ends up with two kernels: the source one
@@ -608,8 +617,11 @@ data_references:
     - index: 23
       word: 0x7e16d
       symbol: "SAADC_IRQHandler"
-      relocate: false
-      note: "part of the kept Withings SAADC driver"
+      relocate: true
+      note: >
+        The driver is linked from source, so its interrupt has to enter the
+        source handler; nothing else in the image names 0x7e16c, so the blob's
+        copy goes dead with this one word.
     - index: 1
       word: 0x34939
       symbol: "Reset_Handler"

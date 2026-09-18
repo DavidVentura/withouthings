@@ -1,0 +1,148 @@
+Withings' changes to the nrfx 2.1.0 SAADC driver, recovered from appl v3411.
+
+The base is nrfx 2.1.0 (2.2.0's nrfx_saadc.c differs only in the sign of one
+NRFX_ASSERT in nrfx_saadc_limits_set, a body the image does not carry, so the
+two are indistinguishable here). It is not the nrfx the rest of the build
+uses: nRF5 SDK 17.1.0 ships nrfx 1.9.0, whose SAADC driver is the old
+channel_init/buffer_convert API, and matching that API's bodies is what made
+the driver look unrecoverable. The timer-driven mode with SAMPLERATE and
+OVERSAMPLE and the two-buffer EasyDMA handover the sim work found are stock
+nrfx 2.x advanced mode, not a Withings addition.
+
+Build, measured the same way: GCC 13.2.Rel1 (the toolchain that also builds
+the image's newlib 4.3.0.20230120) at -Os, without -fno-builtin, and
+abi/config-relink/nrfx_glue.h for the two glue macros. Under that
+configuration nine of the driver's fourteen bodies reproduce the image byte
+for byte once the relocated fields are masked (abi/body_check.py); the five
+that do not are listed at the end.
+
+Hunk 1, nrfx_saadc.h, the channel descriptor gains an idle input pair.
+  nrfx_saadc_channel_t grows from 10 bytes to 12: two nrf_saadc_input_t
+  fields before pin_p/pin_n, so channel_index moves from offset 9 to 11.
+  The image's stride is 12 (`movs r2,#0xc; mla r1,r2,r6,r7` in
+  nrfx_saadc_channels_config) and it reads the index at +0xb, the idle pair
+  at +7/+8 and the active pair at +9/+10.
+
+Hunk 2, saadc_generic_mode_set, the activation test is a right shift.
+  `(ch_to_activate_mask >> ch_pos) & 1` instead of
+  `ch_to_activate_mask & (1 << ch_pos)`: the image computes `lsr.w r3,r0,r2;
+  ands r3,r3,#1` where the release computes `lsl.w r3,r6,r2; ands r3,r3,r0`.
+  No behaviour changes; with this hunk the body is byte-identical.
+
+Hunk 3, nrfx_saadc_channels_config, configure parks the channel and
+activation connects it.
+  The release records pin_p/pin_n in the control block and leaves the
+  hardware PSELP/PSELN alone until saadc_generic_mode_set activates the
+  channel. The image programs PSELN then PSELP at configure time from the
+  new idle pair, and records the active pair in the control block. It also
+  drops NRFX_ASSERT(pin_p) in favour of skipping the channel: a channel
+  whose pin_p is NRF_SAADC_INPUT_DISABLED is configured in hardware but
+  never marked in channels_configured, so nothing can activate it.
+  What the caller does with it (0x7e2e4, the ECG/battery channel table)
+  is the point: it passes the idle pair as DISABLED/DISABLED and the real
+  input in pin_p, so the analog input is disconnected from the moment the
+  channel is configured until the moment it is activated.
+  The already-configured test is the same right shift as hunk 2, and the
+  index is lifted into a local, which the image's register allocation shows.
+
+Hunk 4, nrfx_saadc_mode_trigger, the blocking simple mode stops before it
+disables.
+  After clearing END the image triggers TASKS_STOP and spins on
+  EVENTS_STOPPED before writing ENABLE = 0; the release disables directly.
+  This is the path the battery read takes.
+
+The five bodies that do not reproduce, and what is left in each. None of
+them is a semantic difference: every instruction is accounted for.
+  saadc_event_limits_handle  57/92 B   three independent instructions
+                                       scheduled in a different order.
+  nrfx_saadc_channels_config 250/268 B the image's GCC sank the
+                                       m_cb.channels_configured store out of
+                                       the loop behind a flag (the
+                                       store-motion transformation) and ours
+                                       reloads it each iteration; the
+                                       resulting register allocation differs
+                                       throughout.
+  nrfx_saadc_advanced_mode_set 141/172 B ours allocates 16 stack bytes by
+                                       pushing r0-r3 where the image uses
+                                       `sub sp,#0x14` and one more
+                                       callee-saved register.
+  nrfx_saadc_mode_trigger    296/344 B same shape: the image pre-loads
+                                       size_primary and uses r6-r8 where
+                                       ours re-loads and if-converts the
+                                       buffer handover with `itttt`.
+  SAADC_IRQHandler            10/316 B one `ldr r2,[r4,#8]` scheduled one
+                                       instruction earlier.
+No -f flag tried moves any of these without breaking a body that already
+reproduces (-fno-if-conversion, -fno-if-conversion2, -fno-schedule-insns2,
+-fira-algorithm=priority, -fira-region, -fsched-pressure, -fno-caller-saves,
+-fno-gcse, -funroll-loops, -fno-tree-ter, -O1/-O2/-O3), and neither does
+GCC 12.3, 13.3 or 14.2.
+
+--- a/drivers/include/nrfx_saadc.h
++++ b/drivers/include/nrfx_saadc.h
+@@ -139,6 +139,8 @@
+ typedef struct
+ {
+     nrf_saadc_channel_config_t channel_config; ///< Channel hardware configuration.
++    nrf_saadc_input_t          pin_p_idle;     ///< Positive input parked on the channel while it is not activated.
++    nrf_saadc_input_t          pin_n_idle;     ///< Negative input parked on the channel while it is not activated.
+     nrf_saadc_input_t          pin_p;          ///< Input positive pin selection.
+     nrf_saadc_input_t          pin_n;          ///< Input negative pin selection.
+     uint8_t                    channel_index;  ///< Channel index.
+--- a/drivers/src/nrfx_saadc.c
++++ b/drivers/src/nrfx_saadc.c
+@@ -204,7 +204,7 @@
+         nrf_saadc_burst_t burst_to_set;
+         nrf_saadc_input_t pselp;
+         nrf_saadc_input_t pseln;
+-        if (ch_to_activate_mask & (1 << ch_pos))
++        if ((ch_to_activate_mask >> ch_pos) & 1)
+         {
+             pselp = m_cb.channels_pselp[ch_pos];
+             pseln = m_cb.channels_pseln[ch_pos];
+@@ -277,19 +277,24 @@
+ 
+     for (i = 0; i < channel_count; i++)
+     {
+-        if (m_cb.channels_configured & (1 << p_channels[i].channel_index))
++        uint8_t ch = p_channels[i].channel_index;
++
++        if ((m_cb.channels_configured >> ch) & 1)
+         {
+             // This channel is already configured!
+             return NRFX_ERROR_INVALID_PARAM;
+         }
+-        nrf_saadc_channel_init(NRF_SAADC,
+-                               p_channels[i].channel_index,
+-                               &p_channels[i].channel_config);
+-
+-        NRFX_ASSERT(p_channels[i].pin_p);
+-        m_cb.channels_pselp[p_channels[i].channel_index] = p_channels[i].pin_p;
+-        m_cb.channels_pseln[p_channels[i].channel_index] = p_channels[i].pin_n;
+-        m_cb.channels_configured |= 1U << p_channels[i].channel_index;
++        nrf_saadc_channel_init(NRF_SAADC, ch, &p_channels[i].channel_config);
++        nrf_saadc_channel_input_set(NRF_SAADC, ch,
++                                    p_channels[i].pin_p_idle,
++                                    p_channels[i].pin_n_idle);
++
++        if (p_channels[i].pin_p)
++        {
++            m_cb.channels_pselp[ch] = p_channels[i].pin_p;
++            m_cb.channels_pseln[ch] = p_channels[i].pin_n;
++            m_cb.channels_configured |= 1U << ch;
++        }
+     }
+ 
+     return NRFX_SUCCESS;
+@@ -495,6 +500,11 @@
+                 while (!nrf_saadc_event_check(NRF_SAADC, NRF_SAADC_EVENT_END))
+                 {}
+                 nrf_saadc_event_clear(NRF_SAADC, NRF_SAADC_EVENT_END);
++
++                nrf_saadc_task_trigger(NRF_SAADC, NRF_SAADC_TASK_STOP);
++                while (!nrf_saadc_event_check(NRF_SAADC, NRF_SAADC_EVENT_STOPPED))
++                {}
++                nrf_saadc_event_clear(NRF_SAADC, NRF_SAADC_EVENT_STOPPED);
+                 nrf_saadc_disable(NRF_SAADC);
+             }
+             break;

@@ -422,6 +422,7 @@ build_mbedtls mbedtls_O2 -O2
 # Older nrfx trees, if they were fetched next to the SDK.
 for n in "$ROOT"/nrfx/nrfx-*; do
     [ -d "$n" ] || continue
+    case "$n" in *-withings) continue ;; esac   # built below, by its own compiler
     ver=$(basename "$n" | sed 's/nrfx-//;s/\./_/g')
     NRFX=$n
     build_variant "n${ver}_Os" -Os "-DREF_ASSERT=0" $TCB
@@ -516,6 +517,41 @@ fi
 NEWLIB_SRC=$NEWLIB_LL_SRC
 build_newlib newlib-nano-ll --enable-newlib-io-long-long
 NEWLIB_SRC=$ROOT/src/$NEWLIB
+
+# ---- the Withings SAADC driver ---------------------------------------------
+# The image's SAADC driver is nrfx 2.1.0, not the SDK's nrfx 1.9.0, built by a
+# different compiler from the rest of the variants above: the same GCC 13.2 that
+# builds the image's newlib. abi/patches/nrfx/saadc-withings.patch carries the
+# source changes and the evidence for each; abi/config-relink/nrfx_glue.h the two
+# glue macros. abi/body_check.py checks the result against the image, which is
+# what pins all three.
+SAADC_SRC=$ROOT/nrfx/nrfx-2.1.0-withings
+if [ -d "$ROOT/nrfx/nrfx-2.1.0" ] && [ ! -d "$SAADC_SRC" ]; then
+    cp -r "$ROOT/nrfx/nrfx-2.1.0" "$SAADC_SRC"
+    for p in "$HERE"/patches/nrfx/*.patch; do
+        (cd "$SAADC_SRC" && patch -p1 -s < "$p")
+    done
+fi
+
+build_saadc() {
+    local name="$1" src="$2"
+    local od="$OUT/$name"
+    [ -d "$src" ] || return 0
+    rm -rf "$od"; mkdir -p "$od"
+    local cc=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/bin/arm-none-eabi
+    local ninc="-I$src -I$src/hal -I$src/drivers -I$src/drivers/include -I$src/soc -I$src/mdk"
+    # -fno-builtin is deliberately not passed: the image's channels_config calls
+    # memset for the pselp/pseln reset, which only the builtin emits.
+    local common="-ffunction-sections -fdata-sections -fno-strict-aliasing
+     -fshort-enums -std=gnu99 -g3 -w -Os"
+    "$cc-gcc" $ARCH $common $DEFS -I"$HERE/config-relink" $ninc $INC \
+        -c "$src/drivers/src/nrfx_saadc.c" -o "$od/nrfx_saadc.o" 2>"$od/err.log" || {
+        echo "$name did not build; see $od/err.log"; return 1; }
+    "$cc-ld" -r -o "$od/ref.elf" "$od/nrfx_saadc.o"
+    printf '%-14s %s\n' "$name" "$od/ref.elf"
+}
+build_saadc saadc_stock     "$ROOT/nrfx/nrfx-2.1.0"
+build_saadc saadc_withings  "$SAADC_SRC"
 
 # ---- CMSIS-DSP and KissFFT --------------------------------------------------
 # Candidates for the float and signal-processing blocks inside SENSORS_SYNC and

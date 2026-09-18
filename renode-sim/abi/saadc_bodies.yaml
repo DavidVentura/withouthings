@@ -1,0 +1,24 @@
+# The SAADC driver as the image lays it out, for abi/body_check.py:
+#
+#   python3 abi/body_check.py --elf ~/ref-build/build/saadc_withings/ref.elf \
+#       --pairs abi/saadc_bodies.yaml
+#
+# The addresses are the partition's function starts in 0x7db08..0x7e2a0 plus the
+# one static the linker placed away from the rest (0xa4e3a). The names are the
+# nrfx 2.1.0 symbols the bodies matched, in the object's own emission order; the
+# three symbols.txt had from the 1.x API (channel_init, buffer_convert,
+# sample_convert) were the same three bodies under their 2.x names.
+- {symbol: saadc_busy_check,                  address: 0x7db08}
+- {symbol: saadc_generic_mode_set,            address: 0x7db24}
+- {symbol: saadc_event_limits_handle,         address: 0x7dc2c}
+- {symbol: saadc_channel_count_get,           address: 0x7dc88}
+- {symbol: nrfx_saadc_init,                   address: 0x7dcc0}
+- {symbol: nrfx_saadc_channels_config,        address: 0x7dd10}
+- {symbol: nrfx_saadc_simple_mode_set,        address: 0x7de34}
+- {symbol: nrfx_saadc_advanced_mode_set,      address: 0x7de94}
+- {symbol: nrfx_saadc_buffer_set,             address: 0x7df40}
+- {symbol: nrfx_saadc_mode_trigger,           address: 0x7dfb8}
+- {symbol: nrfx_saadc_abort,                  address: 0x7e108}
+- {symbol: nrfx_saadc_uninit,                 address: 0x7e138}
+- {symbol: SAADC_IRQHandler,                  address: 0x7e16c}
+- {symbol: nrf_saadc_event_clear.constprop.0, address: 0xa4e3a}
