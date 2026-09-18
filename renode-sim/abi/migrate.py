@@ -13,6 +13,11 @@ writes:
   abi/symbols.yaml                  where a thing is: one entry per address
   abi/facts.yaml                    what is neither C nor an address
 
+abi/hwa10.yaml, renode-sim/symbols.txt and abi/gen.py are what this replaces.
+The first two are still here because they are this file's input: the converter
+is re-run against their final state when the naming tools land, and they go
+with the converter once they have nothing left to say.
+
 The split is the point. A prototype is C and belongs in a file a C compiler
 reads; an address is a measurement of this image and belongs in a file the
 tools read; a region argued for in prose is neither. The converter exists so
