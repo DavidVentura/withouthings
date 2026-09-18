@@ -2,6 +2,8 @@
 """The address map: what is where in the app image.
 
     python3 abi/symbols.py                 # a count per kind and per class
+    python3 abi/symbols.py --check         # every hand entry against the
+                                           # measurements on disk
 
 abi/symbols.yaml holds one entry per known address. It says nothing about
 shape: a prototype, a struct or a table's element type is C and lives in
@@ -35,7 +37,7 @@ yaml.add_representer(
     lambda d, v: d.represent_mapping("tag:yaml.org,2002:map", v.items()))
 
 ORDER = ["address", "name", "aliases", "kind", "class", "module", "corrects",
-         "supersedes", "evidence"]
+         "supersedes", "note", "evidence"]
 
 HEADER = """\
 # HWA10 (ScanWatch 2) application firmware v3411 -- the address map.
@@ -52,6 +54,10 @@ HEADER = """\
 # name a derivation produced), so the claim only holds against the
 # measurement it was made against and the refusal fires again when that
 # measurement moves instead of the stale claim winning silently.
+# A derivation never displaces a hand entry and is never silently dropped
+# in favour of one: an address the two disagree on is a refusal until the
+# map accounts for it. `abi/symbols.py --check` re-runs that over the
+# committed file, so a hand entry cannot go stale unnoticed.
 
 """
 
@@ -96,6 +102,17 @@ RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "string",
         "logcb", "bleevt", "logline", "helper", "prose"]
 
 
+# The derivations that settle an address rather than read it: a byte verdict
+# against a reference build, an archive body the call graph confirms, a `svc #N`
+# whose number is the SoftDevice call, a dispatch-table row that names its own
+# handler, a descriptor or a store reading the writer re-checks every run. Where
+# one of these holds an address the hand list may not also carry it -- agreeing
+# or not, because an agreeing duplicate is what hides which of the two claims
+# the repo is standing on.
+SETTLED = ("libc", "libm", "extlib", "svc", "syscall", "string",
+           "wppcmd", "shell", "bleevt", "codec", "wuiview", "store")
+
+
 def outranks(klass, other):
     """Is `klass` stronger evidence for an address than `other`?"""
     if klass not in RANK or other not in RANK:
@@ -116,6 +133,10 @@ class Symbol(object):
         self.evidence = row.get("evidence")
         self.corrects = row.get("corrects")
         self.supersedes = row.get("supersedes")
+        # What a hand knew about the address that the tool that measures it does
+        # not say. `evidence` is the measurement's and is rewritten with it;
+        # this is not, and survives the rewrite.
+        self.note = row.get("note")
         self.row = row
 
     def __repr__(self):
@@ -151,12 +172,20 @@ class Map(object):
     def in_app(self):
         return [s for s in self.symbols if APP_BASE <= s.address < APP_END]
 
-    def rewrite(self, records, owns, path=None):
+    def rewrite(self, records, owns, path=None, verified=()):
         """Replace every entry whose class is in `owns` with `records`.
 
         A measurement owns its own classes and nothing else, so re-running the
         tool that made them refreshes them in place and leaves the hand map and
         the other tools' classes untouched.
+
+        `verified` is the subset of the records' addresses this run settled
+        rather than read: a byte verdict against a reference build, an archive
+        body found where the call graph says it is, a descriptor or a table row
+        the run re-checked. The hand list holds what no tool establishes, so an
+        address in it is one the hand list may not also carry -- agreeing or
+        not. An agreeing duplicate is the worse of the two, because nothing
+        says which of the two claims the repo is standing on.
 
         A derivation may not contradict a hand entry and may not silently
         overwrite one. Where the map already carries the name or the address,
@@ -172,15 +201,28 @@ class Map(object):
             for name in [s.name] + s.aliases:
                 by_name[name] = s
         by_address = dict((s.address, s) for s in kept)
-        corrects = dict((s.name, s.corrects) for s in kept
+        # A correction and a supersession are claims about an address, not
+        # about the class of the row that carries them, so a row this run is
+        # about to rewrite still makes them.
+        corrects = dict((s.name, s.corrects) for s in self.symbols
                         if s.corrects is not None)
-        supersedes = dict((s.supersedes, s.address) for s in kept
+        supersedes = dict((s.supersedes, s.address) for s in self.symbols
                           if s.supersedes is not None)
 
         # An alias is a second name a hand gave the address, not part of the
         # measurement, so it survives the tool that rewrites the entry under it.
-        aliases = dict(((s.address, s.name), s.aliases)
-                       for s in self.symbols if s.klass in owns and s.aliases)
+        # The same holds for a note, the module partition, and a correction a
+        # hand made to where a measurement landed: none of them is the
+        # measurement, and all of them outlive a re-run of it.
+        carried = {}
+        for s in self.symbols:
+            if s.klass not in owns:
+                continue
+            keep = dict((k, s.row[k]) for k in
+                        ("aliases", "note", "module", "corrects", "supersedes")
+                        if s.row.get(k))
+            if keep:
+                carried[(s.address, s.name)] = keep
 
         rows = [s.row for s in kept]
         displaced = set()
@@ -195,15 +237,32 @@ class Map(object):
             if name in by_name:
                 if corrects.get(name) == address:
                     continue
-                mapped = by_name[name].address
-                if mapped != address:
+                held = by_name[name]
+                if held.address != address:
                     raise Refusal("%s is at 0x%x here and 0x%x in the map"
-                                  % (name, address, mapped))
+                                  % (name, address, held.address))
+                if held.klass == HAND and address in verified:
+                    raise Refusal(
+                        "0x%x is %s by hand and %s by this run, which settles"
+                        " it -- %s.\n    Delete the hand entry; anything it"
+                        " says that the record does not goes in `note`, which"
+                        " survives the rewrite."
+                        % (address, name, name,
+                           record.get("evidence") or "no evidence recorded"))
                 continue
             if supersedes.get(name) == address:
                 continue
             if address in by_address:
                 held = by_address[address]
+                if held.klass == HAND:
+                    raise Refusal(
+                        "0x%x is %s (%s) in the map and %s here -- %s.\n"
+                        "    A hand entry is neither displaced by a derivation"
+                        " nor silently kept over one: either delete it, or give"
+                        " it `supersedes: %s` and the reason it stands."
+                        % (address, held.name, held.klass, name,
+                           record.get("evidence") or "no evidence recorded",
+                           name))
                 if outranks(held.klass, record["class"]):
                     continue
                 if not outranks(record["class"], held.klass):
@@ -218,9 +277,8 @@ class Map(object):
                               % (name, named[name], address))
             taken[address], named[name] = name, address
             row = dict(record, address=address)
-            second = aliases.get((address, name))
-            if second:
-                row["aliases"] = second
+            for key, value in carried.get((address, name), {}).items():
+                row.setdefault(key, value)
             rows.append(row)
         rows = [row for row in rows if id(row) not in displaced]
         # The map refuses a duplicate address or name on load, so building one
@@ -243,9 +301,81 @@ def load(path=None):
     return Map([Symbol(row) for row in doc["symbols"]])
 
 
+def measurements():
+    """Every name a measurement on disk proposes, as (name, address) pairs.
+
+    abi/matches.yaml and abi/autonames.yaml are the two measurements that write
+    their records out as files; the rest (abi/stores.py, abi/wui_views.py,
+    abi/protocol.py) re-derive theirs from the image on every run and refuse
+    through `rewrite` as they go.
+    """
+    proposed = []
+    for name in ("matches.yaml", "autonames.yaml"):
+        path = os.path.join(HERE, name)
+        if not os.path.exists(path):
+            continue
+        with open(path) as fh:
+            doc = yaml.safe_load(fh)
+        for row in doc.get("functions") or []:
+            settled = (row.get("verdict") in ("exact", "masked")
+                       or row.get("class") in SETTLED)
+            proposed.append((row["name"], int(row["address"]) & ~1, settled))
+    return proposed
+
+
+def check(m):
+    """The refusal `rewrite` makes, re-run over the map as it was committed.
+
+    A hand entry is neither displaced by a derivation nor silently kept over
+    one, so every address where the two disagree has to be accounted for in the
+    map: `supersedes` names the derivation the hand entry replaced, `corrects`
+    the address a body match landed on. The claim is held to the measurement it
+    was made against rather than standing on its own, so a derivation that
+    moves to another name re-raises here instead of the stale claim winning.
+
+    A `supersedes` the current run no longer proposes is not by itself a
+    finding: several of the derivation rules read the map, so a hand entry
+    changes what would have been derived at its own address and the name it
+    replaced cannot be re-proposed while it stands.
+    """
+    at = collections.defaultdict(set)
+    settled = {}
+    for name, address, is_settled in measurements():
+        at[address].add(name)
+        if is_settled:
+            settled[address] = name
+    bad = []
+    for s in m.symbols:
+        if s.klass != HAND:
+            continue
+        if s.address in settled:
+            bad.append("0x%x is %s by hand and %s by a measurement that"
+                       " settles it. The hand list holds what no tool"
+                       " establishes: delete the entry, and move anything it"
+                       " says that the record does not into `note`."
+                       % (s.address, s.name, settled[s.address]))
+            continue
+        others = at.get(s.address, set()) - {s.name}
+        if others and s.supersedes not in others and s.corrects is None:
+            bad.append("0x%x is %s in the map and %s in the measurement, which"
+                       " the entry does not account for: it supersedes %s."
+                       " Delete the entry, or give it `supersedes: %s` and the"
+                       " reason it stands."
+                       % (s.address, s.name, ", ".join(sorted(others)),
+                          s.supersedes or "nothing", sorted(others)[0]))
+    return bad
+
+
 def main():
     import collections
     m = load()
+    if "--check" in sys.argv:
+        bad = check(m)
+        for line in bad:
+            print("abi/symbols.yaml: %s" % line)
+        print("%d hand entries, %d measured names, %d unaccounted"
+              % (len(m.of_class(HAND)), len(measurements()), len(bad)))
+        return sys.exit(1 if bad else 0)
     print("%d symbols, %d in the app image" % (len(m.symbols), len(m.in_app())))
     for label, counter in (("kind", collections.Counter(s.kind for s in m.symbols)),
                            ("class", collections.Counter(s.klass for s in m.symbols))):

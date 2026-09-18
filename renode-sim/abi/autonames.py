@@ -1493,17 +1493,19 @@ def cross_check(entries):
     smap = symmap.load()
     # abi/protocol.py owns the codec bodies, and its reading of them is the
     # stronger one, so they are compared against here and not emitted.
+    owned = {s.address: s.name
+             for s in smap.of_class("codec") if s.kind == "function"}
     by_hand = {s.address: s.name
-               for s in smap.of_class(symmap.HAND, "codec")
-               if s.kind == "function"}
+               for s in smap.of_class(symmap.HAND) if s.kind == "function"}
     hand = {s.address: s.name for s in smap.of_class("prose")}
+    hand.update(owned)
     hand.update(by_hand)
     agree, disagree, emit = [], [], []
     for e in entries:
         was = hand.get(e["address"])
         if was is not None:
             (agree if was == e["name"] else disagree).append((e, was))
-        if e["address"] not in by_hand:
+        if e["address"] not in owned:
             emit.append(e)
     return agree, disagree, emit
 
@@ -1830,8 +1832,15 @@ def main():
     # a name takes it out of the map too, and a name that collides with what the
     # map already carries is a refusal rather than a second entry.
     try:
+        # The rules that settle an address rather than read it: an archive
+        # body found where the call graph says it is, a `svc #N` whose number
+        # is the SoftDevice call, and a dispatch-table row that names its own
+        # handler. The rest -- a log tag, a caller's nickname -- are readings,
+        # and a hand reading may stand beside them.
+        settled = set(e["address"] for e in emit if e["class"] in symmap.SETTLED)
         added = symmap.load().rewrite(map_entries(emit),
-                                      set(e["class"] for e in emit))
+                                      set(e["class"] for e in emit),
+                                      verified=settled)
     except symmap.Refusal as err:
         sys.exit("abi/autonames.py: abi/symbols.yaml: %s" % err)
     print("wrote %d derived entries to abi/symbols.yaml" % added)

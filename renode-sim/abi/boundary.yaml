@@ -8,8 +8,8 @@
 # Sites were found twice and agreed exactly: a raw scan of appl.bin for Thumb
 # branch encodings whose target lands in a library range, and the linear
 # disassembly abi/match.py already produces. 647 app->library `bl` sites and 96
-# `b.w` tail calls reach 62 distinct library entry points; 28 library->app sites
-# reach 16, two of them the sleep hooks the tickless port calls by macro. The tail calls are a boundary crossing exactly like the calls, and
+# `b.w` tail calls reach 62 distinct library entry points; 25 library->app sites
+# reach 13, two of them the sleep hooks the tickless port calls by macro. The tail calls are a boundary crossing exactly like the calls, and
 # missing them is what wedged the first relinked image: three of them are
 # vPortExitCritical, so the blob decremented its own dead uxCriticalNesting
 # while the source kernel's climbed, basepri never dropped and PendSV was never
@@ -19,7 +19,7 @@ meta:
   image: appl.bin
   app_base: 0x27000
   app_to_lib: {sites: 647, tail_sites: 96, targets: 62}
-  lib_to_app: {sites: 28, targets: 16}
+  lib_to_app: {sites: 25, targets: 13}
 
 # Config corrections forced by the image's own struct layouts. refbuild.sh's
 # FreeRTOSConfig.h is wrong on three knobs; every queue.c body's match score
@@ -28,8 +28,12 @@ meta:
 # xQueueGenericCreate 0.17 -> 0.48, xQueueGenericCreateStatic 0.29 -> 0.42).
 config_corrections:
   configUSE_QUEUE_SETS: 1        # Queue_t is 0x54 with pxQueueSetContainer at 0x48
-  configMAX_TASK_NAME_LEN: 12    # with RECORD_STACK_HIGH_ADDRESS this is the only
+  configMAX_TASK_NAME_LEN: 10    # with RECORD_STACK_HIGH_ADDRESS this is the only
   configRECORD_STACK_HIGH_ADDRESS: 1  # TCB layout giving pxTaskTag 0x54 in 0x60 bytes
+                                      # (10, 11 and 12 all round pcTaskName up to
+                                      # pxEndOfStack at 0x40; the name copy's own
+                                      # bound in xTaskCreateStatic is 10, and the
+                                      # body reproduces byte for byte with it)
   configUSE_TICK_HOOK: 1         # xTaskIncrementTick calls 0x36e84 from both arms
   notes: >
     Queue_t read off the image: pcHead 0x00, pcTail 0x04, pcWriteTo 0x08,
@@ -58,7 +62,6 @@ library_ranges:
   - [0x51a04, 0x51afc]
   - [0x72eb0, 0x73e5c]
   - [0x7db08, 0x7e138]
-  - [0x81220, 0x812a8]
   - [0x8f42c, 0x8f42c]
   - [0x9e32c, 0x9ea2e]
   - [0xa4e3a, 0xa4e3a]
@@ -472,14 +475,18 @@ app_to_lib:
       sites are inside the blob's SAADC_IRQHandler.
     confidence: "high"
 
-  # nrf_fprintf: SDK code, but the image's copy is wired into Withings' own wlog
+  # fiprintf: newlib's, but the image's copy is wired into Withings' own wlog
   # ring (symbols.txt 0x8f460). Kept rather than relinked.
   - addr: 0x8f42c
     sites: 8
-    symbol: "nrf_fprintf"
+    symbol: "fiprintf"
     keep: true
-    how: "matches.yaml/reference 0.67"
-    confidence: "medium"
+    how: >
+      newlib's fiprintf, byte for byte over all 28 bytes with the bl and the
+      _impure_ptr pool word masked. The token matcher read the SDK's
+      nrf_fprintf onto it at 0.67 and that body differs in 18 of 28 bytes;
+      abi/libc_check.py's __assert_func wants fiprintf at exactly this call.
+    confidence: "high"
 
 # --- library -> app ---------------------------------------------------------
 # These become PROVIDE-style defined symbols in the blob object, so the source
@@ -516,21 +523,6 @@ lib_to_app:
       the configASSERT logger; called with a format/file pointer in r0 and the
       __LINE__ value in r1 from queue.c lines 400/523/617 and from tasks.c.
       symbols.txt calls it wlog_fmt_r0d.
-  - addr: 0x80b8c
-    sites: 1
-    symbol: null
-    confidence: "low"
-    how: "app callback out of the 0x81220 SDK-library span"
-  - addr: 0x80bb8
-    sites: 1
-    symbol: null
-    confidence: "low"
-    how: "app callback out of the 0x81220 SDK-library span"
-  - addr: 0x80bfc
-    sites: 1
-    symbol: null
-    confidence: "low"
-    how: "app callback out of the 0x81220 SDK-library span"
   - addr: 0x30a64
     sites: 1
     symbol: "withings_pre_sleep"

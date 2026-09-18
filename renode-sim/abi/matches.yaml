@@ -25,7 +25,7 @@ meta:
   # is a fact about one body and one build, so adding references can add
   # candidates but cannot unsettle one. token_only entries are carried by
   # the alignment score alone and are not settled.
-  verdicts: {exact: 20, masked: 97, token_only: 7}
+  verdicts: {exact: 20, masked: 97, token_only: 5}
   ties: 0
   # Two recipes, because the image has two builds in it, and the hunt
   # that found them is over: FreeRTOS and nrfx across four kernel
@@ -781,30 +781,6 @@ functions:
     insns: 118
     how: direct
     links: [nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a, saadc_event_limits_handle@0x7dc2c, saadc_event_limits_handle@0x7dc2c, nrf_saadc_event_clear.constprop.0@0xa4e3a]
-  - name: nrf_drv_clock_uninit
-    address: 0x81220
-    variant: app
-    verdict: token_only
-    masked_bytes: 12
-    divergence: "10 of 24 bytes differ outside the 12 a relocation owns, first at +0xa"
-    score: 0.875
-    insns: 8
-    how: direct
-    links: []
-    header: integration/nrfx/legacy/nrf_drv_clock.h
-    proto: "void nrf_drv_clock_uninit(void);"
-  - name: nrf_drv_power_uninit
-    address: 0x812a8
-    variant: app
-    verdict: token_only
-    masked_bytes: 20
-    divergence: "9 of 32 bytes differ outside the 20 a relocation owns, first at +0x13"
-    score: 0.700
-    insns: 10
-    how: direct
-    links: []
-    header: integration/nrfx/legacy/nrf_drv_power.h
-    proto: "void nrf_drv_power_uninit(void);"
   - name: pow
     address: 0x8c8fc
     variant: toolchain
@@ -1292,7 +1268,6 @@ library_ranges:  # spans of the image the matches bracket
   - {start: 0x519b8, end: 0x51afc, matched: 3}
   - {start: 0x72d40, end: 0x74034, matched: 40}
   - {start: 0x7db08, end: 0x7e16c, matched: 13}
-  - {start: 0x81220, end: 0x812a8, matched: 2}
   - {start: 0x8c8fc, end: 0x8d6f8, matched: 12}
   - {start: 0x8f42c, end: 0x8f42c, matched: 1}
   - {start: 0x9e32c, end: 0x9ea3a, matched: 25}
@@ -1378,6 +1353,10 @@ unmatched_image:  # call targets inside those spans with no symbol
   - 0x9ea22
   - 0xa7e06
   - 0xa7eae
+
+shape_refused:  # a token alignment onto a body with no shape of its own, which the call count refutes
+  - {name: nrf_drv_clock_uninit, address: 0x81220, bytes: 19, calls: 1, reference_calls: 2}
+  - {name: nrf_drv_power_uninit, address: 0x812a8, bytes: 27, calls: 1, reference_calls: 4}
 
 unmatched_reference:
   - RTC2_IRQHandler  # best 0.67
@@ -1470,7 +1449,9 @@ unmatched_reference:
   - modf  # best 0.17
   - nextafter  # best 0.18
   - nrf_clock_event_clear  # best 0.89
+  - nrf_drv_clock_uninit  # best 0.88
   - nrf_drv_power_sd_usbevt_enable  # best 0.09
+  - nrf_drv_power_uninit  # best 0.70
   - nrf_gpiote_event_clear  # best 0.90
   - nrfx_pwm_simple_playback  # best 0.32
   - nrfx_wdt_feed  # best 0.45

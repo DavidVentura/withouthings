@@ -12,6 +12,10 @@
 # name a derivation produced), so the claim only holds against the
 # measurement it was made against and the refusal fires again when that
 # measurement moves instead of the stale claim winning silently.
+# A derivation never displaces a hand entry and is never silently dropped
+# in favour of one: an address the two disagree on is a refusal until the
+# map accounts for it. `abi/symbols.py --check` re-runs that over the
+# committed file, so a hand entry cannot go stale unnoticed.
 
 symbols:
 - address: 0x8c2
@@ -142,14 +146,15 @@ symbols:
 - address: 0x27da0
   name: prvIdleTask
   kind: function
-  class: hand
+  class: match
   module: freertos
   corrects: 0x27da6
-  evidence: The body match anchors a start on a `bl` target, and nothing calls the
-    idle task, so it settled on 0x27da6 and left the `push {r3-r7,lr}` at 0x27da0
-    in a gap, six bytes the relayout was free to separate from the body. The entry
+  note: The body match anchors a start on a `bl` target, and nothing calls the idle
+    task, so it settled on 0x27da6 and left the `push {r3-r7,lr}` at 0x27da0 in
+    a gap, six bytes the relayout was free to separate from the body. The entry
     is the xTaskCreateStatic at 0x73032, whose r0 pool word (0x73070) holds 0x27da1
     and whose r1 names "IDLE".
+  evidence: app, score 0.93 over 40 insns, direct
 - address: 0x27e20
   name: SVC_Handler
   aliases:
@@ -283,13 +288,15 @@ symbols:
 - address: 0x2d668
   name: _dtoa_r
   kind: function
-  class: hand
+  class: libc
   module: freertos
   supersedes: __cvt__1
-  evidence: 2884 bytes that reproduce exactly from the newlib archive. The derivation
+  note: 2884 bytes that reproduce exactly from the newlib archive. The derivation
     could only call it __cvt__1, because __cvt at 0xa8268 is its only caller and
     a single-caller helper is all the call graph says; naming it puts it and its
     static quorem in the libc class instead of the helper one.
+  evidence: newlib-nano-ll libc.a, 2884 bytes of the built body reproduced at 0x2d668
+    with the 440 bytes a relocation owns masked
 - address: 0x2e2a0
   name: appl_main_init
   kind: label
@@ -1568,11 +1575,13 @@ symbols:
 - address: 0x3ff1c
   name: WPP_CMD_SYNC_REQUEST
   kind: function
-  class: hand
+  class: wppcmd
   module: wpp
-  evidence: row 321 of wpp_cmd_table_slave, so the three-argument prototype; the
-    second caller is wpp_lite_client_cmd_dropped (0x6e7e8), which is inside the
-    slave walk and passes the same three
+  note: row 321 of wpp_cmd_table_slave, so the three-argument prototype; the second
+    caller is wpp_lite_client_cmd_dropped (0x6e7e8), which is inside the slave walk
+    and passes the same three
+  evidence: 'wpp_cmd_table row 0x27ba4: key 321, label ''WPP_CMD_SYNC_REQUEST'',
+    CMD_SYNC_REQUEST in wpp/src/commands.rs'
 - address: 0x3ffa4
   name: shell_help_background_sync
   kind: function
@@ -1588,11 +1597,13 @@ symbols:
 - address: 0x400b4
   name: battery_adc_value_gain_adaptation
   kind: function
-  class: hand
+  class: string
   module: bat
-  evidence: SAADC AIN0; the gain adaptation is gated on product id 0x280010. Named
-    by the __func__ the function logs, which symbols.txt already follows; the manifest
+  note: SAADC AIN0; the gain adaptation is gated on product id 0x280010. Named by
+    the __func__ the function logs, which symbols.txt already follows; the manifest
     still carried the older battery_adc_read.
+  evidence: wlog('[%s] adapt adc value %d with gain %d -> ', 'battery_adc_value_gain_adaptation')
+    at 0x400cc
 - address: 0x40220
   name: battery_pct_to_mv
   kind: function
@@ -6417,11 +6428,13 @@ symbols:
 - address: 0x6c84c
   name: WPP_CMD_PROBE
   kind: function
-  class: hand
+  class: wppcmd
   module: wpp
-  evidence: row 257 of wpp_cmd_table, and also the branch the frame demux 0x6bfa8
-    takes at 0x6c088 when the command word is 0x101, with the same (objects, len)
-    pair it would have given the dispatcher
+  note: row 257 of wpp_cmd_table, and also the branch the frame demux 0x6bfa8 takes
+    at 0x6c088 when the command word is 0x101, with the same (objects, len) pair
+    it would have given the dispatcher
+  evidence: 'wpp_cmd_table row 0x27afc: key 257, label ''WPP_CMD_PROBE'', CMD_PROBE
+    in wpp/src/commands.rs'
 - address: 0x6c94c
   name: process_cmd_probe_challenge_continue
   kind: function
@@ -6456,14 +6469,16 @@ symbols:
   evidence: 'wpp_cmd_table row 0x27ab4: key 294, label ''WPP_CMD_RESTART_TO_UPDATE'',
     CMD_RESTART_TO_UPDATE in wpp/src/commands.rs'
 - address: 0x6ca90
-  name: wpp_cmd_battery_status
+  name: WPP_CMD_BATTERY_STATUS
   kind: function
-  class: hand
+  class: wppcmd
   module: wpp
-  evidence: WPP command 1284 handler, entry 127 of wpp_cmd_table. Reads the battery
-    level, then replies with command 0x504. Ignores its argument. Address carries
-    the Thumb bit as it is stored in the table; gen.py masks it off and sets it
-    again.
+  note: Reads the battery level, then replies with command 0x504. Ignores its argument.
+    The address carries the Thumb bit as it is stored in the table; gen.py masks
+    it off and sets it again. A hand called this wpp_cmd_battery_status until the
+    table row was read.
+  evidence: 'wpp_cmd_table row 0x27aa8: key 1284, label ''WPP_CMD_BATTERY_STATUS'',
+    CMD_BATTERY_STATUS in wpp/src/commands.rs'
 - address: 0x6caec
   name: WPP_CMD_FEATURE_MASK_GET
   kind: function
@@ -6557,10 +6572,11 @@ symbols:
 - address: 0x6d2e0
   name: WPP_CMD_MTU_EXCH
   kind: function
-  class: hand
+  class: wppcmd
   module: wpp
-  evidence: row 341, called directly at 0x6c0aa on the 0x155 branch of the same
-    demux
+  note: row 341, called directly at 0x6c0aa on the 0x155 branch of the same demux
+  evidence: 'wpp_cmd_table row 0x27b2c: key 341, label ''WPP_CMD_MTU_EXCH'', CMD_MTU_EXCH
+    in wpp/src/commands.rs'
 - address: 0x6d38c
   name: WPP_CMD_WUP_DEVICE_SET
   kind: function
@@ -6777,8 +6793,9 @@ symbols:
 - address: 0x730bc
   name: xTaskIncrementTick
   kind: function
-  class: hand
+  class: match
   module: freertos
+  evidence: app, score 0.99 over 95 insns, direct
 - address: 0x731dc
   name: xTaskResumeAll
   kind: function
@@ -6892,10 +6909,11 @@ symbols:
 - address: 0x73a90
   name: xQueueGenericSend
   kind: function
-  class: hand
+  class: match
   module: freertos
-  evidence: called with a NULL handle by battery_sem_give before battery_task exists;
+  note: called with a NULL handle by battery_sem_give before battery_task exists;
     machine.resc patches the sim around it
+  evidence: app, score 0.99 over 104 insns, direct
 - address: 0x73c64
   name: xQueueReceive
   kind: function
@@ -7547,11 +7565,6 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_demo_carousel's
-- address: 0x81220
-  name: nrf_drv_clock_uninit
-  kind: function
-  class: match
-  evidence: app, score 0.88 over 8 insns, direct
 - address: 0x81294
   name: on_foreground_carousel_clocks
   kind: function
@@ -7559,10 +7572,11 @@ symbols:
   module: wui
   evidence: the only view vtable holding this at +0x0c is wui_view_carousel_clocks's
 - address: 0x812a8
-  name: nrf_drv_power_uninit
+  name: on_background_carousel_clocks
   kind: function
-  class: match
-  evidence: app, score 0.70 over 10 insns, direct
+  class: wuiview
+  module: wui
+  evidence: the only view vtable holding this at +0x10 is wui_view_carousel_clocks's
 - address: 0x812bc
   name: on_enter_carousel_clocks
   kind: function
@@ -9105,9 +9119,11 @@ symbols:
 - address: 0x8ebb0
   name: _setenv_r
   kind: function
-  class: hand
+  class: libc
   module: freertos
-  evidence: the body setenv tail-calls, which is where the newlib match belongs
+  note: the body setenv tail-calls, which is where the newlib match belongs
+  evidence: newlib-nano-ll libc.a, 304 bytes of the built body reproduced at 0x8ebb0
+    with the 56 bytes a relocation owns masked
 - address: 0x8ece0
   name: _printf_float
   kind: function
@@ -9115,10 +9131,15 @@ symbols:
   evidence: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score
     0.98 over 434 insns, direct
 - address: 0x8f42c
-  name: nrf_fprintf
+  name: fiprintf
   kind: function
-  class: match
-  evidence: app, score 0.67 over 12 insns, direct
+  class: hand
+  supersedes: nrf_fprintf
+  evidence: newlib libc_a-fprintf.o's fiprintf, byte for byte over all 28 bytes
+    with the bl at +0x12 and the _impure_ptr pool word at +0x20 masked; the token
+    matcher proposed the SDK's nrf_fprintf here and its body differs in 18 of 28
+    bytes. __assert_func at 0x91d3c calls +0x1c here, which is where the archive's
+    __assert_func calls fiprintf.
 - address: 0x8f460
   name: wlog
   aliases:
@@ -9311,18 +9332,21 @@ symbols:
 - address: 0x91ed8
   name: __fixdfdi
   kind: function
-  class: hand
+  class: libc
   module: freertos
-  evidence: 'a libgcc body with its own archive section, declared so the partition
-    pins its bounds: it and __fixunsdfdi sit inside the second tile of the split
-    __assert_func__1__1 at 0x91ea4, which keeps both of them inside a tile that
-    cannot be replaced.'
+  note: 'a libgcc body with its own archive section, declared so the partition pins
+    its bounds: it and __fixunsdfdi sit inside the second tile of the split __assert_func__1__1
+    at 0x91ea4, which keeps both of them inside a tile that cannot be replaced.'
+  evidence: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score
+    1.00 over 18 insns, direct
 - address: 0x91f08
   name: __fixunsdfdi
   kind: function
-  class: hand
+  class: libc
   module: freertos
-  evidence: the second of the two libgcc bodies interleaved into 0x91ea4's tile
+  note: the second of the two libgcc bodies interleaved into 0x91ea4's tile
+  evidence: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score
+    1.00 over 20 insns, direct
 - address: 0x91f44
   name: sd_power_mode_set
   kind: function
@@ -10462,6 +10486,17 @@ symbols:
   module: FLASH_CACHE
   evidence: fills the RAM table from one walk for a given set of ids, which is what
     keeps a glyph lookup off the flash
+- address: 0x97f24
+  name: vTaskReturnTrap
+  kind: label
+  class: hand
+  evidence: 'a bare ''udf #0'' between a ''bx lr'' at 0x97f22 and the _read stub
+    at 0x97f26, reached by nothing. pxPortInitialiseStack (0x73e10) loads 0x97f25
+    into the LR slot of a new task''s stack frame, so this is the image''s configTASK_RETURN_ADDRESS
+    -- a task that returns traps here. With the address of the port''s own prvTaskExitError
+    no longer taken, GCC inlines it into its one caller, which is what xPortStartScheduler
+    (0x740b6) shows. abi/relink.ld PROVIDEs the name at 0x97f25 so the source port
+    binds to it.'
 - address: 0x97f26
   name: _read
   kind: function

@@ -836,7 +836,8 @@ def main():
     if complaints:
         sys.exit("abi/stores.py: %d reading(s) no longer hold" % len(complaints))
     try:
-        added = symmap.load().rewrite(rows, {CLASS})
+        added = symmap.load().rewrite(rows, {CLASS},
+                                      verified=set(r["address"] for r in rows))
     except symmap.Refusal as err:
         sys.exit("abi/stores.py: abi/symbols.yaml: %s" % err)
     print("%d storage-layer names checked against the analysis;"

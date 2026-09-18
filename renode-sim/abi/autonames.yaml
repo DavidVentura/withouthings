@@ -13,7 +13,7 @@ meta:
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
   counts: {bleevt: 28, extlib: 0, helper: 391, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1786, modules: 184, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
-  known_addresses: {agree: 202, disagree: 1}
+  known_addresses: {agree: 194, disagree: 0}
 
 functions:
   - name: memchr
@@ -110,6 +110,12 @@ functions:
     address: 0x2caa0
     class: libc
     evidence: "newlib-nano-ll libc.a, 3016 bytes of the built body reproduced at 0x2caa0 with the 336 bytes a relocation owns masked"
+  - name: _dtoa_r
+    address: 0x2d668
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 2884 bytes of the built body reproduced at 0x2d668 with the 440 bytes a relocation owns masked"
+    header: arm-none-eabi/include/stdlib.h
+    proto: "char * _dtoa_r (struct _reent *, double, int, int, int *, int*, char**);"
   - name: light_sensor_light_value__1
     address: 0x2f040
     class: helper
@@ -983,6 +989,12 @@ functions:
     class: logline
     evidence: "the only line 0x3fe90 logs, wlog('[SYNC] Max of %d timeout reties in %ds, wait for next alarm') at 0x3fec8"
     module: SYNC
+  - name: WPP_CMD_SYNC_REQUEST
+    address: 0x3ff1c
+    class: wppcmd
+    command: 321
+    evidence: "wpp_cmd_table row 0x27ba4: key 321, label 'WPP_CMD_SYNC_REQUEST', CMD_SYNC_REQUEST in wpp/src/commands.rs"
+    module: SYNC
   - name: shell_help_background_sync
     address: 0x3ffa4
     class: shell
@@ -991,6 +1003,11 @@ functions:
     address: 0x3ffb4
     class: shell
     evidence: "shell_cmd_table row 0x2713c: command 'background_sync', run slot (+4)"
+  - name: battery_adc_value_gain_adaptation
+    address: 0x400b4
+    class: string
+    evidence: "wlog('[%s] adapt adc value %d with gain %d -> ', 'battery_adc_value_gain_adaptation') at 0x400cc"
+    module: BATTERY
   - name: bat_battery_management_start__3
     address: 0x404b8
     class: helper
@@ -3590,6 +3607,12 @@ functions:
     class: helper
     evidence: "only 0x6d250 (wpp_not_enough_space_in_wpp) calls 0x6c708; 106 bytes"
     module: WPP
+  - name: WPP_CMD_PROBE
+    address: 0x6c84c
+    class: wppcmd
+    command: 257
+    evidence: "wpp_cmd_table row 0x27afc: key 257, label 'WPP_CMD_PROBE', CMD_PROBE in wpp/src/commands.rs"
+    module: WPP
   - name: process_cmd_probe_challenge_continue
     address: 0x6c94c
     class: logline
@@ -3615,6 +3638,11 @@ functions:
     class: wppcmd
     command: 294
     evidence: "wpp_cmd_table row 0x27ab4: key 294, label 'WPP_CMD_RESTART_TO_UPDATE', CMD_RESTART_TO_UPDATE in wpp/src/commands.rs"
+  - name: WPP_CMD_BATTERY_STATUS
+    address: 0x6ca90
+    class: wppcmd
+    command: 1284
+    evidence: "wpp_cmd_table row 0x27aa8: key 1284, label 'WPP_CMD_BATTERY_STATUS', CMD_BATTERY_STATUS in wpp/src/commands.rs"
   - name: WPP_CMD_FEATURE_MASK_GET
     address: 0x6caec
     class: wppcmd
@@ -3701,6 +3729,12 @@ functions:
     address: 0x6d250
     class: logline
     evidence: "the only line 0x6d250 logs, wlog('[WPP] Not enough space in wpp packet') at 0x6d298"
+    module: WPP
+  - name: WPP_CMD_MTU_EXCH
+    address: 0x6d2e0
+    class: wppcmd
+    command: 341
+    evidence: "wpp_cmd_table row 0x27b2c: key 341, label 'WPP_CMD_MTU_EXCH', CMD_MTU_EXCH in wpp/src/commands.rs"
     module: WPP
   - name: WPP_CMD_WUP_DEVICE_SET
     address: 0x6d38c
@@ -4257,6 +4291,12 @@ functions:
     address: 0x8ea6c
     class: libc
     evidence: "newlib-nano-ll libc.a, 284 bytes of the built body reproduced at 0x8ea6c with the 8 bytes a relocation owns masked"
+  - name: _setenv_r
+    address: 0x8ebb0
+    class: libc
+    evidence: "newlib-nano-ll libc.a, 304 bytes of the built body reproduced at 0x8ebb0 with the 56 bytes a relocation owns masked"
+    header: arm-none-eabi/include/stdlib.h
+    proto: "int _setenv_r (struct _reent *, const char *__string, const char *__value, int __overwrite);"
   - name: _printf_float
     address: 0x8ece0
     class: libc
@@ -4385,6 +4425,14 @@ functions:
     address: 0x91ea4
     class: helper
     evidence: "only 0xa920e (__assert_func__1) calls 0x91ea4; 40 bytes"
+  - name: __fixdfdi
+    address: 0x91ed8
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 18 insns, direct"
+  - name: __fixunsdfdi
+    address: 0x91f08
+    class: libc
+    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 20 insns, direct"
   - name: sd_power_mode_set
     address: 0x91f44
     class: svc
@@ -6081,9 +6129,6 @@ functions:
 # Addresses abi/symbols.yaml already names by hand, and what this run
 # derived for them. A disagreement is a finding: one of the two is wrong.
 agrees_with_hand_map:
-  - {address: 0x2d668, name: _dtoa_r, class: libc}
-  - {address: 0x3ff1c, name: WPP_CMD_SYNC_REQUEST, class: wppcmd}
-  - {address: 0x400b4, name: battery_adc_value_gain_adaptation, class: string}
   - {address: 0x4ed90, name: wpp_obj_Null_parse, class: wppobj}
   - {address: 0x4edb0, name: wpp_obj_Cmderror_parse, class: wppobj}
   - {address: 0x4ee88, name: wpp_obj_DebugDumpMask_parse, class: wppobj}
@@ -6146,11 +6191,6 @@ agrees_with_hand_map:
   - {address: 0x50310, name: wpp_obj_SymptomType_parse, class: wppobj}
   - {address: 0x503f4, name: wpp_obj_VibratorSetSimple_parse, class: wppobj}
   - {address: 0x50434, name: wpp_obj_GreentegIntegrationFactor_parse, class: wppobj}
-  - {address: 0x6c84c, name: WPP_CMD_PROBE, class: wppcmd}
-  - {address: 0x6d2e0, name: WPP_CMD_MTU_EXCH, class: wppcmd}
-  - {address: 0x8ebb0, name: _setenv_r, class: libc}
-  - {address: 0x91ed8, name: __fixdfdi, class: libc}
-  - {address: 0x91f08, name: __fixunsdfdi, class: libc}
   - {address: 0x9917a, name: wpp_obj_Null_encode, class: wppobj}
   - {address: 0x99216, name: wpp_obj_BatteryPercent_encode, class: wppobj}
   - {address: 0x9923a, name: wpp_obj_Cmderror_encode, class: wppobj}
@@ -6284,4 +6324,3 @@ agrees_with_hand_map:
   - {address: 0x9a878, name: wpp_obj_VasistasDbt_encode, class: wppobj}
   - {address: 0x9a918, name: wpp_obj_Null_encode_copy_0x9a918, class: wppobj}
 disagrees_with_hand_map:
-  - {address: 0x6ca90, hand: wpp_cmd_battery_status, derived: WPP_CMD_BATTERY_STATUS, class: wppcmd}

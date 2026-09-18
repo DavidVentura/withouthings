@@ -1042,8 +1042,9 @@ def main():
     # already calls something else with evidence this run does not outrank, is a
     # refusal rather than a second entry.
     try:
-        added = symmap.load().rewrite(map_entries(structs, sizers, enc_names, cout),
-                                      {MAP_CLASS})
+        rows = map_entries(structs, sizers, enc_names, cout)
+        added = symmap.load().rewrite(rows, {MAP_CLASS},
+                                      verified=set(r["address"] for r in rows))
     except symmap.Refusal as err:
         sys.exit("abi/protocol.py: abi/symbols.yaml: %s" % err)
     print("wrote %d %s entries to abi/symbols.yaml" % (added, MAP_CLASS))

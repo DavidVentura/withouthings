@@ -11,14 +11,12 @@
 # stayed behind when a section moved or was dropped; and 60 s of the display run
 # with a zero-line log diff.
 #
-# The baseline for that diff is the plain relink and not stock. The source
-# kernel counts about 64 ticks fewer per minute than the image's over 60 s, a
-# 0.1 percent difference in how the two tickless-idle implementations round the
-# suppressed ticks, and it reorders a couple of dozen log lines and moves one
-# alarm across a second boundary. That is a port.c difference the kernel byte
-# verdicts should locate, not a behavioural one, and it is present in every
-# relink since the startup stub -- so a configuration is measured against the
-# relink it is a variation of.
+# The baseline for that diff is the plain relink and not stock, so that a
+# configuration is measured against the relink it is a variation of. The two are
+# now the same run: once the reference config reached the image's own heap size,
+# task-name length and strict aliasing, the plain relink's 60 s log is stock's
+# line for line and its tick is one above stock's, 59536 against 59535, which is
+# where the two tickless-idle implementations round the last suppressed tick.
 #
 # The update test and the ECG run are not here: they need fixed ports and
 # minutes of virtual time, so they stay separate runs.

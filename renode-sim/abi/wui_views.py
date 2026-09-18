@@ -199,7 +199,8 @@ def main():
     found = rows(img, {sym.address for sym in prior.symbols
                        if sym.klass != CLASS})
     try:
-        added = symmap.load().rewrite(found, {CLASS})
+        added = symmap.load().rewrite(found, {CLASS},
+                                      verified=set(r["address"] for r in found))
     except symmap.Refusal as err:
         sys.exit("abi/wui_views.py: abi/symbols.yaml: %s" % err)
     print("%d view descriptors, %d slot implementations; %d entries added"
