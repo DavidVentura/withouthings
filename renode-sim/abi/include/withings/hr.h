@@ -6,6 +6,10 @@
 #ifndef WITHINGS_HR_H
 #define WITHINGS_HR_H
 
+/* hr_algo is built out of the sensor library's filters and its rate
+   tracker, so the shapes come from there. */
+#include "withings/sensors_sync.h"
+
 struct algo_sample_frame;
 
 /* the HR algorithm's own result block at 0x2000f480, which is its object's
@@ -126,6 +130,139 @@ struct hr_screen_data {
     unsigned char burst_bpm;
     unsigned char pad_a[0x2];
     unsigned int burst_uptime;
+};
+
+/* the window_zscore_step object: the push window at +0, the byte that says it
+   has filled, the newest sample divided by the window's own standard
+   deviation, and the buffer the whole divided window is written to.
+   */
+struct window_zscore {
+    unsigned char full;
+    unsigned char pad_1[0x3];
+    int capacity;
+    int head;
+    float *buf;
+    unsigned char ready;
+    unsigned char pad_11[0x3];
+    float scaled;
+    unsigned int field_18;
+    float *normalised;
+};
+
+/* one PPG channel's front end, the 0x214 bytes hr_chan_filter_step owns and
+   the stride hr_channel_bank_step repeats four times: the four channels sit at
+   +0x8, +0x21c, +0x430 and +0x644 of the bank and their outputs at +0x214,
+   +0x428, +0x63c and +0x850, which is that stride four times over. The order
+   of the fields is the order the body steps them in -- the LED-step remover,
+   the differentiator, the band filter, the z-score -- and `out` and `ready`
+   are the pair the bank reads back.
+   */
+struct hr_chan_filter {
+    struct level_track level;
+    float diff_x1;
+    float diff_x2;
+    int diff_warm;
+    struct iir_df1 band;
+    unsigned char pad_38[0x20];
+    struct window_zscore zscore;
+    unsigned char pad_78[0x194];
+    float out;
+    unsigned char ready;
+    unsigned char pad_211[0x3];
+};
+
+/* the four channel front ends and the accelerometer arm, at +0xa8 of the
+   algorithm object. `mode` at +4 picks one channel or four. `mean` is the
+   average of the four filtered outputs -- the four adds and the multiply by
+   0.25 at 0xa2980..0xa29b2 -- and `accel` the magnitude of the three axes put
+   through `accel_filter`. Those two floats are the whole input to everything
+   downstream: hr_spectrum_step is handed exactly this pair.
+   */
+struct hr_channel_bank {
+    unsigned char pad_0[0x4];
+    int mode;
+    struct hr_chan_filter chan[0x4];
+    unsigned char pad_858[0x4];
+    struct iir_df1 accel_filter;
+    unsigned char pad_87c[0x20];
+    float accel_prev;
+    unsigned char primed;
+    unsigned char pad_8a1[0x3];
+    int replay_count;
+    float mean;
+    float accel;
+};
+
+/* the spectral half, at +0x964 of the algorithm object. Two 200-sample windows
+   -- the channel mean and the accelerometer magnitude -- each with its own
+   0x320-byte buffer right behind it, and the two normalised 257-bin spectra
+   they become. The trigger is the two windows' heads agreeing and the next one
+   being a multiple of the stride the config's first word carries
+   (0x7b086..0x7b09e), which is why both windows are pushed every sample and
+   the transform runs on one in every stride of them. `purity` is
+   spectral_purity_index over the PPG window and `stddev` its vec_f32_stddev.
+   The plan is embedded at +0xe6c rather than pointed at, which is the offset
+   hr_spectrum_step adds before calling spectrum_fft_input.
+   */
+struct hr_spectrum {
+    const unsigned int *cfg;
+    unsigned char ppg_full;
+    unsigned char pad_5[0x3];
+    int ppg_capacity;
+    int ppg_head;
+    float *ppg_buf;
+    float ppg_window[0xc8];
+    float ppg_spectrum[0x101];
+    unsigned char acc_full;
+    unsigned char pad_739[0x3];
+    int acc_capacity;
+    int acc_head;
+    float *acc_buf;
+    float acc_window[0xc8];
+    float acc_spectrum[0x101];
+    struct spectrum_plan plan;
+    unsigned char started;
+    unsigned char pad_ea5[0x3];
+    float purity;
+    float stddev;
+    float *scratch;
+};
+
+/* the whole HR algorithm object at 0x2000c7fc, reached only as the pointer
+   algo_dispatch_sample hands hr_algo_process_sample and never by its own
+   literal, which is why abi/protocol.py --struct-uses reports nothing for it
+   and the layout had to be read off the argument instead.
+   What fixes it is that the sub-objects abut exactly: the channel bank ends at
+   +0x958 where the primed byte sits, the pair it publishes is +0x95c, the
+   spectral half runs +0x964 to +0x1818, the rate tracker's slot is the 0x100
+   bytes to +0x1918, the refused 0x7b320's object the 0x104 to +0x1a1c and the
+   refused 0xa304e's the 0x250 to +0x1c6c -- whose published triple at +0x244,
+   +0x248 and +0x24c is the +0x1c60, +0x1c64 and +0x1c68 the body reads -- and
+   hr_algo_result at +0x2c84 puts its bpm at +0x2ec4, the offset
+   hr_algo_get_result reads it through.
+   */
+struct hr_algo {
+    unsigned char pad_0[0xa8];
+    struct hr_channel_bank bank;
+    unsigned char primed;
+    unsigned char pad_959[0x3];
+    float pair[0x2];
+    struct hr_spectrum spectrum;
+    struct spectrotrack_slot rate;
+    unsigned char harmonics[0x104];
+    unsigned char bands[0x250];
+    const float *threshold_cfg;
+    unsigned char threshold_flag;
+    unsigned char pad_1c71[0x3];
+    unsigned int samples;
+    unsigned char pad_1c78[0x1000];
+    unsigned char mode;
+    unsigned char pad_2c79;
+    unsigned char published;
+    unsigned char clipped;
+    float last_value;
+    int status;
+    struct hr_algo_result result;
 };
 
 /* functions */

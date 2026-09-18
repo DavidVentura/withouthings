@@ -98,8 +98,8 @@ HAND = "hand"
 # abi/protocol.py carries the type id, the byte count and the field layout it
 # recovered, so where both reach an address the measured one keeps it.
 RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "string",
-        "wppcmd", "codec", "wppobj", "wuiview", "vasistas", "store", "shell",
-        "logtag", "logcb", "bleevt", "logline", "helper", "prose"]
+        "wppcmd", "codec", "wppobj", "wuiview", "vasistas", "store", "sensor",
+        "shell", "logtag", "logcb", "bleevt", "logline", "helper", "prose"]
 
 
 # The derivations that settle an address rather than read it: a byte verdict
@@ -111,7 +111,7 @@ RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "string",
 # the repo is standing on.
 SETTLED = ("libc", "libm", "extlib", "svc", "syscall", "string",
            "wppcmd", "shell", "bleevt", "codec", "wuiview", "store",
-           "vasistas")
+           "vasistas", "sensor")
 
 
 def outranks(klass, other):
