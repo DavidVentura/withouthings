@@ -612,7 +612,62 @@ def residue(section):
     return section.start % 4
 
 
-def relayout(sections, mode, pinned, anchors):
+def first_fit(order, free):
+    """Place each section in the lowest free interval it fits, or fail.
+
+    `free` is consumed: each interval's start is the cursor. A section keeps its
+    address modulo 4, because a literal pool is read with a pc-relative load
+    that rounds the program counter down to a word.
+    """
+    free = [list(i) for i in free]
+    moves = {}
+    for s in order:
+        size, want = s.end - s.start, residue(s)
+        for interval in free:
+            at = interval[0] + (want - interval[0]) % 4
+            if at + size <= interval[1]:
+                moves[s.sym] = at
+                interval[0] = at + size
+                break
+        else:
+            return None
+    return moves
+
+
+def pack(movable, free):
+    """Pack the text down and leave the space it saved as one contiguous hole.
+
+    The saving is real but it is scattered: the text is cut into runs by the
+    data between them, so packing each run leaves its own small tail and the
+    largest of them here is twelve bytes. A hole a library can be linked into
+    has to be asked for instead of hoped for, so the biggest run's tail is
+    reserved before anything is placed and the rest of the text is packed into
+    what is left; the reservation is the largest one a first fit still fits, and
+    what bounds it is the alignment each section's own address modulo 4 costs.
+    """
+    order = sorted(movable, key=lambda s: s.start)
+    host = max(range(len(free)), key=lambda i: free[i][1] - free[i][0])
+    if first_fit(order, free) is None:
+        raise SystemExit("the text does not fit in its own space")
+
+    def attempt(want):
+        trimmed = [list(i) for i in free]
+        trimmed[host][1] -= want
+        return (None if trimmed[host][1] < trimmed[host][0]
+                else first_fit(order, trimmed))
+
+    low, high = 0, free[host][1] - free[host][0]
+    while low < high:
+        mid = (low + high + 1) // 2
+        if attempt(mid) is None:
+            high = mid - 1
+        else:
+            low = mid
+    moves = attempt(low) if low else first_fit(order, free)
+    return moves, (free[host][1] - low, free[host][1]), {}
+
+
+def relayout(sections, mode, pinned, anchors, dead=()):
     """Give every text section a new address, and prove none keeps its old one.
 
     Data does not move in this step, so the space the text may use is exactly
@@ -621,6 +676,15 @@ def relayout(sections, mode, pinned, anchors):
     two ways of being sure a stale address cannot survive by luck: `shift` keeps
     the order and starts one word further in, so every section slides; `reverse`
     puts the last function first, so nothing is near where it was.
+
+    `pack` is the third, and it is not a stale-address test: it closes the image
+    up. `dead` is the sections a replacement has already made unreferenced --
+    their names are undefined in the object and every call to them binds to the
+    source's symbol -- so their bytes are free whatever --gc-sections decides,
+    and packing the rest over them leaves one contiguous hole at the top of the
+    text. That hole is flash the library can be linked into, which is the only
+    way it grows: the library region runs from the end of the app image to the
+    bootloader and there is nothing above it to take.
     """
     # A section a word points into that the classification could not decide is
     # not moved: the word is either a pointer that would be left stale or a
@@ -634,22 +698,30 @@ def relayout(sections, mode, pinned, anchors):
         for v, why in anchors.items():
             if s.start <= v < s.end:
                 held.setdefault(s.start, why)
+    dead = set(dead)
     movable = [s for s in sections
-               if s.kind == "code" and s.start not in pinned and s.start not in held]
+               if s.kind == "code" and s.start not in pinned and s.start not in held
+               and s.start not in dead]
     held = dict(held)
     if not movable:
         raise SystemExit("no text section to move")
+    # The free list is the space the movable text covers, and under `pack` the
+    # replaced bodies' space as well, since nothing will link them in.
     free = []
-    for s in sorted(movable, key=lambda s: s.start):
+    for s in sorted([s for s in sections if s.kind == "code" and s.start in dead]
+                    + movable, key=lambda s: s.start):
         if free and free[-1][1] == s.start:
             free[-1][1] = s.end
         else:
             free.append([s.start, s.end])
-    free.append([SPARE_BASE, SPARE_END])
     if mode == "shift":
+        free.append([SPARE_BASE, SPARE_END])
         order, free[0][0] = sorted(movable, key=lambda s: s.start), free[0][0] + 4
     elif mode == "reverse":
+        free.append([SPARE_BASE, SPARE_END])
         order = sorted(movable, key=lambda s: -s.start)
+    elif mode == "pack":
+        return pack(movable, free)
     else:
         raise SystemExit("unknown layout %r" % mode)
 
@@ -663,7 +735,7 @@ def relayout(sections, mode, pinned, anchors):
         size, want = s.end - s.start, residue(s)
         for interval in free:
             at = interval[0] + (want - interval[0]) % 4
-            if at == s.start:
+            if at == s.start and mode != "pack":
                 # The point of the layout is that no function keeps its
                 # address, so the one address this section may not have is its
                 # own; the next slot up is still in the same interval.
@@ -675,6 +747,11 @@ def relayout(sections, mode, pinned, anchors):
         else:
             raise SystemExit("the text does not fit: %s needs %d bytes"
                              % (s.sym, size))
+    if mode == "pack":
+        # Everything fitted below, so the hole is the tail of the last interval:
+        # what the packing squeezed out of every interval below it lands here,
+        # and that is exactly the bytes the replacements freed.
+        return moves, tuple(free[-1]), held
     kept = [s.sym for s in movable if moves[s.sym] == s.start]
     if kept:
         raise SystemExit("%d text sections keep their address under %s: %s"
@@ -706,7 +783,8 @@ def reclaim_placement(sections, pinned, path, obj):
         fh.write("  %s(.text.*)\n  %s(.rodata.*)\n} > APP\n" % (obj, obj))
 
 
-def placement(sections, moves, path, obj, keep=None):
+def placement(sections, moves, path, obj, keep=None, drop=(), hole=None,
+              spill=()):
     """The SECTIONS fragment that places every section.
 
     `keep` is the gc link: a section named in it is KEEPed, every other one is
@@ -730,7 +808,13 @@ def placement(sections, moves, path, obj, keep=None):
     section the location counter runs from the section's start, so the
     placements are offsets and the comment carries the address.
     """
-    placed = sorted((moves.get(s.sym, s.start), s) for s in sections)
+    # `drop` is the sections a replacement has already made unreferenced. Under
+    # `pack` they are left out of the fragment entirely so their bytes are the
+    # hole, and relink.ld's `.blobdead` catches them: if one is somehow still
+    # referenced it lands in the library region and overflows it, loudly, rather
+    # than overlapping whatever was packed over it.
+    placed = sorted((moves.get(s.sym, s.start), s) for s in sections
+                    if s.start not in drop)
     image = [(a, s) for a, s in placed if a < APP_END]
     spare = [(a, s) for a, s in placed if a >= APP_END]
     for (a, s), (b, t) in zip(image, image[1:]):
@@ -751,8 +835,26 @@ def placement(sections, moves, path, obj, keep=None):
                  % ("" if keep is None else ", and which of them --gc-sections"
                     " may not drop"))
         fh.write(".blob 0x%08x :\n{\n" % APP_BASE)
+        # The flash the packing freed, handed to the library: the archive whose
+        # replacements made the hole is the archive linked into it. The `. =`
+        # that follows is the bound -- the location counter moves backwards and
+        # the link fails if the spill does not fit. Nothing is placed inside the
+        # hole, so it goes after the last section below it.
+        def spill_block():
+            fh.write("  /* 0x%08x..0x%08x: %d bytes the packing freed */\n"
+                     % (hole[0], hole[1], hole[1] - hole[0]))
+            fh.write("  . = 0x%06x;\n" % (hole[0] - APP_BASE))
+            for pattern in spill:
+                fh.write("  %s(.text .text.* .rodata .rodata.*)\n" % pattern)
+            fh.write("  . = 0x%06x;\n" % (hole[1] - APP_BASE))
+        spilled = hole is None
         for at, s in image:
+            if not spilled and at >= hole[1]:
+                spill_block()
+                spilled = True
             fh.write(line(at, APP_BASE, s))
+        if not spilled:
+            spill_block()
         fh.write("  . = 0x%06x;\n} > APP\n" % (APP_END - APP_BASE))
         if not spare:
             return

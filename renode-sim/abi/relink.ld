@@ -35,6 +35,21 @@ SECTIONS
      * app's bytes are unchanged and only the library moves. */
     INCLUDE relink-place.ld
 
+    /* --layout pack leaves out of the placement every section the link is
+     * about to drop -- a body abi/replacements.yaml replaced, which is
+     * undefined in the object and referenced by nothing, and a section neither
+     * the object nor the KEEP list reaches -- and counts their bytes as free
+     * flash for the library. This catches one that survives after all: it is
+     * linked and relocated correctly, it costs the library region instead of
+     * overlapping what was packed over it, and `size -A` names it. Under every
+     * other layout the fragment names every section and this stays empty. */
+    .blobdead : ALIGN(4)
+    {
+        *appl-blob.o(.text.* .rodata.*)
+        *appl-data.o(.text.* .rodata.*)
+        . = ALIGN(4);
+    } > LIB
+
     .libtext : ALIGN(4)
     {
         *(.text .text.*)
@@ -64,6 +79,13 @@ SECTIONS
     } > LRAM AT> LIB
     __libdata_load = LOADADDR(.libdata);
 
+    /* A body abi/replacements.yaml replaced is undefined in the object and
+     * every reference into it binds to the source's symbol, so nothing links it
+     * in. --layout pack counts those bytes as free and packs the rest of the
+     * text over them, which means leaving them out of the placement fragment;
+     * this is where one lands if that is ever wrong, and the library region
+     * overflowing is how the link says so. Under every other layout the
+     * fragment names them first and they stay where they were. */
     /DISCARD/ : { *(.ARM.exidx*) *(.comment) *(.note*) *(.debug*) }
 }
 

@@ -8,9 +8,14 @@ Nine classes, in order of certainty:
 
   svc      a `svc #N; bx lr` body is the SoftDevice call whose SVC number is N,
            and the S140 headers give the number and the exact prototype.
-  libc     newlib / libgcc bodies, matched the way abi/match.py matches the SDK:
-           the toolchain's own archives are disassembled member by member and
-           their normalised instruction sequences searched for in the image.
+  libc     newlib libc and libgcc bodies, matched the way abi/match.py matches
+           the SDK: the toolchain's own archives are disassembled member by
+           member and their normalised instruction sequences searched for in
+           the image.
+  libm     the same against the math library alone. It is its own class because
+           it is its own archive: a replacement group derived from the `libc`
+           bodies pulls libm's archive code and tables into the link with them,
+           and the library region has no room for both.
   extlib   the same against the other open-source libraries the image contains
            (mbedTLS built by abi/refbuild.sh, the SDK's prebuilt crypto archives).
   string   a function that passes a bare snake_case identifier as the first
@@ -73,7 +78,8 @@ LIBC_TC_LABEL = "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120)"
 MULTILIB = "thumb/v7e-m+fp/hard"
 LIBDIR = os.path.join(LIBC_TC, "arm-none-eabi/lib", MULTILIB)
 LIBGCC_GLOB = os.path.join(LIBC_TC, "lib/gcc/arm-none-eabi")
-LIBC_ARCHIVES = ["libc_nano.a", "libc.a", "libm.a"]
+LIBC_ARCHIVES = ["libc_nano.a", "libc.a"]
+LIBM_ARCHIVES = ["libm.a"]
 # The prebuilt libm.a is a different build of the same source: the image's
 # math is Withings' own newlib compiled with the image's flags, and the libm
 # abi/refbuild.sh builds from that source reaches bodies the archive does not
@@ -90,7 +96,7 @@ EXT_ARCHIVES = [
 EXT_VARIANTS = ["mbedtls_Os", "mbedtls_O2"]
 
 # Which class names an address when two reach it; earlier wins. See main().
-CLASS_RANK = ["svc", "syscall", "libc", "extlib", "wppcmd", "shell", "wppobj", "string",
+CLASS_RANK = ["svc", "syscall", "libc", "libm", "extlib", "wppcmd", "shell", "wppobj", "string",
               "logtag", "logcb", "bleevt", "logline", "helper"]
 
 INSN = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2,4} )+)\s*\t(\S+)\s*(.*)$")
@@ -1575,7 +1581,7 @@ def main():
     ap.add_argument("--dis", default=os.path.join(SIM, "out", "appl.dis"))
     ap.add_argument("--out", default=os.path.join(HERE, "autonames.yaml"))
     ap.add_argument("--classes",
-                    default="svc,syscall,libc,extlib,string,logtag,logcb,wppcmd,shell,"
+                    default="svc,syscall,libc,libm,extlib,string,logtag,logcb,wppcmd,shell,"
                             "bleevt,wppobj,logline,helper")
     ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"),
                     help="abi/ghidra/analyze.sh's export; the partition and call graph")
@@ -1618,27 +1624,36 @@ def main():
         stats["syscall"] = len(found)
         entries += found
 
-    if "libc" in want:
-        libgcc = ""
-        if os.path.isdir(LIBGCC_GLOB):
-            for v in sorted(os.listdir(LIBGCC_GLOB)):
-                cand = os.path.join(LIBGCC_GLOB, v, MULTILIB, "libgcc.a")
-                if os.path.exists(cand):
-                    libgcc = cand
-        sources = [("%s %s" % (LIBC_TC_LABEL, a), os.path.join(LIBDIR, a))
-                   for a in LIBC_ARCHIVES]
-        sources += [("newlib %s libm" % v.split("_")[1],
-                     os.path.join(ROOT, "build", v, "ref.elf")) for v in LIBM_VARIANTS]
-        if libgcc:
-            sources.append(("%s libgcc.a" % LIBC_TC_LABEL, libgcc))
-        found = library_names(img, sources, "libc", args.threshold,
+    # libc and libm are matched the same way against different archives, and the
+    # archive is what decides the class: `libm` is the one a link may leave out.
+    for cls in ("libc", "libm"):
+        if cls not in want:
+            continue
+        if cls == "libc":
+            sources = [("%s %s" % (LIBC_TC_LABEL, a), os.path.join(LIBDIR, a))
+                       for a in LIBC_ARCHIVES]
+            libgcc = ""
+            if os.path.isdir(LIBGCC_GLOB):
+                for v in sorted(os.listdir(LIBGCC_GLOB)):
+                    cand = os.path.join(LIBGCC_GLOB, v, MULTILIB, "libgcc.a")
+                    if os.path.exists(cand):
+                        libgcc = cand
+            if libgcc:
+                sources.append(("%s libgcc.a" % LIBC_TC_LABEL, libgcc))
+        else:
+            sources = [("%s %s" % (LIBC_TC_LABEL, a), os.path.join(LIBDIR, a))
+                       for a in LIBM_ARCHIVES]
+            sources += [("newlib %s libm" % v.split("_")[1],
+                         os.path.join(ROOT, "build", v, "ref.elf"))
+                        for v in LIBM_VARIANTS]
+        found = library_names(img, sources, cls, args.threshold,
                               args.propagate_threshold, args.min_insns)
         protos = prototypes([e["name"] for e in found],
                             [("arm-none-eabi/include",
                               os.path.join(LIBC_TC, "arm-none-eabi/include"))])
         for e in found:
             e.update(protos.get(e["name"], {}))
-        stats["libc"] = len(found)
+        stats[cls] = len(found)
         entries += found
 
     if "extlib" in want:

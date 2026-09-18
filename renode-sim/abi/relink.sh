@@ -80,12 +80,20 @@ for g in $(echo "${REPLACE:-}" | tr , ' '); do REPLACE_ARGS="$REPLACE_ARGS --rep
 # needs the archives it swapped them for. abi/libc_check.py's verdicts are what
 # the group derives its entries from, so they are measured here rather than
 # carried in the repo: a newlib built differently gives different ones.
+# libm is a group of its own and an archive of its own: taking the math bodies
+# from the source build pulls libm.a's code and tables into the library region,
+# so REPLACE=newlib is libc plus libgcc and REPLACE=newlib,libm is both.
+NEWLIB=${NEWLIB:-newlib-nano-big}
+TC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 case ",${REPLACE:-}," in *,newlib,*)
-    NEWLIB=${NEWLIB:-newlib-nano-big}
-    TC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
-    python3 libc_check.py --build "$NEWLIB" --emit "$OUT/libc-bodies.yaml"
-    LIBS="$ROOT/build/$NEWLIB/arm-none-eabi/newlib/libc.a
- $ROOT/build/$NEWLIB/arm-none-eabi/newlib/libm.a
+    python3 libc_check.py --build "$NEWLIB" --class libc --emit "$OUT/libc-bodies.yaml"
+    LIBS="$LIBS $ROOT/build/$NEWLIB/arm-none-eabi/newlib/libc.a
+ $TC/lib/gcc/arm-none-eabi/13.2.1/thumb/v7e-m+fp/hard/libgcc.a"
+    ;;
+esac
+case ",${REPLACE:-}," in *,libm,*)
+    python3 libc_check.py --build "$NEWLIB" --class libm --emit "$OUT/libm-bodies.yaml"
+    LIBS="$LIBS $ROOT/build/$NEWLIB/arm-none-eabi/newlib/libm.a
  $TC/lib/gcc/arm-none-eabi/13.2.1/thumb/v7e-m+fp/hard/libgcc.a"
     ;;
 esac
@@ -111,9 +119,9 @@ REPLACE_ARGS="$REPLACE_ARGS" ./identity.sh
 # means anything together with GC=1: the edits make the feature unreachable and
 # --gc-sections is what removes it.
 if [ -n "${GC:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" --gc ${LAYOUT:+--layout "$LAYOUT"} ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
+    python3 blobify.py -o "$OUT/appl-blob.o" --gc ${LAYOUT:+--layout "$LAYOUT"} ${SPILL:+--spill "$SPILL"} ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
 elif [ -n "${LAYOUT:-}" ] || [ -n "$REPLACE_ARGS" ] || [ -n "${PRUNE:-}" ] || [ -n "${DATA:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" ${LAYOUT:+--layout "$LAYOUT"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
+    python3 blobify.py -o "$OUT/appl-blob.o" ${LAYOUT:+--layout "$LAYOUT"} ${SPILL:+--spill "$SPILL"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
 fi
 if [ -n "${DATA:-}" ]; then ./datagen.sh; fi
 

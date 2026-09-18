@@ -73,13 +73,44 @@ class Elf(object):
         return sites
 
 
-def placed_addresses(place):
-    """{section name: the address the identity placement gives it}."""
+def placed_addresses(place, obj=None):
+    """{section name: the address the section has in the stock image}.
+
+    The identity placement is the source for it, but it is written from the
+    stock partition: a section a replacement renamed `orig_<symbol>` and a
+    section a layout left out of the fragment are not in it. Both are in the
+    object being linked, where abi/blobify.py gives every section a symbol named
+    after the address it had (`a_<address>`), so the object answers for what the
+    placement cannot.
+    """
     out = {}
     for line in open(place):
         m = re.search(r"\((\.\w+\.[\w.$]+)\)\)\s*/\* 0x([0-9a-f]+)", line)
         if m:
             out[m.group(1)] = int(m.group(2), 16)
+    if obj is not None:
+        for name, addr in section_aliases(obj).items():
+            out.setdefault(name, addr)
+    return out
+
+
+def section_aliases(obj):
+    """{section name: the address its `a_<address>` symbol names}, from the object."""
+    elf = Elf(obj)
+    data, out = elf.data, {}
+    link = [x for x in elf.sections if x["name"] == ".strtab"][0]["off"]
+    for s in elf.sections:
+        if s["type"] != 2 or not s["entsize"]:          # SHT_SYMTAB
+            continue
+        for at in range(0, s["size"], s["entsize"]):
+            name, value, _, _, _, shndx = struct.unpack_from("<IIIBBH", data,
+                                                             s["off"] + at)
+            if not name or not shndx or shndx >= len(elf.sections):
+                continue
+            end = data.index(b"\0", link + name)
+            sym = data[link + name:end].decode()
+            if re.match(r"^a_[0-9a-f]{8}$", sym) and value in (0, 1):
+                out.setdefault(elf.sections[shndx]["name"], int(sym[2:], 16))
     return out
 
 
@@ -91,7 +122,7 @@ def gc_moves(mapfile, place, obj):
     said about a word. ld -M prints one line per input section with the address
     it was placed at, which is the only place that mapping exists.
     """
-    addresses = placed_addresses(place)
+    addresses = placed_addresses(place, obj)
     sizes = {s["name"]: s["size"] for s in Elf(obj).sections}
     want = os.path.basename(obj)
     out, pending, started = [], None, False
@@ -135,7 +166,7 @@ def dropped_sections(report, place, obj):
         m = re.search(r"removing unused section '([^']+)' in file '([^']+)'", line)
         if m and os.path.basename(m.group(2)) == os.path.basename(obj):
             removed.add(m.group(1))
-    addresses = placed_addresses(place)
+    addresses = placed_addresses(place, obj)
     elf = Elf(obj)
     sizes = {s["name"]: s["size"] for s in elf.sections}
     out = []

@@ -121,11 +121,13 @@ groups:
     derive:
       bodies: ../out/relink/libc-bodies.yaml
       build: newlib-nano-big
+      class: libc
       reproduces: [exact, masked]
       why: >
         abi/libc_check.py compares every body abi/autonames.yaml classes `libc`
         against the same body in the build, with the fields a relocation owns
-        masked out. `exact` and `masked` are the two verdicts that say the
+        masked out. The class is the archive the body came out of, and the math
+        library is not in it: see the `libm` group. `exact` and `masked` are the two verdicts that say the
         source is the image's source; `differs` and `absent` are the bodies the
         blob keeps, and they are reported by name at every link. `local` is the
         third of those: a body the archive defines static to its own object,
@@ -263,3 +265,24 @@ groups:
         why: >
           `n *= size; p = pvPortMalloc(n); if (p) memset(p, 0, n); return p;`
           -- read off 0x97fb4..0x97fce. No overflow check, as in the image.
+
+  - group: libm
+    why: >
+      The math library, derived the same way as `newlib` and separate from it
+      because it is a separate archive with a separate cost. The image's libm is
+      Withings' own build of the same newlib source, so abi/refbuild.sh's libm
+      reproduces sin, cos, exp, log, pow, sqrt, their ieee754 kernels and the
+      float entry points where the image has them. Taking them from libm.a
+      brings the archive's own code and its argument-reduction tables into the
+      library region, which `newlib` alone does not pay for; `REPLACE=newlib`
+      is therefore the C library and libgcc, and `REPLACE=newlib,libm` is both.
+    derive:
+      bodies: ../out/relink/libm-bodies.yaml
+      build: newlib-nano-big
+      class: libm
+      reproduces: [exact, masked]
+      why: >
+        The same measurement as the `newlib` group's, over the bodies
+        abi/autonames.yaml classes `libm`. `local` is the verdict that keeps
+        with_errnof and xflow in the blob: newlib's math wrappers are static to
+        their own object, so nothing can link against the names.

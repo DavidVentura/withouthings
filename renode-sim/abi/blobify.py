@@ -430,6 +430,9 @@ def derive(spec, relative_to):
     if verdicts["build"] != spec["build"]:
         sys.exit("%s was measured against %s, the group asks for %s"
                  % (bodies, verdicts["build"], spec["build"]))
+    if verdicts.get("class") != spec["class"]:
+        sys.exit("%s measures the %s bodies, the group asks for %s"
+                 % (bodies, verdicts.get("class"), spec["class"]))
     wanted = set(spec["reproduces"])
     excepted = {e["symbol"]: e["why"] for e in spec.get("except", [])}
     found = set(b["symbol"] for b in verdicts["bodies"])
@@ -729,7 +732,7 @@ def apply_prunes(blob, items, path, wanted):
     return touched
 
 
-def gc_reachable(sections, section_names, start):
+def gc_reachable(sections, section_names, start, also=()):
     """The section starts --gc-sections keeps when it enters the object at `start`.
 
     One node per section and one edge per relocation, which is the same graph
@@ -742,7 +745,8 @@ def gc_reachable(sections, section_names, start):
     for s in sections:
         for _, name, _ in section_names(s):
             owner.setdefault(name, s)
-    seen, stack = set([start.start]), [start]
+    stack = [start] + [s for s in also]
+    seen = set(s.start for s in stack)
     while stack:
         for _, sym, _ in stack.pop().relocs:
             target = owner.get(sym)
@@ -811,10 +815,19 @@ def main():
     ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"))
     ap.add_argument("--place", default=os.path.join(SIM, "out", "relink-place.ld"))
     ap.add_argument("--stock", default=os.path.join(SIM, "out", "relink", "stock-defs.o"))
-    ap.add_argument("--layout", choices=("shift", "reverse"),
+    ap.add_argument("--layout", choices=("shift", "reverse", "pack"),
                     help="move every text section: `shift` keeps the order and"
                          " slides it, `reverse` turns it round. The stale-address"
-                         " scan is what this is for.")
+                         " scan is what these two are for. `pack` closes the"
+                         " image up over the bodies a replacement group made"
+                         " unreferenced, which leaves one hole at the top of the"
+                         " text for --spill to link a library archive into.")
+    ap.add_argument("--spill", action="append", default=[], metavar="PATTERN",
+                    help="a linker input-file pattern whose text and rodata go"
+                         " into the flash --layout pack freed, instead of into"
+                         " the library region after the image; the library"
+                         " region ends at the bootloader and cannot grow, so"
+                         " this is the only place a bigger library fits")
     ap.add_argument("--gc", action="store_true",
                     help="place only the fixed points and KEEP only what the"
                          " linker cannot see, so --gc-sections drops the rest;"
@@ -1098,6 +1111,26 @@ def main():
             sys.exit("%s is defined in the blob, so the library would never be"
                      " called for it" % name)
 
+    # The keep list is decided before the layout, because --layout pack needs to
+    # know what --gc-sections will drop: a section the object does not reach and
+    # the list does not keep is one the linker removes, and its bytes are free
+    # for the packing exactly as a replaced body's are. A section that survives
+    # after all is not placed by the fragment and falls into relink.ld's
+    # `.blobdead`, where it is linked correctly and shows up in the map.
+    keep = None
+    if args.gc:
+        keep = gc_keep_list(sections, layout, pinned_addresses(manifest, layout),
+                            words, args.reach, section_names,
+                            replacements.by_start)
+        if args.keep_also:
+            by_name = {s.name: s for s in sections}
+            listed = set(s.name for s, _ in keep)
+            for line in open(args.keep_also):
+                name = line.strip()
+                if name and name not in listed:
+                    keep.append((by_name[name], "asked for on the command line"))
+
+    hole, dead = None, set()
     if args.layout:
         pinned = pinned_addresses(manifest, layout)
         anchors = dict((w["value"] & ~1, "review") for w in words
@@ -1105,10 +1138,25 @@ def main():
         for d in classified["displacements"]:
             anchors[d["site"]] = "displacement"
             anchors[d["target"]] = "displacement"
+        if args.layout == "pack":
+            dead = set(replacements.by_start)
+            if keep is not None:
+                survives = gc_reachable(sections, section_names,
+                                        layout.at(APP_BASE), [s for s, _ in keep])
+                dead |= set(s.start for s in sections if s.start not in survives)
+        else:
+            dead = set()
         moves, spare, held = objectify.relayout(sections, args.layout, pinned,
-                                                anchors)
-        print("  layout %s: %d text sections moved, %d bytes of spare flash used"
-              % (args.layout, len(moves), spare - objectify.SPARE_BASE))
+                                                anchors, dead)
+        if args.layout == "pack":
+            hole, spare = spare, objectify.SPARE_BASE
+            print("  layout pack: %d text sections packed over %d replaced"
+                  " bodies, leaving 0x%x..0x%x, %d bytes, for %s"
+                  % (len(moves), len(dead), hole[0], hole[1], hole[1] - hole[0],
+                     ", ".join(args.spill) or "nothing"))
+        else:
+            print("  layout %s: %d text sections moved, %d bytes of spare flash used"
+                  % (args.layout, len(moves), spare - objectify.SPARE_BASE))
         for why in sorted(set(held.values())):
             kept = [s for s in sections if held.get(s.start) == why]
             print("  %d text sections held in place by a %s (%d bytes)"
@@ -1127,18 +1175,9 @@ def main():
     build(in_blob, blob, symbols, args.o)
     obj = "*" + os.path.basename(args.o)
     if args.gc:
-        pinned = pinned_addresses(manifest, layout)
-        keep = gc_keep_list(sections, layout, pinned, words, args.reach,
-                            section_names, replacements.by_start)
-        if args.keep_also:
-            by_name = {s.name: s for s in sections}
-            listed = set(s.name for s, _ in keep)
-            for line in open(args.keep_also):
-                name = line.strip()
-                if name and name not in listed:
-                    keep.append((by_name[name], "asked for on the command line"))
         objectify.placement(sections, moves, args.place, obj,
-                            keep=dict((s.start, why) for s, why in keep))
+                            keep=dict((s.start, why) for s, why in keep),
+                            drop=dead, hole=hole, spill=args.spill)
         reasons = collections.Counter(why.split(" 0x")[0].split("/")[0]
                                       for _, why in keep)
         print("  --gc keeps %d sections (%d bytes) the linker cannot see: %s"
@@ -1148,7 +1187,8 @@ def main():
         objectify.reclaim_placement(sections, pinned_addresses(manifest, layout),
                                     args.place, obj)
     else:
-        objectify.placement(sections, moves, args.place, obj)
+        objectify.placement(sections, moves, args.place, obj, drop=dead,
+                            hole=hole, spill=args.spill)
     with open(os.path.splitext(args.place)[0] + "-moves.json", "w") as fh:
         json.dump([{"section": s.sym, "old": s.start, "end": s.end,
                     "new": moves[s.sym]} for s in sections if s.sym in moves], fh)
