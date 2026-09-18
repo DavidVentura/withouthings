@@ -38,6 +38,21 @@ sys.calltrace[0x{addr:x}] = sys.calltrace.get(0x{addr:x}, 0) + 1
 """
 '''
 
+# Counting loses the one thing a scenario trace is for: which function ran
+# first. The entry keeps a count, the sequence number of its first entry and
+# the virtual time of it, so a rate and an order come out of the same run.
+ORDER_HOOK = '''cpu AddHook 0x{addr:x} """
+import sys
+if not hasattr(sys, 'calltrace'): sys.calltrace = dict(); sys.calltrace_n = [0]
+sys.calltrace_n[0] += 1
+e = sys.calltrace.setdefault(0x{addr:x}, [0, 0, 0.0])
+e[0] += 1
+if e[1] == 0:
+    e[1] = sys.calltrace_n[0]
+    e[2] = cpu.GetMachine().ElapsedVirtualTime.TimeElapsed.TotalMicroseconds
+"""
+'''
+
 REPORT = '''cpu AddHook 0x{addr:x} """
 import sys
 for k in sorted(getattr(sys, 'calltrace', dict())):
@@ -66,11 +81,20 @@ def main():
                          " puts in another module")
     ap.add_argument("--count", action="store_true",
                     help="count the entries instead of printing them")
+    ap.add_argument("--order", action="store_true",
+                    help="count, and keep the first entry's position and time")
+    ap.add_argument("--addresses",
+                    help="a file of addresses, one per line, to hook instead of"
+                         " a module or a range; a set a trace was asked for by"
+                         " some other rule than the log-tag partition")
     ap.add_argument("--report", type=lambda x: int(x, 0),
                     help="the address whose entry dumps the counts; give the"
                          " function that ends the run")
     args = ap.parse_args()
-    if args.module:
+    if args.addresses:
+        hooked = set(int(line.split()[0], 16) for line in open(args.addresses)
+                     if line.strip() and not line.startswith("#"))
+    elif args.module:
         hooked = set(module_functions(args.modules, args.module))
     elif args.lo is not None and args.hi is not None:
         hooked = set()
@@ -83,7 +107,7 @@ def main():
     else:
         sys.exit("give a range or --module")
     hooked.update(args.also)
-    template = COUNT_HOOK if args.count else HOOK
+    template = ORDER_HOOK if args.order else COUNT_HOOK if args.count else HOOK
     for addr in sorted(hooked):
         if addr == args.report:
             continue

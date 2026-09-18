@@ -99,7 +99,8 @@ HAND = "hand"
 # recovered, so where both reach an address the measured one keeps it.
 RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "vendor", "string",
         "wppcmd", "codec", "wppobj", "wuiview", "vasistas", "store", "sensor",
-        "shell", "logtag", "logcb", "bleevt", "logline", "helper", "prose"]
+        "trace", "shell", "logtag", "logcb", "bleevt", "logline", "helper",
+        "prose"]
 
 
 # The derivations that settle an address rather than read it: a byte verdict
@@ -111,7 +112,7 @@ RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "vendor", "string",
 # the repo is standing on.
 SETTLED = ("libc", "libm", "extlib", "svc", "syscall", "string",
            "wppcmd", "shell", "bleevt", "codec", "wuiview", "store",
-           "vasistas", "sensor")
+           "vasistas", "sensor", "trace")
 
 
 def outranks(klass, other):

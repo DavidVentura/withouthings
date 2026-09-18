@@ -11,8 +11,10 @@ use wpp::client::{probe_frame, Credentials};
 use wpp::commands::Command;
 use wpp::frame::{Channel, Frame};
 use wpp::objects::{
-    InfoType, MeasureCategory, MeasureLiveAppStatus, ProbeChallenge, ProbeChallengeResponse,
-    ProbeReply, TimeSet, Uint32, VasistasType, Version, WamVasistasGet,
+    ActivitySubcategory, Alarm, Distance, InfoType, LocalNotification, MeasureCategory,
+    MeasureLiveAppStatus, Pace, PauseState, ProbeChallenge, ProbeChallengeResponse, ProbeReply,
+    SleepActivityGet, Speed, StartTime, TimeSet, Uint32, VasistasType, Version, WamAutoSleep,
+    WamVasistasGet, WorkoutGpsStatus,
 };
 use wpp::WppObject;
 
@@ -31,6 +33,23 @@ const QUIET: Duration = Duration::from_secs(20);
 /// A whole ECG measurement: thirty seconds of the 300 Hz the watch reports in
 /// the measurement's own StoredSignalMeta.
 const ECG_SAMPLES: u32 = 30 * 300;
+/// The subcategory the workout scenario starts by default. The watch reads it
+/// as the sport, and running is the one that turns on every algorithm a
+/// workout can run.
+const ACTIVITY_SUBCATEGORY_RUNNING: i16 = 2;
+/// A wall time for a scenario that did not ask for one, so the records a
+/// workout or a sleep window writes carry a plausible timestamp rather than
+/// the watch's uptime. 2025-09-18 09:00:00 UTC.
+const DEFAULT_SCENARIO_TIME: u32 = 1758186000;
+
+/// A scenario's duration argument, which every live scenario takes the same way.
+fn seconds(arguments: &mut impl Iterator<Item = String>, flag: &str) -> u64 {
+    arguments
+        .next()
+        .unwrap_or_else(|| panic!("{flag} takes a number of seconds"))
+        .parse()
+        .unwrap_or_else(|_| panic!("{flag} takes a number of seconds"))
+}
 
 struct Link {
     socket: TcpStream,
@@ -310,6 +329,255 @@ fn ecg(link: &mut Link, seconds: u64) -> std::io::Result<()> {
     )
 }
 
+/// How long a live scenario watches the link before it sends its closing
+/// command, and how often it pushes the phone's own updates while it waits.
+const LIVE_TICK: Duration = Duration::from_secs(5);
+
+/// Everything the watch says between two commands, decoded.
+///
+/// A feature the phone starts and stops runs on the watch in between, and the
+/// frames it pushes on the slave channel are the only report of it, so a
+/// scenario's middle is a read loop with the phone's periodic writes folded in
+/// rather than a request and an answer.
+fn watch(
+    link: &mut Link,
+    label: &str,
+    until: Instant,
+    mut tick: impl FnMut(&mut Link, u32) -> std::io::Result<()>,
+) -> std::io::Result<usize> {
+    println!("\n== {label} ==");
+    let mut frames = 0usize;
+    let mut ticks = 0u32;
+    while Instant::now() < until {
+        let next = (Instant::now() + LIVE_TICK).min(until);
+        while let Some(frame) = link.next_frame(next)? {
+            frames += 1;
+            if frame.command.channel() != Some(Channel::SlaveRequest) {
+                report(&frame);
+            }
+        }
+        tick(link, ticks)?;
+        ticks += 1;
+    }
+    println!("   {frames} frames from the watch over {label}");
+    Ok(frames)
+}
+
+/// One workout, driven the way the phone drives it.
+///
+/// WORKOUT_START carries the three objects its handler at 0x6a864 parses --
+/// StartTime, ActivitySubcategory and PauseState -- and the subcategory is what
+/// says which sport, so it is what selects the algorithms the watch runs. The
+/// phone owns the GPS, so what it sends during the workout is the fix's state
+/// through WORKOUT_GPS_STATUS and the distance, pace and speed it derives
+/// through WORKOUT_LIVE_DATA; the protocol has no coordinate object.
+fn workout(link: &mut Link, seconds: u64, subcategory: i16, now: i32) -> std::io::Result<()> {
+    run(
+        link,
+        &Step {
+            label: "workout start",
+            frame: Frame::new(
+                Command::CMD_WORKOUT_START,
+                vec![
+                    WppObject::StartTime(StartTime { value: now }),
+                    WppObject::ActivitySubcategory(ActivitySubcategory { value: subcategory }),
+                    WppObject::PauseState(PauseState { value: 0, start_time: 0, sum: 0 }),
+                ],
+            ),
+            answers: Answers::One,
+        },
+    )?;
+    run(
+        link,
+        &Step {
+            label: "workout status",
+            frame: Frame::new(Command::CMD_WORKOUT_STATUS, Vec::new()),
+            answers: Answers::One,
+        },
+    )?;
+    // A fix takes a moment on a phone too: the first status is searching and
+    // the rest are locked, which is the transition the watch's GPS screen reads.
+    run(
+        link,
+        &Step {
+            label: "gps searching",
+            frame: Frame::new(
+                Command::CMD_WORKOUT_GPS_STATUS,
+                vec![WppObject::WorkoutGpsStatus(WorkoutGpsStatus { status: 1 })],
+            ),
+            answers: Answers::One,
+        },
+    )?;
+
+    let until = Instant::now() + Duration::from_secs(seconds);
+    watch(link, "workout live", until, |link, tick| {
+        // Five metres a second is a run, and the pace is the reciprocal in the
+        // seconds per kilometre the object carries.
+        let metres = 5 * (tick as i32 + 1) * LIVE_TICK.as_secs() as i32;
+        link.send(&Frame::new(
+            Command::CMD_WORKOUT_GPS_STATUS,
+            vec![WppObject::WorkoutGpsStatus(WorkoutGpsStatus { status: 2 })],
+        ))?;
+        link.send(&Frame::new(
+            Command::CMD_WORKOUT_LIVE_DATA,
+            vec![
+                WppObject::Distance(Distance { value: metres }),
+                WppObject::Pace(Pace { value: 200 }),
+                WppObject::Speed(Speed { value: 5000 }),
+            ],
+        ))
+    })?;
+
+    run(
+        link,
+        &Step {
+            label: "workout stop",
+            frame: Frame::new(Command::CMD_WORKOUT_STOP, Vec::new()),
+            answers: Answers::One,
+        },
+    )?;
+    run(
+        link,
+        &Step {
+            label: "workout status, after",
+            frame: Frame::new(Command::CMD_WORKOUT_STATUS, Vec::new()),
+            answers: Answers::One,
+        },
+    )
+}
+
+/// A manual heart-rate measurement: the one the watch face's heart-rate tile
+/// starts.
+///
+/// The handler at 0x624e4 reads a single Uint32 and nothing else: zero starts
+/// the measurement and one stops it, and everything in between arrives as live
+/// heart rate on the slave channel.
+fn hr_measure(link: &mut Link, seconds: u64) -> std::io::Result<()> {
+    run(
+        link,
+        &Step {
+            label: "hr measure start",
+            frame: Frame::new(Command::CMD_HR_MEASURE, vec![WppObject::Uint32(Uint32 { val: 0 })]),
+            answers: Answers::One,
+        },
+    )?;
+    let until = Instant::now() + Duration::from_secs(seconds);
+    watch(link, "hr measure live", until, |link, _| {
+        link.send(&Frame::new(Command::CMD_GET_LIVE_HR, Vec::new()))
+    })?;
+    run(
+        link,
+        &Step {
+            label: "hr measure stop",
+            frame: Frame::new(Command::CMD_HR_MEASURE, vec![WppObject::Uint32(Uint32 { val: 1 })]),
+            answers: Answers::One,
+        },
+    )?;
+    run(
+        link,
+        &Step {
+            label: "heart rate, after",
+            frame: Frame::new(Command::CMD_GET_HR, Vec::new()),
+            answers: Answers::One,
+        },
+    )
+}
+
+/// An alarm the phone sets, and the settings read back.
+fn alarm(link: &mut Link) -> std::io::Result<()> {
+    for step in [
+        Step {
+            label: "set alarm",
+            frame: Frame::new(
+                Command::CMD_SET_ALARM,
+                vec![WppObject::Alarm(Alarm {
+                    hour: 7,
+                    minute: 30,
+                    wday: 0x7f,
+                    mday: 0,
+                    month: 0,
+                    year: 0,
+                    span: 0,
+                })],
+            ),
+            answers: Answers::One,
+        },
+        Step {
+            label: "alarm read back",
+            frame: Frame::new(Command::CMD_GET_ALARM, Vec::new()),
+            answers: Answers::One,
+        },
+        Step {
+            label: "alarm settings",
+            frame: Frame::new(Command::CMD_GET_ALARM_SETTINGS, Vec::new()),
+            answers: Answers::One,
+        },
+    ] {
+        run(link, &step)?;
+    }
+    Ok(())
+}
+
+/// Sleep: the watch decides it itself, so the phone's part is to turn automatic
+/// sleep on and then leave the watch alone. The scenario is the quiet that
+/// follows, which is what the sleep-wake algorithm reads.
+fn sleep(link: &mut Link, seconds: u64, now: i32) -> std::io::Result<()> {
+    for step in [
+        Step {
+            label: "auto sleep on",
+            frame: Frame::new(
+                Command::CMD_WAM_AUTO_SLEEP,
+                vec![WppObject::WamAutoSleep(WamAutoSleep { auto_sleep: 1 })],
+            ),
+            answers: Answers::One,
+        },
+        Step {
+            label: "auto sleep read back",
+            frame: Frame::new(Command::CMD_WAM_AUTO_SLEEP_GET, Vec::new()),
+            answers: Answers::One,
+        },
+    ] {
+        run(link, &step)?;
+    }
+    let until = Instant::now() + Duration::from_secs(seconds);
+    watch(link, "still and worn", until, |_, _| Ok(()))?;
+    run(
+        link,
+        &Step {
+            label: "sleep activity",
+            frame: Frame::new(
+                Command::CMD_SLEEP_ACTIVITY_GET,
+                vec![WppObject::SleepActivityGet(SleepActivityGet { from_utc: now - 86400 })],
+            ),
+            answers: Answers::One,
+        },
+    )
+}
+
+/// A notification push. ANCS is the phone's own service and the sim has no
+/// radio, so what is reachable over the pipe is the local-event path the watch
+/// exposes for the same purpose.
+fn notify(link: &mut Link) -> std::io::Result<()> {
+    for step in [
+        Step {
+            label: "notification push",
+            frame: Frame::new(
+                Command::CMD_LOCAL_EVENT_NOTIFY,
+                vec![WppObject::LocalNotification(LocalNotification { id: 1, status: 1 })],
+            ),
+            answers: Answers::One,
+        },
+        Step {
+            label: "notification read back",
+            frame: Frame::new(Command::CMD_NOTIFICATION_GET, Vec::new()),
+            answers: Answers::One,
+        },
+    ] {
+        run(link, &step)?;
+    }
+    Ok(())
+}
+
 fn report(frame: &Frame) {
     println!("<- {:?}", frame.command.opcode_name());
     for object in &frame.objects {
@@ -374,6 +642,14 @@ fn main() -> ExitCode {
     let mut probe_only = false;
     // Seconds of ECG to watch between the start and the stop.
     let mut ecg_seconds: Option<u64> = None;
+    // The live scenarios, each the seconds it runs for between its own start
+    // and stop commands.
+    let mut workout_seconds: Option<u64> = None;
+    let mut workout_subcategory: i16 = ACTIVITY_SUBCATEGORY_RUNNING;
+    let mut hr_seconds: Option<u64> = None;
+    let mut sleep_seconds: Option<u64> = None;
+    let mut alarm_scenario = false;
+    let mut notify_scenario = false;
     // A bare command by number, for asking the watch what it does with one.
     // Removing a command from the dispatch table is only half an answer; what
     // the phone sees is the other half, and nothing else here can send a
@@ -409,7 +685,24 @@ fn main() -> ExitCode {
                 version_trailer = update::VersionTrailer::at(parsed)
                     .unwrap_or_else(|reason| panic!("--version-address {text}: {reason}"));
             }
+            // The pipe is on localhost and a run that shares the host with
+            // another run differs from it only in the port.
+            "--port" => {
+                endpoint = format!("127.0.0.1:{}", arguments.next().expect("--port takes a port"))
+            }
             "--probe-only" => probe_only = true,
+            "--workout" => workout_seconds = Some(seconds(&mut arguments, "--workout")),
+            "--activity" => {
+                workout_subcategory = arguments
+                    .next()
+                    .expect("--activity takes a subcategory")
+                    .parse()
+                    .expect("--activity takes a subcategory")
+            }
+            "--hr-measure" => hr_seconds = Some(seconds(&mut arguments, "--hr-measure")),
+            "--sleep" => sleep_seconds = Some(seconds(&mut arguments, "--sleep")),
+            "--alarm" => alarm_scenario = true,
+            "--notify" => notify_scenario = true,
             "--ecg" => {
                 ecg_seconds = Some(
                     arguments
@@ -427,7 +720,7 @@ fn main() -> ExitCode {
                     .expect("--send takes a command number"),
             ),
             other => {
-                eprintln!("usage: wpp-sim-client [--endpoint host:port] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--send <command>] [--update <package> [--version-address <hex>]]");
+                eprintln!("usage: wpp-sim-client [--endpoint host:port | --port n] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--workout <seconds> [--activity <n>]] [--hr-measure <seconds>] [--sleep <seconds>] [--alarm] [--notify] [--send <command>] [--update <package> [--version-address <hex>]]");
                 eprintln!("unknown argument {other}");
                 return ExitCode::FAILURE;
             }
@@ -474,6 +767,51 @@ fn main() -> ExitCode {
     }
     if let Some(seconds) = ecg_seconds {
         ecg(&mut link, seconds).expect("the link stays up");
+        return ExitCode::SUCCESS;
+    }
+    // A scenario needs the watch's own clock to be a plausible wall time, since
+    // a workout and a sleep window are both timestamped against it, so the
+    // scenarios write the time first and then use the same value themselves.
+    let scenario = workout_seconds.is_some()
+        || hr_seconds.is_some()
+        || sleep_seconds.is_some()
+        || alarm_scenario
+        || notify_scenario;
+    if scenario {
+        let now = set_time.unwrap_or(DEFAULT_SCENARIO_TIME);
+        run(
+            &mut link,
+            &Step {
+                label: "set time",
+                frame: Frame::new(
+                    Command::CMD_TIME_SET,
+                    vec![WppObject::TimeSet(TimeSet {
+                        utc: now,
+                        gmt_offset: 0,
+                        dst_change_time: 0,
+                        next_gmt_offset: 0,
+                    })],
+                ),
+                answers: Answers::One,
+            },
+        )
+        .expect("the link stays up");
+        if let Some(seconds) = workout_seconds {
+            workout(&mut link, seconds, workout_subcategory, now as i32)
+                .expect("the link stays up");
+        }
+        if let Some(seconds) = hr_seconds {
+            hr_measure(&mut link, seconds).expect("the link stays up");
+        }
+        if alarm_scenario {
+            alarm(&mut link).expect("the link stays up");
+        }
+        if notify_scenario {
+            notify(&mut link).expect("the link stays up");
+        }
+        if let Some(seconds) = sleep_seconds {
+            sleep(&mut link, seconds, now as i32).expect("the link stays up");
+        }
         return ExitCode::SUCCESS;
     }
     if !send_commands.is_empty() {

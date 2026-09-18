@@ -12,7 +12,7 @@ meta:
   toolchain: arm-gnu-toolchain-13.2.Rel1
   saadc_toolchain: arm-gnu-toolchain-13.2.Rel1, nrfx 2.1.0 (abi/refbuild.sh)
   libm_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120)
-  measured: 2026-09-18
+  measured: 2026-09-19
   threshold: 0.65
   # The reference builds this measurement is comparable against, and the
   # set a re-run uses unless --variants or --all-variants says otherwise:
