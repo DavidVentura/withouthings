@@ -7271,7 +7271,8 @@ symbols:
     +0 (0x7a6e6), multiplies each of the n inputs by the window at +0x10 when the
     flag at +0xc is set (0x7a700..0x7a708), writes zero for every index past n (0x7a72a)
     up to the 0x200 the `cmp.w r3,#0x200` fixes, and hands the 512-point buffer
-    to fft_real_split'
+    to fft_real_split. 130 calls in the 700 s HR run against 65 of hr_algo_step,
+    2 per window'
 - address: 0x7a73c
   name: spectrum_power_bins
   kind: function
@@ -7282,7 +7283,8 @@ symbols:
     the 255 interior bins as re*re + im*im doubled (the `vadd.f32 s15, s15, s15`
     at 0x7a788) over the pairs from +8 to +0x7f8, and the last bin from the second
     word of the packed pair, which is the Nyquist term (0x7a792). Every bin is scaled
-    by the plan''s +8. It refuses any length but 257 (0x7a742)'
+    by the plan''s +8. It refuses any length but 257 (0x7a742). 130 calls in the
+    700 s HR run against 65 of hr_algo_step, 2 per window'
 - address: 0x7aa60
   name: hr_algo_step
   kind: function
@@ -7302,7 +7304,8 @@ symbols:
     at +4, the first step emitting x[n] - x[n-1] and every later one (x[n] - x[n-2])
     * 0.5 (the `vmov.f32 s12, #5.000000e-01` at 0x7af18) -- with the warm-up counter
     at +8 held as a word rather than a halfword, so it is a second copy of the routine
-    in another translation unit and not another operation'
+    in another translation unit and not another operation. 1786 calls in the 700
+    s HR run against 1786 of hr_algo_process_sample, one per sample'
 - address: 0x7af28
   name: window_zscore_step
   kind: function
@@ -7313,7 +7316,8 @@ symbols:
     to +0x14 and the whole window divided by it goes to the buffer at +0x1c (0x7af96..0x7afb6),
     with the divisor forced to 1.0 when its magnitude falls under the literal at
     0x53fbc. Dividing a window by its own standard deviation is one operation and
-    the byte at +0x10 is the only thing that gates it'
+    the byte at +0x10 is the only thing that gates it. 1785 calls in the 700 s HR
+    run against 1786 of hr_algo_process_sample, one per sample'
 - address: 0x7afc0
   name: vec_f32_diff_energy
   kind: function
@@ -7324,7 +7328,8 @@ symbols:
     = 0 accumulates x[i]^2, k = 1 accumulates (x[i+1] - x[i])^2 (the `vsubeq` at
     0x7afec) and k = 2 accumulates (x[i+2] - 2*x[i+1] + x[i])^2 (the `vfmsne` against
     2.0 at 0x7afe8 and the `vaddne` at 0x7aff0). Those three sums are the spectral
-    moments m0, m1 and m2'
+    moments m0, m1 and m2. 195 calls in the 700 s HR run against 65 of hr_algo_step,
+    3 per window'
 - address: 0x7b004
   name: spectral_purity_index
   kind: function
@@ -7334,7 +7339,8 @@ symbols:
     0, 4 and 2 (0x7b00c, 0x7b01a, 0x7b03a), refused to a constant when |m0 * m2|
     falls under the literal at 0x54050. The ratio of the squared first moment to
     the product of the zeroth and second is one number with one name, and hr_spectrum_step
-    stores it beside the window's standard deviation
+    stores it beside the window's standard deviation. 65 calls in the 700 s HR run
+    against 65 of hr_algo_step, once per window
 - address: 0x7b058
   name: hr_spectrum_step
   kind: function
@@ -7347,7 +7353,8 @@ symbols:
     normalised by vec_f32_normalise_sum, and vec_f32_stddev of the raw window into
     +0xeac (0x7b0a8..0x7b0f8); then the same transform over the accelerometer window
     into +0xa68, floored at the literal at 0x54174 and weighted by vec_f32_band_weight_powf
-    (0x7b10a..0x7b154). Two windows in, two normalised spectra and two scalars out'
+    (0x7b10a..0x7b154). Two windows in, two normalised spectra and two scalars out.
+    1686 calls in the 700 s HR run against 1971 popped slots'
 - address: 0x7b178
   name: spectrotrack_posterior_update
   kind: function
@@ -7359,7 +7366,8 @@ symbols:
     multiplied into the weights by vec_f32_mul and renormalised again (0x7b1f6..0x7b222),
     then every weight is clamped into [the literal at 0x54284, 1.0] (0x7b246..0x7b270).
     It refuses an exponent outside [0, 1] (0x7b19a, 0x7b1a8), which is what makes
-    it a temperature'
+    it a temperature. 130 calls in the 700 s HR run against 65 of hr_algo_step,
+    2 per window'
 - address: 0x7b3dc
   name: vec_f32_convolve
   kind: function
@@ -7370,7 +7378,8 @@ symbols:
     output accumulates kernel[j] * x[i+j] by `vfma` (0x7b45c), and the mode byte
     off the stack picks what happens past the edge -- 0 drops the tap, 1 takes the
     first element (`vldr s15, [r1]` at 0x7b450) and 2 takes the mirror (`vldr s15,
-    [r8, #-4]` at 0x7b46c) -- with anything above 2 refused at 0x7b3f2'
+    [r8, #-4]` at 0x7b46c) -- with anything above 2 refused at 0x7b3f2. 195 calls
+    in the 700 s HR run against 65 of hr_algo_step, 3 per window'
 - address: 0x7b4b0
   name: hr_tempo_algo_step
   kind: function
@@ -13506,7 +13515,8 @@ symbols:
   class: sensor
   module: SENSORS_SYNC
   evidence: x[0], then `movlt` on each element that runs higher (0x9ea6e..0x9ea72);
-    the integer vec_f32_max, and like it it returns the value and not the index
+    the integer vec_f32_max, and like it it returns the value and not the index.
+    83 calls in the 700 s HR run against 1971 popped slots
 - address: 0x9ea80
   name: fabsf_vfp
   kind: function
@@ -13708,9 +13718,11 @@ symbols:
     0xa063a), declaring a beat only when more than 15 and more than 14 of them run
     lower. The winner's channel goes to +0x94 and its value to +0x98, and +0xa0
     takes the position as (channel + 0x10) + (samples - 9) * 4 (0xa0674..0xa067e),
-    which is quarter-sample units because the four values are four interleaved sub-samples.
-    ppg_heart_beats_algo_step calls it twice, negating those four floats in between
-    (0xa0554..0xa0584), so the second call is the same detector finding troughs
+    so the position counts in quarters of a sample and the channel is its fractional
+    part, which is only consistent with the four values being four points in time
+    rather than four sensors; that much the arithmetic forces and no more. ppg_heart_beats_algo_step
+    calls it twice, negating those four floats in between (0xa0554..0xa0584), so
+    the second call is the same detector finding troughs
 - address: 0xa071c
   name: motion_window_decide
   kind: function
@@ -13773,7 +13785,8 @@ symbols:
   evidence: 'the complex FFT the real transform is built on: 1738 bytes of radix
     butterflies over the twiddle table the plan''s +0x14 points at, reached only
     from fft_real_split and calling only its own stage bodies. No CMSIS-DSP or KissFFT
-    body matches it (matches.yaml), so it is Withings'' own'
+    body matches it (matches.yaml), so it is Withings'' own. 130 calls in the 700
+    s HR run against 65 of hr_algo_step, 2 per window'
 - address: 0xa1ec2
   name: fft_real_split
   kind: function
@@ -13786,7 +13799,8 @@ symbols:
     k it forms (a+b)/2 and (a-b)/2 against the mirror element at 0xa1f38..0xa1f7c
     with the twiddle pair from +0x14 applied by vfma/vfms, and the DC term is the
     lone (x0+x1)/2, (x0-x1)/2 pair at 0xa1ee8..0xa1f06, which is the packed real
-    spectrum''s DC-and-Nyquist word'
+    spectrum''s DC-and-Nyquist word. 130 calls in the 700 s HR run against 65 of
+    hr_algo_step, 2 per window'
 - address: 0xa20c8
   name: hr_algo_report_state
   kind: function
@@ -13797,7 +13811,8 @@ symbols:
     and quality at +0x1910 and +0x1915, the channel bank's outputs, the result block's
     bpm and quality at +0x2ec4..+0x2ec7 (0xa20d4..0xa2156) -- and hands it to 0x9b7a8
     under the record id 0xba. hr_algo_process_sample calls it on every error exit
-    and once when the mode byte at +0x2c78 turns over, and it writes nothing back
+    and once when the mode byte at +0x2c78 turns over, and it writes nothing back.
+    65 calls in the 700 s HR run against 65 of hr_algo_step, once per window
 - address: 0xa22fc
   name: hr_algo_process_sample
   kind: function
@@ -13837,7 +13852,8 @@ symbols:
     back with one `strd` (0xa26a4) and the return is x - level. An accumulator that
     takes only jumps above a threshold and returns the residue is what takes the
     LED-current steps out of a raw PPG count, and it is the first thing hr_chan_filter_step
-    does to one'
+    does to one. 1786 calls in the 700 s HR run against 1786 of hr_algo_process_sample,
+    one per sample'
 - address: 0xa2848
   name: hr_chan_filter_step
   kind: function
@@ -13848,7 +13864,9 @@ symbols:
     central_diff_step_i32, and once that differentiator''s warm-up counter at +0x14
     has saturated at 1 an iir_df1_step at +0x18 and a window_zscore_step at +0x58
     (0xa2852..0xa287c); when the z-score''s full byte at +0x68 is set it copies
-    the scaled sample at +0x6c into +0x20c and marks +0x210 ready (0xa2880..0xa288c)'
+    the scaled sample at +0x6c into +0x20c and marks +0x210 ready (0xa2880..0xa288c).
+    1786 calls in the 700 s HR run against 1786 of hr_algo_process_sample, one per
+    sample'
 - address: 0xa2896
   name: hr_channel_bank_step
   kind: function
@@ -13861,7 +13879,8 @@ symbols:
     at +0x214, +0x428, +0x63c and +0x850 added and multiplied by 0.25 (0xa2980..0xa29b2)
     -- to +0x8a8. +0x8ac takes the accelerometer arm: sqrt of the sum of the three
     squared axes (0xa28f0..0xa290e) through an iir_df1_step at +0x85c. The ready
-    bytes of the four channels are ANDed at 0xa29ba..0xa29d0'
+    bytes of the four channels are ANDed at 0xa29ba..0xa29d0. 1786 calls in the
+    700 s HR run against 1786 of hr_algo_process_sample, one per sample'
 - address: 0xa2ae8
   name: hr_spectrum_push_ppg
   kind: function
@@ -13869,7 +13888,8 @@ symbols:
   module: SENSORS_SYNC
   evidence: window_f32_push of the pair's first word into the window at +4 (0xa2aea,
     0xa2aee); the pair hr_spectrum_step is handed is hr_channel_bank_step's +0x8a8
-    and +0x8ac, so the first word is the PPG channel mean
+    and +0x8ac, so the first word is the PPG channel mean. 1785 calls in the 700
+    s HR run against 1786 of hr_algo_process_sample, one per sample
 - address: 0xa2af8
   name: hr_spectrum_push_accel
   kind: function
@@ -13877,7 +13897,8 @@ symbols:
   module: SENSORS_SYNC
   evidence: window_f32_push of the same pair's second word into the window at +0x738
     (0xa2afa, 0xa2afe), which is hr_channel_bank_step's +0x8ac, the filtered accelerometer
-    magnitude
+    magnitude. 1785 calls in the 700 s HR run against 1786 of hr_algo_process_sample,
+    one per sample
 - address: 0xa2b0a
   name: vec_f32_weighted_stddev
   kind: function
@@ -13885,7 +13906,8 @@ symbols:
   module: SENSORS_SYNC
   evidence: vec_f32_weighted_mean, then vec_f32_add_scalar of its negation, then
     vec_f32_powf with the exponent 2, then vec_f32_weighted_mean again and sqrtf
-    -- the weighted standard deviation written out one primitive per step (0xa2b16..0xa2b50)
+    -- the weighted standard deviation written out one primitive per step (0xa2b16..0xa2b50).
+    130 calls in the 700 s HR run against 65 of hr_algo_step, 2 per window
 - address: 0xa2b54
   name: spectrotrack_reset
   kind: function
@@ -13931,7 +13953,8 @@ symbols:
   module: SENSORS_SYNC
   evidence: spectrotrack_posterior_update and then one of the two estimators on
     the mode byte off the stack -- 1 tail-calls spectrotrack_estimate_centroid,
-    0 tail-calls spectrotrack_estimate_peak, anything else is -2 (0xa2cf4..0xa2d0e)
+    0 tail-calls spectrotrack_estimate_peak, anything else is -2 (0xa2cf4..0xa2d0e).
+    130 calls in the 700 s HR run against 65 of hr_algo_step, 2 per window
 - address: 0xa2d14
   name: spectrotrack_publish
   kind: function
@@ -13942,7 +13965,8 @@ symbols:
     above the config''s +0x10 and the spread at +0x1c is below its +0x14, and both
     are zero otherwise (0xa2d26..0xa2d4c). A strong enough peak and a tight enough
     distribution is what lets the estimate out, and the two thresholds are the only
-    reason either field ever moves'
+    reason either field ever moves. 65 calls in the 700 s HR run against 65 of hr_algo_step,
+    once per window'
 - address: 0xa2d54
   name: spectrotrack_grade_quality
   kind: function
@@ -13950,7 +13974,8 @@ symbols:
   module: SENSORS_SYNC
   evidence: 'the only writer of the enclosing object''s +0xfd: `2 - valid` when
     the sample is at or below the config''s +0x18 and 0 when it is above (0xa2d62..0xa2d70).
-    One byte, one comparison against one configured constant'
+    One byte, one comparison against one configured constant. 65 calls in the 700
+    s HR run against 65 of hr_algo_step, once per window'
 - address: 0xa2ddc
   name: spectrotrack_feed
   kind: function
@@ -13960,7 +13985,8 @@ symbols:
     tracker at +4 with the config''s exponent at +8 and its bin count at +0xc converted
     to an integer (0xa2dee), then spectrotrack_publish and spectrotrack_grade_quality,
     both skipped when the step failed. It is named for the published estimate, flag
-    and quality it leaves behind because it is three operations and no one of them'
+    and quality it leaves behind because it is three operations and no one of them.
+    65 calls in the 700 s HR run against 65 of hr_algo_step, once per window'
 - address: 0xa30b2
   name: threshold_flag_step
   kind: function
@@ -13999,7 +14025,8 @@ symbols:
   evidence: 'out[i] = x[i] for every i outside [lo, hi] and x[i] * powf(tab[2i],
     e) inside it (0xa3212..0xa3222), the table strided by eight bytes (`lsl #3`);
     it refuses a negative exponent (0xa31ee), a band wider than the array or a length
-    below twice the upper bound (0xa31dc, 0xa31e2)'
+    below twice the upper bound (0xa31dc, 0xa31e2). 122 calls in the 700 s HR run
+    against 1971 popped slots'
 - address: 0xa3256
   name: central_diff_step
   kind: function
@@ -14022,7 +14049,8 @@ symbols:
     two buffers, so the ping-pong is where the new state is written and nothing
     else, and the returned s0 is y. Levinson-Durbin, a lattice and a Goertzel bank
     are all refuted by it: there is no reflection coefficient, no forward/backward
-    error pair and no per-bin recurrence'
+    error pair and no per-bin recurrence. 8924 calls in the 700 s HR run against
+    1786 of hr_algo_process_sample, 5 per sample'
 - address: 0xa330c
   name: running_max3_step
   kind: function

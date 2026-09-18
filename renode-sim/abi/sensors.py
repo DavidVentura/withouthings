@@ -21,9 +21,16 @@ keeps its unnamed byte, which is the point of the refusals listed at the end.
 The counts in the evidence come from two Renode runs over the hooks
 renode-sim/calltrace.py --module SENSORS_SYNC --count emits: a 700 s run with
 `spi1.max86173 Worn true` and `HeartRateBpm 72`, and a run that drives
-`spi2.adxl367 Motion 2000 30` and toggles `Worn`. A count is evidence about
-rate -- once per sample, once per window, once per event -- and never about
-role.
+`spi2.adxl367 Motion 2000 30` and toggles `Worn` across four transitions. A
+count is evidence about rate -- once per sample, once per window -- and never
+about role, so a `rate` line says the ratio and stops.
+
+Neither run started MOTION_DETECTION: its entry point is hooked in both and
+counted zero, and the motion run's transitions land after the burst
+measurement has ended, when the algorithm manager has stopped every algorithm
+and only the ring push and drain are still running. So the three motion names
+below rest on their bodies alone and carry no rate, and what would settle them
+is a run that starts that algorithm rather than a longer one.
 """
 
 import json
@@ -43,10 +50,15 @@ CLASS = "sensor"
 HEADER_MODULE = "sensors_sync"
 
 # address, name, kind, evidence; `calls` are callee addresses the body must
-# still reach and `reads` are literal-pool values it must still load.
+# still reach and `reads` are literal-pool values it must still load. `rate` is
+# what the counting run measured, which says how often a body runs and never
+# what it does -- a ratio against the popped-slot count is the evidence that a
+# stage is per sample and not per window, and the place a reading that says
+# "once per window" would break.
 ROWS = [
     # --- the transforms ------------------------------------------------------
     dict(address=0xA17F8, name="fft_complex_transform", kind="function",
+         rate="130 calls in the 700 s HR run against 65 of hr_algo_step, 2 per window",
          calls=[0x7A12C],
          evidence="the complex FFT the real transform is built on: 1738 bytes"
                   " of radix butterflies over the twiddle table the plan's"
@@ -54,6 +66,7 @@ ROWS = [
                   " calling only its own stage bodies. No CMSIS-DSP or KissFFT"
                   " body matches it (matches.yaml), so it is Withings' own"),
     dict(address=0xA1EC2, name="fft_real_split", kind="function",
+         rate="130 calls in the 700 s HR run against 65 of hr_algo_step, 2 per window",
          calls=[0xA17F8],
          evidence="the real-input wrapper: it halves the plan's point count at"
                   " +0x10 into +0, and either runs fft_complex_transform over"
@@ -67,6 +80,7 @@ ROWS = [
                   " 0xa1ee8..0xa1f06, which is the packed real spectrum's"
                   " DC-and-Nyquist word"),
     dict(address=0x7A6E0, name="spectrum_fft_input", kind="function",
+         rate="130 calls in the 700 s HR run against 65 of hr_algo_step, 2 per window",
          calls=[0xA1EC2],
          evidence="windows and zero-pads: it refuses unless the length equals"
                   " the plan's +0 (0x7a6e6), multiplies each of the n inputs by"
@@ -75,6 +89,7 @@ ROWS = [
                   " (0x7a72a) up to the 0x200 the `cmp.w r3,#0x200` fixes, and"
                   " hands the 512-point buffer to fft_real_split"),
     dict(address=0x7A73C, name="spectrum_power_bins", kind="function",
+         rate="130 calls in the 700 s HR run against 65 of hr_algo_step, 2 per window",
          evidence="the 0x101 = 257 magnitude-squared bins of a 512-point packed"
                   " real spectrum, which is what fixes the transform's length:"
                   " bin 0 from the DC word alone (0x7a74c..0x7a760), the 255"
@@ -86,6 +101,7 @@ ROWS = [
 
     # --- the filters ---------------------------------------------------------
     dict(address=0xA3298, name="iir_df2t_step", kind="function",
+         rate="8924 calls in the 700 s HR run against 1786 of hr_algo_process_sample, 5 per sample",
          evidence="a transposed direct-form II IIR step, not a lattice: with"
                   " b = +4, a = +8, and the two state buffers at +0xc and"
                   " +0x10, it forms y = b[0]*x + s[0] (the `vfma.f32 s0, s15,"
@@ -109,6 +125,7 @@ ROWS = [
                   " one-element shift of both rings and +8 is the warm-up mode"
                   " that decides how they are seeded"),
     dict(address=0x7AEE0, name="central_diff_step_i32", kind="function",
+         rate="1786 calls in the 700 s HR run against 1786 of hr_algo_process_sample, one per sample",
          evidence="the same body as central_diff_step 0xa3256 -- x[n-1] at +0,"
                   " x[n-2] at +4, the first step emitting x[n] - x[n-1] and"
                   " every later one (x[n] - x[n-2]) * 0.5 (the `vmov.f32 s12,"
@@ -117,6 +134,7 @@ ROWS = [
                   " copy of the routine in another translation unit and not"
                   " another operation"),
     dict(address=0xA2684, name="level_track_step", kind="function",
+         rate="1786 calls in the 700 s HR run against 1786 of hr_algo_process_sample, one per sample",
          evidence="a deadband level tracker over {last input @0, level @4, seeded"
                   " @8}: d = x - last, and the level moves by d only when |d|"
                   " reaches the threshold argument (the `cmp r5, r2` and"
@@ -127,6 +145,7 @@ ROWS = [
                   " of a raw PPG count, and it is the first thing"
                   " hr_chan_filter_step does to one"),
     dict(address=0x7AF28, name="window_zscore_step", kind="function",
+         rate="1785 calls in the 700 s HR run against 1786 of hr_algo_process_sample, one per sample",
          calls=[0xA30FE, 0x743D8],
          evidence="window_f32_push, and once the window is full a"
                   " vec_f32_stddev over the whole of it (0x7af6c): the newest"
@@ -143,6 +162,7 @@ ROWS = [
 
     # --- the vector primitives the chain adds to the ones already named ------
     dict(address=0x7AFC0, name="vec_f32_diff_energy", kind="function",
+         rate="195 calls in the 700 s HR run against 65 of hr_algo_step, 3 per window",
          evidence="the sum of the squared k-th difference over the array, with"
                   " k taken as the third argument shifted right by one"
                   " (`asrs r2, r2, #1` at 0x7afc4): k = 0 accumulates x[i]^2,"
@@ -152,6 +172,7 @@ ROWS = [
                   " `vaddne` at 0x7aff0). Those three sums are the spectral"
                   " moments m0, m1 and m2"),
     dict(address=0x7B004, name="spectral_purity_index", kind="function",
+         rate="65 calls in the 700 s HR run against 65 of hr_algo_step, once per window",
          calls=[0x7AFC0],
          evidence="m1^2 / (m0 * m2) from three vec_f32_diff_energy calls with"
                   " the orders 0, 4 and 2 (0x7b00c, 0x7b01a, 0x7b03a), refused"
@@ -161,6 +182,7 @@ ROWS = [
                   " name, and hr_spectrum_step stores it beside the window's"
                   " standard deviation"),
     dict(address=0x7B3DC, name="vec_f32_convolve", kind="function",
+         rate="195 calls in the 700 s HR run against 65 of hr_algo_step, 3 per window",
          evidence="a 1-D convolution with a centred kernel and a boundary mode:"
                   " the kernel half-width is the kernel length halved and"
                   " negated (0x7b3f4..0x7b3fe), each output accumulates"
@@ -170,6 +192,7 @@ ROWS = [
                   " 0x7b450) and 2 takes the mirror (`vldr s15, [r8, #-4]` at"
                   " 0x7b46c) -- with anything above 2 refused at 0x7b3f2"),
     dict(address=0xA31C6, name="vec_f32_band_weight_powf", kind="function",
+         rate="122 calls in the 700 s HR run against 1971 popped slots",
          calls=[0xA7CC6],
          evidence="out[i] = x[i] for every i outside [lo, hi] and x[i] *"
                   " powf(tab[2i], e) inside it (0xa3212..0xa3222), the table"
@@ -177,6 +200,7 @@ ROWS = [
                   " exponent (0xa31ee), a band wider than the array or a"
                   " length below twice the upper bound (0xa31dc, 0xa31e2)"),
     dict(address=0xA2B0A, name="vec_f32_weighted_stddev", kind="function",
+         rate="130 calls in the 700 s HR run against 65 of hr_algo_step, 2 per window",
          calls=[0x74434, 0x9F594, 0x9F606, 0x8CA48],
          evidence="vec_f32_weighted_mean, then vec_f32_add_scalar of its"
                   " negation, then vec_f32_powf with the exponent 2, then"
@@ -190,6 +214,7 @@ ROWS = [
                   " (`ldr r4, [r1, #-4]!` at 0x9ea4c) divided by n with `sdiv`;"
                   " zero for n == 0. vec_f32_mean over integers"),
     dict(address=0x9EA5C, name="vec_i32_max", kind="function",
+         rate="83 calls in the 700 s HR run against 1971 popped slots",
          evidence="x[0], then `movlt` on each element that runs higher"
                   " (0x9ea6e..0x9ea72); the integer vec_f32_max, and like it"
                   " it returns the value and not the index"),
@@ -271,8 +296,11 @@ ROWS = [
                   " more than 14 of them run lower. The winner's channel goes"
                   " to +0x94 and its value to +0x98, and +0xa0 takes the"
                   " position as (channel + 0x10) + (samples - 9) * 4"
-                  " (0xa0674..0xa067e), which is quarter-sample units because"
-                  " the four values are four interleaved sub-samples."
+                  " (0xa0674..0xa067e), so the position counts in quarters of a"
+                  " sample and the channel is its fractional part, which is"
+                  " only consistent with the four values being four points in"
+                  " time rather than four sensors; that much the arithmetic"
+                  " forces and no more."
                   " ppg_heart_beats_algo_step calls it twice, negating those"
                   " four floats in between (0xa0554..0xa0584), so the second"
                   " call is the same detector finding troughs"),
@@ -309,6 +337,7 @@ ROWS = [
                   " (0xa2bd2..0xa2be2) and tail-calls spectrotrack_reset;"
                   " refuses when the window width exceeds the bin count"),
     dict(address=0x7B178, name="spectrotrack_posterior_update", kind="function",
+         rate="130 calls in the 700 s HR run against 65 of hr_algo_step, 2 per window",
          calls=[0x7B3DC, 0x9F5AE, 0x9F5CC, 0x9F606],
          evidence="one multiplicative update of the weights: the likelihood is"
                   " built uniform over the first m bins and zero after"
@@ -336,6 +365,7 @@ ROWS = [
                   " against its neighbours is what separates it from the"
                   " mode-0 arm, which takes the bin itself"),
     dict(address=0xA2CE6, name="spectrotrack_step", kind="function",
+         rate="130 calls in the 700 s HR run against 65 of hr_algo_step, 2 per window",
          calls=[0x7B178, 0xA2BF4, 0xA2C9E],
          evidence="spectrotrack_posterior_update and then one of the two"
                   " estimators on the mode byte off the stack -- 1 tail-calls"
@@ -343,6 +373,7 @@ ROWS = [
                   " spectrotrack_estimate_peak, anything else is -2"
                   " (0xa2cf4..0xa2d0e)"),
     dict(address=0xA2D14, name="spectrotrack_publish", kind="function",
+         rate="65 calls in the 700 s HR run against 65 of hr_algo_step, once per window",
          evidence="the only writer of the published pair, over the enclosing"
                   " object: +0xfc is 1 and +0xf8 takes the estimate at +0x18"
                   " when the peak weight at +0x20 is above the config's +0x10"
@@ -352,11 +383,13 @@ ROWS = [
                   " and the two thresholds are the only reason either field"
                   " ever moves"),
     dict(address=0xA2D54, name="spectrotrack_grade_quality", kind="function",
+         rate="65 calls in the 700 s HR run against 65 of hr_algo_step, once per window",
          evidence="the only writer of the enclosing object's +0xfd: `2 - valid`"
                   " when the sample is at or below the config's +0x18 and 0"
                   " when it is above (0xa2d62..0xa2d70). One byte, one"
                   " comparison against one configured constant"),
     dict(address=0xA2DDC, name="spectrotrack_feed", kind="function",
+         rate="65 calls in the 700 s HR run against 65 of hr_algo_step, once per window",
          calls=[0xA2CE6, 0xA2D14, 0xA2D54],
          evidence="one sample through the enclosing object: spectrotrack_step"
                   " over the tracker at +4 with the config's exponent at +8 and"
@@ -368,6 +401,7 @@ ROWS = [
 
     # --- the HR chain, in the order the trace fixes -------------------------
     dict(address=0xA2848, name="hr_chan_filter_step", kind="function",
+         rate="1786 calls in the 700 s HR run against 1786 of hr_algo_process_sample, one per sample",
          calls=[0xA2684, 0x7AEE0, 0x742C0, 0x7AF28],
          evidence="one PPG channel's front end and the only writer of that"
                   " channel's output pair: level_track_step over the raw count,"
@@ -379,6 +413,7 @@ ROWS = [
                   " sample at +0x6c into +0x20c and marks +0x210 ready"
                   " (0xa2880..0xa288c)"),
     dict(address=0xA2896, name="hr_channel_bank_step", kind="function",
+         rate="1786 calls in the 700 s HR run against 1786 of hr_algo_process_sample, one per sample",
          calls=[0xA2848, 0x742C0],
          evidence="the channel bank and the only writer of the two signals the"
                   " rest of the chain runs on. On the mode at +4 it drives"
@@ -392,18 +427,21 @@ ROWS = [
                   " iir_df1_step at +0x85c. The ready bytes of the four"
                   " channels are ANDed at 0xa29ba..0xa29d0"),
     dict(address=0xA2AE8, name="hr_spectrum_push_ppg", kind="function",
+         rate="1785 calls in the 700 s HR run against 1786 of hr_algo_process_sample, one per sample",
          calls=[0xA30FE],
          evidence="window_f32_push of the pair's first word into the window at"
                   " +4 (0xa2aea, 0xa2aee); the pair hr_spectrum_step is handed"
                   " is hr_channel_bank_step's +0x8a8 and +0x8ac, so the first"
                   " word is the PPG channel mean"),
     dict(address=0xA2AF8, name="hr_spectrum_push_accel", kind="function",
+         rate="1785 calls in the 700 s HR run against 1786 of hr_algo_process_sample, one per sample",
          calls=[0xA30FE],
          evidence="window_f32_push of the same pair's second word into the"
                   " window at +0x738 (0xa2afa, 0xa2afe), which is"
                   " hr_channel_bank_step's +0x8ac, the filtered accelerometer"
                   " magnitude"),
     dict(address=0x7B058, name="hr_spectrum_step", kind="function",
+         rate="1686 calls in the 700 s HR run against 1971 popped slots",
          calls=[0xA2AE8, 0xA2AF8, 0xA3128, 0x7B004, 0x7A6E0, 0x7A73C,
                 0x743D8, 0x9F5CC, 0xA31C6],
          evidence="pushes both windows every sample and, once the counter at"
@@ -419,6 +457,7 @@ ROWS = [
                   " (0x7b10a..0x7b154). Two windows in, two normalised spectra"
                   " and two scalars out"),
     dict(address=0xA20C8, name="hr_algo_report_state", kind="function",
+         rate="65 calls in the 700 s HR run against 65 of hr_algo_step, once per window",
          calls=[0x9B7A8, 0x9BF40],
          evidence="gathers a 0x34-byte record on its own stack out of fourteen"
                   " fields spread across the whole object -- the status at"
@@ -509,10 +548,13 @@ def checked(rows):
                               % (row["name"], at,
                                  ", ".join("0x%x" % v for v in absent)))
             continue
+        evidence = row["evidence"]
+        if row.get("rate"):
+            evidence += ". " + row["rate"]
         out.append(dict(address=at, name=row["name"], kind=row["kind"],
                         **{"class": CLASS,
                            "module": partition.get("0x%x" % at, HEADER_MODULE),
-                           "evidence": row["evidence"]}))
+                           "evidence": evidence}))
     return out, complaints
 
 
