@@ -18,9 +18,9 @@ more byte of nrfx_saadc_channels_config agrees.
 Build, measured the same way: GCC 13.2.Rel1 (the toolchain that also builds
 the image's newlib 4.3.0.20230120) at -Os, without -fno-builtin, and
 abi/config-relink/nrfx_glue.h for the two glue macros. Under that
-configuration nine of the driver's fourteen bodies reproduce the image byte
-for byte once the relocated fields are masked (abi/body_check.py); the five
-that do not are listed at the end.
+configuration thirteen of the driver's fourteen bodies reproduce the image
+byte for byte once the relocated fields are masked (abi/body_check.py); the
+one that does not is discussed at the end.
 
 Hunk 1, nrfx_saadc.h, the channel descriptor gains an idle input pair.
   nrfx_saadc_channel_t grows from 10 bytes to 12: two nrf_saadc_input_t
@@ -40,16 +40,24 @@ activation connects it.
   The release records pin_p/pin_n in the control block and leaves the
   hardware PSELP/PSELN alone until saadc_generic_mode_set activates the
   channel. The image programs PSELN then PSELP at configure time from the
-  new idle pair, and records the active pair in the control block. It also
-  drops NRFX_ASSERT(pin_p) in favour of skipping the channel: a channel
-  whose pin_p is NRF_SAADC_INPUT_DISABLED is configured in hardware but
-  never marked in channels_configured, so nothing can activate it.
+  new idle pair, and records the active pair in the control block.
   What the caller does with it (0x7e2e4, the ECG/battery channel table)
   is the point: it passes the idle pair as DISABLED/DISABLED and the real
   input in pin_p, so the analog input is disconnected from the moment the
   channel is configured until the moment it is activated.
   The already-configured test is the same right shift as hunk 2, and the
   index is lifted into a local, which the image's register allocation shows.
+  NRFX_ASSERT(pin_p) stays. This hunk once wrapped the three control-block
+  stores in `if (p_channels[i].pin_p)` instead, on the reading that a channel
+  with no active pin should be parked and left unmarked; the bytes refuse it.
+  The image branches the other way at 0x7de04 -- `cmp.w lr, #0; bne` into the
+  stores -- so pin_p equal to zero falls into the assert's `udf #0` at 0x7dd20,
+  and it is the assert arm, not a loop continue, because the block before it
+  writes channels_configured back the way both return paths do. With the assert
+  restored the body's 292 bytes agree with the image; with the `if` 73 of 280
+  differed, the pointer increment among them (the image hoists `adds r3, #0xc`
+  above the PSELP store and reads the rest of the record at negative offsets,
+  which is what the unconditional stores let it do).
 
 Hunk 4, nrfx_saadc_mode_trigger, the blocking simple mode stops before it
 disables.
@@ -57,32 +65,40 @@ disables.
   EVENTS_STOPPED before writing ENABLE = 0; the release disables directly.
   This is the path the battery read takes.
 
-The five bodies that do not reproduce, and what is left in each. None of
-them is a semantic difference: every instruction is accounted for.
-  saadc_event_limits_handle  57/92 B   three independent instructions
-                                       scheduled in a different order.
-  nrfx_saadc_channels_config 250/268 B the image's GCC sank the
-                                       m_cb.channels_configured store out of
-                                       the loop behind a flag (the
-                                       store-motion transformation) and ours
-                                       reloads it each iteration; the
-                                       resulting register allocation differs
-                                       throughout.
-  nrfx_saadc_advanced_mode_set 141/172 B ours allocates 16 stack bytes by
-                                       pushing r0-r3 where the image uses
-                                       `sub sp,#0x14` and one more
-                                       callee-saved register.
-  nrfx_saadc_mode_trigger    296/344 B same shape: the image pre-loads
-                                       size_primary and uses r6-r8 where
-                                       ours re-loads and if-converts the
-                                       buffer handover with `itttt`.
-  SAADC_IRQHandler            10/316 B one `ldr r2,[r4,#8]` scheduled one
-                                       instruction earlier.
-No -f flag tried moves any of these without breaking a body that already
-reproduces (-fno-if-conversion, -fno-if-conversion2, -fno-schedule-insns2,
+The one body that does not reproduce is saadc_event_limits_handle, 57 of 92
+bytes, and it is not a semantic difference: the same instructions in a
+different order. The image clears the bit first (`lsl.w r3,r6,r2; bic.w
+r4,r4,r3`) and only then computes the event offset (`lsl.w r3,r2,#3`); ours
+computes `lsls r0,r2,#3` before the compare and does the bic after the `ite`,
+and the register assignment follows.
+
+The pass that does it is code hoisting. nrf_saadc_limit_event_get returns
+LIMITL or LIMITH, both `base + channel * 8`, so GCC lifts the multiply to the
+block that dominates the two arms, which is above the bit clear. With
+-fno-code-hoisting the 92 bytes agree exactly. That is not the image's build:
+the same flag breaks nrfx_saadc_mode_trigger in this very file (291 of 336)
+and prvAddNewTaskToReadyList in the kernel (10 of 256), both of which
+reproduce with hoisting on, so neither a build flag nor a `#pragma GCC
+optimize` over the file can be the explanation -- only a per-function
+`__attribute__((optimize("no-code-hoisting")))`, which reproduces it and which
+nobody writes.
+
+No source edit reproduces it either. Measured against the body: the statement
+order of the bit clear and the event get (either way round, and with the clear
+moved to the bottom of the loop), the clear written as `^=`, as `~(1U << ch)`
+and through a separate bit local, `channel` as uint32_t and as volatile, a
+volatile local for limits_activated, `__builtin_expect` on the event test both
+ways, hot, cold, optimize O1/O2/O3/Os and noinline on the function, the loop as
+a do/while, an NRFX_ASSERT or a memory barrier between the clear and the get,
+and the event offset written as one expression in the HAL or open-coded in the
+driver. Every one of them leaves the same 57 bytes or makes the body worse.
+The order is the compiler's, and the rest of the file pins the compiler.
+
+The -f flags previously tried and rejected against the full body set:
+-fno-if-conversion, -fno-if-conversion2, -fno-schedule-insns2,
 -fira-algorithm=priority, -fira-region, -fsched-pressure, -fno-caller-saves,
--fno-gcse, -funroll-loops, -fno-tree-ter, -O1/-O2/-O3), and neither does
-GCC 12.3, 13.3 or 14.2.
+-fno-gcse, -funroll-loops, -fno-tree-ter, -O1/-O2/-O3, and GCC 12.3, 13.3
+and 14.2.
 
 --- a/drivers/include/nrfx_saadc.h
 +++ b/drivers/include/nrfx_saadc.h
@@ -106,7 +122,7 @@ GCC 12.3, 13.3 or 14.2.
          {
              pselp = m_cb.channels_pselp[ch_pos];
              pseln = m_cb.channels_pseln[ch_pos];
-@@ -277,19 +277,24 @@
+@@ -277,19 +277,22 @@
  
      for (i = 0; i < channel_count; i++)
      {
@@ -121,26 +137,22 @@ GCC 12.3, 13.3 or 14.2.
 -        nrf_saadc_channel_init(NRF_SAADC,
 -                               p_channels[i].channel_index,
 -                               &p_channels[i].channel_config);
--
--        NRFX_ASSERT(p_channels[i].pin_p);
--        m_cb.channels_pselp[p_channels[i].channel_index] = p_channels[i].pin_p;
--        m_cb.channels_pseln[p_channels[i].channel_index] = p_channels[i].pin_n;
--        m_cb.channels_configured |= 1U << p_channels[i].channel_index;
 +        nrf_saadc_channel_init(NRF_SAADC, ch, &p_channels[i].channel_config);
 +        nrf_saadc_channel_input_set(NRF_SAADC, ch,
 +                                    p_channels[i].pin_p_idle,
 +                                    p_channels[i].pin_n_idle);
-+
-+        if (p_channels[i].pin_p)
-+        {
-+            m_cb.channels_pselp[ch] = p_channels[i].pin_p;
-+            m_cb.channels_pseln[ch] = p_channels[i].pin_n;
-+            m_cb.channels_configured |= 1U << ch;
-+        }
+ 
+         NRFX_ASSERT(p_channels[i].pin_p);
+-        m_cb.channels_pselp[p_channels[i].channel_index] = p_channels[i].pin_p;
+-        m_cb.channels_pseln[p_channels[i].channel_index] = p_channels[i].pin_n;
+-        m_cb.channels_configured |= 1U << p_channels[i].channel_index;
++        m_cb.channels_pselp[ch] = p_channels[i].pin_p;
++        m_cb.channels_pseln[ch] = p_channels[i].pin_n;
++        m_cb.channels_configured |= 1U << ch;
      }
  
      return NRFX_SUCCESS;
-@@ -495,6 +500,11 @@
+@@ -495,6 +498,11 @@
                  while (!nrf_saadc_event_check(NRF_SAADC, NRF_SAADC_EVENT_END))
                  {}
                  nrf_saadc_event_clear(NRF_SAADC, NRF_SAADC_EVENT_END);
