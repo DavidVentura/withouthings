@@ -132,15 +132,6 @@ groups:
         which reproduces the image's bytes and still cannot be linked against,
         because the name belongs to the source file (qsort's swapfunc, dtoa's
         quorem, setenv_r's validate_structure).
-      except:
-        - symbol: fcntl
-          why: >
-            0x97fd0 is the stub _fstat_r at 0x91cd4 calls, and _fstat_r is
-            reached only from __swhatbuf_r at 0xa9030, which __smakebuf_r calls;
-            every `errno = <n>; return -1` stub compiles to the same four
-            instructions, so a body match cannot tell fcntl from _fstat and took
-            the name the archive has a global for. The exports below name it
-            _fstat, which is what the archive's own _fstat_r then binds to.
     exports:
       - at: 0x4ca2c
         as: _write
