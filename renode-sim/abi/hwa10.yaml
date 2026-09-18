@@ -1731,6 +1731,205 @@ functions:
       iterations from ring_wr, starting at zero or at the cursor depending on
       ring_wrapped (0x49ffe), emitting two samples at a time. Three ring fields
       and one emit call leave one reading.
+  # ---- the ECG algorithm library, from a pipe-driven acquisition ----
+  # Everything below is fixed by where the function sits in one measurement.
+  # `wpp-sim-client --ecg` runs one over the WPP pipe (MEASURE_START 2419 to
+  # subscribe, ECG_TEST 2425 carrying the sample count to start it, MEASURE_STOP
+  # 2420 to end it), the SAADC model feeds it a synthetic waveform at the 300 Hz
+  # the measurement's own StoredSignalMeta reports, and `calltrace.py --module
+  # ECG --count` counts every entry into the 96 functions the log-tag partition
+  # puts in ECG. One 9000-sample measurement separates four rates, and each is a
+  # number the run itself produces: 9000 entries is once per sample, 9144 is once
+  # per sample plus once per slot of the 144-slot ring, 180 is once per 50-sample
+  # ADC block, 30 is once a second, 29 is once per QRS complex (the log's own
+  # qrs_blocks_size) and 1 is once per measurement. Nothing here is named from a
+  # count alone: the count says which stage a body is and the body says what the
+  # stage does, and anything that leaves two readings is not here.
+  - name: ecg_algo_init
+    address: 0x775dc
+    ret: void
+    args: [[void *, ctx], [u32, sample_rate_hz], [u32, gain]]
+    notes: >
+      the algorithm object's constructor, and the two arguments are read off its
+      own bounds checks and off the protocol in one step: it refuses r1 outside
+      200..2000 and r2 below 100 (0x775e0, 0x77612), then stores them at ctx+4
+      and ctx+8. ecg_acquisition_start calls it once per measurement with
+      (ecg_session+0x28, 300, 1610) at 0x4a52c, and 300 and 1610 are exactly the
+      sampling_freq of the StoredSignalMeta and the gain of the
+      UnitConversionParameters the watch sends the phone when the measurement
+      starts, so r1 is the sample rate in hertz and r2 the microvolt scale.
+  - name: ecg_algo_reset
+    address: 0xa0d80
+    ret: void
+    args: [[void *, ctx]]
+    notes: >
+      `ldrd r1, r2, [r0,#4]; b.w ecg_algo_init` -- two instructions that re-run
+      the constructor with the rate and gain the object already holds. Called
+      from ecg_acquisition_start straight after the init and from
+      ecg_task_state_machine's start arm.
+  - name: ecg_algo_process_sample
+    address: 0x77688
+    ret: void
+    args: [[void *, ctx], [i16, sample]]
+    notes: >
+      one call per ADC sample: ecg_adc_block_handler's 50-iteration loop calls it
+      at 0x49ef6 with the raw halfword and the session's algorithm object, and
+      the trace counts 9000 entries in a 9000-sample measurement. Its own first
+      test is sample_count against 30 * sample_rate, the same window
+      ecg_algo_finish asserts on, and it is the only path into the beat detector.
+  - name: ecg_algo_finish
+    address: 0x77768
+    ret: void
+    args: [[void *, ctx]]
+    notes: >
+      one entry per measurement in the trace, from ecg_task_state_machine's
+      processing arm at 0x4a334, before anything reads a result. Its own guard is
+      the name: the first thing it does is compare sample_count against 30 *
+      sample_rate and, when they differ, log its pool word 0x77a14 "WARNING:
+      Finish function must be called only once after %li samples are processed"
+      and trap (0x77940). An acquisition short of the whole thirty seconds
+      reaches exactly that line and the undefined instruction after it. It then
+      normalises four accumulated floats into ctx+0x10..0x1c, which are the four
+      the log prints as ECGSW2 out=%d, %d, %d, %d once multiplied by 100.
+  - name: ecg_algo_heart_rate
+    address: 0x77a18
+    ret: i32
+    args: [[void *, ctx]]
+    notes: >
+      returns ctx+0x28 behind an assert on ctx+0xc, once per measurement. The
+      caller is the reading: ecg_task_state_machine stores its result at 0x4a3be
+      into ecg_session+0x30d0 and logs that byte as "[ECG DIAGNOSIS] ECGSW2 HR:
+      %d". A run against a synthetic 62 bpm waveform logs 62.
+  - name: ecg_algo_heart_rate_from_rr
+    address: 0x77a44
+    ret: i32
+    args: [[void *, ctx]]
+    notes: >
+      `if (ctx->e78 <= 6 || ctx->e84 == 0.0f) return 0; return lroundf(60000.0f /
+      ctx->e84);` -- sixty thousand over a float divided and rounded is beats per
+      minute from an interval in milliseconds, the interval being the mean
+      ecg_rr_interval_add accumulates into that same object, and the guard is
+      seven intervals. This is the live one, not the diagnosis's:
+      ecg_adc_block_handler calls it every 300 samples (0x49faa, one second at
+      the measurement's own rate) and drops the answer above 255, and the trace
+      counts 30 entries in a thirty-second measurement.
+  - name: ecg_algo_diagnosis
+    address: 0x77a80
+    ret: i32
+    args: [[void *, ctx]]
+    notes: >
+      returns ctx+0x44 behind the same assert, once per measurement.
+      ecg_task_state_machine takes it at 0x4a35c, sign-extends it into
+      ecg_session.result_code, and the log line beside it reads the same word as
+      "[ECG DIAGNOSIS] ECGSW2 WS Diagnosis: %li"; afib_class_names is the table
+      it indexes.
+  - name: ecg_algo_result_copy
+    address: 0x77aac
+    ret: void
+    args: [[void *, out], [const void *, ctx]]
+    notes: >
+      copies 0x38 bytes from ctx+0x10 with four `ldm`/`stm` pairs and a
+      two-register tail, once per measurement. The caller settles what the block
+      is: ecg_task_state_machine copies the result straight on into
+      ecg_session+0x30d4 (0x4a342), which is the fourteen-word algorithm result
+      the manifest already declares, and its first four words are the class
+      probabilities ecg_algo_finish normalised.
+  - name: ecg_filter_process_sample
+    address: 0x77df8
+    ret: void
+    args: [[void *, ctx], [i16, sample]]
+    notes: >
+      the other per-sample call in ecg_adc_block_handler's loop (0x49eb6), on the
+      second algorithm object at 0x20013c04 rather than the session's, and the
+      only thing between a raw ADC sample and the filtered value
+      ecg_filter_output returns. The trace counts 9144 entries in a 9000-sample
+      measurement, the extra 144 being ecg_filter_flush_last_sample's. What it is
+      a chain of is in the report and not here: the stages are shared primitives
+      outside this module.
+  - name: ecg_filter_output
+    address: 0x78150
+    ret: i32
+    args: [[void *, ctx]]
+    notes: >
+      `if (ecg_algo_output_ready(ctx)) return ctx->b28;` with an assert on the
+      other arm, 9000 entries in the trace. ecg_adc_block_handler stores the
+      return into the next slot of the 144-sample ring (0x49ed0), so the word at
+      ctx+0xb28 is the filtered sample and this is how it leaves the filter.
+  - name: ecg_filter_flush_last_sample
+    address: 0x78114
+    ret: void
+    args: [[void *, ctx]]
+    notes: >
+      `if (ecg_algo_output_ready(ctx)) return ecg_filter_process_sample(ctx,
+      ctx->58);` -- ctx+0x58 is where ecg_filter_process_sample stores the sample
+      it was last given (0x77e70), so this feeds the chain its own last sample
+      again, which is what a filter with a group delay needs to push its tail
+      out. The trace counts exactly 144 entries, one per slot of the ring.
+  - name: ecg_algo_output_ready
+    address: 0xa0d9e
+    ret: i32
+    args: [[const void *, ctx]]
+    notes: >
+      `return ctx->0 >= ctx->8 && ctx->b2c <= 30 * ctx->5c;` -- enough samples in
+      and not past the measurement's window. Every per-sample caller gates on it
+      before reading an output, three times a sample between them.
+  - name: ecg_sample_ring_push
+    address: 0x49cec
+    ret: i32
+    args: [[const i16 *, block], [const i16 *, filtered]]
+    notes: >
+      walks the block's 0x32 samples writing each into ecg_session.sample_ring at
+      ring_wr and reading the slot's old value out first; once ring_wr wraps at
+      0x90 it pairs each evicted raw sample with the filtered one and hands the
+      pairs to the store call, which is the same two-samples-at-a-time shape
+      ecg_sample_ring_flush emits. The trace counts 180 entries, one per block.
+  - name: ecg_nn_classify
+    address: 0x78f1c
+    ret: void
+    args: [[void *, net], [const void *, beats], [i32, count]]
+    notes: >
+      the classifier, and its failure message names it: ecg_algo_finish calls it
+      once per measurement at 0x777b0 and the very next thing it does is test the
+      output count at ctx+0x1f4c and, when it is zero, log "Neural network failed
+      to provide an output" and trap (0x77964). The four floats it leaves at
+      ctx+0x1f3c are what ecg_algo_finish divides by that count into the class
+      probabilities, which are the "out=%d, %d, %d, %d" of the diagnosis line.
+  - name: ecg_rr_interval_add
+    address: 0x78184
+    ret: void
+    args: [[void *, rr], [const i16 *, beat]]
+    notes: >
+      one entry per detected QRS complex -- 29 in a run whose own log says
+      qrs_blocks_size=29 -- and the arithmetic is the definition of an RR
+      interval: `t = beat[0] * 1000.0f / 300.0f;` (the sample index at the
+      measurement's 300 Hz, in milliseconds) `d = t - prev; prev = t;` then d
+      into the accumulator at rr+0x1f8 and, unless it is over 2000 ms or the
+      hundred-and-twentieth, into the array at rr+0x14, which is then sorted.
+      Its caller passes the algorithm object's ctx+0xe78, which is the same
+      object ecg_algo_heart_rate_from_rr divides 60000 by.
+  - name: argmax_f32
+    address: 0x9eb0a
+    ret: i32
+    args: [[const float *, v], [i32, n]]
+    notes: >
+      `if (!n) return 0; best = v[0]; for (i = 1; i < n; i++) if (v[i] > best) {
+      best = v[i]; r = i; } return r;` -- the index of the largest, with no other
+      output. ecg_algo_finish calls it twice on its own accumulated floats, and
+      the trace counts two entries per measurement.
+  - name: fabsf_vfp
+    address: 0x9ea80
+    ret: float
+    args: [[float, x]]
+    notes: >
+      `vcmpe.f32 s0,#0; it mi; vnegmi.f32 s0,s0` and nothing else. The compiler
+      would have inlined `vabs`, so this is a called-through absolute value the
+      algorithm library builds its chains out of.
+  - name: accum_f32_reset
+    address: 0x9ee06
+    ret: void
+    args: [[void *, a]]
+    notes: >
+      zeroes the two words accum_f32_add writes, which are the sum and the count.
   - name: hr_measure_lock
     address: 0x61ffc
     ret: i32

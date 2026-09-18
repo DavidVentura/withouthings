@@ -11,8 +11,8 @@ use wpp::client::{probe_frame, Credentials};
 use wpp::commands::Command;
 use wpp::frame::{Channel, Frame};
 use wpp::objects::{
-    InfoType, ProbeChallenge, ProbeChallengeResponse, ProbeReply, TimeSet, VasistasType, Version,
-    WamVasistasGet,
+    InfoType, MeasureCategory, MeasureLiveAppStatus, ProbeChallenge, ProbeChallengeResponse,
+    ProbeReply, TimeSet, Uint32, VasistasType, Version, WamVasistasGet,
 };
 use wpp::WppObject;
 
@@ -28,6 +28,9 @@ const WRITE_LIMIT: usize = ATT_MTU - 3;
 const FRAME_PER_WRITE_LIMIT: usize = wpp::frame::MAX_FRAME_BYTES;
 const REPLY_TIMEOUT: Duration = Duration::from_secs(120);
 const QUIET: Duration = Duration::from_secs(20);
+/// A whole ECG measurement: thirty seconds of the 300 Hz the watch reports in
+/// the measurement's own StoredSignalMeta.
+const ECG_SAMPLES: u32 = 30 * 300;
 
 struct Link {
     socket: TcpStream,
@@ -90,25 +93,39 @@ impl Link {
     /// repeating it.
     fn next_answer(&mut self, deadline: Instant) -> std::io::Result<Option<Frame>> {
         loop {
-            // The deadline is absolute because answering chatter must not push
-            // the wait for the answer out again.
-            let Some(left) = deadline.checked_duration_since(Instant::now()) else {
-                return Ok(None);
-            };
-            let Some(frame) = self.receive(left)? else {
+            let Some(frame) = self.next_frame(deadline)? else {
                 return Ok(None);
             };
             if frame.command.channel() == Some(Channel::SlaveRequest) {
-                println!("   [slave request] {:?} {:?}", frame.command.opcode_name(), frame.objects);
-                let echo = Frame::new(
-                    Command(frame.command.opcode()).with_channel(Channel::SlaveRequest),
-                    Vec::new(),
-                );
-                self.send(&echo)?;
                 continue;
             }
             return Ok(Some(frame));
         }
+    }
+
+    /// The same read with the watch-initiated frames kept rather than skipped.
+    /// A measurement is driven from the watch: the phone asks for it once and
+    /// everything after that arrives on the slave channel, so a scenario that
+    /// wants the measurement has to see those frames and not only acknowledge
+    /// them.
+    fn next_frame(&mut self, deadline: Instant) -> std::io::Result<Option<Frame>> {
+        // The deadline is absolute because answering chatter must not push the
+        // wait for the answer out again.
+        let Some(left) = deadline.checked_duration_since(Instant::now()) else {
+            return Ok(None);
+        };
+        let Some(frame) = self.receive(left)? else {
+            return Ok(None);
+        };
+        if frame.command.channel() == Some(Channel::SlaveRequest) {
+            println!("   [slave request] {:?} {:?}", frame.command.opcode_name(), frame.objects);
+            let echo = Frame::new(
+                Command(frame.command.opcode()).with_channel(Channel::SlaveRequest),
+                Vec::new(),
+            );
+            self.send(&echo)?;
+        }
+        Ok(Some(frame))
     }
 }
 
@@ -219,6 +236,80 @@ fn run(link: &mut Link, step: &Step) -> std::io::Result<()> {
     }
 }
 
+/// One ECG acquisition: ask for it, watch it run, stop it.
+///
+/// MEASURE_START and MEASURE_STOP are the only two commands the phone sends;
+/// everything between them the watch pushes by itself on the slave channel, so
+/// the middle of this is a read loop and not a request. The request objects are
+/// the two the handler at 0x54238 parses -- MeasureCategory, which is what says
+/// ECG rather than PPG or SpO2, and MeasureLiveAppStatus, which says the phone
+/// has the live screen up and is therefore ready for the sample frames.
+fn ecg(link: &mut Link, seconds: u64) -> std::io::Result<()> {
+    let category =
+        WppObject::MeasureCategory(MeasureCategory { value: MeasureCategory::VALUE_ECG });
+    run(
+        link,
+        &Step {
+            label: "ecg start",
+            frame: Frame::new(
+                Command::CMD_MEASURE_START,
+                vec![
+                    category.clone(),
+                    WppObject::MeasureLiveAppStatus(MeasureLiveAppStatus {
+                        app_live_screen_displayed: 1,
+                    }),
+                ],
+            ),
+            answers: Answers::One,
+        },
+    )?;
+    // MEASURE_START is the phone saying it will take the live data; it does not
+    // start anything, because on the watch an ECG is started by the wearer
+    // holding the crown. CMD_ECG_TEST is the command that stands in for that,
+    // and the watch answers it by sending its own MEASURE_START back with the
+    // signal's real metadata. Its one object is how many samples to take, and
+    // the number matters: the classifier asserts unless it is handed the whole
+    // measurement, which at the 300 Hz the metadata reports is thirty seconds.
+    // Without the object the handler logs that it could not read the count and
+    // falls back to a thousand, and the run ends in that assert.
+    run(
+        link,
+        &Step {
+            label: "ecg run",
+            frame: Frame::new(
+                Command::CMD_ECG_TEST,
+                vec![WppObject::Uint32(Uint32 { val: ECG_SAMPLES })],
+            ),
+            answers: Answers::One,
+        },
+    )?;
+
+    println!("\n== ecg live, {seconds} s ==");
+    let until = Instant::now() + Duration::from_secs(seconds);
+    let (mut frames, mut samples) = (0usize, 0usize);
+    while let Some(frame) = link.next_frame(until)? {
+        frames += 1;
+        for object in &frame.objects {
+            if let WppObject::MeasureLiveEcg(live) = object {
+                samples += live.samples.len();
+            }
+        }
+        if frame.command.channel() != Some(Channel::SlaveRequest) {
+            report(&frame);
+        }
+    }
+    println!("   {frames} frames from the watch, {samples} ECG sample bytes");
+
+    run(
+        link,
+        &Step {
+            label: "ecg stop",
+            frame: Frame::new(Command::CMD_MEASURE_STOP, vec![category]),
+            answers: Answers::One,
+        },
+    )
+}
+
 fn report(frame: &Frame) {
     println!("<- {:?}", frame.command.opcode_name());
     for object in &frame.objects {
@@ -281,6 +372,8 @@ fn main() -> ExitCode {
     let mut set_time: Option<u32> = None;
     let mut package_path: Option<String> = None;
     let mut probe_only = false;
+    // Seconds of ECG to watch between the start and the stop.
+    let mut ecg_seconds: Option<u64> = None;
     // A bare command by number, for asking the watch what it does with one.
     // Removing a command from the dispatch table is only half an answer; what
     // the phone sees is the other half, and nothing else here can send a
@@ -306,6 +399,15 @@ fn main() -> ExitCode {
                 package_path = Some(arguments.next().expect("--update takes a package path"))
             }
             "--probe-only" => probe_only = true,
+            "--ecg" => {
+                ecg_seconds = Some(
+                    arguments
+                        .next()
+                        .expect("--ecg takes a number of seconds")
+                        .parse()
+                        .expect("--ecg takes a number of seconds"),
+                )
+            }
             "--send" => send_commands.push(
                 arguments
                     .next()
@@ -314,7 +416,7 @@ fn main() -> ExitCode {
                     .expect("--send takes a command number"),
             ),
             other => {
-                eprintln!("usage: wpp-sim-client [--endpoint host:port] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--send <command>] [--update <package>]");
+                eprintln!("usage: wpp-sim-client [--endpoint host:port] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--send <command>] [--update <package>]");
                 eprintln!("unknown argument {other}");
                 return ExitCode::FAILURE;
             }
@@ -357,6 +459,10 @@ fn main() -> ExitCode {
         }
         update::restart(&mut link).expect("the link stays up to the restart");
         println!("update pushed");
+        return ExitCode::SUCCESS;
+    }
+    if let Some(seconds) = ecg_seconds {
+        ecg(&mut link, seconds).expect("the link stays up");
         return ExitCode::SUCCESS;
     }
     if !send_commands.is_empty() {

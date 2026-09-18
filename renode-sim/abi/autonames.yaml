@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 4, helper: 416, libc: 97, libm: 32, logcb: 3, logline: 331, logtag: 8, module_functions: 1797, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {bleevt: 28, extlib: 4, helper: 416, libc: 97, libm: 32, logcb: 3, logline: 332, logtag: 8, module_functions: 1799, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 200, disagree: 14}
 
 functions:
@@ -71,7 +71,7 @@ functions:
   - name: pow__1
     address: 0x2b3b0
     class: helper
-    evidence: "only 0x8c8fc (pow) calls 0x2b3b0; 2342 bytes"
+    evidence: "only 0x8c8fc (pow) calls 0x2b3b0; 2378 bytes"
   - name: __ieee754_rem_pio2
     address: 0x2bdf8
     class: libm
@@ -3202,6 +3202,11 @@ functions:
     address: 0x64a0c
     class: helper
     evidence: "only 0x64cf8 (FW_AVAILABLE__1) calls 0x64a0c; 38 bytes"
+    module: CHUNKED_UPDATE
+  - name: chunked_update_not_aligned
+    address: 0x64bc8
+    class: logline
+    evidence: "the only line 0x64bc8 logs, wlog('[CHUNKED_UPDATE] not aligned') at 0x64bf2"
     module: CHUNKED_UPDATE
   - name: FW_AVAILABLE__1
     address: 0x64cf8

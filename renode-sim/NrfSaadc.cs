@@ -5,6 +5,15 @@
 // the silicon does, so the value the firmware reads tracks RESOLUTION/GAIN/REFSEL
 // instead of being a fixed number the driver could never have produced.
 //
+// This block is also the watch's ECG front end. There is no separate analogue
+// front end on the board: the firmware's ECG acquisition programs SAMPLERATE in
+// timer mode, OVERSAMPLE, and a pair of EasyDMA buffers of fifty 16-bit results,
+// and every block of samples the ECG module processes arrives that way. The
+// battery read is the other user and it is task-triggered, which is the rule
+// this model reads the input by: a conversion the internal timer drove takes the
+// ECG waveform, a conversion TASKS_SAMPLE drove takes the channel's static
+// input voltage.
+//
 using System;
 using System.Collections.Generic;
 using Antmicro.Renode.Core;
@@ -13,6 +22,8 @@ using Antmicro.Renode.Core.Structure;
 using Antmicro.Renode.Logging;
 using Antmicro.Renode.Peripherals;
 using Antmicro.Renode.Peripherals.Bus;
+using Antmicro.Renode.Peripherals.Timers;
+using Antmicro.Renode.Time;
 
 namespace Antmicro.Renode.Peripherals.Analog
 {
@@ -27,6 +38,12 @@ namespace Antmicro.Renode.Peripherals.Analog
             IRQ = new GPIO();
             Connections = new Dictionary<int, IGPIO> { { 0, IRQ } };
             Vdd = 3.0;
+            EcgBpm = 62;
+            EcgMillivolts = 110;
+            sampleTimer = new LimitTimer(machine.ClockSource, TimerFrequency, this, "saadc-samplerate",
+                limit: 1, direction: Antmicro.Renode.Time.Direction.Ascending, enabled: false,
+                workMode: WorkMode.Periodic, eventEnabled: true);
+            sampleTimer.LimitReached += TimedSample;
             Reset();
         }
 
@@ -35,6 +52,17 @@ namespace Antmicro.Renode.Peripherals.Analog
 
         // Supply rail, used as Vref/4 when a channel selects REFSEL=VDD1_4.
         public double Vdd { get; set; }
+
+        // The synthetic ECG the internal timer's conversions read, in beats per
+        // minute and in millivolts peak (the R wave) at the analogue input pin.
+        // The electrode amplifier in front of that pin is off the chip and is
+        // not modelled, so this is its output and not what a pair of electrodes
+        // would see: the firmware programs AIN4 single-ended with gain 1/3
+        // against the 0.6 V reference, which is 110 uV a code, and the default
+        // is the millivolts that put a normal R wave about a thousand codes
+        // above the baseline. Kept out of Reset() like the input voltages.
+        public double EcgBpm { get; set; }
+        public double EcgMillivolts { get; set; }
 
         // Analog input on AIN<channel>, in volts. Set from the run script; kept out
         // of Reset() so it survives the SYSRESETREQ the app's fault handler issues.
@@ -69,6 +97,13 @@ namespace Antmicro.Renode.Peripherals.Analog
             case TasksCalibrateOffset:
                 SetEvent(EventsCalibrateDone);
                 return;
+            case SampleRate:
+                regs[offset] = value;
+                if(bufferInProgress)
+                {
+                    StartSampleTimer();
+                }
+                return;
             case Inten:
                 inten = value;
                 UpdateIrq();
@@ -100,9 +135,52 @@ namespace Antmicro.Renode.Peripherals.Analog
             regs[ResultAmount] = 0;
             bufferInProgress = true;
             SetEvent(EventsStarted);
+            StartSampleTimer();
         }
 
-        private void Sample()
+        // SAMPLERATE selects between a conversion per TASKS_SAMPLE and a
+        // conversion per CC ticks of the 16 MHz clock; OVERSAMPLE accumulates
+        // 2^N conversions into one result, so the rate a result appears at is
+        // the timer's divided by that. The firmware's ECG programs CC 1667 and
+        // OVERSAMPLE 32, which is the 300 Hz the measurement's own metadata
+        // reports, and its battery read leaves MODE at task and is unaffected.
+        private void StartSampleTimer()
+        {
+            uint samplerate = Get(SampleRate);
+            if((samplerate & SampleRateTimerMode) == 0)
+            {
+                sampleTimer.Enabled = false;
+                return;
+            }
+            uint cc = samplerate & 0xFFF;
+            if(cc == 0)
+            {
+                this.Log(LogLevel.Warning, "SAMPLERATE is in timer mode with CC=0, so nothing samples");
+                return;
+            }
+            double rate = AdcClockHz / (cc * (double)(1 << (int)(Get(Oversample) & 0xF)));
+            sampleTimer.Limit = (ulong)Math.Max(1, Math.Round(TimerFrequency / rate));
+            sampleTimer.Enabled = true;
+            var on = new List<string>();
+            for(int channel = 0; channel < ChannelCount; channel++)
+            {
+                if(Get(ChannelPselP(channel)) != 0)
+                {
+                    on.Add(string.Format("CH{0} PSELP={1} PSELN={2} CONFIG=0x{3:X}", channel,
+                        Get(ChannelPselP(channel)), Get(ChannelPselN(channel)),
+                        Get(ChannelConfig(channel))));
+                }
+            }
+            this.Log(LogLevel.Info, "sampling into 0x{0:X} for {1} results at {2:F1} Hz, {3} bits, {4}",
+                Get(ResultPtr), Get(ResultMaxCnt), rate, ResolutionBits(), string.Join(", ", on));
+        }
+
+        private void TimedSample()
+        {
+            Sample(fromTimer: true);
+        }
+
+        private void Sample(bool fromTimer = false)
         {
             if(Get(Enable) == 0)
             {
@@ -122,7 +200,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                     this.Log(LogLevel.Warning, "sample buffer full ({0} entries), dropping channel {1}", maxCount, channel);
                     break;
                 }
-                short result = Convert(channel);
+                short result = Convert(channel, fromTimer);
                 sysbus.WriteByte(pointer + (ulong)(2 * samplePosition), (byte)(result & 0xFF));
                 sysbus.WriteByte(pointer + (ulong)(2 * samplePosition) + 1, (byte)((result >> 8) & 0xFF));
                 samplePosition++;
@@ -133,12 +211,17 @@ namespace Antmicro.Renode.Peripherals.Analog
             if(samplePosition >= maxCount)
             {
                 bufferInProgress = false;
+                // One buffer is one END; the driver hands the next buffer over
+                // in the handler and starts again, so the timer stops here
+                // rather than running on into a pointer nothing owns.
+                sampleTimer.Enabled = false;
                 SetEvent(EventsEnd);
             }
         }
 
         private void Stop()
         {
+            sampleTimer.Enabled = false;
             if(bufferInProgress)
             {
                 bufferInProgress = false;
@@ -147,13 +230,16 @@ namespace Antmicro.Renode.Peripherals.Analog
             SetEvent(EventsStopped);
         }
 
-        private short Convert(int channel)
+        private short Convert(int channel, bool fromTimer = false)
         {
             uint config = Get(ChannelConfig(channel));
             double gain = GainFactor((config >> 8) & 0x7, channel);
             double reference = ((config >> 12) & 0x1) == 0 ? InternalReference : Vdd / 4.0;
             int bits = ResolutionBits();
-            double input = inputVoltage[channel];
+            // The ECG amplifier's output sits at mid-scale, which is what the
+            // measurement's own UnitConversionParameters says when it reports an
+            // offset of -8192 against a 14-bit result.
+            double input = fromTimer ? reference / gain / 2.0 + EcgVolts() : inputVoltage[channel];
             bool differential = ((config >> 20) & 0x1) != 0;
             if(differential)
             {
@@ -162,6 +248,31 @@ namespace Antmicro.Renode.Peripherals.Analog
                 return Clamp((input - negativeInput) * gain / reference * (1 << (bits - 1)), -(1 << (bits - 1)), (1 << (bits - 1)) - 1);
             }
             return Clamp(input * gain / reference * (1 << bits), 0, (1 << bits) - 1);
+        }
+
+        // One beat of a synthetic lead-I ECG at the current virtual time: a P
+        // wave, a QRS complex and a T wave, each a Gaussian at its own place in
+        // the beat. The shape matters and the exact millivolts do not -- what
+        // the firmware's chain looks for is a sharp R peak at a repeatable
+        // interval, which is what makes a beat detector and an RR series
+        // testable at all.
+        private double EcgVolts()
+        {
+            double period = 60.0 / Math.Max(20.0, EcgBpm);
+            double seconds = machine.ElapsedVirtualTime.TimeElapsed.TotalSeconds;
+            double t = seconds - Math.Floor(seconds / period) * period;
+            double r = EcgMillivolts / 1000.0;
+            return Bump(t, 0.16 * period, 0.025, 0.15 * r)      // P
+                 - Bump(t, 0.24 * period, 0.008, 0.10 * r)      // Q
+                 + Bump(t, 0.26 * period, 0.008, r)             // R
+                 - Bump(t, 0.29 * period, 0.010, 0.20 * r)      // S
+                 + Bump(t, 0.45 * period, 0.045, 0.30 * r);     // T
+        }
+
+        private static double Bump(double t, double centre, double width, double height)
+        {
+            double z = (t - centre) / width;
+            return height * Math.Exp(-0.5 * z * z);
         }
 
         private double GainFactor(uint code, int channel)
@@ -228,6 +339,7 @@ namespace Antmicro.Renode.Peripherals.Analog
         public void Reset()
         {
             regs.Clear();
+            sampleTimer.Enabled = false;
             inten = 0;
             samplePosition = 0;
             bufferInProgress = false;
@@ -264,6 +376,12 @@ namespace Antmicro.Renode.Peripherals.Analog
         private const long IntenClr = 0x308;
         private const long Enable = 0x500;
         private const long Resolution = 0x5F0;
+        private const long Oversample = 0x5F4;
+        private const long SampleRate = 0x5F8;
+        private const uint SampleRateTimerMode = 1u << 12;
+        // The SAADC's own 16 MHz clock, which SAMPLERATE.CC divides.
+        private const double AdcClockHz = 16000000.0;
+        private const long TimerFrequency = 1000000;
         private const long ResultPtr = 0x62C;
         private const long ResultMaxCnt = 0x630;
         private const long ResultAmount = 0x634;
@@ -272,6 +390,7 @@ namespace Antmicro.Renode.Peripherals.Analog
         private uint samplePosition;
         private bool bufferInProgress;
         private readonly double[] inputVoltage;
+        private readonly LimitTimer sampleTimer;
         private readonly Dictionary<long, uint> regs;
         private readonly IBusController sysbus;
         private readonly IMachine machine;
