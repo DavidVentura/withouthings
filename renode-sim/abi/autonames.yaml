@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 4, helper: 422, libc: 98, logcb: 3, logline: 333, logtag: 8, module_functions: 1797, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {bleevt: 28, extlib: 4, helper: 414, libc: 98, logcb: 3, logline: 332, logtag: 8, module_functions: 1799, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 200, disagree: 14}
 
 functions:
@@ -184,11 +184,6 @@ functions:
     class: logline
     evidence: "the only line 0x31410 logs, wlog('[TRACKER_ALGO] Exception detected (0x%lx)') at 0x63d5a"
     module: TRACKER_ALGO
-  - name: sensors_sync_nothing_to_pop__1
-    address: 0x3141c
-    class: helper
-    evidence: "only 0x59584 (sensors_sync_nothing_to_pop) calls 0x3141c; 668 bytes"
-    module: SENSORS_SYNC
   - name: stopwatch_next_alarm
     address: 0x316bc
     class: logline
@@ -1409,17 +1404,7 @@ functions:
     class: logline
     evidence: "the only line 0x49bcc logs, wlog('[ECG] Unkown state for timer handler') at 0x49c1c"
     module: ECG
-  - name: shell_cmd_ecg__2__1
-    address: 0x49cec
-    class: helper
-    evidence: "only 0x49d78 (shell_cmd_ecg__2) calls 0x49cec; 134 bytes"
-    module: ECG
   - name: shell_cmd_ecg__2
-    address: 0x49d78
-    class: helper
-    evidence: "only 0x4b168 (shell_cmd_ecg) calls 0x49d78; 584 bytes"
-    module: ECG
-  - name: shell_cmd_ecg__3
     address: 0x4a7d4
     class: helper
     evidence: "only 0x4b168 (shell_cmd_ecg) calls 0x4a7d4; 54 bytes"
@@ -1429,7 +1414,7 @@ functions:
     class: helper
     evidence: "only 0x4b410 (wpp_could_not_read_nb_values) calls 0x4a810; 42 bytes"
     module: WPP
-  - name: shell_cmd_ecg__4
+  - name: shell_cmd_ecg__3
     address: 0x4a840
     class: helper
     evidence: "only 0x4b168 (shell_cmd_ecg) calls 0x4a840; 42 bytes"
@@ -1458,11 +1443,6 @@ functions:
     address: 0x4ade8
     class: logline
     evidence: "the only line 0x4ade8 logs, wlog('error header') at 0x4adfa"
-  - name: shell_cmd_ecg__2__2
-    address: 0x4ae24
-    class: helper
-    evidence: "only 0x49d78 (shell_cmd_ecg__2) calls 0x4ae24; 22 bytes"
-    module: ECG
   - name: ecg_err_no_sample_queue__2
     address: 0x4b034
     class: helper
@@ -1477,7 +1457,7 @@ functions:
     class: logline
     evidence: "the only line 0x4b0fc logs, wlog('Failed to create task') at 0x4b11c"
     module: ECG
-  - name: shell_cmd_ecg__5
+  - name: shell_cmd_ecg__4
     address: 0x4b154
     class: helper
     evidence: "only 0x4b168 (shell_cmd_ecg) calls 0x4b154; 16 bytes"
@@ -2457,11 +2437,6 @@ functions:
     address: 0x590c4
     class: shell
     evidence: "shell_cmd_table row 0x27388: command 'reset_ctx', run slot (+4)"
-  - name: sensors_sync_nothing_to_pop
-    address: 0x59584
-    class: logline
-    evidence: "the only line 0x59584 logs, wlog('[SENSORS_SYNC][%s] Nothing to pop') at 0x596ce"
-    module: SENSORS_SYNC
   - name: WPP_CMD_SHORTCUT_SET__1
     address: 0x59914
     class: helper
@@ -3048,11 +3023,6 @@ functions:
     class: logline
     evidence: "the only line 0x623c0 logs, wlog('[HR_MEASURE] Cannot call hr_measure_release with BURST_AUTO_STOP mode') at 0x623fc"
     module: HR_MEASURE
-  - name: hr_measure_failed_to_get_screen_data
-    address: 0x624b0
-    class: logline
-    evidence: "the only line 0x624b0 logs, wlog('[HR_MEASURE] Failed to get screen data') at 0x624d2"
-    module: HR_MEASURE
   - name: WPP_CMD_HR_MEASURE
     address: 0x624e4
     class: wppcmd
@@ -3115,11 +3085,6 @@ functions:
     address: 0x64158
     class: shell
     evidence: "shell_cmd_table row 0x27424: command 'tracker_algo', run slot (+4)"
-  - name: sensors_sync_nothing_to_pop__1__1
-    address: 0x64214
-    class: helper
-    evidence: "only 0x3141c (sensors_sync_nothing_to_pop__1) calls 0x64214; 132 bytes"
-    module: SENSORS_SYNC
   - name: tsm_tried_to_release_mode_while__1
     address: 0x6426c
     class: helper
@@ -3179,6 +3144,11 @@ functions:
     address: 0x64a0c
     class: helper
     evidence: "only 0x64cf8 (FW_AVAILABLE__1) calls 0x64a0c; 38 bytes"
+    module: CHUNKED_UPDATE
+  - name: chunked_update_not_aligned
+    address: 0x64bc8
+    class: logline
+    evidence: "the only line 0x64bc8 logs, wlog('[CHUNKED_UPDATE] not aligned') at 0x64bf2"
     module: CHUNKED_UPDATE
   - name: FW_AVAILABLE__1
     address: 0x64cf8
@@ -3947,25 +3917,10 @@ functions:
     address: 0x765c4
     class: helper
     evidence: "only 0x6370c (WPP_CMD_STORED_MEASURE_SIGNAL_GET__3) calls 0x765c4; 4 bytes"
-  - name: shell_cmd_ecg__2__3
-    address: 0x77688
-    class: helper
-    evidence: "only 0x49d78 (shell_cmd_ecg__2) calls 0x77688; 214 bytes"
-    module: ECG
-  - name: shell_cmd_ecg__2__4
-    address: 0x77a44
-    class: helper
-    evidence: "only 0x49d78 (shell_cmd_ecg__2) calls 0x77a44; 54 bytes"
-    module: ECG
   - name: ecg_bad_diag_algo_version__1
     address: 0x77af0
     class: helper
     evidence: "only 0x4ac90 (ecg_bad_diag_algo_version) calls 0x77af0; 4 bytes"
-    module: ECG
-  - name: shell_cmd_ecg__2__5
-    address: 0x77df8
-    class: helper
-    evidence: "only 0x49d78 (shell_cmd_ecg__2) calls 0x77df8; 780 bytes"
     module: ECG
   - name: WPP_CMD_WAM_VASISTAS_GET__3
     address: 0x7da2c

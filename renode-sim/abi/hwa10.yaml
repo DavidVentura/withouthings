@@ -1502,6 +1502,139 @@ functions:
       zero with an error rather than wrapping (0x59840); an increment and a
       decrement over one byte with an underflow refusal is a reference count.
       Its caller outside the module is adxl367_continuous_measure_mode.
+  - name: sensors_sync_lock
+    address: 0x59574
+    ret: i32
+    notes: >
+      `xQueueSemaphoreTake(sensors_sync_mutex, 0xffffffff)` and nothing else; the
+      handle is the one 0x59700 created and the only other user is
+      sensors_sync_unlock.
+  - name: sensors_sync_unlock
+    address: 0x59560
+    ret: i32
+    notes: >
+      `xQueueGenericSend(sensors_sync_mutex, 0, 0, 0)`, the give that pairs with
+      every sensors_sync_lock in the module.
+  - name: sensors_sync_mutex_init
+    address: 0x59700
+    ret: void
+    notes: >
+      the only writer of sensors_sync_mutex: xQueueCreateMutexStatic over the
+      static storage at 0x2001d280, called from INIT at 0x2e4a2 just before the
+      flush callback is installed.
+  - name: sensors_sync_set_flush_cb
+    address: 0x59880
+    ret: void
+    args: [[sensors_sync_flush_fn, cb]]
+    notes: >
+      a single store into sensors_sync_flush_cb; the word it writes is only ever
+      read by the `blx` in sensors_sync_drain, so the argument is that callback
+      and nothing else.
+  - name: sensors_sync_drain
+    address: 0x59584
+    supersedes: sensors_sync_nothing_to_pop
+    ret: void
+    notes: >
+      the consumer side of the ring, and the reason the two streams are one. It
+      takes the lock, reads each subscribed ring's fill count and keeps the
+      smaller of the two (0x595a2), so the slower stream sets the pace; over that
+      many slots from sensors_sync_rd it zeroes, in each slot, the byte range of
+      any stream that is not subscribed or has nothing pending (0x595ec,
+      0x59602, using the stream's offset and size as one `ldrd`) and hands each
+      contiguous run to sensors_sync_flush_cb (0x59636); it drains
+      sensors_sync_exception_flags into 0x31410 (0x5964c); then it pops one slot
+      at a time -- decrementing each subscribed ring's fill count, logging
+      "Nothing to pop" if one is already empty, memcpying the 0x4c bytes to the
+      stack and advancing sensors_sync_rd modulo 128 -- and hands each to
+      sensors_sync_slot_to_algo (0x596b6). The derived name it takes over is one
+      of its two error logs.
+  - name: sensors_sync_reset
+    address: 0x5988c
+    ret: void
+    notes: >
+      drains what is pending (0x5989a) and then, under the lock, zeroes
+      sensors_sync_rd and both rings' write index and fill count with one word
+      store each (0x598a6..0x598b0), and sets bit 0 of
+      sensors_sync_exception_flags. Clearing every cursor of both rings and the
+      shared read index is a reset and leaves no other reading.
+  - name: sensors_sync_restart
+    address: 0x598d4
+    ret: void
+    notes: >
+      the only writer of either ring's drop countdown: for each subscribed ring
+      it stores `5 - ring->stream->field_c` into +9 (0x598e2, 0x598f2), so the
+      accelerometer drops nothing and the PPG drops five samples, then restarts
+      the sampling clock. It touches no other field.
+  - name: sensors_sync_slot_to_algo
+    address: 0x3141c
+    supersedes: sensors_sync_nothing_to_pop__1
+    ret: void
+    args: [[const struct sensors_sync_slot *, slot]]
+    notes: >
+      the only reader of a whole slot, and the only thing that gives the bit
+      fields of sensor_sample_ppg a meaning. It zeroes a 0xec-byte frame, copies
+      the three accelerometer axes into its head as one word plus one halfword
+      (0x3143c..0x31440), and for each of the sixteen channel words emits a
+      0xc-byte record -- the sign-extended 20-bit datum, the float 0x28758 makes
+      out of the 9-bit and 2-bit fields, and bit 31 as a byte -- then hands the
+      frame to 0x64214. Sixteen identical unrolled expansions of one struct field
+      is what names it; the derived name it takes over came from the caller's log
+      line.
+  - name: sensors_sync_push_accel
+    address: 0x3bd10
+    ret: void
+    notes: >
+      builds a sensor_sample_accel and pushes it as sensor 0. It walks the
+      driver's sample array six bytes at a time (0x3bdc0), writes the three axes
+      with one of them negated, the literal zero and the sum of the three
+      absolute values into a 0xc-byte stack struct, and calls
+      sensors_sync_ring_push with r0 = 0 (0x3bda2). Three i16 reads filling the
+      accel sample is the whole body.
+  - name: sensors_sync_push_ppg
+    address: 0x523cc
+    ret: void
+    notes: >
+      builds a sensor_sample_ppg and pushes it as sensor 1. It memsets 0x40 bytes
+      (0x523e2), walks the measurement's channel list, asks 0x9ab06 for that
+      channel's word inside the sample and packs the caller's 20-bit datum and
+      the channel configuration's two upper fields into it, then calls
+      sensors_sync_ring_push with r0 = 1 (0x523f6). The 0x40-byte buffer and the
+      channel-indexed slot are the PPG stream's size and layout.
+  - name: ppg_sample_channel_slot
+    address: 0x9ab06
+    ret: i32
+    args: [[u32, channel], [struct sensor_sample_ppg *, sample], [u32 **, slot]]
+    notes: >
+      a `tbb` switch on the channel id, refusing above 0xf, whose every arm
+      returns the address of that channel's word in the caller's PPG sample; it
+      is what fixes sensor_sample_ppg as sixteen words indexed by channel id.
+
+  - name: algo_frame_select_channels
+    address: 0xa4418
+    ret: i32
+    args: [[struct algo_sample_frame *, frame]]
+    notes: >
+      nine copies and nothing else: channel 3's counts, scale and flag into the
+      frame's first selection slot, channel 13's into the second and channel 6's
+      into the third, in place. It is what fixes the frame head's three-slot
+      shape and the three channels the algorithms actually use.
+  - name: algo_enabled
+    address: 0x7d4c0
+    ret: u8
+    args: [[u32, algo]]
+    notes: >
+      one byte read out of a global table indexed by the algorithm id, and every
+      caller is a gate in algo_dispatch_sample.
+  - name: algo_dispatch_sample
+    address: 0x7d4f0
+    ret: void
+    args: [[void *, ctx], [struct algo_sample_frame *, frame]]
+    notes: >
+      hands one frame to each enabled algorithm: it folds the selected channels
+      in (0x7d4fe), then for each of the ids 9, 8, 0xc, 7, 3, 4 and the rest asks
+      algo_enabled and, if it answers, calls that algorithm with a fixed slice of
+      the one context in r0 and the frame in r1 (0x7d506..0x7d5a4 and on). A
+      per-id enable test in front of a per-id call is the whole body.
   - name: ecg_acquisition_start
     address: 0x4a4d8
     ret: i32
@@ -1526,6 +1659,192 @@ functions:
       creates a one-slot semaphore, posts state 6 to the ECG task, blocks on that
       semaphore until the task acknowledges, then deletes it and drops the mutex;
       its caller outside the module is WPP_CMD_MEASURE_STOP.
+  - name: ecg_set_state
+    address: 0x49bb8
+    ret: void
+    args: [[u8, state]]
+    notes: >
+      the only writer of ecg_session.state: it saves the old value into
+      prev_state and notifies the ECG task with 0x200 (0x49bc6). Every state
+      transition in the module goes through it.
+  - name: ecg_get_algo_version
+    address: 0x4a870
+    ret: u8
+    notes: one load of ecg_session.algo_version, the `%d` of "[ECG] algo version %d".
+  - name: ecg_is_active
+    address: 0x4a6bc
+    ret: bool
+    notes: returns ecg_session.state != 0 and touches nothing else.
+  - name: ecg_is_measuring
+    address: 0x4a5d4
+    ret: bool
+    notes: >
+      returns ecg_session.state > 1; its two callers use it as the "in progress"
+      gate, one of them in front of "Cancel called while ECG is not in progress".
+  - name: ecg_get_progress_percent
+    address: 0x4a768
+    ret: i32
+    notes: >
+      -1 unless ecg_is_measuring, else ecg_session.sample_count divided by 90 and
+      clamped to 0..100 (0x4a778..0x4a790). A sample count turned into a
+      percentage is the whole body.
+  - name: ecg_adc_acquisition_stop
+    address: 0x49c38
+    ret: void
+    notes: >
+      reads and clears ecg_session.adc_running (0x49c3c, 0x49c42), drops the
+      module mutex around the driver call at 0x49c4c and takes it again; it is
+      the only clear of that field outside the reset.
+  - name: ecg_module_init
+    address: 0x4a6f8
+    ret: void
+    notes: >
+      creates the ECG task queue and the module mutex (0x4a736), zeroes the stop
+      semaphore, state and prev_state, and sets repeats_remaining to -1. It runs
+      once from INIT and writes no other field.
+  - name: ecg_task_state_machine
+    address: 0x4a068
+    ret: void
+    notes: >
+      takes the module mutex with a 500-tick timeout, loads ecg_session.state and
+      dispatches on it through the seven-arm `tbh` at 0x4a094, every arm leaving
+      through the single release at 0x4a0c8. A switch on the state field and
+      nothing else.
+  - name: ecg_adc_block_handler
+    address: 0x49d78
+    supersedes: shell_cmd_ecg__2
+    ret: void
+    notes: >
+      the ADC block callback ecg_task_state_machine installs (its address is the
+      pool word loaded at 0x4a1f0). It counts a dropped buffer when the mutex is
+      not free (0x49db4, the "%u" of "Nb dropped buffers"), checks the block
+      against ecg_session.expected_evt_counter and bumps it (0x49de0), walks the
+      block's 0x32 samples, adds 0x32 to sample_count (0x49f54) and stops when
+      that passes target_sample_count. The derived name it takes over came from
+      the shell command that also calls it.
+  - name: ecg_sample_ring_flush
+    address: 0x49ff8
+    ret: void
+    notes: >
+      the only reader of ecg_session.sample_ring that walks it whole: 0x90
+      iterations from ring_wr, starting at zero or at the cursor depending on
+      ring_wrapped (0x49ffe), emitting two samples at a time. Three ring fields
+      and one emit call leave one reading.
+  - name: hr_measure_lock
+    address: 0x61ffc
+    ret: i32
+    notes: paired with hr_measure_unlock around every access to hr_screen_data.
+  - name: hr_measure_unlock
+    address: 0x62018
+    ret: i32
+    notes: the give that closes every hr_measure_lock.
+  - name: hr_measure_reset_context
+    address: 0x62040
+    ret: void
+    notes: >
+      under the lock, zeroes hr_measure_ctx's measure_start_uptime,
+      non_storable_count, the sixteen bytes from sdnn, rr_interval, rr_censored
+      and rr_uptime, and clears hr_screen_data's live halfword (0x62064). It
+      writes no field it does not zero.
+  - name: hr_measure_set_live_hr
+    address: 0x621a0
+    ret: void
+    args: [[u8, bpm], [bool, valid]]
+    notes: >
+      under the lock, stores its two arguments into hr_screen_data.live_valid and
+      live_bpm and the current uptime into live_uptime (0x621ae..0x621ba).
+  - name: hr_measure_get_screen_data
+    address: 0x624b0
+    supersedes: hr_measure_failed_to_get_screen_data
+    ret: i32
+    args: [[struct hr_screen_data *, out]]
+    notes: >
+      takes the lock and copies the sixteen bytes of hr_screen_data out with one
+      `ldm`/`stm` pair; its derived name is the error line on the lock failure,
+      not the role.
+  - name: hr_measure_on_algo_result
+    address: 0x62604
+    ret: void
+    args: [[const struct hr_algo_report *, report]]
+    notes: >
+      the sole consumer of hr_algo_report, reached only from 0x64072. It prints
+      every field of the report under "[HR_MEASURE]", gates its burst block on
+      the report's ready byte and stores the report's bpm into
+      hr_measure_ctx.last_bpm, which is what the WPP handler answers with.
+  - name: algo_manager_feed_sample
+    address: 0x64214
+    supersedes: sensors_sync_nothing_to_pop__1__1
+    ret: void
+    args: [[void *, ctx], [struct algo_sample_frame *, frame]]
+    notes: >
+      one frame in, one round of the algorithms out: it keeps one sample in every
+      rate/25 (the `udiv` by 0x19 at 0x64242 against the configured rate), calls
+      algo_dispatch_sample and then tail-calls the publisher 0x63ddc with the
+      same context. Its only caller is sensors_sync_slot_to_algo.
+  - name: algo_manager_publish_results
+    address: 0x63ddc
+    ret: void
+    args: [[void *, ctx]]
+    notes: >
+      the other half of algo_manager_feed_sample: a chain of algo_enabled gates,
+      each followed by a read of that algorithm's own result object and a call to
+      that algorithm's consumer; the heart-rate arm builds a hr_algo_report on
+      its stack (0x63fc4..0x64068) and hands it to hr_measure_on_algo_result.
+  - name: hr_algo_get_result
+    address: 0xa24e0
+    ret: i32
+    args: [[struct hr_algo_report *, out]]
+    notes: >
+      refuses with -2 while the HR algorithm's mode byte is zero, otherwise
+      copies hr_algo_result's bpm, bpm_ref, ready and acceptable as one word and
+      quality as one byte into the caller's report and returns the status field.
+      It is the only reader of that five-byte group.
+  - name: hr_algo_step
+    address: 0x7aa60
+    ret: i32
+    notes: >
+      the only writer of hr_algo_result's bpm, bpm_ref, ready, acceptable,
+      quality, warm and status. It steps the three channel filters and the motion
+      filter, sets warm once all four report ready (0x7aade), and on a full
+      window converts the rate and the quality to bytes (0x7ac6c, 0x7ac88) and
+      decides acceptability from the sample count and the distance to bpm_ref.
+  - name: hr_algo_reset
+    address: 0xa2548
+    ret: i32
+    notes: >
+      resets the four filters of hr_algo_result, memsets its three 0x98-byte
+      buffers and puts status back to -3 with bpm, quality and warm at zero
+      (0xa257c..0xa2592). The mirror of hr_algo_step and nothing else.
+  - name: hrv_get_sdnn
+    address: 0xa47f6
+    ret: i32
+    args: [[void *, hrv]]
+    notes: one load whose result is hr_measure_ctx.sdnn and the `%ld` of "sdnn:".
+  - name: hrv_get_rmssd
+    address: 0xa47fa
+    ret: i32
+    args: [[void *, hrv]]
+    notes: one load whose result is hr_measure_ctx.rmssd and the `%ld` of "rmssd:".
+  - name: hrv_get_quality
+    address: 0xa4802
+    ret: i8
+    args: [[void *, hrv]]
+    notes: >
+      one load whose result is hr_measure_ctx.hrv_quality, the `%d` the
+      "Poor quality %d < %d" line compares against 0x14.
+  - name: rr_get_interval
+    address: 0xa0bf2
+    ret: float
+    args: [[void *, rr]]
+    notes: one load whose result is hr_measure_ctx.rr_interval and the `rr:` line's value.
+  - name: rr_get_is_censored
+    address: 0xa0bf8
+    ret: i8
+    args: [[void *, rr]]
+    notes: >
+      one load whose result is hr_measure_ctx.rr_censored, the value the
+      "is_censored: %s" line prints.
+
   - name: rre_font_draw_glyph
     address: 0x34df0
     supersedes: rre_fonts_unsupported_font_type
@@ -2601,6 +2920,81 @@ globals:
       capacity 200 at ctx+64; FIRMWARE.md's frame-length section is the
       evidence, including that the next global begins exactly 200 bytes later
 
+  # ---- the sensor-sync path ---------------------------------------------------
+  - name: sensors_sync_streams
+    address: 0xb41c4
+    type: "const struct sensors_sync_stream *[0x2]"
+    notes: >
+      indexed by sensor id after the `cmp r0,#1` that refuses anything else
+      (0x59718, 0x59804, 0x59838); entry 0 is the accelerometer, entry 1 the PPG,
+      which the copy lengths fix -- the accel builder hands over a 0xc-byte stack
+      struct as sensor 0 and the PPG builder a 0x40-byte one as sensor 1.
+  - name: sensors_sync_stream_ppg
+    address: 0xb41cc
+    type: const struct sensors_sync_stream
+  - name: sensors_sync_stream_acc
+    address: 0xb41dc
+    type: const struct sensors_sync_stream
+  - name: sensors_sync_ring_acc
+    address: 0x20007124
+    type: struct sensors_sync_ring
+  - name: sensors_sync_ring_ppg
+    address: 0x20007118
+    type: struct sensors_sync_ring
+  - name: sensors_sync_mutex
+    address: 0x2001d2d4
+    type: void *
+    notes: >
+      the handle xQueueCreateMutexStatic leaves at 0x59700, taken with
+      portMAX_DELAY by sensors_sync_lock and given by sensors_sync_unlock; its
+      static queue storage is the 0x54 bytes at 0x2001d280.
+  - name: sensors_sync_slots
+    address: 0x2001d2d8
+    type: "struct sensors_sync_slot[0x80]"
+    notes: >
+      the one buffer both streams write into, 0x2600 bytes; the wrap is the
+      `cmp #0x80` in the push (0x597c0), in the consumer's read cursor (0x596a4)
+      and in the `and #0x7f` at 0x5963a.
+  - name: sensors_sync_flush_cb
+    address: 0x2001f8d8
+    type: sensors_sync_flush_fn
+    notes: >
+      written only by sensors_sync_set_flush_cb and called only at 0x59636;
+      abi/out/ghidra shows INIT installing raw_data_save's 0x30ea0 there
+      (pool word at 0x2e568).
+  - name: sensors_sync_rd
+    address: 0x2001f8dc
+    type: u16
+    notes: >
+      the read cursor both streams share, which is what makes the two rings one
+      ring: the push compares it against a stream's own write index to detect the
+      overrun (0x5975c) and advances it past the lost slot (0x5978c), the
+      consumer reads it to place the batch callback (0x595c0) and advances it once
+      per popped slot (0x596aa), and sensors_sync_reset clears it (0x598a6).
+  - name: sensors_sync_exception_flags
+    address: 0x2001f8e0
+    type: u32
+    notes: >
+      a bitmask, set and never cleared here: bit 0 by sensors_sync_reset
+      (0x598ba) and bit 1 by the push's overrun path (0x59776). The consumer
+      hands a non-zero value to 0x31410 and zeroes it (0x59646..0x59650), which
+      is the "[TRACKER_ALGO] Exception detected (0x2)" line.
+
+  # ---- the ECG session, and the HR algorithm's two ends ----------------------
+  - name: ecg_session
+    address: 0x20011668
+    type: struct ecg_session
+  - name: hr_algo_result_block
+    address: 0x2000f480
+    type: struct hr_algo_result
+    notes: reached only as the HR algorithm object's +0x2c84, never by its own literal
+  - name: hr_measure_ctx
+    address: 0x20020004
+    type: struct hr_measure_ctx
+  - name: hr_screen_data
+    address: 0x2001fff4
+    type: struct hr_screen_data
+
 typedefs:
   # The dispatchers fix these, not the handlers: a handler is only ever reached
   # through the table, so whatever the walk loads into r0..r2 before `blx r3`
@@ -2662,6 +3056,15 @@ typedefs:
       with r0 = &cursor (the stack slot it has already advanced past the TLV
       header), r1 = the object's data length and r2 = the caller's out pointer;
       a non-zero return is logged as a parse failure and turns into -1
+
+  - name: sensors_sync_flush_fn
+    ret: void
+    args: [[const void *, slots], [u32, count]]
+    notes: >
+      the batch hook sensors_sync_drain calls at 0x59636 once per contiguous run
+      of pending slots, with r0 the first slot and r1 the run length; the
+      parameter is left void * because the typedef is emitted before
+      struct sensors_sync_slot.
 
 structs:
   - name: nrf_nvic_state
@@ -3569,6 +3972,231 @@ structs:
       - [u32, a]
       - [i32, minutes]
       - [u32, timestamp]
+
+
+  # ---- the sensor-sync path: one 0x4c-byte slot shared by two streams --------
+  - name: sensors_sync_stream
+    fields: [[const char *, name], [u32, offset], [u32, size], [u8, field_c],
+             ["u8[0x3]", pad_d]]
+    notes: >
+      the constant description of one of the two streams that share a sensor-sync
+      slot; two of them, 0xb41cc {"PPG_CHANS", 0xc, 0x40, 0} and 0xb41dc
+      {"ACC", 0, 0xc, 5}, reached through the two-entry pointer table at 0xb41c4
+      that sensors_sync_ring_push indexes by sensor id. +0 is the %s of
+      "[SENSORS_SYNC][%s] Sample lost !!!" (loaded at 0x59766) and of "Nothing to
+      pop" (0x596c8). +4 and +8 are the byte range the stream owns inside the
+      slot: the push adds +4 to the slot base and passes +8 as the memcpy length
+      (0x597a6, 0x597ae), and the consumer zeroes exactly that range for a stream
+      that is not subscribed with the same pair loaded as one `ldrd` (0x595f0,
+      0x59606). +0xc is read once, only as `5 - x` into the ring's drop counter
+      (0x598e2, 0x598f2), which is not enough to name it.
+  - name: sensors_sync_ring
+    fields: [[const struct sensors_sync_stream *, stream], [u16, wr], [u16, fill],
+             [u8, refs], [u8, drop], ["u8[0x2]", pad_a]]
+    notes: >
+      the per-stream state of the shared ring, two of them at 0x20007124 (sensor
+      id 0) and 0x20007118 (id 1), 0xc bytes apart. +0 is the stream description
+      the log line and the memcpy length come from. +4 is the write index, bumped
+      and wrapped at 0x80 after each push (0x597ba..0x597c6), and +6 the fill
+      count bumped with it (0x597c8), decremented once per popped slot (0x5967c,
+      0x59688) and cleared together with +4 by the single `str` at 0x598ac, which
+      is what fixes them as two adjacent u16. +8 is a reference count:
+      sensors_sync_ref_acquire increments it, sensors_sync_ref_release decrements
+      it and refuses at zero, and both the push and the pop treat non-zero as
+      "this stream is running". +9 is a drop countdown -- the push returns
+      without storing while it is non-zero and decrements it (0x59746), and
+      sensors_sync_restart is the only thing that loads it, from the stream's
+      +0xc.
+  - name: sensor_sample_accel
+    fields: [[i16, x], [i16, y], [i16, z], [u16, reserved_6], [i32, abs_sum]]
+    notes: >
+      the 0xc bytes the "ACC" stream owns at offset 0 of a slot. The builder
+      0x3bd10 walks the driver's 6-byte-per-entry sample array and writes the
+      three axes to sp+0xc/0xe/0x10 (0x3bd6a, 0x3bd76, 0x3bd82), a literal zero
+      to sp+0x12 (0x3bd92) and the sum of the three absolute values to sp+0x14
+      (0x3bd86..0x3bd8e), then hands sp+0xc to sensors_sync_ring_push as sensor 0,
+      and the stream's size says 0xc bytes travel. Both readers take the axes as
+      signed halfwords at +0/+2/+4 (0x5f5e2..0x5f5ea, 0x5f618..0x5f620) and both
+      copy the 6 bytes as one word plus one halfword (0x5f636..0x5f642, 0x3141e
+      at 0x3143c..0x31440), which is a 3 x i16 struct assignment. Nothing reads
+      +6 or +8.
+  - name: sensor_sample_ppg
+    fields: [["u32[0x10]", chan]]
+    notes: >
+      the 0x40 bytes the "PPG_CHANS" stream owns at offset 0xc of a slot: one
+      word per MAX86173 channel, indexed by channel id -- 0x9ab06 switches on the
+      id (`cmp r0,#0xf`) and hands back the address of the word (0x52410), and the
+      expander 0x3141c reads all sixteen. Each word is a bit field, written by
+      0x523cc and read by 0x3141c at the same positions: bits 0..19 are the
+      20-bit FIFO datum, `bfi r2,r1,#0,#20` at 0x5242a against `sbfx r3,r3,#0,#0x14`
+      at 0x31442; bits 20..28 and 29..30 are two values the producer packs into
+      the upper halfword under the mask 0xffff800f (0x52466..0x5247e) and the
+      consumer unpacks with `ubfx r0,r0,#4,#9` and `ubfx r1,r1,#5,#2` (0x3144a,
+      0x31446) before turning the pair into one float through 0x28758; bit 31 is
+      a flag stored as a byte by the consumer (0x3145e). The producer takes bits
+      20..28 and 31 from the per-channel configuration at 0x2001af9c through
+      0x51bcc and 0x51bf4, which is not enough to name any of the three.
+  - name: sensors_sync_slot
+    fields: [[struct sensor_sample_accel, acc], [struct sensor_sample_ppg, ppg]]
+    notes: >
+      one entry of the 128-slot ring at 0x2001d2d8; the stride 0x4c is the
+      literal every walk of the buffer multiplies by (0x597a8 in the push,
+      0x595ce and 0x59664 in the consumer, 0x30ee0 in the raw-data flush) and it
+      is the sum of the two streams' offset and size.
+
+  - name: algo_ppg_chan
+    fields: [[i32, counts], [float, scale], [u8, flag], ["u8[0x3]", pad_9]]
+    notes: >
+      one MAX86173 channel as the algorithms see it, unpacked from the channel
+      word of sensor_sample_ppg by sensors_sync_slot_to_algo: the sign-extended
+      20-bit datum (`sbfx #0,#0x14`), the float 0x28758 makes out of the word's
+      9-bit and 2-bit fields, and bit 31 as a byte. Sixteen unrolled copies of
+      the same three stores, 0xc apart, fix the record (0x3144e..0x31464 is the
+      first, 0x3169a..0x316aa the last).
+  - name: algo_sample_frame
+    fields: [[i16, x], [i16, y], [i16, z], [u16, pad_6],
+             ["i32[0x3]", sel_counts],
+             [float, sel_scale_0], [u8, sel_flag_0], ["u8[0x3]", pad_19],
+             [float, sel_scale_1], [u8, sel_flag_1], ["u8[0x3]", pad_21],
+             [float, sel_scale_2], [u8, sel_flag_2], ["u8[0x3]", pad_29],
+             ["struct algo_ppg_chan[0x10]", chan]]
+    notes: >
+      what one sensors_sync slot becomes on its way to the algorithms, 0xec bytes
+      -- sensors_sync_slot_to_algo zeroes it from +6 for 0xe6 (0x31422) and the
+      accelerometer driver's own feed builds the same frame the same way
+      (0x5f62a). The head is the three accelerometer axes, copied as one word
+      plus one halfword, and then a three-slot selection the sixteen channel
+      records are folded into: 0xa4418 copies channel 3 to slot 0, channel 13 to
+      slot 1 and channel 6 to slot 2, each as its counts, its scale and its flag
+      (0xa4418..0xa444a), and that is what fixes the split between the i32 array
+      at +8 and the three scale/flag pairs at +0x14, +0x1c and +0x24. +0x2c is
+      the sixteen algo_ppg_chan records, which ends the frame exactly at 0xec.
+
+  # ---- the ECG session, and the HR algorithm's two ends ----------------------
+  - name: ecg_session
+    fields: [[u8, algo_version], [u8, state], [u8, prev_state], [u8, pad_3],
+             [u32, adc_running], [i32, sample_count], [i32, repeats_remaining],
+             [i32, stop_result], [u32, expected_evt_counter],
+             [u32, dropped_buffers], [i32, field_1c], [i32, field_20],
+             ["u8[0x4]", pad_24], ["u8[0x2450]", algo_ctx],
+             ["i16[0x90]", sample_ring], [u16, ring_wr], [u8, ring_wrapped],
+             [u8, pad_259b], ["u8[0xb30]", pad_259c],
+             [i32, result_code], [u8, field_30d0], ["u8[0x3]", pad_30d1],
+             ["u8[0x38]", algo_result],
+             [void *, mutex], [void *, stop_done_sem], [void *, result_out],
+             [i32, target_sample_count], [u8, cfg_mode], [u8, field_311d],
+             [u8, cfg_stream], [u8, field_311f], [u8, cfg_raw_print],
+             ["u8[0x3]", pad_3121], [const void *, callbacks]]
+    notes: >
+      one object at 0x20011668, 0x3128 bytes, reached through three literals --
+      itself, +0x2000 (0x20013668, which is how the ring cursors are written) and
+      +0x3000 (0x20014668, the handles and the configuration) -- and nothing
+      outside the ECG module loads any of the three.
+      +0 is the `%d` of "[ECG] algo version %d" (0x4a538) and is set to 2 at
+      0x4a520. +1 is the state the 7-way `tbh` at 0x4a094 switches on and the
+      only thing 0x49bb8 writes, which also saves the old value into +2; nothing
+      reads +2. +4 is cleared and tested around the ADC start and stop (0x49c3c,
+      0x4a1fc). +8 counts samples in steps of 0x32 (0x49f54) and is compared
+      against +0x3118 (0x49f4a). +0xc is the repeat counter, initialised to -1
+      (0x4a746) and decremented at 0x4a482. +0x10 is the `result = %d` of the
+      stop line (0x49c90), +0x14 the "expected evt" counter and +0x18 the
+      `%u` of "Nb dropped buffers" (0x49c9c). +0x1c and +0x20 are written once
+      each (0x4a19c, 0x4a1ba, the latter from dblib id 0x11f) and read nowhere
+      that names them.
+      +0x28 is an embedded algorithm object: 0x4a52c initialises it as
+      (base+0x28, 300, 1610) and every later use passes the same address; the
+      loads at +0x6c, +0xcc8 and +0xd08 are inside it.
+      +0x2478 is a 144-entry i16 ring with its write index at +0x2598 (wrapped at
+      0x90 at 0x49d24 and 0x4a04e) and a wrapped flag at +0x259a, all three
+      written through the +0x2000 literal.
+      +0x30cc is the `%d` of the result line (0x4a400), +0x30d4 the 14-word block
+      the algorithm's own result accessor fills (`ldm`/`stm` at 0x4a342..0x4a358)
+      and out of which four floats and one word are read at 0x4a364..0x4a37a.
+      +0x310c is the module mutex, created by xQueueCreateMutexStatic at 0x4a736
+      over the storage at 0x2001924c and taken with a 500-tick timeout by the
+      task and by every entry point; +0x3110 is a one-slot semaphore created
+      only for the duration of ecg_task_stop (0x4a620, deleted at 0x4a678).
+      +0x3114..+0x3124 are the five configuration words ecg_acquisition_start
+      copies in one block from its argument (0x4a54c..0x4a562): a 0x68-byte
+      result buffer, a sample target that is -1 for unlimited, two words the
+      image only ever reads a byte at a time, and a table of six function
+      pointers (called at +0, +4, +8, +0xc, +0x10 and +0x14). Of those bytes
+      +0x311c is only ever compared against 2, +0x311e gates every path that
+      emits samples and +0x3120 selects the per-sample "%d" dump; +0x311d and
+      +0x311f gate paths that leave more than one reading.
+  - name: hr_algo_result
+    fields: [["u8[0x230]", filters], [u32, window_samples],
+             [void *, buf_a], [void *, buf_b], [void *, buf_c],
+             [u8, bpm], [u8, bpm_ref], [u8, ready], [u8, acceptable],
+             [u8, quality], [u8, warm], ["u8[0x2]", pad_246], [i32, status]]
+    notes: >
+      the HR algorithm's own result block at 0x2000f480, which is its object's
+      +0x2c84; 0x7aa60 is the only writer of the tail and 0xa2548 the only
+      reset. The head is four filter states (three of 0xa8 for the three selected
+      PPG channels, one of 0x38 that also takes the accelerometer, initialised
+      and stepped in that order at 0x7aa7a..0x7aa9e) whose ready bytes are ANDed
+      into +0x245 at 0x7aade. +0x234..+0x23c are three 0x98-byte float buffers,
+      the size taken from the memsets at 0xa25b2..0xa25c0. +0x240 is the beats
+      per minute, a `vcvt.u32.f32` stored at 0x7ac6c, and the same byte is read
+      through the object base as +0x2ec4 at 0xa24fa, which is what fixes the
+      block's offset inside the object. +0x241 is the reference the plausibility
+      test at 0x7ac84 measures against, +0x242 the ready mirror, +0x243 the flag
+      the acceptance test at 0x7ac98..0x7acec produces, +0x244 the quality
+      0x74494 returns and +0x248 the status: 0 on success, -3 for too few
+      samples (0xa257c, 0x7acfa) and -6 for a failed sub-step (0x7aba4). The
+      reader 0xa265c copies +0x240..+0x244 out and returns +0x248.
+  - name: hr_algo_report
+    fields: [[u8, updated], [u8, hr_store], [u8, hr_live], [u8, field_3],
+             [u8, worn], [u8, field_5], [u8, field_6],
+             [u8, bpm], [u8, bpm_ref], [u8, ready], [u8, acceptable],
+             [u8, quality]]
+    notes: >
+      the twelve bytes the algorithm manager builds on its stack and hands to the
+      HR consumer, and the only call of that consumer is 0x64072, so the layout
+      is forced from both sides. The publisher zeroes all twelve (0x63fc4,
+      0x63fc8), writes +0 to 1, +1 and +2 from the two beat rates the log lines
+      call `hr_store: %dbpm` and `hr_live: %dbpm` (0x62624, 0x62622), +4 from the
+      worn flag the `worn:%s` line prints (0x63fca, 0x62620) and +7..+0xb as one
+      five-byte copy of hr_algo_result's +0x240..+0x244 (0x63fe4). The consumer
+      gates its whole burst block on +9 (0x626ba), prints +0xa as
+      `Notifiable: %s` and stores +7 into the HR context's last result. +3, +5
+      and +6 are written only on the path taken when one algorithm is disabled
+      (0x64124, 0x64130, 0x6406e), which is not enough to name them.
+  - name: hr_measure_ctx
+    fields: [[u8, mode], [u8, mode_1_requested], [u8, mode_2_requested],
+             [u8, field_3], [u8, field_4], [u8, field_5], [u8, auto_burst_armed],
+             [u8, pad_7], [u32, measure_start_uptime], [u32, non_storable_count],
+             [u8, vasistas_stored], ["u8[0x3]", pad_11],
+             [i32, sdnn], [i32, rmssd], [i8, hrv_quality], ["u8[0x3]", pad_1d],
+             [u32, window_start_uptime], [i32, rr_interval], [i8, rr_censored],
+             ["u8[0x3]", pad_29], [u32, rr_uptime], [u8, last_bpm],
+             ["u8[0x3]", pad_31], [void *, timer]]
+    notes: >
+      the HR_MEASURE module's own state at 0x20020004, every field of which is
+      printed by one of its log lines or read by the WPP handler. +0 is the mode
+      the `BURST`/`CONTINUOUS` selection at 0x62670 switches on (1 and 2 are
+      burst, 3 and 4 continuous, from the range tests at 0x6269a and 0x62a66) and
+      +1 and +2 are the two requests that set it. +8 is the uptime a measurement
+      started at, subtracted at 0x626d0 to give its duration, and +0xc the
+      counter the "Limit reached (non storable samples count = %u / %d)" line
+      compares against 0x2c. +0x14, +0x18 and +0x1c are the `sdnn: %ld`,
+      `rmssd: %ld` and quality the three HRV getters return (0x62686, 0x6268e,
+      0x62698), and +0x24 and +0x28 the `rr:` and `is_censored:` the two RR
+      getters return (0x628bc, 0x628d2). +0x30 is the byte the WPP handler
+      answers CMD_HR_MEASURE with: written from hr_algo_report's bpm at 0x62746,
+      read at 0x62560 and refused when zero. +0x34 is the measurement timer
+      0x623a2 creates. 0x62040 clears +8, +0xc, sixteen bytes from +0x14, +0x24,
+      +0x28 and +0x2c.
+  - name: hr_screen_data
+    fields: [[u8, live_valid], [u8, live_bpm], ["u8[0x2]", pad_2],
+             [u32, live_uptime], [u8, pad_8], [u8, burst_bpm],
+             ["u8[0x2]", pad_a], [u32, burst_uptime]]
+    notes: >
+      sixteen bytes at 0x2001fff4 that the watch face reads and nothing else
+      writes: the live rate and its validity as one halfword (cleared together by
+      the `strh` at 0x62064, set at 0x621ae and 0x621b2) with the uptime it was
+      taken at, and the same pair for the last burst result (0x62984, 0x6298a).
+      0x624b0 hands the whole block out under the module lock.
 
 tables:
   - name: wpp_cmd_table

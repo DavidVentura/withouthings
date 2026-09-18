@@ -2,6 +2,7 @@
 """The WPP wire format as the firmware writes it, against the crate's decoder.
 
     python3 abi/protocol.py            # -> abi/out/protocol/{objects,commands}.json
+    python3 abi/protocol.py --struct-uses ecg=0x20011668 [--module ECG]
 
 Two questions, one image and one crate each.
 
@@ -21,6 +22,13 @@ of a regex. Comparing the two lists field by field is the conformance test:
 too (signedness is invisible on the wire and is not compared), and a length or
 an ordering difference is a real disagreement between this repo's decoder and
 the firmware.
+
+Structs outside the protocol. The register model the codecs are read with does
+not care that its base came from an argument: seeded from a pc-relative load of
+a known global instead, the same walk reports every field access a module makes
+through that global, with the displacement, the width and the signedness the
+instruction carries. --struct-uses is that, and it is what recovered the
+sensor-sync rings, the ECG session and the HR contexts.
 
 Commands. A WPP command handler is a row of wpp_cmd_table. What it parses is the
 object types the TLV walk is given inside it; what it replies is the object the
@@ -459,6 +467,140 @@ def codecs_yaml(structs):
     return "\n".join(out)
 
 
+# ---------------------------------------------------------- structs by module
+# The same register model, pointed at a struct rather than at a cursor. A codec
+# is walked from a known argument; a module's state is reached through a pc-
+# relative literal instead, so the seed is "this register holds the global at
+# address A" and everything the walk then does with it -- an immediate-offset
+# load or store, an add that makes a second base, a scaled index -- is one field
+# access with a displacement and a width. Nothing is inferred across a call:
+# AAPCS clobbers r0..r3 and r12, so a pointer that leaves in an argument
+# register is simply lost, which is why this reports sites rather than types.
+STORE_OPS = {"strb": (1, False), "strb.w": (1, False),
+             "strh": (2, False), "strh.w": (2, False),
+             "str": (4, False), "str.w": (4, False)}
+_STORE = re.compile(r"^(r\d+), \[(r\d+)(?:, #(0x[0-9a-f]+|\d+))?\]$")
+_LOADD = re.compile(r"^(r\d+), (r\d+), \[(r\d+)(?:, #(0x[0-9a-f]+|\d+))?\]$")
+_INDEX = re.compile(r"^(r\d+), \[(r\d+), (r\d+)(?:, lsl #(\d+))?\]$")
+_POOL = re.compile(r"@ 0x([0-9a-f]+)")
+
+
+def _pool_target(img, ops):
+    """The address a `ldr rX, [pc, #N]` reads, or None. The listing annotates
+    the slot with its file offset, so the image base is added back."""
+    if "[pc" not in ops:
+        return None
+    m = _POOL.search(ops)
+    return int(m.group(1), 16) + img.base if m else None
+
+
+def struct_uses(img, ex, fns, bases):
+    """Every field access the given functions make through the given globals.
+
+    `bases` is {address: name}. A register becomes ("ptr", name, offset) when a
+    literal pool load brings the address in, and stays one through moves and
+    immediate adds; each load or store through it is recorded as
+    (name, offset, width, signed, kind, address, function).
+    """
+    out = []
+    by_fn = collections.defaultdict(list)
+    for i, (addr, mnem, ops) in enumerate(img.insns):
+        fn = ex.owner(addr)
+        if fn in fns:
+            by_fn[fn].append((i, addr, mnem, ops))
+    for fn in sorted(by_fn):
+        regs = {}
+        for _, addr, mnem, ops in by_fn[fn]:
+            if mnem in ("bl", "bl.w"):
+                for r in ("r0", "r1", "r2", "r3", "r12"):
+                    regs.pop(r, None)
+                continue
+            if mnem.startswith("ldr") and "[pc" in ops:
+                d = ops.split(",")[0].strip()
+                slot = _pool_target(img, ops)
+                w = img.word(slot) if slot is not None else None
+                regs[d] = ("ptr", bases[w], 0) if w in bases else None
+                continue
+            m = _INDEX.match(ops)
+            if m and (mnem in LOAD_OPS or mnem in STORE_OPS):
+                d, base, _, shift = m.groups()
+                b = regs.get(base)
+                if b and b[0] == "ptr":
+                    width, signed = (LOAD_OPS if mnem in LOAD_OPS else STORE_OPS)[mnem]
+                    out.append((b[1], b[2], width, signed,
+                                "index<<%s" % (shift or "0"),
+                                "read" if mnem in LOAD_OPS else "write",
+                                "0x%x" % addr, "0x%x" % fn))
+                if mnem in LOAD_OPS:
+                    regs[d] = None
+                continue
+            m = _LOADD.match(ops)
+            if m and mnem in ("ldrd", "strd"):
+                d0, d1, base, off = m.groups()
+                b = regs.get(base)
+                if b and b[0] == "ptr":
+                    o = b[2] + (int(off, 0) if off else 0)
+                    for k in (0, 4):
+                        out.append((b[1], o + k, 4, False, "",
+                                    "read" if mnem == "ldrd" else "write",
+                                    "0x%x" % addr, "0x%x" % fn))
+                if mnem == "ldrd":
+                    regs[d0] = regs[d1] = None
+                continue
+            m = _STORE.match(ops)
+            if m and mnem in STORE_OPS:
+                src, base, off = m.groups()
+                b = regs.get(base)
+                if b and b[0] == "ptr":
+                    width, signed = STORE_OPS[mnem]
+                    out.append((b[1], b[2] + (int(off, 0) if off else 0), width,
+                                signed, "", "write", "0x%x" % addr, "0x%x" % fn))
+                continue
+            m = _LOAD.match(ops)
+            if m and mnem in LOAD_OPS:
+                d, base, off = m.groups()
+                b = regs.get(base)
+                width, signed = LOAD_OPS[mnem]
+                if b and b[0] == "ptr":
+                    out.append((b[1], b[2] + (int(off, 0) if off else 0), width,
+                                signed, "", "read", "0x%x" % addr, "0x%x" % fn))
+                regs[d] = None
+                continue
+            m = _MOVR.match(ops)
+            if m and mnem in MOV_OPS:
+                d, src = m.groups()
+                regs[d] = regs.get(src)
+                continue
+            m = _ADDI.match(ops)
+            if m and mnem in ("adds", "add", "add.w"):
+                d, base, off = m.groups()
+                b = regs.get(base)
+                regs[d] = ("ptr", b[1], b[2] + int(off, 0)) if b and b[0] == "ptr" else None
+                continue
+            m = re.match(r"^(r\d+)[,\s]", ops)
+            if m:
+                regs[m.group(1)] = None
+    return out
+
+
+def struct_uses_report(uses):
+    """The accesses grouped by global and offset, the way a field table reads."""
+    by = collections.defaultdict(list)
+    for name, off, width, signed, kind, rw, at, fn in uses:
+        by[(name, off)].append((width, signed, kind, rw, at, fn))
+    lines = []
+    for (name, off) in sorted(by, key=lambda k: (k[0], k[1])):
+        rows = by[(name, off)]
+        widths = sorted({w for w, _, _, _, _, _ in rows})
+        signed = any(s for _, s, _, _, _, _ in rows)
+        rw = sorted({r for _, _, _, r, _, _ in rows})
+        lines.append("%-32s +0x%-5x %s%s %-11s %s"
+                     % (name, off, "i" if signed else "u",
+                        "/".join(str(w * 8) for w in widths), ",".join(rw),
+                        " ".join(at for _, _, _, _, at, _ in rows)))
+    return "\n".join(lines)
+
+
 def compare(image, crate):
     """The first index at which the two field lists disagree, or None."""
     if crate is None:
@@ -648,12 +790,27 @@ def main():
                     help="write the recovered sizers as a hwa10.yaml functions block")
     ap.add_argument("--emit-codecs-yaml",
                     help="write the codec prototypes as a hwa10.yaml functions block")
+    ap.add_argument("--struct-uses", action="append", default=[], metavar="NAME=ADDR",
+                    help="report every field access made through this global")
+    ap.add_argument("--module", action="append", default=[],
+                    help="restrict --struct-uses to the functions of this module")
     args = ap.parse_args()
 
     img = A.Image(os.path.join(SIM, "appl.bin"), os.path.join(SIM, "out", "appl.dis"))
     ex = A.Export(args.export, A.prior_addresses(args.export))
     if not ex.ok:
         sys.exit("protocol: no export under %s" % args.export)
+    if args.struct_uses:
+        bases = {}
+        for spec in args.struct_uses:
+            name, _, addr = spec.partition("=")
+            bases[int(addr, 0)] = name
+        mods = json.load(open(os.path.join(args.export, "modules.json")))["functions"]
+        fns = ({int(a, 16) for a, v in mods.items() if v["module"] in args.module}
+               if args.module else set(ex.fns))
+        print(struct_uses_report(struct_uses(img, ex, fns, bases)))
+        return
+
     body = Body(img, ex)
     names, _ = A.wpp_object_names(img, ex)
     crate = crate_objects()
