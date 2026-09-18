@@ -30,6 +30,10 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         public GPIO IRQ { get; private set; }
         public IReadOnlyDictionary<int, IGPIO> Connections { get; private set; }
 
+        // Set on the instances a step motor hangs off, which decode the played
+        // sequence into hand movement.
+        public NrfHands Hands { get; set; }
+
         public uint ReadDoubleWord(long offset)
         {
             if(IsEvent(offset) || IsStored(offset))
@@ -94,9 +98,26 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private void PlaySequence(int sequence)
         {
             LogFirstDutyValue(sequence);
+            if(Hands != null && sequence == 0)
+            {
+                DecodeStep();
+            }
             regs[(long)Reg.EventsSeqStarted0 + 4 * sequence] = 1;
             regs[(long)Reg.EventsSeqEnd0 + 4 * sequence] = 1;
             regs[(long)Reg.EventsLoopsDone] = 1;
+            // The playback that ends in zero time still has to end the way the
+            // shortcuts say it does: nrfx asks for LOOPSDONE_STOP and takes the
+            // STOPPED interrupt as the completion, so a model that leaves the
+            // shortcuts out stops the step motor driver dead on its first step.
+            var shorts = Get((long)Reg.Shorts);
+            if((shorts & (SeqEndStop0 | SeqEndStop1 | LoopsDoneStop)) != 0)
+            {
+                regs[(long)Reg.EventsStopped] = 1;
+            }
+            if((shorts & (LoopsDoneSeqStart0 | LoopsDoneSeqStart1)) != 0)
+            {
+                this.Log(LogLevel.Warning, "SHORTS 0x{0:X} chains another sequence, which this model does not replay", shorts);
+            }
             UpdateIrq();
         }
 
@@ -115,6 +136,21 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             this.Log(LogLevel.Debug, "SEQSTART[{0}] duty=0x{1:X4} cnt={2} loop={3} countertop={4} pins={5},{6},{7},{8}",
                 sequence, sysbus.ReadWord(pointer), count, Get((long)Reg.Loop), Get((long)Reg.CounterTop),
                 Get((long)Reg.PselOut0), Get((long)Reg.PselOut0 + 4), Get((long)Reg.PselOut0 + 8), Get((long)Reg.PselOut0 + 12));
+        }
+
+        // DECODER.LOAD = WaveForm: an entry is four halfwords, three channel
+        // compares and a COUNTERTOP that replaces the register for the period.
+        private void DecodeStep()
+        {
+            var pointer = Get(SeqBase);
+            if(pointer == 0 || Get(SeqBase + 4) != WaveFormEntryLength
+               || (Get((long)Reg.Decoder) & DecoderLoadMask) != (uint)DecoderLoadWaveForm)
+            {
+                return;
+            }
+            Hands.PlayedSequence(Get((long)Reg.PselOut0), Get((long)Reg.PselOut0 + 4), Get((long)Reg.PselOut0 + 8),
+                                 sysbus.ReadWord(pointer), sysbus.ReadWord(pointer + 2),
+                                 sysbus.ReadWord(pointer + 4), sysbus.ReadWord(pointer + 6));
         }
 
         private void UpdateIrq()
@@ -167,6 +203,14 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         public long Size { get { return 0x1000; } }
 
+        private const uint SeqEndStop0 = 1u << 0;
+        private const uint SeqEndStop1 = 1u << 1;
+        private const uint LoopsDoneSeqStart0 = 1u << 2;
+        private const uint LoopsDoneSeqStart1 = 1u << 3;
+        private const uint LoopsDoneStop = 1u << 4;
+        private const uint WaveFormEntryLength = 4;
+        private const uint DecoderLoadMask = 0x7;
+        private const uint DecoderLoadWaveForm = 3;
         private const long SeqBase = 0x520;
         private const long SeqStride = 0x20;
         private const int SequenceCount = 2;

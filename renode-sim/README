@@ -24,6 +24,7 @@ All the main sensors are modelled
 | APDS-9306 ambient light | TWI0 0x52 |
 | MS5849 barometer | TWI0 0x77 |
 | battery sense | SAADC AIN0 |
+| hour, minute and tracker hands | PWM1 P1.2/P1.5/P1.6, PWM0 P1.1/P1.4/P1.7, PWM2 P1.3/P0.9/P0.10 |
 
 There are some hacks to patch over Renode, i'd like to upstream them at some point.
 

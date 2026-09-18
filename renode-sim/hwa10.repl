@@ -89,16 +89,30 @@ temp: Sensors.NrfTemp @ sysbus 0x4000C000
     preinit:
         include @NrfTemp.cs
 
+// The three hands. Each motor is one PWM instance driving the two ends of its
+// winding on channels 0 and 2 and the common on channel 1; the model reads the
+// step out of the sequence those channels play. Channel 3 is unconnected on all
+// three, and PWM3 drives the vibrator, not a hand.
+hands: Miscellaneous.NrfHands @ sysbus
+    hourPins: "P1.2 P1.5 P1.6"
+    minutePins: "P1.1 P1.4 P1.7"
+    trackerPins: "P1.3 P0.9 P0.10"
+    preinit:
+        include @NrfHands.cs
+
 pwm0: Miscellaneous.NrfPwm @ sysbus 0x4001C000
     -> nvic@28
+    Hands: hands
     preinit:
         include @NrfPwm.cs
 
 pwm1: Miscellaneous.NrfPwm @ sysbus 0x40021000
     -> nvic@33
+    Hands: hands
 
 pwm2: Miscellaneous.NrfPwm @ sysbus 0x40022000
     -> nvic@34
+    Hands: hands
 
 pwm3: Miscellaneous.NrfPwm @ sysbus 0x4002D000
     -> nvic@45

@@ -120,10 +120,13 @@ enum dblib_ie {
        0x9af6a; entry length 0x800.
        */
     DBLIB_IE_07D = 0x7d,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
-       0x5cc38, 0x5cd10; entry length 0x8.
+    /* the calibration phase of each step motor: one byte per motor, and the
+       two functions that touch it are step_motor_load_cal_ph and
+       step_motor_save_cal_ph, which log "[STEP_MOTOR] load cal ph." and
+       "[STEP_MOTOR] save cal ph.". Reached through dblib_get_first 0x9776e,
+       the setter at 0x47ebc from 0x5cc38, 0x5cd10; entry length 0x8.
        */
-    DBLIB_IE_081 = 0x81,
+    DBLIB_IE_HANDS_CAL_PHASE = 0x81,
     /* reached through the setter at 0x47ebc from 0x44784; entry length 0x10. */
     DBLIB_IE_086 = 0x86,
     /* reached through the setter at 0x47ebc from 0x3baf0; entry length 0x1. */
@@ -182,8 +185,11 @@ enum dblib_ie {
        0x46ba4; entry length 0x4.
        */
     DBLIB_IE_0B8 = 0xb8,
-    /* reached through the setter at 0x47ebc from 0x9bef4; entry length 0x4. */
-    DBLIB_IE_0B9 = 0xb9,
+    /* which hands are fitted: two bits per motor, set by
+       step_motor_probe_coils when the winding continuity check passes.
+       Reached through the setter at 0x47ebc from 0x9bef4; entry length 0x4.
+       */
+    DBLIB_IE_HANDS_PRESENT = 0xb9,
     /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the
        setter at 0x47e58 from 0x3e808, 0x3f060, 0x3f1e4; entry length 0x6.
        */

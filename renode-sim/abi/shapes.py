@@ -52,10 +52,14 @@ class Field(object):
     """One member of a struct, at the offset the compiler put it."""
 
     def __init__(self, name, offset, size, kind, ctype, count=1, unit=0,
-                 points_to=None):
+                 points_to=None, members=()):
         self.name, self.offset, self.size = name, offset, size
         self.kind, self.ctype, self.count = kind, ctype, count
         self.unit = unit or size
+        # A member that is itself a struct carries its own members, at their
+        # offsets within it, because a value for it has to be written as one
+        # initialiser per member and not as the word the bytes happen to be.
+        self.members = list(members)
         # What a pointer field points at: "code" for a function pointer,
         # "char" for a string, "void" where the target has no type, "data" for
         # anything else. It is what tells a dispatch row's handler column from
@@ -305,6 +309,11 @@ def _field(member, cus):
     if base.tag == "DW_TAG_pointer_type":
         return Field(name, at, 4, POINTER, ctype,
                      points_to=_points_to(base, cus))
+    if base.tag == "DW_TAG_structure_type":
+        members = [f for f in (_field(m, cus) for m in base.iter_children()
+                               if m.tag == "DW_TAG_member") if f is not None]
+        return Field(name, at, _size(base, cus), STRUCT, ctype,
+                     members=members)
     return Field(name, at, _size(base, cus), SCALAR, ctype)
 
 

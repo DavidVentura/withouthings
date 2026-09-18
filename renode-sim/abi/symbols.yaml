@@ -4993,11 +4993,67 @@ symbols:
   class: logline
   evidence: the only line 0x5c5cc logs, wlog('[SPI] device < %s > not requested')
     at 0x5c5ec
+- address: 0x5cb5c
+  name: step_motor_wait_positions
+  kind: function
+  class: hand
+  module: hands
+  evidence: polls the three step_motor_positions words against the caller's triple,
+    vTaskDelay(1) between tries; the field offsets 0x24/0x2c/0x34 off 0x20002800
+    are the ones step_motor_print_positions labels t, h and m
+- address: 0x5cb98
+  name: step_motor_print_positions
+  kind: function
+  class: hand
+  module: hands
+  evidence: wlog('h=%d'), wlog(', m=%d') and wlog(', t=%d') at 0x5cba0..0x5cbb0
+    off step_motor_positions
+- address: 0x5cbd0
+  name: step_motor_print_positions_vs_targets
+  kind: function
+  class: hand
+  module: hands
+  evidence: wlog(', h=%d/%d'), wlog(', m=%d/%d') and wlog(', t=%d/%d') at 0x5cbdc..0x5cbf0,
+    each pairing a step_motor_positions word with the caller's target
+- address: 0x5cc10
+  name: step_motor_tracker_percent_of_position
+  kind: function
+  class: hand
+  module: hands
+  evidence: position * 100 / max clamped to 100, then scaled by the max_position
+    of step_motor_hw_table's tracker row read at 0x5cc24; the inverse of step_motor_move_tracker_percent
+- address: 0x5cc38
+  name: step_motor_load_cal_ph
+  kind: function
+  class: hand
+  module: hands
+  evidence: wlog('[STEP_MOTOR] load cal ph.') at 0x5cc40, 'Ph. load err' when dblib_get_first(DBLIB_IE_HANDS_CAL_PHASE,
+    8) fails and 'Recover pos.' on the restoring path; exclusive-ors each stored
+    phase byte with the low bit of the restored position into step_motor_positions
+- address: 0x5ccec
+  name: step_motor_init_once
+  kind: function
+  class: hand
+  module: hands
+  evidence: calls step_motor_init behind a flag and logs '[STEP_MOTOR] already initialized'
+    (0xe63f3) once the flag is set
 - address: 0x5cd10
   name: step_motor_save_cal_ph
   kind: function
   class: logline
   evidence: the only line 0x5cd10 logs, wlog('[STEP_MOTOR] save cal ph.') at 0x5cd54
+- address: 0x5cda8
+  name: step_motor_lock
+  kind: function
+  class: hand
+  module: hands
+  evidence: increments the byte at 0x20026bd2 that step_motor_unlock decrements
+- address: 0x5cdb8
+  name: step_motor_unlock
+  kind: function
+  class: hand
+  module: hands
+  evidence: decrements 0x20026bd2 and, at zero, runs step_motor_service_all
 - address: 0x5cde4
   name: input_nb_steps_is_too__1
   kind: function
@@ -5029,6 +5085,24 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x44798 (wpp_clock_calib_move_motor) calls 0x5d33c; 58 bytes
+- address: 0x5d384
+  name: step_motor_pick_direction
+  kind: function
+  class: hand
+  module: hands
+  evidence: only runs when the move's wait field is 2; compares the distance the
+    two ways round against half the span and writes 0 or 1 to the motor's direction
+    field at +0xc, the field step_motor_play_step indexes step_motor_step_waveforms
+    with
+- address: 0x5d3c4
+  name: step_motor_coil_check
+  kind: function
+  class: hand
+  module: hands
+  evidence: configures winding_a (+2) and winding_b (+0xa) of the motor's step_motor_hw_table
+    row as inputs and the common (+6) as an output, drives it high, delays 0x15
+    ticks and requires both ends to read 1, then drives it low and requires both
+    to read 0; returns 0 when the winding is there and -1 otherwise
 - address: 0x5d570
   name: steps_new_steps__1
   kind: function
@@ -8051,6 +8125,14 @@ symbols:
   class: logline
   evidence: the only line 0x7e478 logs, wlog('[ADC] Not using internal timer, setup
     PPI') at 0x7e48c
+- address: 0x7e5a8
+  name: step_motor_move_tracker_percent
+  kind: function
+  class: hand
+  module: hands
+  evidence: clamps its argument to 100, scales it by the max_position of step_motor_hw_table's
+    tracker row (0xb2294+0x10, read at 0x7e5c4) and hands the result to step_motor_request_move
+    as the target
 - address: 0x7e604
   name: WPP_CMD_GPIO
   kind: function
@@ -8072,6 +8154,67 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x273a0: command ''security'', --help slot (+8)'
+- address: 0x7e7b4
+  name: step_motor_play_step
+  kind: function
+  class: hand
+  module: hands
+  evidence: waveform = step_motor_step_waveforms[direction][phase] at 0x7e7ba..0x7e7c0,
+    flips the pending phase byte, sets the motor's bit in 0x20021b5c and calls nrfx_pwm_complex_playback
+    with that waveform as SEQ0 and the constant step_motor_idle_sequence as SEQ1
+- address: 0x7e820
+  name: step_motor_step_toward
+  kind: function
+  class: hand
+  module: hands
+  evidence: 'one slot of the speed pattern: a step_motor_play_step drive pulse while
+    the motor''s slot counter at +0x18 is below its speed_on at +0x15, otherwise
+    the idle waveform at 0x20007918 through nrfx_pwm_simple_playback; the counter
+    wraps at speed_period (+0x16)'
+- address: 0x7e8ac
+  name: step_motor_service
+  kind: function
+  class: hand
+  module: hands
+  evidence: if the motor has a staged request it copies the eight requested bytes
+    at +8 onto the committed ones at +0x10, then calls step_motor_step_toward when
+    the committed target differs from the motor's step_motor_positions word
+- address: 0x7e8f8
+  name: step_motor_pwm_handler
+  kind: function
+  class: hand
+  module: hands
+  evidence: the nrfx PWM callback, one per motor through the thunks at 0xa4f7d,
+    0xa4f89 and 0xa4f95. Clears the motor's bit in 0x20021b5c, and only when the
+    phase byte changed -- which is what tells a drive pulse from an idle one --
+    moves the position by one in the committed direction and wraps it at the row's
+    max_position
+- address: 0x7ea24
+  name: step_motor_service_all
+  kind: function
+  class: hand
+  module: hands
+  evidence: step_motor_service over the three motors, then the position save
+- address: 0x7ea60
+  name: step_motor_init
+  kind: function
+  class: hand
+  module: hands
+  evidence: wlog('[STEP_MOTOR] init:') at 0x7ea88, then step_motor_probe_coils and
+    step_motor_load_cal_ph, then three nrfx_pwm_init calls whose nrfx_pwm_config_t
+    takes its four output pins as pointers to the winding_a, common and winding_b
+    gpio_pin of a step_motor_hw_table row and NULL (0x7eaa4..0x7eae8), PRESCALER
+    5 and DECODER.LOAD = WaveForm
+- address: 0x7eb10
+  name: step_motor_step_blocking
+  kind: function
+  class: hand
+  module: hands
+  evidence: copies the motor's step_motor_positions entry onto its stack, drives
+    one step_motor_play_step off that copy, spins until step_motor_pwm_handler clears
+    the motor's bit in 0x20021b5c and writes the stack copy back, so the stored
+    position does not follow the hand; only lap_hand_id and the shell's `step_motor
+    move` reach it
 - address: 0x7eb78
   name: shell_help_step_motor
   kind: function
@@ -8100,6 +8243,14 @@ symbols:
   class: logline
   evidence: the only line 0x7faa4 logs, wlog('[TEMPERATURE] Stop acquisition task')
     at 0x7faaa
+- address: 0x7fb24
+  name: ui_move_hands_feature_init
+  kind: function
+  class: hand
+  module: hands
+  evidence: reads dblib item DBLIB_IE_MOVE_HANDS (0x156); if it is missing it derives
+    the answer from the model code in r0 and writes it back, and either way ends
+    on wlog('[UI] move_hands feature %sabled') at 0x7fbb6
 - address: 0x7fcac
   name: set_move_hands
   kind: function
@@ -13711,6 +13862,21 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x5d33c (wpp_clock_calib_move_motor__1) calls 0x9be9e; 22 bytes
+- address: 0x9beb4
+  name: step_motor_request_move
+  kind: function
+  class: hand
+  module: hands
+  evidence: 'refuses with udf #0 when the requested target is above the max_position
+    of the motor''s step_motor_hw_table row, stores it at +8, calls step_motor_pick_direction
+    and marks the request staged'
+- address: 0x9bef4
+  name: step_motor_probe_coils
+  kind: function
+  class: hand
+  module: hands
+  evidence: step_motor_coil_check over motors 0, 1 and 2, two bits per motor set
+    when the winding is there, written to dblib item DBLIB_IE_HANDS_PRESENT (0xb9)
 - address: 0x9bf90
   name: WPP_CMD_THRESHOLDS_SET__4
   kind: function
@@ -16160,6 +16326,15 @@ symbols:
     immediately after their own offset table instead (0xbdba4 plus 182 is 0xbdc5a),
     which is the same arithmetic from the other side. type is the number "unsupported
     font type (%i)" at 0xcad90 prints.'
+- address: 0xb226c
+  name: step_motor_hw_table
+  kind: table
+  class: hand
+  module: hands
+  evidence: 'three 20-byte rows the three step_motor objects point at: a PWM instance
+    index (1, 0, 2), three gpio_pin descriptors and a max_position of 359. nrfx_pwm_init
+    reads PSEL.OUT out of the pin descriptors at +2, +6 and +0xa, which a run confirms
+    as P1.2/P1.5/P1.6 on PWM1, P1.1/P1.4/P1.7 on PWM0 and P1.3/P0.9/P0.10 on PWM2'
 - address: 0xb22c4
   name: i2c_device_table
   kind: table
@@ -16344,6 +16519,21 @@ symbols:
     and the eleventh row is not one: its name pointer lands on a lone "e". index
     is a permutation of 0..9 and is what the rest of the image indexes the set by,
     since the rows are not stored in that order.'
+- address: 0xb9018
+  name: step_motor_step_waveforms
+  kind: global
+  class: hand
+  module: hands
+  evidence: two pointers, indexed by direction, to the two-entry phase tables step_motor_play_step
+    reads; both tables and the four waveforms they name are built in RAM at init
+- address: 0xb9020
+  name: step_motor_idle_sequence
+  kind: global
+  class: hand
+  module: hands
+  evidence: 'the nrf_pwm_sequence_t step_motor_play_step passes as SEQ1 of every
+    drive pulse: four halfwords at 0x20007920 whose compares all sit above their
+    COUNTERTOP, so the three pins hold one level for the 2.3 ms after the step'
 - address: 0xb91cc
   name: wui_view_factory_test_screen
   kind: global
@@ -17456,11 +17646,27 @@ symbols:
   kind: global
   class: hand
   module: boot
+- address: 0x20002824
+  name: step_motor_positions
+  kind: table
+  class: hand
+  module: hands
+  evidence: three eight-byte entries at +0x24 of rambkp_block, so the hand positions
+    survive the reset the fault handler takes and the boot log can print them as
+    '[M] last min t=%d, h=%d, m=%d'. step_motor_pwm_handler moves the word and step_motor_load_cal_ph
+    fills the phase byte at +5
 - address: 0x20006000
   name: crown_ctx
   kind: global
   class: hand
   module: crown
+- address: 0x20006e84
+  name: step_motors
+  kind: global
+  class: hand
+  module: hands
+  evidence: the three step_motor objects, tracker, hour and minute in that order,
+    as step_motor_init walks them against step_motor_positions
 - address: 0x20007118
   name: sensors_sync_ring_ppg
   kind: global
@@ -17590,8 +17796,23 @@ symbols:
   kind: global
   class: hand
   module: freertos
+- address: 0x20021b5c
+  name: step_motor_pending
+  kind: global
+  class: hand
+  module: hands
+  evidence: a bit per motor that step_motor_play_step sets and step_motor_pwm_handler
+    clears, which is what step_motor_step_blocking spins on, followed by the blocking
+    caller's flag and its move at +4
 - address: 0x2002527e
   name: oled_rx_buf
   kind: label
   class: prose
   evidence: RAM; 1-byte SPI response buffer for the OLED poll
+- address: 0x20026bd2
+  name: step_motor_lock_depth
+  kind: global
+  class: hand
+  module: hands
+  evidence: the step_motor_lock nesting counter; the position save waits for it
+    to reach zero
