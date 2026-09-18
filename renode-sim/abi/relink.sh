@@ -10,35 +10,25 @@ set -eu
 cd "$(dirname "$0")"
 ROOT=${ROOT:-$HOME/ref-build}
 SDK=$ROOT/sdk/nRF5_SDK_17.1.0_ddde560
-GCC=$ROOT/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi
-KERNEL=$SDK/external/freertos/source
-PORT=$SDK/external/freertos/portable
+TC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
+GCC=$TC/bin/arm-none-eabi
 OUT=../out/relink
 mkdir -p "$OUT"
 
 ARCH="-mcpu=cortex-m4 -mthumb -mabi=aapcs -mfpu=fpv4-sp-d16 -mfloat-abi=hard"
 COMMON="-Os -ffunction-sections -fdata-sections -fno-strict-aliasing -fno-builtin
- -fshort-enums -std=gnu99 -g3 -w -DNRF52840_XXAA -DFLOAT_ABI_HARD -DS140
+ -fshort-enums -std=gnu99 -g3 -w -fcommon -DNRF52840_XXAA -DFLOAT_ABI_HARD -DS140
  -DSOFTDEVICE_PRESENT -DNRF_SD_BLE_API_VERSION=7 -DFREERTOS -DSWI_DISABLE0"
 
-# The tick-source correction, out of abi/facts.yaml: the reference port
-# hardcodes an RTC this firmware does not tick on, and the macro is an
-# unconditional #define, so the header is rewritten into the build directory and
-# shadowed on the include path rather than -D'd. The evidence for which RTC it
-# is lives with the correction rather than here.
-python3 refbuild_fix.py --port "$PORT" --out "$OUT"
+# abi/stage.sh puts the kernel, the port, Withings' patches and abi/facts.yaml's
+# corrections in one tree. abi/refbuild.sh stages the same tree and measures a
+# build of it against the image body for body, so what is linked here is what
+# the verdicts in abi/matches.yaml were measured on.
+./stage.sh "$OUT/src"
+KERNEL=$OUT/src/source
+PORT=$OUT/src/portable
 
-# The kernel is compiled out of a staged copy so abi/patches/ can recover the
-# changes Withings made to it; each patch is -p1 against the kernel source dir.
-SRC=$OUT/src
-rm -rf "$SRC"
-cp -r "$KERNEL" "$SRC"
-for p in patches/*.patch; do
-    patch -s -d "$SRC" -p1 < "$p"
-done
-KERNEL=$SRC
-
-INC="-I$OUT -Iconfig-relink -I$KERNEL/include -I$PORT/GCC/nrf52 -I$PORT/CMSIS/nrf52 -I$SDK/examples/ble_peripheral/ble_app_hrs_freertos/pca10056/s140/config"
+INC="-Iconfig-relink -I$KERNEL/include -I$PORT/GCC/nrf52 -I$PORT/CMSIS/nrf52 -I$SDK/examples/ble_peripheral/ble_app_hrs_freertos/pca10056/s140/config"
 for d in components/toolchain/cmsis/include modules/nrfx modules/nrfx/hal \
          modules/nrfx/mdk modules/nrfx/drivers/include components/libraries/util \
          components/softdevice/s140/headers components/softdevice/s140/headers/nrf52 \
@@ -57,14 +47,10 @@ for s in tasks.c queue.c list.c portable/MemMang/heap_4.c; do
     "$GCC-gcc" $ARCH $COMMON $INC -DconfigUSE_TIMERS=0 -c "$KERNEL/$s" -o "$o"
     objs="$objs $o"
 done
-# port.c's configASSERTs are build-time sanity checks about the core revision
-# (it compares CPUID against 0x410fc241) and the image does not carry them:
-# xPortStartScheduler in the blob has no such compare. Building them in wedges
-# the boot on Renode's CPUID, so port.c takes the empty assert.
 for s in "$PORT/GCC/nrf52/port.c" "$PORT/CMSIS/nrf52/port_cmsis.c" \
          "$PORT/CMSIS/nrf52/port_cmsis_systick.c"; do
     o="$OUT/$(basename "$s" .c).o"
-    "$GCC-gcc" $ARCH $COMMON $INC -DconfigUSE_TIMERS=0 -DREF_ASSERT=2 -c "$s" -o "$o"
+    "$GCC-gcc" $ARCH $COMMON $INC -DconfigUSE_TIMERS=0 -DREF_ASSERT=0 -c "$s" -o "$o"
     objs="$objs $o"
 done
 
@@ -81,8 +67,16 @@ if [ ! -d "$NRFX" ]; then
     echo "$NRFX is missing; run abi/refbuild.sh" >&2
     exit 1
 fi
+# The flags are the driver's own and not $COMMON: -fno-builtin is deliberately
+# not passed, because the image's channels_config calls memset for the
+# pselp/pseln reset and only the builtin emits that call. abi/refbuild.sh
+# compiles the `app` reference the same way, so the object the body verdicts
+# were measured on is the object linked here.
 NRFX_INC="-I$NRFX -I$NRFX/hal -I$NRFX/drivers -I$NRFX/drivers/include -I$NRFX/soc"
-"$GCC-gcc" $ARCH $COMMON -Iconfig-relink $NRFX_INC $INC -DNRFX_SAADC_ENABLED=1 \
+"$GCC-gcc" $ARCH -Os -ffunction-sections -fdata-sections -fno-strict-aliasing \
+    -fshort-enums -std=gnu99 -g3 -w -DNRF52840_XXAA -DFLOAT_ABI_HARD -DS140 \
+    -DSOFTDEVICE_PRESENT -DNRF_SD_BLE_API_VERSION=7 -DFREERTOS -DSWI_DISABLE0 \
+    -Iconfig-relink $NRFX_INC $INC -DNRFX_SAADC_ENABLED=1 \
     -DSAADC_ENABLED=1 -DNRF_LOG_ENABLED=0 \
     -c "$NRFX/drivers/src/nrfx_saadc.c" -o "$OUT/nrfx_saadc.o"
 objs="$objs $OUT/nrfx_saadc.o"
@@ -122,7 +116,6 @@ for pattern in ${SPILL:-}; do SPILL_ARGS="$SPILL_ARGS --spill $pattern"; done
 # is the option that makes the nano printf and scanf honour long long, which is
 # how the image was configured.
 NEWLIB=${NEWLIB:-newlib-nano-ll}
-TC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 case ",${REPLACE:-}," in *,newlib,*)
     python3 libc_check.py --build "$NEWLIB" --class libc --emit "$OUT/libc-bodies.yaml"
     LIBS="$LIBS $ROOT/build/$NEWLIB/arm-none-eabi/newlib/libc.a
@@ -146,6 +139,12 @@ DATA_ARGS=""
 if [ -n "${DATA:-}" ]; then
     DATA_ARGS="--data-source $(cd ..; pwd)/out/data"
     DATA_OBJ="$OUT/appl-data.o"
+else
+    # A link without DATA=1 has no data object, and abi/stale_scan.py reads
+    # every object of the link to find out where a section used to be, so one
+    # left behind by an earlier run would answer for sections this link places
+    # itself.
+    rm -f "$OUT/appl-data.o"
 fi
 # The archives are the only part of the link line whose names neither
 # abi/boundary.yaml nor abi/replacements.yaml owns, so they are what the

@@ -1,6 +1,6 @@
 # The SAADC driver as the image lays it out, for abi/body_check.py:
 #
-#   python3 abi/body_check.py --elf ~/ref-build/build/saadc_withings/ref.elf \
+#   python3 abi/body_check.py --elf ~/ref-build/build/app/ref.elf \
 #       --pairs abi/saadc_bodies.yaml
 #
 # The addresses are the partition's function starts in 0x7db08..0x7e2a0 plus the

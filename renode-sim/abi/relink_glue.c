@@ -13,15 +13,6 @@ nrf_nvic_state_t nrf_nvic_state;
 
 void vAssertCalled(const char *file, unsigned int line);
 
-/* The image calls portYIELD out of line (0x9e46c, 77 call sites) and without
- * the __SEV() the SDK's macro inlines; DEVELOPMENT.md records that mismatch. */
-void vPortYield(void)
-{
-    SCB->ICSR = SCB_ICSR_PENDSVSET_Msk;
-    __DSB();
-    __ISB();
-}
-
 /* port.c has this but keeps it static, and the blob calls it across the
  * boundary (0x73dfc). */
 __attribute__((naked)) void vPortEnableVFP(void)

@@ -1,0 +1,244 @@
+The image's FreeRTOS port is the SDK's nRF52 CMSIS port with the kernel's own
+Cortex-M4F primitives put back in place of the CMSIS-derived ones the SDK
+substituted. Each hunk is one of those, and each is decided by a body that stops
+differing once it is there.
+
+portmacro_cmsis.h
+  Interrupt masking goes through CMSIS's __set_BASEPRI, a plain `msr basepri`
+  off a C constant. Every body in the image that enters a critical section shows
+  the kernel's asm form instead: the mask materialised with `mov` (not `movs`)
+  and `isb; dsb` after the write. vPortEnterCritical (0x73e3c) is the whole of it
+  in five instructions and xQueueGiveFromISR (0x9e828) shows the read-modify-
+  write variant with `mrs` first. This is inlined everywhere, so it is most of
+  the difference: it settles nine queue and task bodies at once.
+
+  portYIELD sends an event as well as pending PendSV. No caller in the image
+  does: xTaskResumeAll (0x73276) pends, fences and nothing else. The tick ISR
+  does send one, but out of its own source, not out of this macro.
+
+port_cmsis.c
+  PendSV's priority is set with CMSIS's NVIC_SetPriority, which stores one byte.
+  The image (0x74080) reads, ors and writes the whole system-handler priority
+  word, which is what the kernel's own port does.
+
+  vPortEnableVFP is C, so GCC inlines it into xPortStartScheduler. The image
+  calls it (0x74078 -> 0x73dfc) and the body at 0x73dfc is the kernel's naked
+  asm version verbatim, 0xE000ED88 in its own literal pool.
+
+  prvTaskExitError ends in for(;;). The image (inlined at 0x740b6) spins on a
+  volatile zero, which is what the kernel's own version does so a debugger can
+  write the variable and step out.
+
+port.c
+  vPortStartFirstTask sets MSP and enables interrupts; the image (0x73dd0)
+  clears CONTROL between the two, so the first task starts privileged on the
+  main stack with no lazy FP context inherited from whatever ran before.
+
+  xPortPendSVHandler saves r3 alone across vTaskSwitchContext; the image
+  (0x27e6c) saves r0 and r3. Both the mnemonic and the register list matter:
+  `stmdb sp!` assembles wide and `push` narrow, and the image has the wide one
+  going in and the narrow `pop` coming out, which is exactly what the kernel's
+  source text produces.
+
+  Both handlers end their asm with `.align 2`. The image's literal pools sit
+  four bytes further on, on 16-byte boundaries, which is `.align 4`.
+
+--- a/CMSIS/nrf52/portmacro_cmsis.h
++++ b/CMSIS/nrf52/portmacro_cmsis.h
+@@ -86,13 +86,16 @@
+ /*-----------------------------------------------------------*/
+ 
+ /* Scheduler utilities. */
++/* The kernel's own form: pend PendSV and fence, with no SEV. The SDK's sends
++an event as well, which every caller in the image is missing (xTaskResumeAll
++@0x73276 pends and fences and nothing else); the tick ISR does send one, but it
++sends it from its own source, not from this macro. */
++#define portNVIC_INT_CTRL_REG   ( * ( ( volatile uint32_t * ) 0xe000ed04 ) )
++#define portNVIC_PENDSVSET_BIT  ( 1UL << 28UL )
++
+ #define portYIELD() do                                                          \
+ {                                                                               \
+-    /* Set a PendSV to request a context switch. */                             \
+-    SCB->ICSR = SCB_ICSR_PENDSVSET_Msk;                                         \
+-    __SEV();                                                                    \
+-    /* Barriers are normally not required but do ensure the code is completely  \
+-    within the specified behaviour for the architecture. */                     \
++    portNVIC_INT_CTRL_REG = portNVIC_PENDSVSET_BIT;                             \
+     __DSB();                                                                    \
+     __ISB();                                                                    \
+ }while (0)
+@@ -161,18 +164,51 @@
+ 
+ /*-----------------------------------------------------------*/
+ 
+-#define vPortSetBASEPRI( ulNewMaskValue ) __set_BASEPRI(ulNewMaskValue)
++__attribute__( ( always_inline ) ) static inline void vPortSetBASEPRI( uint32_t ulBASEPRI )
++{
++    __asm volatile
++    (
++        "   msr basepri, %0 \n"
++        :: "r" ( ulBASEPRI ) : "memory"
++    );
++}
+ 
+ /*-----------------------------------------------------------*/
+ 
+-#define vPortRaiseBASEPRI( ) vPortSetBASEPRI(configMAX_SYSCALL_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))
++__attribute__( ( always_inline ) ) static inline void vPortRaiseBASEPRI( void )
++{
++    uint32_t ulNewBASEPRI;
++
++    __asm volatile
++    (
++        "   mov %0, %1      \n"
++        "   msr basepri, %0 \n"
++        "   isb             \n"
++        "   dsb             \n"
++        : "=r" ( ulNewBASEPRI )
++        : "i" ( configMAX_SYSCALL_INTERRUPT_PRIORITY << ( 8 - configPRIO_BITS ) )
++        : "memory"
++    );
++}
+ 
+ /*-----------------------------------------------------------*/
+ 
+-__STATIC_INLINE uint32_t ulPortRaiseBASEPRI( void )
++__attribute__( ( always_inline ) ) static inline uint32_t ulPortRaiseBASEPRI( void )
+ {
+-    uint32_t ulOriginalBASEPRI = __get_BASEPRI();
+-    vPortRaiseBASEPRI();
++    uint32_t ulOriginalBASEPRI, ulNewBASEPRI;
++
++    __asm volatile
++    (
++        "   mrs %0, basepri \n"
++        "   mov %1, %2      \n"
++        "   msr basepri, %1 \n"
++        "   isb             \n"
++        "   dsb             \n"
++        : "=r" ( ulOriginalBASEPRI ), "=r" ( ulNewBASEPRI )
++        : "i" ( configMAX_SYSCALL_INTERRUPT_PRIORITY << ( 8 - configPRIO_BITS ) )
++        : "memory"
++    );
++
+     return ulOriginalBASEPRI;
+ }
+ 
+--- a/GCC/nrf52/port.c
++++ b/GCC/nrf52/port.c
+@@ -58,6 +58,8 @@
+ #endif
+                     " ldr r0, [r0]          \n"
+                     " msr msp, r0           \n" /* Set the msp back to the start of the stack. */
++                    " mov r0, #0            \n" /* Privileged, MSP, no FP context. */
++                    " msr control, r0       \n"
+                     " cpsie i               \n" /* Globally enable interrupts. */
+                     " cpsie f               \n"
+                     " dsb                   \n"
+@@ -91,7 +93,7 @@
+                     "   msr basepri, r0                 \n"
+                     "   bx r14                          \n"
+                     "                                   \n"
+-                    "   .align 2                        \n"
++                    "   .align 4                        \n"
+                 );
+ }
+ 
+@@ -117,7 +119,7 @@
+     "                                       \n"
+     "   str r0, [r2]                        \n" /* Save the new top of stack into the first member of the TCB. */
+     "                                       \n"
+-    "   stmdb sp!, {r3}                     \n"
++    "   stmdb sp!, {r0, r3}                 \n"
+     "   mov r0, %0                          \n"
+     "   msr basepri, r0                     \n"
+     "   dsb                                 \n"
+@@ -125,7 +127,7 @@
+     "   bl vTaskSwitchContext               \n"
+     "   mov r0, #0                          \n"
+     "   msr basepri, r0                     \n"
+-    "   ldmia sp!, {r3}                     \n"
++    "   ldmia sp!, {r0, r3}                 \n"
+     "                                       \n"
+     "   ldr r1, [r3]                        \n" /* The first item in pxCurrentTCB is the task top of stack. */
+     "   ldr r0, [r1]                        \n"
+@@ -142,7 +144,7 @@
+     "                                       \n"
+     "   bx r14                              \n"
+     "                                       \n"
+-    "   .align 2                            \n"
++    "   .align 4                            \n"
+     ::"i"(configMAX_SYSCALL_INTERRUPT_PRIORITY  << (8 - configPRIO_BITS))
+     );
+ }
+--- a/CMSIS/nrf52/port_cmsis.c
++++ b/CMSIS/nrf52/port_cmsis.c
+@@ -93,13 +93,16 @@
+ /*
+  * Function to enable the VFP.
+  */
+-static void vPortEnableVFP( void );
++static void vPortEnableVFP( void ) __attribute__ (( naked ));
+ 
+ /*
+  * Used to catch tasks that attempt to return from their implementing function.
+  */
+ static void prvTaskExitError( void );
+ 
++#define portNVIC_SYSPRI2_REG    ( * ( ( volatile uint32_t * ) 0xe000ed20 ) )
++#define portNVIC_PENDSV_PRI     ( ( ( uint32_t ) configKERNEL_INTERRUPT_PRIORITY << ( 8 - configPRIO_BITS ) ) << 16UL )
++
+ /*-----------------------------------------------------------*/
+ 
+ /*
+@@ -155,9 +158,18 @@
+ 
+     Artificially force an assert() to be triggered if configASSERT() is
+     defined, then stop here so application writers can catch the error. */
++    volatile uint32_t ulDummy = 0UL;
++
+     configASSERT( uxCriticalNesting == ~0UL );
+     portDISABLE_INTERRUPTS();
+-    for ( ;; );
++
++    /* The kernel's own port spins on a volatile rather than on for(;;), so a
++    debugger can step out of the loop by writing the variable. The image
++    (0x740b6) has the stack slot and the load-compare loop, inlined into
++    xPortStartScheduler, which for(;;) would never produce. */
++    while( ulDummy == 0 )
++    {
++    }
+ }
+ 
+ 
+@@ -217,8 +229,11 @@
+     }
+     #endif /* conifgASSERT_DEFINED */
+ 
+-    /* Make PendSV the lowest priority interrupts. */
+-    NVIC_SetPriority(PendSV_IRQn, configKERNEL_INTERRUPT_PRIORITY);
++    /* Make PendSV the lowest priority interrupt. The kernel's own port writes
++    the priority through the system-handler priority word, which is what the
++    image does at 0x74080: a read-modify-write of SHPR3 with 0xe0 in the PendSV
++    byte, where CMSIS's NVIC_SetPriority would store the byte on its own. */
++    portNVIC_SYSPRI2_REG |= portNVIC_PENDSV_PRI;
+ 
+     /* Start the timer that generates the tick ISR.  Interrupts are disabled
+     here already. */
+@@ -290,7 +305,15 @@
+ /* This is a naked function. */
+ static void vPortEnableVFP( void )
+ {
+-    SCB->CPACR |= 0xf << 20;
++    __asm volatile
++    (
++        "   ldr.w r0, =0xE000ED88       \n"
++        "   ldr r1, [r0]                \n"
++        "   orr r1, r1, #( 0xf << 20 )  \n"
++        "   str r1, [r0]                \n"
++        "   bx r14                      \n"
++        "   .align 4                    \n"
++    );
+ }
+ /*-----------------------------------------------------------*/
+ 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Apply abi/facts.yaml's reference-build corrections to a staged header.
 
-    python3 abi/refbuild_fix.py --port <SDK>/external/freertos/portable --out DIR
+    python3 abi/refbuild_fix.py --port <staged>/portable
 
 The reference build is the SDK's, and the SDK is right about the SDK: where it
 disagrees with this image it is because this image was configured differently,
@@ -23,7 +23,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", required=True, help="the SDK's freertos/portable")
-    ap.add_argument("--out", required=True, help="where the corrected header goes")
+    ap.add_argument("--out", help="where the corrected header goes; by default"
+                    " it is written back over the staged one")
     ap.add_argument("--facts", default=os.path.join(HERE, "facts.yaml"))
     args = ap.parse_args()
 
@@ -36,7 +37,8 @@ def main():
             if not count:
                 raise SystemExit("abi/refbuild_fix.py: %s says %s appears in %s,"
                                  " and it does not" % (name, old, fix["header"]))
-        out = os.path.join(args.out, os.path.basename(fix["header"]))
+        out = (os.path.join(args.out, os.path.basename(fix["header"]))
+               if args.out else source)
         with open(out, "w") as fh:
             fh.write(text)
         print(out)

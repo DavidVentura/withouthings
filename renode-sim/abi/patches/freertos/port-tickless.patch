@@ -1,0 +1,237 @@
+The tickless idle this firmware runs, recovered from 0x73ec8..0x7401f. Two
+config bits carry the rest of the difference and live in
+abi/config-relink/FreeRTOSConfig.h; what is here is what no switch produces.
+
+1. The entry and exit times are read out of a loop that repeats until two
+   consecutive reads of the RTC counter agree. The counter is clocked from
+   LFCLK and a CPU read can catch it mid-increment.
+
+2. The entry time is biased by the tick interrupt's own pending bit, sampled
+   inside that loop (0x73f0a reads NVIC->ISPR[1], 0x73f22 takes bit 4, which is
+   RTC2's IRQ 36). A tick already pending is a tick the kernel has not counted,
+   so the sleep started one tick earlier than the counter says.
+
+3. Waiting is a loop, not a single call, in both arms: sd_app_evt_wait()
+   returns on events the SoftDevice handles and does not forward, and the image
+   goes back to sleep unless NVIC has something pending (0x73f72..0x73f80 for
+   the SoftDevice arm, 0x74008 for the bare one).
+
+4. Between re-enabling the tick and sampling the exit time there is a 350
+   iteration busy loop (0x73fa4, `movw r1, #0x41a` then `subs #3 / bpl`), about
+   16 us, so a tick that is due arrives before the correction is computed
+   rather than after it.
+
+5. The correction itself is two-branch (0x73fd0). The SDK steps the whole
+   elapsed count whatever happened. This one steps the whole count only when it
+   woke early; when it slept the time it asked for, the last tick is delivered
+   through xTaskIncrementTick() instead, so the scheduler sees it. That is the
+   64 ticks a minute the SDK port loses.
+
+Reading the counter through NVIC->ISPR and NVIC_ClearPendingIRQ rather than the
+SoftDevice's wrappers is the image's own choice too; the critical region around
+the whole function is sd_nvic_critical_region_enter/exit inlined, which is what
+the SDK's header does by itself, minus APP_ERROR_CHECK on a call that cannot
+fail here.
+--- a/CMSIS/nrf52/port_cmsis_systick.c
++++ b/CMSIS/nrf52/port_cmsis_systick.c
+@@ -163,8 +163,12 @@
+  */
+ void vPortSetupTimerInterrupt( void )
+ {
+-    /* Request LF clock */
+-    nrf_drv_clock_lfclk_request(NULL);
++    /* Start the LF clock directly rather than through nrf_drv_clock's request
++    counter (0x74034 writes CLOCK's own registers): the tick is the only user,
++    there is nothing to arbitrate, and the RTC counts from whichever source is
++    running until the crystal takes over. */
++    nrf_clock_event_clear(NRF_CLOCK_EVENT_LFCLKSTARTED);
++    nrf_clock_task_trigger(NRF_CLOCK_TASK_LFCLKSTART);
+ 
+     /* Configure SysTick to interrupt at the requested rate. */
+     nrf_rtc_prescaler_set(portNRF_RTC_REG, portNRF_RTC_PRESCALER);
+@@ -181,40 +185,48 @@
+ 
+ void vPortSuppressTicksAndSleep( TickType_t xExpectedIdleTime )
+ {
+-    /*
+-     * Implementation note:
+-     *
+-     * To help debugging the option configUSE_TICKLESS_IDLE_SIMPLE_DEBUG was presented.
+-     * This option would make sure that even if program execution was stopped inside
+-     * this function no more than expected number of ticks would be skipped.
+-     *
+-     * Normally RTC works all the time even if firmware execution was stopped
+-     * and that may lead to skipping too much of ticks.
+-     */
+     TickType_t enterTime;
++    TickType_t xMaxIdleTime;
++    TickType_t xCounter, xPrevCounter;
++    uint32_t   ulTickPending;
+ 
+-    /* Make sure the SysTick reload value does not overflow the counter. */
+-    if ( xExpectedIdleTime > portNRF_RTC_MAXTICKS - configEXPECTED_IDLE_TIME_BEFORE_SLEEP )
++    /* Block all the interrupts globally. */
+     {
+-        xExpectedIdleTime = portNRF_RTC_MAXTICKS - configEXPECTED_IDLE_TIME_BEFORE_SLEEP;
+-    }
+-    /* Block all the interrupts globally */
+-#ifdef SOFTDEVICE_PRESENT
+-    do{
+         uint8_t dummy = 0;
+-        uint32_t err_code = sd_nvic_critical_region_enter(&dummy);
+-        APP_ERROR_CHECK(err_code);
+-    }while (0);
+-#else
+-    __disable_irq();
+-#endif
++        (void) sd_nvic_critical_region_enter(&dummy);
++    }
+ 
+-    enterTime = nrf_rtc_counter_get(portNRF_RTC_REG);
++    /* The RTC counter is clocked from LFCLK and is asynchronous to the CPU, so
++     * a single read can catch it mid-increment; it is read until two reads
++     * agree. NVIC's pending bit for the tick IRQ is sampled in the same window:
++     * if the tick is already pending, one tick has elapsed that the kernel has
++     * not counted, and the entry time is that tick earlier. */
++    xCounter = nrf_rtc_counter_get(portNRF_RTC_REG);
++    do
++    {
++        ulTickPending = NVIC->ISPR[ (uint32_t) portNRF_RTC_IRQn >> 5UL ];
++        xPrevCounter = xCounter;
++        xCounter = nrf_rtc_counter_get(portNRF_RTC_REG);
++    } while ( xPrevCounter != xCounter );
+ 
+     if ( eTaskConfirmSleepModeStatus() != eAbortSleep )
+     {
+         TickType_t xModifiableIdleTime;
+-        TickType_t wakeupTime = (enterTime + xExpectedIdleTime) & portNRF_RTC_MAXTICKS;
++        TickType_t wakeupTime;
++
++        /* Make sure the wake-up compare value does not overflow the counter.
++         * The caller's value is left alone: the sleep instruction is skipped on
++         * the value it asked for, not on the capped one. */
++        xMaxIdleTime = xExpectedIdleTime;
++        if ( xMaxIdleTime > portNRF_RTC_MAXTICKS - configEXPECTED_IDLE_TIME_BEFORE_SLEEP )
++        {
++            xMaxIdleTime = portNRF_RTC_MAXTICKS - configEXPECTED_IDLE_TIME_BEFORE_SLEEP;
++        }
++
++        enterTime = ( xCounter
++                      - ( ( ulTickPending >> ( (uint32_t) portNRF_RTC_IRQn & 0x1FUL ) ) & 1UL ) )
++                    & portNRF_RTC_MAXTICKS;
++        wakeupTime = (enterTime + xMaxIdleTime) & portNRF_RTC_MAXTICKS;
+ 
+         /* Stop tick events */
+         nrf_rtc_int_disable(portNRF_RTC_REG, NRF_RTC_INT_TICK_MASK);
+@@ -226,25 +238,23 @@
+ 
+         __DSB();
+ 
+-        /* Sleep until something happens.  configPRE_SLEEP_PROCESSING() can
+-         * set its parameter to 0 to indicate that its implementation contains
+-         * its own wait for interrupt or wait for event instruction, and so wfi
+-         * should not be executed again.  However, the original expected idle
+-         * time variable must remain unmodified, so a copy is taken. */
+         xModifiableIdleTime = xExpectedIdleTime;
+         configPRE_SLEEP_PROCESSING( xModifiableIdleTime );
+         if ( xModifiableIdleTime > 0 )
+         {
+-#ifdef SOFTDEVICE_PRESENT
++            /* Both arms wait until something is actually pending. The
++             * SoftDevice's sd_app_evt_wait() returns on any event, including
++             * ones it handles internally and does not forward, so returning
++             * from it is not by itself a reason to stop sleeping. */
+             if (nrf_sdh_is_enabled())
+             {
+-                uint32_t err_code = sd_app_evt_wait();
+-                APP_ERROR_CHECK(err_code);
++                do {
++                    (void) sd_app_evt_wait();
++                } while (0 == (NVIC->ISPR[0] | NVIC->ISPR[1]));
+             }
+             else
+-#endif
+             {
+-                /* No SD -  we would just block interrupts globally.
++                /* No SD - we would just block interrupts globally.
+                 * BASEPRI cannot be used for that because it would prevent WFE from wake up.
+                 */
+                 do{
+@@ -262,32 +272,62 @@
+             TickType_t diff;
+             TickType_t exitTime;
+ 
+-            nrf_rtc_event_clear(portNRF_RTC_REG, NRF_RTC_EVENT_TICK);
+             nrf_rtc_int_enable (portNRF_RTC_REG, NRF_RTC_INT_TICK_MASK);
+ 
+-            exitTime = nrf_rtc_counter_get(portNRF_RTC_REG);
+-            diff =  (exitTime - enterTime) & portNRF_RTC_MAXTICKS;
++            /* The tick is enabled again above but the RTC is a full LFCLK
++             * period away from presenting the event, so the exit time must not
++             * be sampled before the tick that is due has had its chance to
++             * arrive: the loop below clears the event and the pending bit, and
++             * a tick that arrives after that is one the ISR will count. 350
++             * iterations of three cycles is about 16 us at 64 MHz, which
++             * is half an LFCLK period. */
++            {
++                uint32_t ulDelay = 1050;
++                __asm volatile
++                (
++                    "1: subs %0, %0, #3 \n"
++                    "   bpl 1b          \n"
++                    : "+r" ( ulDelay ) :: "cc"
++                );
++            }
++
++            /* Same stable read as on entry. Clearing the event and the pending
++             * interrupt inside the loop keeps the correction the latest word
++             * and in sync with the tick handler. */
++            xCounter = nrf_rtc_counter_get(portNRF_RTC_REG);
++            do
++            {
++                nrf_rtc_event_clear(portNRF_RTC_REG, NRF_RTC_EVENT_TICK);
++                NVIC_ClearPendingIRQ(portNRF_RTC_IRQn);
++                xPrevCounter = xCounter;
++                xCounter = nrf_rtc_counter_get(portNRF_RTC_REG);
++            } while ( xPrevCounter != xCounter );
++            exitTime = xCounter;
+ 
+-            /* It is important that we clear pending here so that our corrections are latest and in sync with tick_interrupt handler */
+-            NVIC_ClearPendingIRQ(portNRF_RTC_IRQn);
++            diff = (exitTime - enterTime) & portNRF_RTC_MAXTICKS;
+ 
+-            if ((configUSE_TICKLESS_IDLE_SIMPLE_DEBUG) && (diff > xExpectedIdleTime))
++            if ( xMaxIdleTime <= diff )
+             {
+-                diff = xExpectedIdleTime;
++                /* Slept the whole time: the last of those ticks is the wake-up
++                 * itself, so it is counted through xTaskIncrementTick() and the
++                 * scheduler gets to see it. Stepping all of them instead is the
++                 * tick this port loses on every sleep. */
++                if ( diff > 0 )
++                {
++                    vTaskStepTick(diff - 1);
++                    (void) xTaskIncrementTick();
++                }
+             }
+-
+-            if (diff > 0)
++            else
+             {
++                /* Woken early: every elapsed tick is one the kernel still owes
++                 * and none of them has an interrupt behind it. */
+                 vTaskStepTick(diff);
+             }
+         }
+     }
+-#ifdef SOFTDEVICE_PRESENT
+-    uint32_t err_code = sd_nvic_critical_region_exit(0);
+-    APP_ERROR_CHECK(err_code);
+-#else
+-    __enable_irq();
+-#endif
++
++    (void) sd_nvic_critical_region_exit(0);
+ }
+ 
+ #endif // configUSE_TICKLESS_IDLE

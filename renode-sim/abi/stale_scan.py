@@ -73,14 +73,14 @@ class Elf(object):
         return sites
 
 
-def placed_addresses(place, obj=None):
+def placed_addresses(place, objects=()):
     """{section name: the address the section has in the stock image}.
 
     The identity placement is the source for it, but it is written from the
     stock partition: a section a replacement renamed `orig_<symbol>` and a
     section a layout left out of the fragment are not in it. Both are in the
-    object being linked, where abi/blobify.py gives every section a symbol named
-    after the address it had (`a_<address>`), so the object answers for what the
+    objects being linked, where abi/blobify.py gives every section a symbol named
+    after the address it had (`a_<address>`), so the objects answer for what the
     placement cannot.
     """
     out = {}
@@ -88,10 +88,19 @@ def placed_addresses(place, obj=None):
         m = re.search(r"\((\.\w+\.[\w.$]+)\)\)\s*/\* 0x([0-9a-f]+)", line)
         if m:
             out[m.group(1)] = int(m.group(2), 16)
-    if obj is not None:
+    for obj in objects:
         for name, addr in section_aliases(obj).items():
             out.setdefault(name, addr)
     return out
+
+
+def section_sizes(objects):
+    """{section name: its size}, across every object of the link."""
+    sizes = {}
+    for obj in objects:
+        for s in Elf(obj).sections:
+            sizes.setdefault(s["name"], s["size"])
+    return sizes
 
 
 def section_aliases(obj):
@@ -114,7 +123,7 @@ def section_aliases(obj):
     return out
 
 
-def gc_moves(mapfile, place, obj):
+def gc_moves(mapfile, place, objects):
     """Where the link put each section that survived, from ld's own map.
 
     A gc link packs what it keeps, so every surviving section is at a new
@@ -122,9 +131,9 @@ def gc_moves(mapfile, place, obj):
     said about a word. ld -M prints one line per input section with the address
     it was placed at, which is the only place that mapping exists.
     """
-    addresses = placed_addresses(place, obj)
-    sizes = {s["name"]: s["size"] for s in Elf(obj).sections}
-    want = os.path.basename(obj)
+    addresses = placed_addresses(place, objects)
+    sizes = section_sizes(objects)
+    want = set(os.path.basename(o) for o in objects)
     out, pending, started = [], None, False
     for line in open(mapfile):
         # The map lists the discarded sections first, all at address 0; the
@@ -141,7 +150,7 @@ def gc_moves(mapfile, place, obj):
                 pending = name
                 continue
         m = re.match(r"\s*(\.\S+)\s+0x([0-9a-f]+)\s+0x([0-9a-f]+)\s+(\S+)", row)
-        if not m or os.path.basename(m.group(4)) != want:
+        if not m or os.path.basename(m.group(4)) not in want:
             continue
         name = m.group(1)
         if name not in addresses:
@@ -150,25 +159,26 @@ def gc_moves(mapfile, place, obj):
         out.append({"section": name, "old": old, "new": int(m.group(2), 16),
                     "end": old + sizes[name]})
     if not out:
-        sys.exit("%s names no section of %s" % (mapfile, obj))
+        sys.exit("%s names no section of %s"
+                 % (mapfile, ", ".join(objects)))
     return out
 
 
-def dropped_sections(report, place, obj):
+def dropped_sections(report, place, objects):
     """The sections `--gc-sections` removed, as the ranges they used to occupy.
 
     They are fed to the same scan as a move: a dropped section is a move to
     nowhere, so `new` is its old address and the translation from the linked
     image back to the classification is the identity for them.
     """
+    want = set(os.path.basename(o) for o in objects)
     removed = set()
     for line in open(report):
         m = re.search(r"removing unused section '([^']+)' in file '([^']+)'", line)
-        if m and os.path.basename(m.group(2)) == os.path.basename(obj):
+        if m and os.path.basename(m.group(2)) in want:
             removed.add(m.group(1))
-    addresses = placed_addresses(place, obj)
-    elf = Elf(obj)
-    sizes = {s["name"]: s["size"] for s in elf.sections}
+    addresses = placed_addresses(place, objects)
+    sizes = section_sizes(objects)
     out = []
     for name in sorted(removed):
         if name not in addresses:
@@ -194,10 +204,23 @@ def main():
                     " was classified at")
     ap.add_argument("--place", default=os.path.join(SIM, "out", "reach", "place.ld"),
                     help="the identity placement --dropped reads addresses from")
-    ap.add_argument("--object", default=os.path.join(SIM, "out", "relink", "appl-blob.o"),
-                    help="the object --dropped reads section sizes from")
+    ap.add_argument("--object", action="append", default=[],
+                    help="an object of the link, repeatable; the scan reads"
+                         " section sizes and stock addresses from it. Default:"
+                         " the blob, plus the data object when DATA=1 wrote one")
     ap.add_argument("--list", type=int, default=20, help="survivors to print per bucket")
     args = ap.parse_args()
+
+    # Every object the link places has to be here, not just the blob: DATA=1
+    # hands the data sections to a second object, and a section the scan cannot
+    # find the stock address of is one it silently translates by the identity,
+    # so a word inside it is looked up under whatever the classification said
+    # about the address it happens to have landed on.
+    if not args.object:
+        args.object = [os.path.join(SIM, "out", "relink", "appl-blob.o")]
+        data = os.path.join(SIM, "out", "relink", "appl-data.o")
+        if os.path.exists(data):
+            args.object.append(data)
 
     with open(args.moves) as fh:
         moves = json.load(fh)

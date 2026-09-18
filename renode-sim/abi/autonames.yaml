@@ -10,9 +10,9 @@ meta:
   image: appl.bin
   app_base: 0x27000
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
-  toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)
+  toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 4, helper: 418, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 331, logtag: 8, module_functions: 1780, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {bleevt: 28, extlib: 0, helper: 418, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 331, logtag: 8, module_functions: 1780, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 202, disagree: 1}
 
 functions:
@@ -30,26 +30,26 @@ functions:
   - name: exp
     address: 0x2a7e0
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 37 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 37 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "double exp (double);"
   - name: log
     address: 0x2a870
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 39 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 39 insns, direct"
     also_matched: [log10]
     header: arm-none-eabi/include/math.h
     proto: "double log (double);"
   - name: cos
     address: 0x2a8f0
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 50 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 50 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "double cos (double);"
   - name: sin
     address: 0x2a998
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 51 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 51 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "double sin (double);"
   - name: nan
@@ -61,19 +61,19 @@ functions:
   - name: __kernel_cos
     address: 0x2aa50
     class: libm
-    evidence: "newlib nano-big libm, score 0.99 over 120 insns, direct"
+    evidence: "newlib libm (toolchain), score 0.99 over 120 insns, direct"
   - name: __kernel_sin
     address: 0x2abe0
     class: libm
-    evidence: "newlib nano-big libm, score 0.99 over 115 insns, direct"
+    evidence: "newlib libm (toolchain), score 0.99 over 115 insns, direct"
   - name: __ieee754_exp
     address: 0x2ad58
     class: libm
-    evidence: "newlib nano-big libm, score 0.94 over 231 insns, direct"
+    evidence: "newlib libm (toolchain), score 0.94 over 231 insns, direct"
   - name: __ieee754_log
     address: 0x2b040
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 281 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 281 insns, direct"
   - name: pow__1
     address: 0x2b3b0
     class: helper
@@ -81,7 +81,7 @@ functions:
   - name: __ieee754_rem_pio2
     address: 0x2bdf8
     class: libm
-    evidence: "newlib nano-big libm, score 0.82 over 343 insns, propagated from cos"
+    evidence: "newlib libm (toolchain), score 0.82 over 343 insns, propagated from cos"
   - name: scalbn
     address: 0x2c1f0
     class: libc
@@ -103,7 +103,7 @@ functions:
   - name: floor
     address: 0x2c9a8
     class: libm
-    evidence: "newlib nano-big libm, score 0.99 over 90 insns, direct"
+    evidence: "newlib libm (toolchain), score 0.99 over 90 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "double floor (double);"
   - name: _strtod_l
@@ -3966,12 +3966,6 @@ functions:
     class: logline
     evidence: "the only line 0x6eed8 logs, wlog('[WUI] Failed to push event 0x%08x') at 0x6eefe"
     module: WUI
-  - name: mbedtls_x509_get_serial
-    address: 0x6f490
-    class: extlib
-    evidence: "mbedtls_Os, score 0.97 over 30 insns, direct"
-    header: mbedtls-2.16.10/mbedtls/x509.h
-    proto: "int mbedtls_x509_get_serial( unsigned char **p, const unsigned char *end, mbedtls_x509_buf *serial );"
   - name: dropped_log__1__1
     address: 0x73320
     class: helper
@@ -4202,19 +4196,19 @@ functions:
   - name: pow
     address: 0x8c8fc
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 79 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 79 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "double pow (double, double);"
   - name: expf
     address: 0x8c9dc
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 28 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 28 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "float expf (float);"
   - name: sqrtf
     address: 0x8ca48
     class: libm
-    evidence: "newlib nano-big libm, score 0.94 over 17 insns, direct"
+    evidence: "newlib libm (toolchain), score 0.94 over 17 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "float sqrtf (float);"
   - name: __fpclassifyd
@@ -4226,7 +4220,7 @@ functions:
   - name: expm1f
     address: 0x8cacc
     class: libm
-    evidence: "newlib nano-big libm, score 0.99 over 161 insns, direct"
+    evidence: "newlib libm (toolchain), score 0.99 over 161 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "float expm1f (float);"
   - name: __fpclassifyf
@@ -4238,27 +4232,27 @@ functions:
   - name: __ieee754_sqrt
     address: 0x8cd6c
     class: libm
-    evidence: "newlib nano-big libm, score 0.97 over 158 insns, direct"
+    evidence: "newlib libm (toolchain), score 0.97 over 158 insns, direct"
   - name: round
     address: 0x8cf10
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 51 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 51 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "double round (double);"
   - name: roundf
     address: 0x8cf9c
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 26 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 26 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "float roundf (float);"
   - name: __ieee754_expf
     address: 0x8cfe4
     class: libm
-    evidence: "newlib nano-big libm, score 0.78 over 106 insns, propagated from expf"
+    evidence: "newlib libm (toolchain), score 0.78 over 106 insns, propagated from expf"
   - name: __ieee754_powf
     address: 0x8d170
     class: libm
-    evidence: "newlib nano-big libm, score 0.66 over 386 insns, propagated from powf"
+    evidence: "newlib libm (toolchain), score 0.66 over 386 insns, propagated from powf"
   - name: scalbnf
     address: 0x8d6f8
     class: libc
@@ -5890,24 +5884,6 @@ functions:
     class: wppcmd
     command: 2452
     evidence: "wpp_cmd_table row 0x27b80: key 2452, label 'WPP_CMD_EVENTS_DEL', CMD_EVENTS_DEL in wpp/src/commands.rs"
-  - name: mbedtls_pk_can_do
-    address: 0x9d7ac
-    class: extlib
-    evidence: "mbedtls_Os, score 1.00 over 9 insns, direct"
-    header: mbedtls-2.16.10/mbedtls/pk.h
-    proto: "int mbedtls_pk_can_do( const mbedtls_pk_context *ctx, mbedtls_pk_type_t type );"
-  - name: mbedtls_asn1_get_tag
-    address: 0x9d8d0
-    class: extlib
-    evidence: "mbedtls_Os, score 1.00 over 17 insns, direct"
-    header: mbedtls-2.16.10/mbedtls/asn1.h
-    proto: "int mbedtls_asn1_get_tag( unsigned char **p, const unsigned char *end, size_t *len, int tag );"
-  - name: mbedtls_asn1_get_bitstring_null
-    address: 0x9d9aa
-    class: extlib
-    evidence: "mbedtls_Os, score 1.00 over 18 insns, direct"
-    header: mbedtls-2.16.10/mbedtls/asn1.h
-    proto: "int mbedtls_asn1_get_bitstring_null( unsigned char **p, const unsigned char *end, size_t *len );"
   - name: ecg_err_no_sample_queue__4
     address: 0x9ea10
     class: helper
@@ -5994,14 +5970,14 @@ functions:
   - name: sqrt
     address: 0xa7c6e
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 31 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 31 insns, direct"
     also_matched: [remainder, acosh]
     header: arm-none-eabi/include/math.h
     proto: "double sqrt (double);"
   - name: powf
     address: 0xa7cc6
     class: libm
-    evidence: "newlib nano-big libm, score 0.98 over 54 insns, direct"
+    evidence: "newlib libm (toolchain), score 0.98 over 54 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "float powf (float, float);"
   - name: finite
@@ -6019,13 +5995,13 @@ functions:
   - name: fmaxf
     address: 0xa7df2
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 18 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 18 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "float fmaxf (float, float);"
   - name: fminf
     address: 0xa7e2c
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 18 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 18 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "float fminf (float, float);"
   - name: with_errnof
@@ -6053,7 +6029,7 @@ functions:
   - name: xflow
     address: 0xa7ee0
     class: libm
-    evidence: "newlib nano-big libm, score 1.00 over 17 insns, direct"
+    evidence: "newlib libm (toolchain), score 1.00 over 17 insns, direct"
   - name: shell_cmd_calib_test__3
     address: 0xa7f12
     class: helper

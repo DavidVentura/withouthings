@@ -17,7 +17,7 @@
 set -eu
 cd "$(dirname "$0")"
 ROOT=${ROOT:-$HOME/ref-build}
-GCC=$ROOT/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi
+GCC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/bin/arm-none-eabi
 OUT=../out/relink
 mkdir -p "$OUT"
 

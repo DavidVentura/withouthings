@@ -6,8 +6,13 @@
 #define configUSE_APPLICATION_TASK_TAG 1
 #define configMAX_TASK_NAME_LEN       12
 #define configRECORD_STACK_HIGH_ADDRESS 1
+/* 0, which leaves configASSERT undefined. Nine kernel bodies that otherwise
+   reproduce stop doing so under the logging flavour and ten under the empty
+   one, and xTaskCreateStatic has no configASSERT_DEFINED store. The logger the
+   image does call (0x5e7a8, six sites in queue.c and tasks.c) is Withings'
+   own, not configASSERT; abi/boundary.yaml carries it as vAssertCalled. */
 #ifndef REF_ASSERT
-#define REF_ASSERT                    3
+#define REF_ASSERT                    0
 #endif
 #define ref_assert_log                vAssertCalled
 #ifndef FREERTOS_CONFIG_H
@@ -21,11 +26,16 @@
 #define configTICK_SOURCE     FREERTOS_USE_RTC
 
 #define configUSE_PREEMPTION                    1
-#ifndef configUSE_PORT_OPTIMISED_TASK_SELECTION
-#define configUSE_PORT_OPTIMISED_TASK_SELECTION 1
-#endif
+/* 0, not the SDK example's 1: the image records a ready priority by comparing
+   it against uxTopReadyPriority and storing the larger (xTaskResumeAll @0x731dc,
+   `cmp r3, r2; it hi; strhi r3, [r6]`), which is the generic implementation.
+   The bitmap one would set a bit with the CLZ-indexed mask. */
+#define configUSE_PORT_OPTIMISED_TASK_SELECTION 0
 #define configUSE_TICKLESS_IDLE                 1
-#define configUSE_TICKLESS_IDLE_SIMPLE_DEBUG    1
+/* 0: the SDK's debug clamp caps the correction at the idle time it asked for.
+   The image's correction (0x73fd0) compares the two the other way round and
+   steps the full elapsed count, so there is no clamp. */
+#define configUSE_TICKLESS_IDLE_SIMPLE_DEBUG    0
 #define configCPU_CLOCK_HZ                      ( SystemCoreClock )
 #define configTICK_RATE_HZ                      1000
 #ifndef configMAX_PRIORITIES
@@ -79,9 +89,18 @@
 #define configTIMER_TASK_STACK_DEPTH            ( 80 )
 #define configEXPECTED_IDLE_TIME_BEFORE_SLEEP   2
 
-/* REF_ASSERT picks the assert flavour; the variants build both, because which
-   one the image used is only decidable by matching. __builtin_trap() is the udf
-   the image's assert path ends in. */
+/* Real calls in the image, at 0x30a64 and 0x30ad8, either side of the sleep in
+   vPortSuppressTicksAndSleep; neither takes the idle time. abi/boundary.yaml
+   relocates them back into the app. */
+extern void withings_pre_sleep( void );
+extern void withings_post_sleep( void );
+#define configPRE_SLEEP_PROCESSING( x )         withings_pre_sleep()
+#define configPOST_SLEEP_PROCESSING( x )        withings_post_sleep()
+
+/* REF_ASSERT picks the assert flavour. Which one the image used is decidable
+   only by matching, and the answer is 0; the other two are kept because the
+   argument is a measurement that has to stay repeatable. __builtin_trap() is
+   the udf the image's assert path ends in. */
 #if REF_ASSERT == 1
 #define configASSERT( x ) do { if( !( x ) ) { __builtin_trap(); } } while( 0 )
 #elif REF_ASSERT == 2
@@ -134,6 +153,9 @@ extern void ref_assert_log( const char *file, unsigned int line );
 #endif
 #endif
 
-#define configUSE_DISABLE_TICK_AUTO_CORRECTION_DEBUG 0
+/* 1: the tick ISR at 0x73e70 reads the RTC counter and throws it away, then
+   calls xTaskIncrementTick exactly once. The auto-correcting body would
+   subtract the tick count from the counter and loop. */
+#define configUSE_DISABLE_TICK_AUTO_CORRECTION_DEBUG 1
 
 #endif

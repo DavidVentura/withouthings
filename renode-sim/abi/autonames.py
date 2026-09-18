@@ -65,7 +65,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SIM = os.path.dirname(HERE)
 ROOT = os.path.expanduser("~/ref-build")
 SDK = os.path.join(ROOT, "sdk", "nRF5_SDK_17.1.0_ddde560")
-GCC = os.path.join(ROOT, "gcc-arm-none-eabi-9-2020-q2-update")
+GCC = os.path.join(ROOT, "tc", "arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi")
 SD_HEADERS = os.path.join(SDK, "components/softdevice/s140/headers")
 APP_BASE = match.APP_BASE
 
@@ -91,7 +91,7 @@ LIBM_ARCHIVES = ["libm.a"]
 # math is Withings' own newlib compiled with the image's flags, and the libm
 # abi/refbuild.sh builds from that source reaches bodies the archive does not
 # (sin, cos, exp, log, pow, sqrt and their kernels), so both are offered.
-LIBM_VARIANTS = ["libm_nano-big", "libm_nano-small"]
+LIBM_VARIANTS = ["toolchain"]  # abi/refbuild.sh's newlib-nano-ll libm.a
 
 # Prebuilt, so they can be matched without building anything.
 EXT_ARCHIVES = [
@@ -99,8 +99,10 @@ EXT_ARCHIVES = [
     os.path.join(SDK, "external/nrf_oberon/lib/cortex-m4/hard-float/liboberon_3.0.8.a"),
     os.path.join(SDK, "external/nrf_oberon/lib/cortex-m4/hard-float/liboberon_mbedtls_3.0.8.a"),
 ]
-# Built from source by abi/refbuild.sh, one directory per variant.
-EXT_VARIANTS = ["mbedtls_Os", "mbedtls_O2"]
+# mbedTLS was built from source here while the WPPS TLS handshake was being
+# read; it named nothing the prebuilt archives above do not, so abi/refbuild.sh
+# no longer builds it and only the archives are offered.
+EXT_VARIANTS = []
 
 # Which class names an address when two reach it; earlier wins. See main().
 CLASS_RANK = ["svc", "syscall", "libc", "libm", "extlib", "wppcmd", "shell", "wppobj", "string",
@@ -1534,7 +1536,7 @@ def write_yaml(path, entries, agree, disagree, stats):
         "  image: appl.bin",
         "  app_base: 0x%x" % APP_BASE,
         "  softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)",
-        "  toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)",
+        "  toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)",
         "  libc_toolchain: %s, multilib %s" % (LIBC_TC_LABEL, MULTILIB),
         "  counts: {%s}" % ", ".join("%s: %d" % kv for kv in sorted(stats.items())),
         "  known_addresses: {agree: %d, disagree: %d}" % (len(agree), len(disagree)),
@@ -1664,7 +1666,7 @@ def main():
         else:
             sources = [("%s %s" % (LIBC_TC_LABEL, a), os.path.join(LIBDIR, a))
                        for a in LIBM_ARCHIVES]
-            sources += [("newlib %s libm" % v.split("_")[1],
+            sources += [("newlib libm (%s)" % v,
                          os.path.join(ROOT, "build", v, "ref.elf"))
                         for v in LIBM_VARIANTS]
         found = library_names(img, sources, cls, args.threshold,

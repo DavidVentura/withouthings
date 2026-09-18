@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check a newlib build against the library bodies the image carries.
 
-    python3 abi/libc_check.py [--build newlib-nano-big] [--class libc|libm]
+    python3 abi/libc_check.py [--build newlib-nano-ll] [--class libc|libm]
 
 abi/autonames.py names 98 libc and libgcc bodies by matching the Arm GNU
 Toolchain 13.2.Rel1 prebuilt archives against the image. This asks the stronger
@@ -487,7 +487,7 @@ def apply_rules(rules, verdicts):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--build", default="newlib-nano-big",
+    ap.add_argument("--build", default="newlib-nano-ll",
                     help="the abi/refbuild.sh newlib build to check")
     ap.add_argument("--class", dest="cls", default="libc",
                     help="the abi/autonames.yaml class whose bodies to check;"

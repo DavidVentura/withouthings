@@ -1,8 +1,18 @@
 #!/bin/bash
-# Build reference objects for the open-source parts of the HWA10 firmware, so
-# abi/match.py can map image addresses to source symbols.
+# Build the reference objects the image's open-source parts are measured
+# against, so abi/match.py can map image addresses to source symbols and
+# abi/body_check.py can settle each body byte for byte.
 #
-#   abi/refbuild.sh          # downloads (once) into ~/ref-build, builds every variant
+#   abi/refbuild.sh          # downloads (once) into ~/ref-build, builds both recipes
+#   abi/refbuild.sh --check  # report the newlib archives against abi/newlib-sizes.txt
+#
+# Two recipes, because the image has two builds in it:
+#
+#   app        the firmware's own: the SDK's FreeRTOS and nrfx 2.1.0 staged and
+#              patched by abi/stage.sh, abi/config-relink/ for the config and the
+#              nrfx glue, GCC 13.2 at -Os. This is what abi/relink.sh links.
+#   toolchain  newlib 4.3.0.20230120 configured nano with long long, and its
+#              libm, built by the same GCC 13.2; libgcc comes from the release.
 #
 # Nothing here lands in the repo: sources, toolchain and ELFs all live in
 # $ROOT (~/ref-build).
@@ -16,188 +26,65 @@
 #     header the reference code compiles against, and no SoftDevice code is built
 #     here anyway (it is binary-only), so the headers are only used for nrf_nvic.h
 #     and the SVC prototypes.
-#   GNU Arm Embedded 9-2020-q2-update (gcc 9.3.1 20200408), the compiler the SDK
-#     17.1.0 armgcc makefiles name in Makefile.posix
-#     https://developer.arm.com/-/media/Files/downloads/gnu-rm/9-2020q2/gcc-arm-none-eabi-9-2020-q2-update-x86_64-linux.tar.bz2
+#   Arm GNU Toolchain 13.2.Rel1 (gcc 13.2.1), for everything. The image's newlib
+#     and SAADC driver pinned it first; the kernel then reproduced under it and
+#     under nothing else tried. Measured over the 59 kernel, port and driver
+#     bodies abi/matches.yaml carried at the time, at -Os with the config below:
+#     13.2 and 13.3 agree body for body (30 reproduce), 12.3 loses one and 14.2
+#     loses three, and -O2 and -O3 inline half the bodies out of existence
+#     before they can be compared at all. 13.3's newlib is 4.4.0, which the
+#     image's own assert paths rule out, so 13.2 is the one.
+#     The SDK 17.1.0 armgcc makefiles name GCC 9 and every body in the image
+#     disagrees with it.
+#     https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
 #
-# The config is derived from observed firmware behaviour; see abi/CONFIG-HUNT in
-# the commit message and the notes in matches.yaml.
+# The config is abi/config-relink/FreeRTOSConfig.h; every value in it that is not
+# the SDK's default is forced by something measured in the image.
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=${ROOT:-$HOME/ref-build}
 SDK=$ROOT/sdk/nRF5_SDK_17.1.0_ddde560
-GCC=$ROOT/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi
+TC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
+GCC=$TC/bin/arm-none-eabi
 OUT=$ROOT/build
 CFG=$ROOT/cfg
 
 SDK_URL=https://files.nordicsemi.com/artifactory/nRF5-SDK/external/nRF5_SDK_v17.x.x/nRF5_SDK_17.1.0_ddde560.zip
-GCC_URL=https://developer.arm.com/-/media/Files/downloads/gnu-rm/9-2020q2/gcc-arm-none-eabi-9-2020-q2-update-x86_64-linux.tar.bz2
-# Arm GNU Toolchain releases whose prebuilt newlib is matched against the image
-# by abi/autonames.py. The image names its own newlib in three source paths
-# (.../newlib-4.3.0.20230120/newlib/libc/stdlib/{dtoa,mprec,gdtoa-gethex}.c),
-# and 12.3.Rel1 and 13.2.Rel1 are the releases that ship exactly that newlib;
-# 13.3 and 14.2 ship 4.4.0 and are fetched only as controls for the GCC-version
-# comparison, since their newlib cannot be the image's.
-TC_RELEASES="12.3.rel1 13.2.rel1 13.3.rel1 14.2.rel1"
-TC_BASE=https://developer.arm.com/-/media/Files/downloads/gnu
+TC_URL=https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
 
-mkdir -p "$ROOT/dl"
+mkdir -p "$ROOT/dl" "$ROOT/tc"
 if [ ! -d "$SDK" ]; then
     [ -f "$ROOT/dl/sdk.zip" ] || curl -L -o "$ROOT/dl/sdk.zip" "$SDK_URL"
     mkdir -p "$ROOT/sdk" && unzip -q "$ROOT/dl/sdk.zip" -d "$ROOT/sdk"
 fi
-if [ ! -d "$(dirname "$GCC")" ]; then
-    [ -f "$ROOT/dl/gcc.tar.bz2" ] || curl -L -o "$ROOT/dl/gcc.tar.bz2" "$GCC_URL"
-    tar xf "$ROOT/dl/gcc.tar.bz2" -C "$ROOT"
+if [ ! -d "$TC" ]; then
+    f="$ROOT/dl/arm-gnu-toolchain-13.2.rel1.tar.xz"
+    [ -f "$f" ] || curl -L -o "$f" "$TC_URL"
+    tar xf "$f" -C "$ROOT/tc"
 fi
-mkdir -p "$ROOT/tc"
-for v in $TC_RELEASES; do
-    if ! ls -d "$ROOT/tc/arm-gnu-toolchain-$v"* >/dev/null 2>&1; then
-        f="$ROOT/dl/arm-gnu-toolchain-$v.tar.xz"
-        [ -f "$f" ] || curl -L -o "$f" "$TC_BASE/$v/binrel/arm-gnu-toolchain-$v-x86_64-arm-none-eabi.tar.xz"
-        tar xf "$f" -C "$ROOT/tc"
-    fi
-done
 
 mkdir -p "$OUT" "$CFG"
+# The config lives in abi/config-relink/ now; a copy left here would shadow it.
+rm -f "$CFG/FreeRTOSConfig.h"
 
-# ---- FreeRTOSConfig.h -------------------------------------------------------
-# Every non-default value below is forced by something traced in the image; the
-# reasoning is in the commit message.
-cat > "$CFG/FreeRTOSConfig.h" <<'EOF'
-#ifndef FREERTOS_CONFIG_H
-#define FREERTOS_CONFIG_H
+# ONLY="<name> <name>" builds just those; everything else is skipped. A build
+# directory is the unit of measurement, so rebuilding one is enough.
+want() {
+    [ -n "${ONLY:-}" ] || return 0
+    case " $ONLY " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
 
-#include "nrf.h"
-#include "nrf_assert.h"
-
-#define FREERTOS_USE_RTC      0
-#define FREERTOS_USE_SYSTICK  1
-#define configTICK_SOURCE     FREERTOS_USE_RTC
-
-#define configUSE_PREEMPTION                    1
-#ifndef configUSE_PORT_OPTIMISED_TASK_SELECTION
-#define configUSE_PORT_OPTIMISED_TASK_SELECTION 1
-#endif
-#define configUSE_TICKLESS_IDLE                 1
-#define configUSE_TICKLESS_IDLE_SIMPLE_DEBUG    1
-#define configCPU_CLOCK_HZ                      ( SystemCoreClock )
-#define configTICK_RATE_HZ                      1000
-#ifndef configMAX_PRIORITIES
-#define configMAX_PRIORITIES ( 5 )
-#endif
-#define configMINIMAL_STACK_SIZE                ( 60 )
-#define configTOTAL_HEAP_SIZE                   ( 16384 )
-#ifndef configMAX_TASK_NAME_LEN
-#define configMAX_TASK_NAME_LEN ( 12 )
-#endif
-#define configRECORD_STACK_HIGH_ADDRESS         1
-#define configUSE_16_BIT_TICKS                  0
-#define configIDLE_SHOULD_YIELD                 1
-#define configUSE_MUTEXES                       1
-#define configUSE_RECURSIVE_MUTEXES             1
-#define configUSE_COUNTING_SEMAPHORES           1
-#define configUSE_ALTERNATIVE_API               0
-#ifndef configQUEUE_REGISTRY_SIZE
-#define configQUEUE_REGISTRY_SIZE 0
-#endif
-#define configUSE_QUEUE_SETS                    1
-#ifndef configUSE_TIME_SLICING
-#define configUSE_TIME_SLICING 1
-#endif
-#define configUSE_NEWLIB_REENTRANT              0
-#ifndef configENABLE_BACKWARD_COMPATIBILITY
-#define configENABLE_BACKWARD_COMPATIBILITY 0
-#endif
-#define configSUPPORT_STATIC_ALLOCATION         1
-#define configSUPPORT_DYNAMIC_ALLOCATION        1
-#define configUSE_TASK_NOTIFICATIONS            1
-#define configUSE_IDLE_HOOK                     0
-#define configUSE_TICK_HOOK                     1
-#ifndef configCHECK_FOR_STACK_OVERFLOW
-#define configCHECK_FOR_STACK_OVERFLOW 2
-#endif
-#define configUSE_MALLOC_FAILED_HOOK            0
-#ifndef configGENERATE_RUN_TIME_STATS
-#define configGENERATE_RUN_TIME_STATS 0
-#endif
-#ifndef configUSE_TRACE_FACILITY
-#define configUSE_TRACE_FACILITY 0
-#endif
-#define configUSE_STATS_FORMATTING_FUNCTIONS    0
-#define configUSE_CO_ROUTINES                   0
-#define configMAX_CO_ROUTINE_PRIORITIES         ( 2 )
-#ifndef configUSE_TIMERS
-#define configUSE_TIMERS 1
-#endif
-#define configTIMER_TASK_PRIORITY               ( 2 )
-#define configTIMER_QUEUE_LENGTH                32
-#define configTIMER_TASK_STACK_DEPTH            ( 80 )
-#define configEXPECTED_IDLE_TIME_BEFORE_SLEEP   2
-
-/* REF_ASSERT picks the assert flavour; the variants build both, because which
-   one the image used is only decidable by matching. __builtin_trap() is the udf
-   the image's assert path ends in. */
-#if REF_ASSERT == 1
-#define configASSERT( x ) do { if( !( x ) ) { __builtin_trap(); } } while( 0 )
-#elif REF_ASSERT == 2
-#define configASSERT( x ) ( ( void ) 0 )
-#elif REF_ASSERT == 3
-/* The image's assert is a logging call taking __FILE__ in r0 and __LINE__ in r1,
-   followed by an infinite loop (e.g. xQueueGenericSend @0x73aa4). */
-extern void ref_assert_log( const char *file, unsigned int line );
-#define configASSERT( x ) do { if( !( x ) ) { ref_assert_log( __FILE__, __LINE__ ); for( ;; ) {} } } while( 0 )
-#endif
-/* REF_ASSERT == 0 leaves configASSERT undefined, which also drops the
-   configASSERT_DEFINED code (the volatile sizeof(StaticTask_t) store in
-   xTaskCreateStatic) -- the image has no such store. */
-
-#define INCLUDE_vTaskPrioritySet                1
-#define INCLUDE_uxTaskPriorityGet               1
-#define INCLUDE_vTaskDelete                     1
-#define INCLUDE_vTaskSuspend                    1
-#define INCLUDE_xResumeFromISR                  1
-#define INCLUDE_vTaskDelayUntil                 1
-#define INCLUDE_vTaskDelay                      1
-#define INCLUDE_xTaskGetSchedulerState          1
-#define INCLUDE_xTaskGetCurrentTaskHandle       1
-#define INCLUDE_uxTaskGetStackHighWaterMark     1
-#define INCLUDE_xTaskGetIdleTaskHandle          1
-#define INCLUDE_xTimerGetTimerDaemonTaskHandle  1
-#define INCLUDE_pcTaskGetTaskName               1
-#define INCLUDE_eTaskGetState                   1
-#define INCLUDE_xEventGroupSetBitFromISR        1
-#define INCLUDE_xTimerPendFunctionCall          1
-
-/* basepri 0xe0 kernel / 0xc0 max-syscall as traced, with 3 priority bits. */
-#define configLIBRARY_LOWEST_INTERRUPT_PRIORITY      0x7
-#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 0x6
-#define configKERNEL_INTERRUPT_PRIORITY      configLIBRARY_LOWEST_INTERRUPT_PRIORITY
-#define configMAX_SYSCALL_INTERRUPT_PRIORITY configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY
-
-#define vPortSVCHandler     SVC_Handler
-#define xPortPendSVHandler  PendSV_Handler
-/* RTC2, not the SDK example's RTC1: rtc2_init @0x74050 writes PRESCALER 0x20. */
-#define xPortSysTickHandler RTC2_IRQHandler
-#define configSYSTICK_CLOCK_HZ ( 32768UL )
-
-#if !(defined(__ASSEMBLY__) || defined(__ASSEMBLER__))
-#include "nrf.h"
-#ifdef __NVIC_PRIO_BITS
-#define configPRIO_BITS __NVIC_PRIO_BITS
-#else
-#error "This port requires __NVIC_PRIO_BITS to be defined"
-#endif
-#endif
-
-#define configUSE_DISABLE_TICK_AUTO_CORRECTION_DEBUG 0
-
-#endif
-EOF
-
+# ---- the staged FreeRTOS ----------------------------------------------------
+# abi/stage.sh puts the kernel, the port, Withings' patches and abi/facts.yaml's
+# corrections in one tree; abi/relink.sh stages the same way, so the reference
+# and the linked library are the same source.
+STAGE=$ROOT/src/freertos-withings
+"$HERE/stage.sh" "$STAGE"
+KERNEL=$STAGE/source
+PORT=$STAGE/portable
 # ---- include paths ----------------------------------------------------------
-INC="-I$CFG"
+INC="-I$HERE/config-relink -I$CFG"
 for d in \
   components/libraries/util components/libraries/experimental_section_vars \
   components/libraries/delay components/libraries/atomic components/libraries/log \
@@ -210,13 +97,11 @@ for d in \
   modules/nrfx modules/nrfx/hal modules/nrfx/mdk modules/nrfx/drivers \
   modules/nrfx/drivers/include modules/nrfx/soc \
   integration/nrfx integration/nrfx/legacy \
-  external/freertos/portable/GCC/nrf52 \
-  external/freertos/portable/CMSIS/nrf52 \
   external/fprintf ; do
     INC="$INC -I$SDK/$d"
 done
+INC="$INC -I$PORT/GCC/nrf52 -I$PORT/CMSIS/nrf52"
 INC="$INC -I$SDK/examples/ble_peripheral/ble_app_hrs_freertos/pca10056/s140/config"
-
 # ---- sources ----------------------------------------------------------------
 KERNEL_SRC="
 tasks.c
@@ -229,10 +114,13 @@ croutine.c
 portable/MemMang/heap_4.c
 "
 
+PORT_SRC="
+GCC/nrf52/port.c
+CMSIS/nrf52/port_cmsis.c
+CMSIS/nrf52/port_cmsis_systick.c
+"
+
 SRC="
-external/freertos/portable/GCC/nrf52/port.c
-external/freertos/portable/CMSIS/nrf52/port_cmsis.c
-external/freertos/portable/CMSIS/nrf52/port_cmsis_systick.c
 modules/nrfx/drivers/src/nrfx_spim.c
 modules/nrfx/drivers/src/nrfx_spi.c
 modules/nrfx/drivers/src/nrfx_twi.c
@@ -331,24 +219,13 @@ DEFS="-DNRF52840_XXAA -DBOARD_PCA10056 -DFLOAT_ABI_HARD -DCONFIG_GPIO_AS_PINRESE
 ARCH="-mcpu=cortex-m4 -mthumb -mabi=aapcs -mfpu=fpv4-sp-d16 -mfloat-abi=hard"
 COMMON="-ffunction-sections -fdata-sections -fno-strict-aliasing -fno-builtin
  -fshort-enums -std=gnu99 -g3 -w"
-
-# KERNEL points at a FreeRTOS kernel source root: the SDK's own copy, or an
-# upstream FreeRTOS-Kernel tarball, since which version Withings used is part of
-# the hunt (the SDK's copy calls itself V9.0.0).
-KERNEL=${KERNEL:-$SDK/external/freertos/source}
-# NRFX likewise: the image's driver control blocks do not have the SDK 17 (nrfx 2.x)
-# layout, so older nrfx trees are built as their own variants when present.
-NRFX=${NRFX:-}
-
 build_variant() {
     local name="$1"; shift
+    want "$name" || return 0
     local od="$OUT/$name"
     rm -rf "$od"; mkdir -p "$od"
     local objs=""
     local kinc="-I$KERNEL/include"
-    if [ -n "$NRFX" ]; then
-        kinc="$kinc -I$NRFX -I$NRFX/hal -I$NRFX/drivers -I$NRFX/drivers/include -I$NRFX/soc -I$NRFX/mdk"
-    fi
     for s in $KERNEL_SRC; do
         local o="$od/kernel_$(echo "$s" | tr / _ | sed 's/\.c$/.o/')"
         if "$GCC-gcc" $ARCH $COMMON "$@" $DEFS $kinc $INC -c "$KERNEL/$s" -o "$o" 2>>"$od/err.log"; then
@@ -358,10 +235,11 @@ build_variant() {
         fi
     done
     INC="$kinc $INC"
-    for s in $SRC; do
+    for s in $PORT_SRC $SRC; do
         local o="$od/$(echo "$s" | tr / _ | sed 's/\.c$/.o/')"
+        case " ${SKIP_SRC:-} " in *" $s "*) continue ;; esac
         local src="$SDK/$s"
-        case "$s" in modules/nrfx/*) [ -z "$NRFX" ] || src="$NRFX/${s#modules/nrfx/}" ;; esac
+        case "$s" in GCC/*|CMSIS/*) src="$PORT/$s" ;; esac
         [ -f "$src" ] || { echo "  skip $src (absent)" >> "$od/skipped.log"; continue; }
         if "$GCC-gcc" $ARCH $COMMON "$@" $DEFS $INC -c "$src" -o "$o" 2>>"$od/err.log"; then
             objs="$objs $o"
@@ -376,71 +254,6 @@ build_variant() {
     "$GCC-ld" -r -o "$od/ref.elf" $objs
     printf '%-10s %3d objs  %s\n' "$name" "$(echo $objs | wc -w)" "$od/ref.elf"
 }
-
-# The knobs below are what the configuration hunt converged on; see the commit
-# message. TCB_t in the image is 0x60 bytes with ucNotifyState at +0x5c, which is
-# 12 bytes more than the baseline: configUSE_TRACE_FACILITY adds uxTCBNumber and
-# uxTaskNumber (8) and configUSE_APPLICATION_TASK_TAG adds pxTaskTag (4).
-# The four knobs above the hunt -- queue sets, a 12-byte task name, the recorded
-# stack high address and the tick hook -- are read straight off the image's own
-# struct layouts and call sites, so they are not variants; abi/boundary.yaml
-# carries the evidence.
-HUNT="-DREF_ASSERT=0 -DconfigUSE_TRACE_FACILITY=1 -DconfigUSE_APPLICATION_TASK_TAG=1"
-TCB="-DconfigUSE_TRACE_FACILITY=1 -DconfigUSE_APPLICATION_TASK_TAG=1"
-for o in Os O2 O3; do
-    for a in 0 2 3; do
-        build_variant "${o}_a${a}" "-$o" "-DREF_ASSERT=$a" $TCB
-    done
-done
-
-# ---- mbedTLS ----------------------------------------------------------------
-# The image contains mbedTLS (its oid.c description strings -- "ecdsa-with-SHA256",
-# "TLS Web Client Authentication" -- are in the flash verbatim), and the WPPS
-# characteristic drives a TLS handshake. The SDK's own copy is 2.16.10, which is
-# the first candidate version; it builds standalone against its default config.
-build_mbedtls() {
-    local name="$1"; shift
-    local od="$OUT/$name"
-    local src="$SDK/external/mbedtls"
-    [ -d "$src" ] || return 0
-    rm -rf "$od"; mkdir -p "$od"
-    local objs=""
-    for s in "$src"/library/*.c; do
-        local o="$od/$(basename "$s" .c).o"
-        if "$GCC-gcc" $ARCH $COMMON "$@" -I"$src/include" -c "$s" -o "$o" 2>>"$od/err.log"; then
-            objs="$objs $o"
-        else
-            echo "  skip $s" >> "$od/skipped.log"
-        fi
-    done
-    "$GCC-ld" -r -o "$od/ref.elf" $objs
-    printf '%-10s %3d objs  %s\n' "$name" "$(echo $objs | wc -w)" "$od/ref.elf"
-}
-build_mbedtls mbedtls_Os -Os
-build_mbedtls mbedtls_O2 -O2
-
-# Older nrfx trees, if they were fetched next to the SDK.
-for n in "$ROOT"/nrfx/nrfx-*; do
-    [ -d "$n" ] || continue
-    case "$n" in *-withings) continue ;; esac   # built below, by its own compiler
-    ver=$(basename "$n" | sed 's/nrfx-//;s/\./_/g')
-    NRFX=$n
-    build_variant "n${ver}_Os" -Os "-DREF_ASSERT=0" $TCB
-    build_variant "n${ver}_O2" -O2 "-DREF_ASSERT=0" $TCB
-done
-NRFX=
-
-# Upstream kernel versions, if they were fetched next to the SDK.
-for k in "$ROOT"/krn/FreeRTOS-Kernel-*; do
-    [ -d "$k" ] || continue
-    ver=$(basename "$k" | sed 's/FreeRTOS-Kernel-//;s/\./_/g')
-    KERNEL=$k
-    for o in Os O2; do
-        for a in 0 3; do
-            build_variant "k${ver}_${o}_a${a}" "-$o" "-DREF_ASSERT=$a" $TCB
-        done
-    done
-done
 
 # ---- newlib from source -----------------------------------------------------
 # The image's libc is newlib 4.3.0.20230120 built by Withings themselves: the
@@ -503,6 +316,7 @@ newlib_code_bytes() {
 build_newlib() {
     # $1 is the build name, $2... any extra configure options.
     local name=$1; shift
+    want "$name" || return 0
     local d=$OUT/$name
     if [ -f "$d/arm-none-eabi/newlib/libc.a" ]; then
         if [ "$(cat "$d/.recipe" 2>/dev/null)" = "$(newlib_recipe "$@")" ]; then
@@ -542,20 +356,6 @@ check_newlib() {
     done < "$SIZES"
     return $bad
 }
-build_newlib newlib-nano-big
-build_newlib newlib-nano-small --enable-newlib-reent-small --enable-newlib-reent-check-verify
-
-# The image's printf and scanf take long long, which no release of newlib can
-# do in the nano files: nano-vfprintf_local.h and nano-vfscanf_local.h define
-# _NO_LONGLONG unconditionally in 4.3.0 and still do in 4.5.0, and no Arm
-# prebuilt nano archive differs there. abi/patches/newlib/ makes those two
-# headers honour --enable-newlib-io-long-long the way the non-nano files
-# already do and adds the two bodies the image shows: the second 'l' consumed
-# into QUADINT in nano-vfprintf.c, and the _strtoll_r/_strtoull_r arm in
-# nano-vfscanf_i.c. With it _svfprintf_r (0x90fb8) and _scanf_i (0x91780)
-# reproduce the image byte for byte, which they do under no other
-# configuration tried: -O2/-O3, GCC 12.3/13.2/13.3/14.2, newlib 4.4.0/4.5.0,
-# reent-small, and the io-c99-formats/io-pos-args/multithread options.
 NEWLIB_LL_SRC=$ROOT/src/$NEWLIB-longlong
 if [ ! -d "$NEWLIB_LL_SRC" ]; then
     cp -r "$ROOT/src/$NEWLIB" "$NEWLIB_LL_SRC"
@@ -565,23 +365,6 @@ if [ ! -d "$NEWLIB_LL_SRC" ]; then
 fi
 NEWLIB_SRC=$NEWLIB_LL_SRC
 build_newlib newlib-nano-ll --enable-newlib-io-long-long
-
-# Single-thread, tried and refused. abi/libc_check.py reports that the image's
-# __swbuf_r calls the 36-byte unlocked fflush at 0xa8fd0 where this build's
-# __swbuf_r calls the 74-byte locking _fflush_r, and the 74-byte body is
-# nowhere in the image at all, which reads like --disable-newlib-multithread.
-# It is not: that option takes the _lock member out of FILE, every fake FILE a
-# stdio wrapper builds on its own stack loses a word, and sprintf, snprintf and
-# sscanf stop reproducing on nothing but stack offsets shifted by four
-# (sprintf's eleven differing bytes are `str r0,[sp,#8]` against `[sp,#4]`, and
-# so on through the body). The image's frames are the wide ones, so its FILE
-# carries the lock and the library is multithread, the same structural argument
-# that settled _REENT_SMALL. Measured: 83 of 115 libc bodies reproduce under
-# --disable-newlib-multithread against 87 under the default, it fixes neither
-# __swbuf_r nor __assert_func, and it breaks four bodies that reproduced. What
-# the image does with fflush is narrower than a configure switch and is still
-# open; abi/out/relink/libc-bodies.yaml carries it as __swbuf_r's verdict.
-build_newlib newlib-nano-ll-st --enable-newlib-io-long-long --disable-newlib-multithread
 NEWLIB_SRC=$ROOT/src/$NEWLIB
 
 # Every newlib archive the tree now holds, against abi/newlib-sizes.txt. The
@@ -592,13 +375,24 @@ NEWLIB_SRC=$ROOT/src/$NEWLIB
 check_newlib
 if [ "${1:-}" = --check ]; then exit 0; fi
 
+
+# ---- libm as a matchable ELF ------------------------------------------------
+# abi/match.py searches the image for library bodies and needs an object, not an
+# archive; libc's verdicts come from abi/libc_check.py, which reads the archive
+# directly, so `toolchain` is libm.
+if want toolchain; then
+    d=$OUT/toolchain
+    mkdir -p "$d"
+    "$GCC-ld" -r --whole-archive -o "$d/ref.elf" "$OUT/newlib-nano-ll/arm-none-eabi/newlib/libm.a"
+    printf '%-14s %s\n' toolchain "$d/ref.elf"
+fi
+
 # ---- the Withings SAADC driver ---------------------------------------------
-# The image's SAADC driver is nrfx 2.1.0, not the SDK's nrfx 1.9.0, built by a
-# different compiler from the rest of the variants above: the same GCC 13.2 that
-# builds the image's newlib. abi/patches/nrfx/saadc-withings.patch carries the
-# source changes and the evidence for each; abi/config-relink/nrfx_glue.h the two
-# glue macros. abi/body_check.py checks the result against the image, which is
-# what pins all three.
+# The image's SAADC driver is nrfx 2.1.0, not the SDK's nrfx 1.9.0.
+# abi/patches/nrfx/saadc-withings.patch carries the source changes and the
+# evidence for each; abi/config-relink/nrfx_glue.h the two glue macros. The
+# `app` build below compiles the driver out of this tree and abi/body_check.py
+# checks the result against the image, which is what pins all three.
 SAADC_SRC=$ROOT/nrfx/nrfx-2.1.0-withings
 if [ -d "$ROOT/nrfx/nrfx-2.1.0" ] && [ ! -d "$SAADC_SRC" ]; then
     cp -r "$ROOT/nrfx/nrfx-2.1.0" "$SAADC_SRC"
@@ -607,110 +401,31 @@ if [ -d "$ROOT/nrfx/nrfx-2.1.0" ] && [ ! -d "$SAADC_SRC" ]; then
     done
 fi
 
-build_saadc() {
-    local name="$1" src="$2"
-    local od="$OUT/$name"
-    [ -d "$src" ] || return 0
-    rm -rf "$od"; mkdir -p "$od"
-    local cc=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/bin/arm-none-eabi
-    local ninc="-I$src -I$src/hal -I$src/drivers -I$src/drivers/include -I$src/soc -I$src/mdk"
+# ---- the app's own build ----------------------------------------------------
+# The kernel, port and driver abi/relink.sh links, measured against the image.
+# nrfx 2.1.0 is the SAADC driver's tree alone: its other headers disagree with
+# the SDK 17 integration layer the rest of the build compiles against, so the
+# driver is compiled separately, with its own include path, and merged in. That
+# is also how abi/relink.sh links it.
+#
+# -fcommon is GCC 9's default and GCC 13's is not; the SDK has tentative
+# definitions (nrf_nvic_state) in two translation units and the partial link
+# refuses them otherwise.
+#
+# REF_ASSERT=0 leaves configASSERT undefined. It is not a guess: the logging
+# flavour (3) costs nine of the kernel bodies that otherwise reproduce, and the
+# empty one (2) costs ten.
+SKIP_SRC="modules/nrfx/drivers/src/nrfx_saadc.c"
+build_variant app -Os -fcommon -DREF_ASSERT=0 -DconfigUSE_TIMERS=0
+if want app; then
+    SAADC_INC="-I$SAADC_SRC -I$SAADC_SRC/hal -I$SAADC_SRC/drivers -I$SAADC_SRC/drivers/include -I$SAADC_SRC/soc"
     # -fno-builtin is deliberately not passed: the image's channels_config calls
     # memset for the pselp/pseln reset, which only the builtin emits.
-    local common="-ffunction-sections -fdata-sections -fno-strict-aliasing
-     -fshort-enums -std=gnu99 -g3 -w -Os"
-    "$cc-gcc" $ARCH $common $DEFS -I"$HERE/config-relink" $ninc $INC \
-        -c "$src/drivers/src/nrfx_saadc.c" -o "$od/nrfx_saadc.o" 2>"$od/err.log" || {
-        echo "$name did not build; see $od/err.log"; return 1; }
-    "$cc-ld" -r -o "$od/ref.elf" "$od/nrfx_saadc.o"
-    printf '%-14s %s\n' "$name" "$od/ref.elf"
-}
-build_saadc saadc_stock     "$ROOT/nrfx/nrfx-2.1.0"
-build_saadc saadc_withings  "$SAADC_SRC"
-
-# ---- CMSIS-DSP and KissFFT --------------------------------------------------
-# Candidates for the float and signal-processing blocks inside SENSORS_SYNC and
-# ECG, which are hard-float VFP code no struct layout reaches. An earlier verdict
-# ruled CMSIS-DSP out from its constant tables alone; these variants put the
-# bodies in front of abi/match.py. Releases span the plausible build window:
-# CMSIS 5.7.0 (DSP 1.9.0), CMSIS 5.9.0 (DSP 1.10.0) and the standalone v1.14.4.
-DSP_SRC=$ROOT/src/dsp
-DSP_TAGS="5.7.0 5.9.0 1.14.4"
-DSP_URL=https://github.com/ARM-software/CMSIS-DSP/archive/refs/tags
-KISS_URL=https://github.com/mborgerding/kissfft/archive/refs/tags/131.1.0.tar.gz
-
-mkdir -p "$DSP_SRC"
-for t in $DSP_TAGS; do
-    [ -d "$DSP_SRC/CMSIS-DSP-$t" ] && continue
-    f=$ROOT/dl/cmsis-dsp-$t.tar.gz
-    v=$t; case "$t" in 1.*) v=v$t ;; esac
-    [ -s "$f" ] || curl -L -o "$f" "$DSP_URL/$v.tar.gz"
-    tar xf "$f" -C "$DSP_SRC"
-done
-if [ ! -d "$DSP_SRC/kissfft-131.1.0" ]; then
-    [ -s "$ROOT/dl/kissfft-131.1.0.tar.gz" ] || curl -L -o "$ROOT/dl/kissfft-131.1.0.tar.gz" "$KISS_URL"
-    tar xf "$ROOT/dl/kissfft-131.1.0.tar.gz" -C "$DSP_SRC"
+    "$GCC-gcc" $ARCH -ffunction-sections -fdata-sections -fno-strict-aliasing \
+        -fshort-enums -std=gnu99 -g3 -w -Os $DEFS -I"$HERE/config-relink" \
+        $SAADC_INC $INC \
+        -c "$SAADC_SRC/drivers/src/nrfx_saadc.c" -o "$OUT/app/nrfx_saadc.o" 2>>"$OUT/app/err.log"
+    "$GCC-ld" -r -o "$OUT/app/merged.elf" "$OUT/app/ref.elf" "$OUT/app/nrfx_saadc.o"
+    mv "$OUT/app/merged.elf" "$OUT/app/ref.elf"
 fi
-
-# ARM_MATH_CM4 with __FPU_PRESENT is the image's core; the CMSIS-Core headers
-# come from the SDK, which is where the image's own would have come from.
-build_cmsisdsp() {
-    local name="$1" src="$2"; shift 2
-    local od="$OUT/$name"
-    [ -d "$src" ] || return 0
-    rm -rf "$od"; mkdir -p "$od"
-    local dinc="-I$src/Include -I$src/PrivateInclude -I$SDK/components/toolchain/cmsis/include"
-    local ddef="-DARM_MATH_CM4 -D__FPU_PRESENT=1 -DNRF52840_XXAA -D__GNUC_PYTHON__=0"
-    local objs=""
-    for s in $(find "$src/Source" -name '*.c' | sort); do
-        # Each Source subdirectory carries an umbrella .c that #includes all its
-        # siblings, so compiling it too gives every body twice.
-        [ "$(basename "$s" .c)" = "$(basename "$(dirname "$s")")" ] && continue
-        local o="$od/$(echo "${s#$src/Source/}" | tr / _ | sed 's/\.c$/.o/')"
-        if "$GCC-gcc" $ARCH $COMMON "$@" $ddef $dinc -c "$s" -o "$o" 2>>"$od/err.log"; then
-            objs="$objs $o"
-        else
-            echo "  skip $s" >> "$od/skipped.log"
-        fi
-    done
-    [ -n "$objs" ] || return 0
-    "$GCC-ld" -r -o "$od/ref.elf" $objs
-    printf '%-14s %3d objs  %s\n' "$name" "$(echo $objs | wc -w)" "$od/ref.elf"
-}
-for t in $DSP_TAGS; do
-    tag=$(echo "$t" | tr . _)
-    build_cmsisdsp "dsp${tag}_Os" "$DSP_SRC/CMSIS-DSP-$t" -Os
-    build_cmsisdsp "dsp${tag}_O2" "$DSP_SRC/CMSIS-DSP-$t" -O2
-done
-
-build_kissfft() {
-    local name="$1"; shift
-    local src=$DSP_SRC/kissfft-131.1.0
-    local od="$OUT/$name"
-    [ -d "$src" ] || return 0
-    rm -rf "$od"; mkdir -p "$od"
-    local objs=""
-    for s in "$src"/kiss_fft.c "$src"/kiss_fftr.c "$src"/kiss_fftnd.c "$src"/kiss_fftndr.c; do
-        local o="$od/$(basename "$s" .c).o"
-        if "$GCC-gcc" $ARCH $COMMON "$@" -DFIXED_POINT=0 -I"$src" -c "$s" -o "$o" 2>>"$od/err.log"; then
-            objs="$objs $o"
-        fi
-    done
-    [ -n "$objs" ] || return 0
-    "$GCC-ld" -r -o "$od/ref.elf" $objs
-    printf '%-14s %3d objs  %s\n' "$name" "$(echo $objs | wc -w)" "$od/ref.elf"
-}
-build_kissfft kissfft_Os -Os
-build_kissfft kissfft_O2 -O2
-
-# ---- newlib libm as a matchable ELF ----------------------------------------
-# abi/autonames.py matches the Arm prebuilt libm.a; these turn the libm built
-# here (the full-precision one, from Withings' own newlib version) into a
-# ref.elf so abi/match.py can search the SENSORS_SYNC and ECG blocks for it.
-for n in newlib-nano-big newlib-nano-small; do
-    a=$OUT/$n/arm-none-eabi/newlib/libm.a
-    [ -f "$a" ] || continue
-    d=$OUT/libm_${n#newlib-}
-    mkdir -p "$d"
-    "$GCC-ld" -r --whole-archive -o "$d/ref.elf" "$a"
-    printf '%-14s %s\n' "libm_${n#newlib-}" "$d/ref.elf"
-done
+SKIP_SRC=

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare function bodies in a relocatable ELF against the image, byte for byte.
 
-    python3 abi/body_check.py --elf ~/ref-build/build/n2_0_0_Os/ref.elf \
+    python3 abi/body_check.py --elf ~/ref-build/build/app/ref.elf \
         --pair saadc_busy_check=0x7db08 --pair nrfx_saadc_uninit=0x7e138
     python3 abi/body_check.py --elf <elf> --pairs abi/saadc_bodies.yaml --dis
 

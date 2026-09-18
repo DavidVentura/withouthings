@@ -157,7 +157,7 @@ symbols:
   - vPortSVCHandler
   kind: function
   class: match
-  evidence: O2_a0, score 1.00 over 9 insns, direct
+  evidence: app, score 1.00 over 10 insns, direct
 - address: 0x27e50
   name: PendSV_Handler
   aliases:
@@ -165,7 +165,7 @@ symbols:
   - xPortPendSVHandler
   kind: function
   class: match
-  evidence: O2_a0, score 0.93 over 28 insns, direct
+  evidence: app, score 1.00 over 29 insns, direct
 - address: 0x27ec0
   name: memchr
   kind: function
@@ -196,47 +196,47 @@ symbols:
   name: exp
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 37 insns, direct
+  evidence: toolchain, score 1.00 over 37 insns, direct
 - address: 0x2a870
   name: log
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 39 insns, direct
+  evidence: toolchain, score 1.00 over 39 insns, direct
 - address: 0x2a8f0
   name: cos
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 50 insns, direct
+  evidence: toolchain, score 1.00 over 50 insns, direct
 - address: 0x2a998
   name: sin
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 51 insns, direct
+  evidence: toolchain, score 1.00 over 51 insns, direct
 - address: 0x2aa40
   name: nan
   kind: function
   class: match
-  evidence: libm_nano-big+graph, score 1.00 over 3 insns, propagated from log
+  evidence: toolchain+graph, score 1.00 over 3 insns, propagated from log
 - address: 0x2aa50
   name: __kernel_cos
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.99 over 120 insns, direct
+  evidence: toolchain, score 0.99 over 120 insns, direct
 - address: 0x2abe0
   name: __kernel_sin
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.99 over 115 insns, direct
+  evidence: toolchain, score 0.99 over 115 insns, direct
 - address: 0x2ad58
   name: __ieee754_exp
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.94 over 231 insns, direct
+  evidence: toolchain, score 0.94 over 231 insns, direct
 - address: 0x2b040
   name: __ieee754_log
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 281 insns, direct
+  evidence: toolchain, score 1.00 over 281 insns, direct
 - address: 0x2b3b0
   name: pow__1
   kind: function
@@ -246,12 +246,12 @@ symbols:
   name: __ieee754_rem_pio2
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.82 over 343 insns, direct
+  evidence: toolchain, score 0.82 over 343 insns, direct
 - address: 0x2c1f0
   name: scalbn
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 77 insns, direct
+  evidence: toolchain, score 1.00 over 77 insns, direct
 - address: 0x2c2e8
   name: __math_uflow
   kind: function
@@ -268,12 +268,12 @@ symbols:
   name: __kernel_rem_pio2
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.59 over 577 insns, byte-confirmed by autonames
+  evidence: toolchain, score 0.59 over 577 insns, byte-confirmed by autonames
 - address: 0x2c9a8
   name: floor
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.99 over 90 insns, direct
+  evidence: toolchain, score 0.99 over 90 insns, direct
 - address: 0x2caa0
   name: _strtod_l
   kind: function
@@ -3637,16 +3637,21 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x272a4: command ''local_notif'', run slot (+4)'
+- address: 0x519b8
+  name: prvInsertBlockIntoFreeList
+  kind: function
+  class: match
+  evidence: app, score 0.85 over 34 insns, direct
 - address: 0x51a04
   name: pvPortMalloc
   kind: function
   class: match
-  evidence: Os_a0, score 0.73 over 88 insns, direct
+  evidence: app, score 0.85 over 92 insns, direct
 - address: 0x51afc
   name: vPortFree
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 24 insns, direct
+  evidence: app, score 1.00 over 24 insns, direct
 - address: 0x52180
   name: max86173_driver
   kind: label
@@ -6151,31 +6156,46 @@ symbols:
   name: ptls_send
   kind: label
   class: prose
+- address: 0x72d40
+  name: prvAddNewTaskToReadyList
+  kind: function
+  class: match
+  evidence: app, score 0.99 over 81 insns, direct
+- address: 0x72e40
+  name: prvAddCurrentTaskToDelayedList
+  kind: function
+  class: match
+  evidence: app, score 0.97 over 38 insns, direct
 - address: 0x72eb0
   name: prvGetExpectedIdleTime
   kind: function
   class: match
-  evidence: Os_a0, score 0.90 over 20 insns, direct
+  evidence: app, score 1.00 over 20 insns, direct
 - address: 0x72eec
   name: prvResetNextTaskUnblockTime
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 13 insns, direct
+  evidence: app, score 1.00 over 13 insns, direct
+- address: 0x72f10
+  name: vTaskDelete
+  kind: function
+  class: match
+  evidence: app, score 0.96 over 49 insns, direct
 - address: 0x72fa4
   name: eTaskGetState
   kind: function
   class: match
-  evidence: Os_a0, score 0.95 over 40 insns, direct
+  evidence: app, score 1.00 over 40 insns, direct
 - address: 0x7300c
   name: vTaskStartScheduler
   kind: function
   class: match
-  evidence: Os_a0, score 0.75 over 36 insns, direct
+  evidence: app, score 1.00 over 37 insns, direct
 - address: 0x73084
   name: vTaskSuspendAll
   kind: function
   class: match
-  evidence: O2_a0, score 1.00 over 6 insns, direct
+  evidence: app, score 1.00 over 6 insns, direct
 - address: 0x730ac
   name: vTaskStepTick
   kind: function
@@ -6191,72 +6211,112 @@ symbols:
   name: xTaskResumeAll
   kind: function
   class: match
-  evidence: Os_a0, score 0.74 over 76 insns, direct
+  evidence: app, score 0.99 over 73 insns, direct
 - address: 0x732b0
   name: vTaskDelayUntil
   kind: function
   class: match
-  evidence: Os_a0, score 0.80 over 30 insns, direct
+  evidence: app, score 0.97 over 30 insns, direct
 - address: 0x73300
   name: vTaskSetApplicationTaskTag
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 11 insns, direct
+  evidence: app, score 1.00 over 11 insns, direct
 - address: 0x73320
-  name: dropped_log__1__1
+  name: xTaskGetApplicationTaskTag
   kind: function
-  class: helper
-  evidence: only 0x50f6c (dropped_log__1) calls 0x73320; 24 bytes
+  class: match
+  evidence: app, score 1.00 over 10 insns, direct
 - address: 0x7333c
   name: vTaskSwitchContext
   kind: function
   class: match
-  evidence: Os_a3, score 0.66 over 58 insns, direct
+  evidence: app, score 1.00 over 55 insns, direct
 - address: 0x733cc
   name: vTaskPlaceOnEventList
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 11 insns, direct
+  evidence: app, score 1.00 over 11 insns, direct
+- address: 0x733ec
+  name: xTaskRemoveFromEventList
+  kind: function
+  class: match
+  evidence: app, score 1.00 over 38 insns, direct
 - address: 0x7345c
   name: vTaskInternalSetTimeOutState
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 8 insns, direct
+  evidence: app, score 1.00 over 8 insns, direct
 - address: 0x73474
   name: xTaskCheckForTimeOut
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 33 insns, direct
+  evidence: app, score 1.00 over 33 insns, direct
 - address: 0x734d0
   name: eTaskConfirmSleepModeStatus
   kind: function
   class: match
-  evidence: Os_a0, score 0.89 over 18 insns, direct
+  evidence: app, score 1.00 over 18 insns, direct
 - address: 0x73504
   name: vTaskGetInfo
   kind: function
   class: match
-  evidence: Os_a0, score 0.80 over 55 insns, direct
+  evidence: app, score 0.94 over 52 insns, direct
 - address: 0x73614
   name: uxTaskGetStackHighWaterMark
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 13 insns, direct
+  evidence: app, score 1.00 over 13 insns, direct
+- address: 0x73634
+  name: vTaskGetStackBounds
+  kind: function
+  class: match
+  evidence: app, score 1.00 over 8 insns, direct
+- address: 0x73654
+  name: xTaskGetSchedulerState
+  kind: function
+  class: match
+  evidence: app, score 1.00 over 11 insns, direct
+- address: 0x73674
+  name: xTaskPriorityInherit
+  kind: function
+  class: match
+  evidence: app, score 0.98 over 53 insns, direct
+- address: 0x736f4
+  name: xTaskPriorityDisinherit
+  kind: function
+  class: match
+  evidence: app, score 1.00 over 34 insns, direct
+- address: 0x73748
+  name: vTaskPriorityDisinheritAfterTimeout
+  kind: function
+  class: match
+  evidence: app, score 0.85 over 41 insns, direct
 - address: 0x737b0
   name: pvTaskIncrementMutexHeldCount
   kind: function
   class: match
-  evidence: O2_a0, score 1.00 over 10 insns, direct
+  evidence: app, score 1.00 over 10 insns, direct
 - address: 0x737c8
   name: ulTaskNotifyTake
   kind: function
   class: match
-  evidence: Os_a0, score 0.89 over 38 insns, direct
+  evidence: app, score 1.00 over 36 insns, direct
 - address: 0x7382c
   name: xTaskNotifyWait
   kind: function
   class: match
-  evidence: Os_a0, score 0.94 over 50 insns, direct
+  evidence: app, score 1.00 over 50 insns, direct
+- address: 0x738b8
+  name: xTaskGenericNotify
+  kind: function
+  class: match
+  evidence: app, score 0.97 over 62 insns, direct
+- address: 0x73960
+  name: xTaskGenericNotifyFromISR
+  kind: function
+  class: match
+  evidence: app, score 0.97 over 69 insns, direct
 - address: 0x73a90
   name: xQueueGenericSend
   kind: function
@@ -6268,33 +6328,38 @@ symbols:
   name: xQueueReceive
   kind: function
   class: match
-  evidence: Os_a0, score 0.70 over 84 insns, direct
+  evidence: app, score 0.83 over 81 insns, direct
 - address: 0x73dd0
   name: vPortStartFirstTask
   aliases:
   - prvPortStartFirstTask
   kind: function
   class: match
-  evidence: O2_a0, score 0.82 over 11 insns, direct
+  evidence: app, score 1.00 over 13 insns, direct
 - address: 0x73dfc
   name: vPortEnableVFP
   kind: label
   class: prose
   evidence: CPACR |= 0xf<<20
+- address: 0x73e10
+  name: pxPortInitialiseStack
+  kind: function
+  class: match
+  evidence: app+graph, score 0.70 over 10 insns, propagated from prvInitialiseNewTask.constprop.0
 - address: 0x73e3c
   name: vPortEnterCritical
   aliases:
   - crit_enter
   kind: function
   class: match
-  evidence: Os_a0+graph, score 0.71 over 7 insns, propagated from vTaskSetApplicationTaskTag
+  evidence: app, score 1.00 over 10 insns, direct
 - address: 0x73e5c
   name: vPortExitCritical
   aliases:
   - crit_exit
   kind: function
   class: match
-  evidence: O2_a0, score 1.00 over 7 insns, direct
+  evidence: app, score 1.00 over 7 insns, direct
 - address: 0x73e70
   name: rtc2_tick_isr
   aliases:
@@ -6365,11 +6430,10 @@ symbols:
   kind: label
   class: prose
 - address: 0x74034
-  name: rtc2_tick_init
-  kind: label
-  class: prose
-  evidence: StartLFCLK; RTC2 PRESCALER=32, INTENSET, CLEAR, START (FreeRTOS tick
-    setup)
+  name: vPortSetupTimerInterrupt
+  kind: function
+  class: match
+  evidence: app, score 1.00 over 24 insns, direct
 - address: 0x74050
   name: rtc2_init
   kind: label
@@ -6674,43 +6738,43 @@ symbols:
   name: saadc_busy_check
   kind: function
   class: match
-  evidence: n2_0_0_Os, score 1.00 over 11 insns, direct
+  evidence: app, score 1.00 over 11 insns, direct
 - address: 0x7db24
   name: saadc_generic_mode_set
   kind: function
   class: match
-  evidence: saadc_withings, score 1.00 over 85 insns, direct
+  evidence: app, score 1.00 over 85 insns, direct
 - address: 0x7dc2c
   name: saadc_event_limits_handle
   kind: function
   class: match
-  evidence: n2_0_0_Os, score 0.81 over 32 insns, direct
+  evidence: app, score 0.81 over 32 insns, direct
 - address: 0x7dc88
   name: saadc_channel_count_get
   kind: function
   class: match
-  evidence: saadc_stock, score 1.00 over 24 insns, direct
+  evidence: app, score 1.00 over 24 insns, direct
 - address: 0x7dcc0
   name: nrfx_saadc_init
   aliases:
   - saadc_init
   kind: function
   class: match
-  evidence: saadc_stock, score 1.00 over 24 insns, direct
+  evidence: app, score 1.00 over 24 insns, direct
 - address: 0x7de34
   name: nrfx_saadc_simple_mode_set
   aliases:
   - saadc_channel_init
   kind: function
   class: match
-  evidence: saadc_stock, score 1.00 over 35 insns, direct
+  evidence: app, score 1.00 over 35 insns, direct
 - address: 0x7df40
   name: nrfx_saadc_buffer_set
   aliases:
   - saadc_buffer_convert
   kind: function
   class: match
-  evidence: saadc_stock, score 1.00 over 48 insns, direct
+  evidence: app, score 1.00 over 48 insns, direct
 - address: 0x7dfb8
   name: saadc_sample_blocking
   kind: label
@@ -6720,17 +6784,17 @@ symbols:
   name: nrfx_saadc_abort
   kind: function
   class: match
-  evidence: saadc_stock, score 1.00 over 17 insns, direct
+  evidence: app, score 1.00 over 17 insns, direct
 - address: 0x7e138
   name: nrfx_saadc_uninit
   kind: function
   class: match
-  evidence: n2_0_0_Os, score 1.00 over 14 insns, direct
+  evidence: app, score 1.00 over 14 insns, direct
 - address: 0x7e16c
   name: SAADC_IRQHandler
   kind: function
   class: match
-  evidence: saadc_stock, score 0.98 over 118 insns, direct
+  evidence: app, score 0.98 over 118 insns, direct
 - address: 0x7e478
   name: adc_not_using_internal_timer_setup
   kind: function
@@ -6843,12 +6907,12 @@ symbols:
   name: nrf_drv_clock_uninit
   kind: function
   class: match
-  evidence: O2_a0, score 0.88 over 8 insns, direct
+  evidence: app, score 0.88 over 8 insns, direct
 - address: 0x812a8
   name: nrf_drv_power_uninit
   kind: function
   class: match
-  evidence: O2_a0, score 0.70 over 10 insns, direct
+  evidence: app, score 0.70 over 10 insns, direct
 - address: 0x82a58
   name: toggle_alarm
   kind: function
@@ -6994,62 +7058,62 @@ symbols:
   name: pow
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 79 insns, direct
+  evidence: toolchain, score 1.00 over 79 insns, direct
 - address: 0x8c9dc
   name: expf
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 28 insns, direct
+  evidence: toolchain, score 1.00 over 28 insns, direct
 - address: 0x8ca48
   name: sqrtf
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.94 over 17 insns, direct
+  evidence: toolchain, score 0.94 over 17 insns, direct
 - address: 0x8ca84
   name: __fpclassifyd
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 28 insns, direct
+  evidence: toolchain, score 1.00 over 28 insns, direct
 - address: 0x8cacc
   name: expm1f
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.99 over 161 insns, direct
+  evidence: toolchain, score 0.99 over 161 insns, direct
 - address: 0x8cd1c
   name: __fpclassifyf
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.95 over 21 insns, direct
+  evidence: toolchain, score 0.95 over 21 insns, direct
 - address: 0x8cd6c
   name: __ieee754_sqrt
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.97 over 158 insns, direct
+  evidence: toolchain, score 0.97 over 158 insns, direct
 - address: 0x8cf10
   name: round
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 51 insns, direct
+  evidence: toolchain, score 1.00 over 51 insns, direct
 - address: 0x8cf9c
   name: roundf
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 26 insns, direct
+  evidence: toolchain, score 1.00 over 26 insns, direct
 - address: 0x8cfe4
   name: __ieee754_expf
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.78 over 106 insns, direct
+  evidence: toolchain, score 0.78 over 106 insns, direct
 - address: 0x8d170
   name: __ieee754_powf
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.66 over 386 insns, direct
+  evidence: toolchain, score 0.66 over 386 insns, direct
 - address: 0x8d6f8
   name: scalbnf
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.98 over 58 insns, direct
+  evidence: toolchain, score 0.98 over 58 insns, direct
 - address: 0x8d7cc
   name: __subdf3
   kind: function
@@ -7280,7 +7344,7 @@ symbols:
   name: nrf_fprintf
   kind: function
   class: match
-  evidence: Os_a0, score 0.67 over 12 insns, direct
+  evidence: app, score 0.67 over 12 insns, direct
 - address: 0x8f460
   name: wlog
   aliases:
@@ -10821,83 +10885,84 @@ symbols:
   name: prvDeleteTCB
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 12 insns, direct
+  evidence: app, score 1.00 over 12 insns, direct
 - address: 0x9e34c
-  name: prvInitialiseNewTask.isra.0
+  name: prvInitialiseNewTask.constprop.0
   kind: function
   class: match
-  evidence: Os_a0, score 0.87 over 52 insns, direct
+  evidence: app, score 0.96 over 51 insns, direct
 - address: 0x9e3dc
   name: xTaskCreateStatic
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 22 insns, direct
+  evidence: app, score 1.00 over 22 insns, direct
 - address: 0x9e410
   name: xTaskCreate
   kind: function
   class: match
-  evidence: Os_a0, score 0.83 over 36 insns, direct
+  evidence: app, score 1.00 over 37 insns, direct
 - address: 0x9e46c
-  name: vPortYield
-  aliases:
-  - task_yield
+  name: vTaskDelay
   kind: function
-  class: hand
-  module: freertos
-  evidence: "pends PendSV via ICSR and returns \u2014 taskYIELD, NOT vTaskDelay.\
-    \ Anything calling this address as vTaskDelay(ticks) would silently not delay."
+  class: match
+  evidence: app, score 1.00 over 15 insns, direct
 - address: 0x9e4fa
   name: vListInitialise
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 8 insns, direct
+  evidence: app, score 1.00 over 8 insns, direct
+- address: 0x9e510
+  name: vListInitialiseItem
+  kind: function
+  class: match
+  evidence: app+graph, score 1.00 over 3 insns, propagated from prvInitialiseNewTask.constprop.0
 - address: 0x9e516
   name: vListInsertEnd
   kind: function
   class: match
-  evidence: Os_a0, score 0.82 over 11 insns, direct
+  evidence: app, score 0.82 over 11 insns, direct
 - address: 0x9e52c
   name: vListInsert
   kind: function
   class: match
-  evidence: Os_a0, score 0.91 over 22 insns, direct
+  evidence: app, score 0.91 over 22 insns, direct
 - address: 0x9e55a
   name: uxListRemove
   kind: function
   class: match
-  evidence: O2_a0, score 0.71 over 17 insns, direct
+  evidence: app, score 0.71 over 17 insns, direct
 - address: 0x9e57a
   name: prvIsQueueEmpty
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 8 insns, direct
+  evidence: app, score 1.00 over 8 insns, direct
 - address: 0x9e590
   name: prvCopyDataToQueue
   aliases:
   - queue_push
   kind: function
   class: match
-  evidence: Os_a0+graph, score 0.60 over 50 insns, propagated from prvNotifyQueueSetContainer
+  evidence: app, score 1.00 over 48 insns, direct
 - address: 0x9e5f6
   name: prvNotifyQueueSetContainer
   kind: function
   class: match
-  evidence: Os_a0, score 0.97 over 32 insns, direct
+  evidence: app, score 0.97 over 32 insns, direct
 - address: 0x9e640
   name: prvCopyDataFromQueue
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 19 insns, direct
+  evidence: app, score 1.00 over 19 insns, direct
 - address: 0x9e66c
   name: prvUnlockQueue
   kind: function
   class: match
-  evidence: Os_a0, score 0.89 over 47 insns, direct
+  evidence: app+graph, score 0.62 over 45 insns, propagated from xQueueReceive
 - address: 0x9e6e8
   name: xQueueGenericReset
   kind: function
   class: match
-  evidence: Os_a0, score 0.82 over 38 insns, direct
+  evidence: app, score 1.00 over 37 insns, direct
 - address: 0x9e752
   name: xQueueGenericCreateStatic
   kind: label
@@ -10906,37 +10971,37 @@ symbols:
   name: xQueueCreateMutexStatic
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 18 insns, direct
+  evidence: app, score 1.00 over 18 insns, direct
 - address: 0x9e7ac
   name: xQueueGenericSendFromISR
   kind: function
   class: match
-  evidence: Os_a0, score 0.67 over 46 insns, direct
+  evidence: app, score 0.98 over 48 insns, direct
 - address: 0x9e828
   name: xQueueGiveFromISR
   kind: function
   class: match
-  evidence: Os_a0, score 0.82 over 40 insns, direct
+  evidence: app, score 1.00 over 42 insns, direct
 - address: 0x9e890
   name: xQueueSemaphoreTake
   kind: function
   class: match
-  evidence: Os_a0, score 0.86 over 104 insns, direct
+  evidence: app, score 1.00 over 100 insns, direct
 - address: 0x9e9ac
   name: xQueueReceiveFromISR
   kind: function
   class: match
-  evidence: Os_a0, score 0.74 over 35 insns, direct
+  evidence: app, score 1.00 over 35 insns, direct
 - address: 0x9ea10
-  name: ecg_err_no_sample_queue__4
+  name: uxQueueMessagesWaiting
   kind: function
-  class: helper
-  evidence: only 0x85e68 (ecg_err_no_sample_queue) calls 0x9ea10; 18 bytes
+  class: match
+  evidence: app, score 1.00 over 7 insns, direct
 - address: 0x9ea2e
   name: xQueueIsQueueFullFromISR
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 6 insns, direct
+  evidence: app, score 1.00 over 6 insns, direct
 - address: 0x9ea3a
   name: sd_app_evt_wait
   kind: function
@@ -11232,10 +11297,10 @@ symbols:
   class: helper
   evidence: only 0x63a20 (ppg_dbt_failed_turn_off_ppg_sensor) calls 0xa4a0c; 6 bytes
 - address: 0xa4e3a
-  name: nrf_saadc_event_clear
+  name: nrf_saadc_event_clear.constprop.0
   kind: function
   class: match
-  evidence: Os_a0, score 1.00 over 10 insns, direct
+  evidence: app, score 1.00 over 10 insns, direct
 - address: 0xa4e52
   name: adc_read_one
   kind: label
@@ -11297,42 +11362,42 @@ symbols:
   name: sqrt
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 31 insns, direct
+  evidence: toolchain, score 1.00 over 31 insns, direct
 - address: 0xa7cc6
   name: powf
   kind: function
   class: match
-  evidence: libm_nano-big, score 0.98 over 54 insns, direct
+  evidence: toolchain, score 0.98 over 54 insns, direct
 - address: 0xa7d74
   name: finite
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 8 insns, direct
+  evidence: toolchain, score 1.00 over 8 insns, direct
 - address: 0xa7d8a
   name: fmax
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 25 insns, direct
+  evidence: toolchain, score 1.00 over 25 insns, direct
 - address: 0xa7dde
   name: finitef
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 7 insns, direct
+  evidence: toolchain, score 1.00 over 7 insns, direct
 - address: 0xa7df2
   name: fmaxf
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 18 insns, direct
+  evidence: toolchain, score 1.00 over 18 insns, direct
 - address: 0xa7e2c
   name: fminf
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 18 insns, direct
+  evidence: toolchain, score 1.00 over 18 insns, direct
 - address: 0xa7e66
   name: with_errnof
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 9 insns, direct
+  evidence: toolchain, score 1.00 over 9 insns, direct
 - address: 0xa7e82
   name: xflowf
   kind: function
@@ -11343,12 +11408,12 @@ symbols:
   name: __ieee754_sqrtf
   kind: function
   class: match
-  evidence: libm_nano-big+graph, score 1.00 over 2 insns, propagated from __ieee754_powf
+  evidence: toolchain+graph, score 1.00 over 2 insns, propagated from __ieee754_powf
 - address: 0xa7e9e
   name: fabs
   kind: function
   class: match
-  evidence: libm_nano-big+graph, score 1.00 over 5 insns, propagated from __ieee754_rem_pio2
+  evidence: toolchain+graph, score 1.00 over 5 insns, propagated from __ieee754_rem_pio2
 - address: 0xa7eae
   name: __ieee754_powf__1
   kind: function
@@ -11364,7 +11429,7 @@ symbols:
   name: xflow
   kind: function
   class: match
-  evidence: libm_nano-big, score 1.00 over 17 insns, direct
+  evidence: toolchain, score 1.00 over 17 insns, direct
 - address: 0xa7f12
   name: shell_cmd_calib_test__3
   kind: function

@@ -37,7 +37,8 @@ UMBRELLA = os.path.join(INCLUDE, "withings", "all.h")
 # abi/relink.sh compiles the replacement bodies with; a layout is only the
 # image's layout if the compiler that reads it is the same one.
 GCC = os.path.join(os.environ.get("REF_BUILD", os.path.expanduser("~/ref-build")),
-                   "gcc-arm-none-eabi-9-2020-q2-update", "bin", "arm-none-eabi-gcc")
+                   "tc", "arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi",
+                   "bin", "arm-none-eabi-gcc")
 ARCH = ["-mcpu=cortex-m4", "-mthumb", "-mabi=aapcs", "-mfpu=fpv4-sp-d16",
         "-mfloat-abi=hard", "-fshort-enums", "-std=gnu99"]
 

@@ -453,17 +453,11 @@ def main():
     if args.threshold is None:
         args.threshold = float(meta.get("threshold", 0.90))
     if args.all_variants:
-        # The mbedtls_* variants belong to abi/autonames.py's extlib class, not
-        # to the kernel/driver boundary this file maps. The dsp*_ and kissfft_
-        # variants are a candidate hunt for the VFP blocks in SENSORS_SYNC and
-        # ECG that came back empty (CMSIS-DSP's only hit was one 17-instruction
-        # rfft init body that eight of its own sizes share, KissFFT none), so
-        # they are built and kept runnable by name but left out of the scan,
-        # where their near-identical short bodies are only noise.
-        skip = ("mbedtls_", "dsp1_", "dsp5_", "kissfft_")
+        # Whatever is in ~/ref-build/build with a ref.elf. abi/refbuild.sh
+        # builds two, so this only means anything to somebody who has put a
+        # candidate of their own next to them.
         args.variants = ",".join(sorted(d for d in os.listdir(REF_ROOT)
-                                        if not d.startswith(skip)
-                                        and os.path.exists(os.path.join(REF_ROOT, d, "ref.elf"))))
+                                        if os.path.exists(os.path.join(REF_ROOT, d, "ref.elf"))))
     elif not args.variants:
         if "variants" not in meta:
             sys.exit("%s records no variant set; pass --variants or --all-variants"
@@ -806,7 +800,7 @@ def write_matches(path, accepted, best, streams, protos, threshold, acc,
         "  image: appl.bin",
         "  app_base: 0x%x" % APP_BASE,
         "  sdk: nRF5_SDK_17.1.0_ddde560",
-        "  toolchain: gcc-arm-none-eabi-9-2020-q2-update",
+        "  toolchain: arm-gnu-toolchain-13.2.Rel1",
         "  saadc_toolchain: arm-gnu-toolchain-13.2.Rel1, nrfx 2.1.0 (abi/refbuild.sh)",
         "  libm_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120)",
         "  measured: %s" % datetime.date.today().isoformat(),
@@ -824,14 +818,15 @@ def write_matches(path, accepted, best, streams, protos, threshold, acc,
         "  # the alignment score alone and are not settled.",
         "  verdicts: {%s}" % ", ".join("%s: %d" % kv for kv in sorted(verdicts.items())),
         "  ties: %d" % len(ties),
-        "  # Candidates tried against the hard-float blocks in SENSORS_SYNC and",
-        "  # ECG and rejected on bodies, not on constant tables: CMSIS-DSP 1.9.0",
-        "  # (CMSIS 5.7.0), 1.10.0 (CMSIS 5.9.0) and 1.14.4 at -Os and -O2, whose",
-        "  # only hit was one 17-instruction arm_rfft_*_fast_init_f64 body that",
-        "  # eight of its own transform sizes share, and KissFFT 131.1.0, which",
-        "  # reached no candidate position at all. The libm that does match is",
-        "  # newlib 4.3.0.20230120 built by abi/refbuild.sh with the image's own",
-        "  # flags, and none of its bodies lands in either block.",
+        "  # Two recipes, because the image has two builds in it, and the hunt",
+        "  # that found them is over: FreeRTOS and nrfx across four kernel",
+        "  # versions, two nrfx trees, GCC 9/12.3/13.2/13.3/14.2, -Os/-O2/-O3 and",
+        "  # three assert flavours; newlib across reent-small and single-thread;",
+        "  # CMSIS-DSP 1.9.0/1.10.0/1.14.4 and KissFFT 131.1.0 against the",
+        "  # hard-float blocks in SENSORS_SYNC and ECG, which reached one",
+        "  # 17-instruction body eight of its own transform sizes share and",
+        "  # nothing else. abi/refbuild.sh builds only the two that won; git",
+        "  # history has the rest.",
         "  # accuracy against the addresses abi/symbols.yaml already establishes by hand",
         "  known_set: {correct: %d, wrong: %d, missing: %d, precision: %.2f, recall: %.2f}"
         % (acc["ok"], acc["wrong"], acc["missing"], acc["precision"], acc["recall"]),

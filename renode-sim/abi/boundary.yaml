@@ -8,8 +8,8 @@
 # Sites were found twice and agreed exactly: a raw scan of appl.bin for Thumb
 # branch encodings whose target lands in a library range, and the linear
 # disassembly abi/match.py already produces. 647 app->library `bl` sites and 96
-# `b.w` tail calls reach 62 distinct library entry points; 26 library->app sites
-# reach 14. The tail calls are a boundary crossing exactly like the calls, and
+# `b.w` tail calls reach 62 distinct library entry points; 28 library->app sites
+# reach 16, two of them the sleep hooks the tickless port calls by macro. The tail calls are a boundary crossing exactly like the calls, and
 # missing them is what wedged the first relinked image: three of them are
 # vPortExitCritical, so the blob decremented its own dead uxCriticalNesting
 # while the source kernel's climbed, basepri never dropped and PendSV was never
@@ -19,7 +19,7 @@ meta:
   image: appl.bin
   app_base: 0x27000
   app_to_lib: {sites: 647, tail_sites: 96, targets: 62}
-  lib_to_app: {sites: 26, targets: 14}
+  lib_to_app: {sites: 28, targets: 16}
 
 # Config corrections forced by the image's own struct layouts. refbuild.sh's
 # FreeRTOSConfig.h is wrong on three knobs; every queue.c body's match score
@@ -389,13 +389,19 @@ app_to_lib:
   - addr: 0x9e46c
     sites: 77
     tail_sites: 6
-    symbol: vPortYield
+    symbol: vTaskDelay
     confidence: high
     how: >
-      symbols.txt: pends PendSV via ICSR. NOT vTaskDelay -- DEVELOPMENT.md
-      records the trap that calling it with a tick count returns immediately.
-      The reference's portYIELD is inlined with __SEV(); the image's is out of
-      line without it, which is why it never matched by body.
+      The body reproduces vTaskDelay byte for byte (abi/matches.yaml, masked,
+      15 instructions) and its three calls land on vTaskSuspendAll@0x73084,
+      prvAddCurrentTaskToDelayedList@0x72e40 and xTaskResumeAll@0x731dc. It was
+      read as an out-of-line portYIELD because its zero-ticks arm is nothing but
+      an inlined portYIELD -- `cbnz r0` over the delay, then ICSR PENDSVSET, DSB,
+      ISB, return -- and because the reference's portYIELD carried an __SEV()
+      the image does not have, which is a difference in the port macro
+      (abi/patches/freertos/port-primitives.patch) and not a second function.
+      The relink bound all 77 sites to a glue stub that pends PendSV and
+      returns, so every vTaskDelay in the firmware returned immediately.
 
   # nrfx SAADC. The driver is nrfx 2.1.0 with four source changes, recovered as
   # abi/patches/nrfx/saadc-withings.patch and built into the library by
@@ -525,6 +531,23 @@ lib_to_app:
     symbol: null
     confidence: "low"
     how: "app callback out of the 0x81220 SDK-library span"
+  - addr: 0x30a64
+    sites: 1
+    symbol: "withings_pre_sleep"
+    confidence: "high"
+    how: >
+      configPRE_SLEEP_PROCESSING. The only call is from
+      vPortSuppressTicksAndSleep@0x73f5e, immediately after the compare match is
+      armed and the DSB, and it takes no argument: the macro ignores the
+      modifiable idle time the port hands it, which is why the sleep decision at
+      0x73f62 tests the caller's original value.
+  - addr: 0x30ad8
+    sites: 1
+    symbol: "withings_post_sleep"
+    confidence: "high"
+    how: >
+      configPOST_SLEEP_PROCESSING; the counterpart of 0x30a64, called at
+      0x73f82 on both paths out of the wait, before the tick is re-enabled.
   - addr: 0x933c6
     sites: 1
     symbol: "withings_irq_priority_set"

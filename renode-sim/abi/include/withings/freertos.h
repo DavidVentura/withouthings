@@ -21,7 +21,6 @@ extern int xQueueGenericSend(void *xQueue, const void *pvItemToQueue, unsigned i
 /* pends PendSV via ICSR and returns — taskYIELD, NOT vTaskDelay. Anything
    calling this address as vTaskDelay(ticks) would silently not delay.
    */
-extern void vPortYield(void);
 /* inferred from the tickless-idle catch-up call site at 0x73f82 */
 extern void vTaskStepTick(unsigned int xTicksToJump);
 extern int xTaskIncrementTick(void);

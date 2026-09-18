@@ -79,6 +79,26 @@ def dump(rows, path=None):
 HAND = "hand"
 
 
+# Class precedence among the derived classes. Where two derivations reach the
+# same address the stronger evidence keeps it: a byte verdict against a
+# reference build (match) over a name read out of an archive, and either over a
+# nickname derived from the call graph (helper). Hand entries are not on this
+# list and are never displaced; overriding one is what `corrects` and
+# `supersedes` are for.
+# `prose` is last: it names an address without saying what is there, so it is
+# something to compare a derivation against and not something that stops one.
+RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "string",
+        "wppcmd", "wppobj", "shell", "logtag", "logcb", "bleevt", "logline",
+        "helper", "prose"]
+
+
+def outranks(klass, other):
+    """Is `klass` stronger evidence for an address than `other`?"""
+    if klass not in RANK or other not in RANK:
+        return False
+    return RANK.index(klass) < RANK.index(other)
+
+
 class Symbol(object):
     def __init__(self, row):
         self.address = row["address"]
@@ -159,6 +179,7 @@ class Map(object):
                        for s in self.symbols if s.klass in owns and s.aliases)
 
         rows = [s.row for s in kept]
+        displaced = set()
         taken, named = {}, {}
         for record in records:
             address, name = record["address"] & ~1, record["name"]
@@ -178,8 +199,13 @@ class Map(object):
             if supersedes.get(name) == address:
                 continue
             if address in by_address:
-                raise Refusal("0x%x is %s here and %s in the map"
-                              % (address, name, by_address[address].name))
+                held = by_address[address]
+                if outranks(held.klass, record["class"]):
+                    continue
+                if not outranks(record["class"], held.klass):
+                    raise Refusal("0x%x is %s here and %s in the map"
+                                  % (address, name, held.name))
+                displaced.add(id(held.row))
             if address in taken:
                 raise Refusal("0x%x is %s and %s in the same run"
                               % (address, name, taken[address]))
@@ -192,11 +218,12 @@ class Map(object):
             if second:
                 row["aliases"] = second
             rows.append(row)
+        rows = [row for row in rows if id(row) not in displaced]
         # The map refuses a duplicate address or name on load, so building one
         # is what says the file about to be written can be read back.
         Map([Symbol(row) for row in rows])
         dump(rows, path)
-        return len(rows) - len(kept)
+        return len(rows) - len(kept) + len(displaced)
 
     # An address a hand entry declares it corrects is not a function start: the
     # body match anchored there and the hand entry says where the body really
