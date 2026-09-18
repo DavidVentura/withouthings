@@ -26,12 +26,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", default=os.path.join(ROOT, "ghidra-project"))
     ap.add_argument("--words", default=os.path.join(ABI, "out", "ghidra", "words.json"))
-    ap.add_argument("--install", default=None)
+    ap.add_argument("--install", default=None,
+                    help="Ghidra install dir; defaults to the release fetch.sh put under ROOT")
     args = ap.parse_args()
     words = json.load(open(args.words))
     rows = words["words"] if "words" in words else words
 
-    pyghidra.start(install_dir=args.install)
+    install = args.install
+    if install is None:
+        import glob
+        found = sorted(glob.glob(os.path.join(ROOT, "ghidra", "ghidra_*")))
+        if not found:
+            raise SystemExit("no Ghidra under %s; run abi/ghidra/fetch.sh" % os.path.join(ROOT, "ghidra"))
+        install = found[-1]
+    pyghidra.start(install_dir=install)
     from ghidra.program.model.listing import CodeUnit
     counts = {"review": 0, "pointer": 0}
     project = pyghidra.open_project(args.project, "hwa10", create=False)
