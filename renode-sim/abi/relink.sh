@@ -89,7 +89,11 @@ for pattern in ${SPILL:-}; do SPILL_ARGS="$SPILL_ARGS --spill $pattern"; done
 # libm is a group of its own and an archive of its own: taking the math bodies
 # from the source build pulls libm.a's code and tables into the library region,
 # so REPLACE=newlib is libc plus libgcc and REPLACE=newlib,libm is both.
-NEWLIB=${NEWLIB:-newlib-nano-big}
+# The build replacements.yaml's derive groups are measured against, and so the
+# archive the link takes the bodies from: abi/patches/newlib/nano-io-long-long.patch
+# is the option that makes the nano printf and scanf honour long long, which is
+# how the image was configured.
+NEWLIB=${NEWLIB:-newlib-nano-ll}
 TC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 case ",${REPLACE:-}," in *,newlib,*)
     python3 libc_check.py --build "$NEWLIB" --class libc --emit "$OUT/libc-bodies.yaml"

@@ -120,7 +120,13 @@ groups:
     sources: [replace/newlib_glue.c]
     derive:
       bodies: ../out/relink/libc-bodies.yaml
-      build: newlib-nano-big
+      # The image's own newlib was configured with long long in the nano printf
+      # and scanf, which no release of the toolchain ships: abi/patches/newlib/
+      # nano-io-long-long.patch is that option reaching the nano vfprintf and
+      # vfscanf, and `newlib-nano-ll` is the build that carries it. It is also
+      # the archive abi/relink.sh links, so the measurement and the link are the
+      # same library.
+      build: newlib-nano-ll
       class: libc
       reproduces: [exact, masked]
       why: >
@@ -278,7 +284,10 @@ groups:
       is therefore the C library and libgcc, and `REPLACE=newlib,libm` is both.
     derive:
       bodies: ../out/relink/libm-bodies.yaml
-      build: newlib-nano-big
+      # The same build as the `newlib` group: libm.a comes out of the same
+      # configure, and a body measured against one archive and linked from
+      # another is measured against nothing.
+      build: newlib-nano-ll
       class: libm
       reproduces: [exact, masked]
       why: >
