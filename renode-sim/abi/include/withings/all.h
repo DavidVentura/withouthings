@@ -15,6 +15,7 @@
 #include "withings/ecg.h"
 #include "withings/flash.h"
 #include "withings/freertos.h"
+#include "withings/hands.h"
 #include "withings/hr.h"
 #include "withings/hw.h"
 #include "withings/misc.h"
