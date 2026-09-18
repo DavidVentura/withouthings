@@ -156,11 +156,20 @@ extern void step_motor_save_cal_ph(void);
    and logs "[UI] move_hands feature %sabled". */
 extern void ui_move_hands_feature_init(unsigned int model_code);
 
+/* The nrfx sequence descriptor step_motor_play_step passes as SEQ1. */
+struct nrf_pwm_sequence {
+    const unsigned short *values;
+    unsigned int length;
+    unsigned int repeats;
+    unsigned int end_delay;
+};
+
 /* globals */
 extern struct step_motor_hw step_motor_hw_table[STEP_MOTOR_COUNT];
 extern struct step_motor *step_motors[STEP_MOTOR_COUNT];
 extern struct step_motor_position step_motor_positions[STEP_MOTOR_COUNT];
 /* [direction][phase] -> one waveform, filled in at init. */
 extern const struct step_motor_waveform *step_motor_step_waveforms[2][2];
+extern const struct nrf_pwm_sequence step_motor_idle_sequence;
 
 #endif

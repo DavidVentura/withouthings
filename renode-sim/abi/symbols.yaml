@@ -143,6 +143,44 @@ symbols:
     master-request ones. In address order the commands are SYNC_REQUEST 321, LOCAL_EVENT_NOTIFY
     2459, MEASURE_STOP 2420, MEASURE_START 2419, NOTIFICATION_GET 2404, GLYPH_GET
     2403, WORKOUT_STOP 318 and WORKOUT_START 317.
+- address: 0x27c94
+  name: post_update_hooks
+  kind: table
+  class: hand
+  module: boot
+  evidence: 'eleven eight-byte rows between the pair (0x27c94, 0x27cec) that both
+    readers hold in their own pool: 0x56b80 calls +0 of every row it finds non-null
+    and 0x56ba8 calls +4, both stepping by eight and both under product_get_erase_flag,
+    and 0x2e1d8 calls the first at 0x2e3aa ahead of the module inits and the second
+    at 0x2e3e8 behind them. cfs_post_update_check sits in the first column with
+    cfs_post_update_mark beside it, which names the two; the other rows are
+    flash_cache, glyph_cache and workout_cache post_update_check, wftl_post_update,
+    ecg_post_update, spo2_post_update and update_stats_post_update. The table
+    starts where the six-row table at 0x27c04 stops.'
+- address: 0x27cec
+  name: debug_dump_ram_items
+  kind: table
+  class: hand
+  module: dblib
+  evidence: 'six twelve-byte rows between the pair (0x27cec, 0x27d34) debug_dump_dblib_ram__2
+    loads into r8 and r9 and walks with `adds r3, #0xc`. The first word is two
+    u16 fields and not a pointer: the walk compares the halfword at +0 against
+    the id at +6 of its cursor and takes the record length from the halfword at
+    +2, and three of the six first words (0x2010c, 0x10013a, 0x4013c) are outside
+    the image altogether. The ids are 313, 268, 314, 330, 316 and 355, the +4
+    column is called with the destination four bytes past the header the walk
+    writes out of +0, and +8 is named by notification_enabled_get_num_elem
+    standing beside notification_enabled_fetch in the same row.'
+- address: 0x27d34
+  name: factory_reset_hooks
+  kind: global
+  class: hand
+  module: boot
+  evidence: 'twelve function pointers between the pair (0x27d34, 0x27d64) whose
+    reader 0x4bdd0 holds in its pool and walks with `ldr r3, [r5], #4`, calling
+    each non-null one with no argument. cfs_factory_reset, glyph_cache_factory_reset
+    and workout_cache_factory_reset are three of them, and the array stops where
+    the four sixteen-byte rows at 0x27d64 begin.'
 - address: 0x27da0
   name: prvIdleTask
   kind: function
@@ -2668,6 +2706,14 @@ symbols:
   class: shell
   evidence: 'shell_cmd_table row 0x27220: command ''factory_state'', --help slot
     (+8)'
+- address: 0x4bdd0
+  name: factory_reset_perform
+  kind: function
+  class: hand
+  module: boot
+  evidence: the only reader of factory_reset_hooks; called by WPP_CMD_FACTORY_RESET
+    (0x4be58), shell_cmd_factory_reset (0x9b9da) and 0x4ec52, and it tail-calls
+    the reboot at 0x36cdc when its argument is 2
 - address: 0x4be38
   name: WPP_CMD_FACTORY_RESET
   kind: function
@@ -4407,6 +4453,20 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x27328: command ''pls'', run slot (+4)'
+- address: 0x56b80
+  name: post_update_run_checks
+  kind: function
+  class: hand
+  module: boot
+  evidence: walks post_update_hooks calling +0 of each row, under product_get_erase_flag;
+    0x2e1d8 calls it at 0x2e3aa, before the module inits
+- address: 0x56ba8
+  name: post_update_run_marks
+  kind: function
+  class: hand
+  module: boot
+  evidence: the same walk over post_update_hooks calling +4 of each row; 0x2e1d8
+    calls it at 0x2e3e8, after the module inits
 - address: 0x56d24
   name: pwr_negative_counter
   kind: function
