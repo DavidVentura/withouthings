@@ -178,3 +178,22 @@ hooks:
     why: >
       The sd_ble_gatts_hvx thunk, where the WPP pipe takes the notification and
       returns success without running the SVC.
+
+# RAM cells the scripts read, rather than code they patch or hook. A cell holds
+# nothing before the run, so there are no bytes to check against; what stands in
+# for the byte check is the name. The source kernel a relink links defines
+# xTickCount and the linked ELF says where it put it; the stock image has no
+# symbol table, so `stock` is the address the analysis read off it and
+# abi/blobify.py's alias for that address is what a relink that keeps the blob's
+# own kernel answers with. Each entry becomes a `$name` monitor variable in
+# out/rig/hooks.resc.
+variables:
+  - name: xTickCount
+    symbol: xTickCount
+    stock: 0x20021920
+    why: >
+      FreeRTOS's tick counter, which display-run.resc reports at the end of a
+      run. In the image it is a queue.c static at 0x20021920, the pool word
+      xTaskIncrementTick loads at 0x731b4; in a relink against the source
+      kernel it is wherever the link put the kernel's own, so a number read
+      off the stock image reports whatever RAM happens to be at it.

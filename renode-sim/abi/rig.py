@@ -136,6 +136,32 @@ def resolve(entry, symbols, names, image, meta):
     return address
 
 
+def resolve_variable(entry, symbols):
+    """Where one sim.yaml RAM cell is in the run about to start.
+
+    A RAM cell is not in the image, so there are no bytes to check and no
+    partition item to key on; the two answers are which kernel the run carries.
+    A relink against the source kernel brings the cell's own definition with it
+    and the linked ELF is the only thing that knows where the link put it. A
+    stock run, and a relink that replaces something else and keeps the blob's
+    kernel, has the image's cell where the analysis found it, which is `stock`.
+    """
+    at = symbols.get(entry["symbol"], set())
+    if len(at) > 1:
+        sys.exit("%s: the symbol table defines %s at %s"
+                 % (entry["name"], entry["symbol"],
+                    ", ".join("0x%x" % v for v in sorted(at))))
+    if at:
+        address, how = next(iter(at)), "the source kernel's own, from the linked ELF"
+    else:
+        address, how = (int(str(entry["stock"]), 0),
+                        "the image's own; the link brought no %s" % entry["symbol"])
+    if not 0x20000000 <= address < 0x20040000:
+        sys.exit("%s resolves to 0x%x, which is not SRAM"
+                 % (entry["name"], address))
+    return address, how
+
+
 def commented(why, indent):
     return "".join("%s# %s\n" % (indent, line) for line in
                    textwrap.wrap(" ".join(str(why).split()), 78 - len(indent)))
@@ -188,6 +214,11 @@ def main():
             resolved += 1
             fh.write("\n" + commented(entry["why"], ""))
             fh.write("$%s=0x%x\n" % (entry["name"], address))
+        for entry in spec["variables"]:
+            address, how = resolve_variable(entry, symbols)
+            resolved += 1
+            fh.write("\n" + commented(entry["why"], ""))
+            fh.write("# %s\n$%s=0x%x\n" % (how, entry["name"], address))
 
     print("%s: patches.resc and hooks.resc, %d addresses resolved against %s"
           % (args.out, resolved, args.symbols))

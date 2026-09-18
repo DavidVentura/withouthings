@@ -9,7 +9,7 @@ emulation SetAdvanceImmediately true
 emulation RunFor "60.0"
 echo "=== display-run done ==="
 echo "protected region words changed:"; sysbus.nvmc VerifyProtectedRegion
-echo "tick:"; sysbus ReadDoubleWord 0x20021920
+echo "tick:"; sysbus ReadDoubleWord $xTickCount
 echo "pc:"; cpu PC
 sysbus.spi3 DumpStream $ORIGIN/out/oled_stream.txt
 sysbus.spi3 DumpPixels $ORIGIN/out/oled_pixels.bin
