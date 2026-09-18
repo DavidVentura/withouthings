@@ -1468,6 +1468,205 @@ functions:
       how many entries are stored under one id: a cursor opened with length 0 and
       drained with a null buffer, counting the iterations.
 
+  # ---- roles read off the bodies of the modules that carry no log tag ----------
+  # Only where the body leaves one reading. SENSORS_SYNC, ECG and RRE_FONTS log
+  # under a single tag and carry no __func__, so a name here comes from what the
+  # function does to the structures it touches, not from a string.
+  - name: sensors_sync_ring_push
+    address: 0x59718
+    ret: i32
+    args: [[u32, sensor], [const void *, sample], [u32, arg2], [u32, arg3]]
+    notes: >
+      one sample into one of the two sensor rings. The body indexes a two-entry
+      table of ring descriptors by the first argument and refuses anything above
+      one (0x5971e), memcpys the sample into slot (write index * 0x4c) of the
+      ring's buffer (0x597a0), advances the write index modulo 128 (0x597ac) and
+      increments the fill count; when the reader's index has caught up it logs
+      an overrun and drops the oldest slot instead. A ring with a write index, a
+      wrap and a fill count is a push and nothing else.
+  - name: sensors_sync_ref_acquire
+    address: 0x597f8
+    supersedes: sensors_sync_unsupported_sensor_type
+    ret: i32
+    args: [[u32, sensor]]
+    notes: >
+      increments the byte at +8 of the same ring descriptor under the same lock
+      sensors_sync_ref_release decrements it under, having refused a sensor index
+      above one. The logline name it takes over is the panic path for a bad index.
+  - name: sensors_sync_ref_release
+    address: 0x5982c
+    ret: i32
+    args: [[u32, sensor]]
+    notes: >
+      decrements the byte at +8 sensors_sync_ref_acquire increments, refusing at
+      zero with an error rather than wrapping (0x59840); an increment and a
+      decrement over one byte with an underflow refusal is a reference count.
+      Its caller outside the module is adxl367_continuous_measure_mode.
+  - name: ecg_acquisition_start
+    address: 0x4a4d8
+    ret: i32
+    args: [[const void *, cfg]]
+    notes: >
+      takes the ECG mutex at +0x10c, moves the state byte to 2, copies the nine
+      words of the caller's configuration into the module's own globals
+      (0x4a534..0x4a548), requests the high-frequency clock through the
+      SoftDevice (svc 66 at 0x4a558) and posts state 1; its callers outside the
+      module are the shell's ecg command and the WPP measure-start helper.
+  - name: ecg_acquisition_stopped
+    address: 0x49c74
+    ret: void
+    notes: >
+      the other half: releases the high-frequency clock (svc 67 at 0x49cba),
+      clears the handle at +0x10 the start set and posts state 0. It is the only
+      hfclk release in the module and pairs with the one request.
+  - name: ecg_task_stop
+    address: 0x4a5e8
+    ret: i32
+    notes: >
+      creates a one-slot semaphore, posts state 6 to the ECG task, blocks on that
+      semaphore until the task acknowledges, then deletes it and drops the mutex;
+      its caller outside the module is WPP_CMD_MEASURE_STOP.
+  - name: rre_font_draw_glyph
+    address: 0x34df0
+    supersedes: rre_fonts_unsupported_font_type
+    ret: u32
+    args: [[i32, x], [i32, y], [i32, code], [i32, x_offset]]
+    notes: >
+      the whole of RRE_FONTS. The glyph is a run of big-endian-free 16-bit words
+      taken from the font's data block between offset_table[code - first] and
+      offset_table[code - first + 1] (0x34e5c), and each word is one filled
+      rectangle: bits 0..3 are the x offset, bits 4..7 the y offset, bits 8..11
+      the width minus one and bits 12..15 the height minus one (0x34e88..0x34ea8),
+      clipped against the current window and handed to the blit callback as
+      (x, y, w, h, colour). The switch on the font descriptor's first byte has
+      seven arms, which is what the "unsupported font type" line it took its
+      derived name from guards.
+  - name: rre_font_glyph_width
+    address: 0x34a80
+    ret: u32
+    args: [[i32, code]]
+    notes: >
+      the pixel width of one glyph and nothing else: it reads the same descriptor
+      rre_font_draw_glyph does, returns the fixed advance at +6 (divided by three
+      for the proportional arms) or walks the same offset table to measure the
+      glyph, and calls nothing. rre_font_draw_glyph calls it once before it draws.
+  # ---- WPP parsers the object walk reaches by a direct call --------------------
+  # A handler that inlines the TLV walk calls the parser itself, so the callback
+  # register autonames.py's wppobj class reads is never written; the type is the
+  # literal the inlined walk compares the TLV header against on the branch that
+  # reaches the call, and every one of these agrees with the crate field for field.
+  - name: wpp_obj_ActivitySubcategory_parse
+    address: 0x4fc34
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_ActivitySubcategory *, out]]
+    notes: >
+      the object walk inlined into 0x6a864 (WPP_CMD_WORKOUT_START_0x6a864), 0x6a9dc
+      (WPP_CMD_WORKOUT_STOP_0x6a9dc) compares the TLV header's type against 2409 before
+      calling it, and its 1 field read agree with wpp/src/objects.rs's
+      ActivitySubcategory parse.
+  - name: wpp_obj_CalibrationType_parse
+    address: 0x4f7e4
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_CalibrationType *, out]]
+    notes: >
+      the object walk inlined into 0x94b52 (WPP_CMD_CALIBRATION_GET), 0x94bba
+      (WPP_CMD_CALIBRATION_SET) compares the TLV header's type against 2351 before
+      calling it, and its 1 field read agree with wpp/src/objects.rs's CalibrationType
+      parse.
+  - name: wpp_obj_EndTime_parse
+    address: 0x4fda4
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_EndTime *, out]]
+    notes: >
+      the object walk inlined into 0x3d088 (WPP_CMD_SET_MULTI_ALARM), 0x6a9dc
+      (WPP_CMD_WORKOUT_STOP_0x6a9dc) compares the TLV header's type against 2419 before
+      calling it, and its 1 field read agree with wpp/src/objects.rs's EndTime parse.
+  - name: wpp_obj_Id_parse
+    address: 0x4f24c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_Id *, out]]
+    notes: >
+      the object walk inlined into 0x4c1a4 (WPP_CMD_FEATURE_TAGS_SET_DEPRECATED_V2),
+      0x5eaac (WPP_CMD_THRESHOLDS_SET) compares the TLV header's type against 325 before
+      calling it, and its 1 field read agree with wpp/src/objects.rs's Id parse.
+  - name: wpp_obj_ImageData_parse
+    address: 0x4fb0c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_ImageData *, out]]
+    notes: >
+      the object walk inlined into 0x560c8 (WPP_CMD_GLYPH_GET), 0x6b224
+      (WPP_CMD_WORKOUT_SCREEN_SET), 0x6b6d8 (WPP_CMD_CUSTO_SCREEN_SET) compares the TLV
+      header's type against 2398 before calling it, and its 1 field read agree with
+      wpp/src/objects.rs's ImageData parse.
+  - name: wpp_obj_ImageMetadata_parse
+    address: 0x4facc
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_ImageMetadata *, out]]
+    notes: >
+      the object walk inlined into 0x6b224 (WPP_CMD_WORKOUT_SCREEN_SET), 0x6b6d8
+      (WPP_CMD_CUSTO_SCREEN_SET) compares the TLV header's type against 2397 before
+      calling it, and its 3 field reads agree with wpp/src/objects.rs's ImageMetadata
+      parse.
+  - name: wpp_obj_MeasureCategory_parse
+    address: 0x4feac
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_MeasureCategory *, out]]
+    notes: >
+      the object walk inlined into 0x54238 (WPP_CMD_MEASURE_START_0x54238), 0x54380
+      (WPP_CMD_MEASURE_STOP_0x54380), 0x54418 (WPP_CMD_MEASURE_START_0x54418) compares
+      the TLV header's type against 2427 before calling it, and its 1 field read agree
+      with wpp/src/objects.rs's MeasureCategory parse.
+  - name: wpp_obj_MeasureLiveAppStatus_parse
+    address: 0x4ffdc
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_MeasureLiveAppStatus *, out]]
+    notes: >
+      the object walk inlined into 0x54238 (WPP_CMD_MEASURE_START_0x54238), 0x54418
+      (WPP_CMD_MEASURE_START_0x54418) compares the TLV header's type against 2463 before
+      calling it, and its 1 field read agree with wpp/src/objects.rs's
+      MeasureLiveAppStatus parse.
+  - name: wpp_obj_NotificationAppDisplayInfo_parse
+    address: 0x4fbc4
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_NotificationAppDisplayInfo *, out]]
+    notes: >
+      the object walk inlined into 0x55b8c (NOTIFICATION_APP_ENABLED_SET) compares the
+      TLV header's type against 2405 before calling it, and its 3 field reads agree with
+      wpp/src/objects.rs's NotificationAppDisplayInfo parse.
+  - name: wpp_obj_NotificationAppId_parse
+    address: 0x4fb94
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_NotificationAppId *, out]]
+    notes: >
+      the object walk inlined into 0x55b8c (NOTIFICATION_APP_ENABLED_SET) compares the
+      TLV header's type against 2404 before calling it, and its 1 field read agree with
+      wpp/src/objects.rs's NotificationAppId parse.
+  - name: wpp_obj_StartTime_parse
+    address: 0x4fd78
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_StartTime *, out]]
+    notes: >
+      the object walk inlined into 0x3d088 (WPP_CMD_SET_MULTI_ALARM), 0x6a864
+      (WPP_CMD_WORKOUT_START_0x6a864), 0x6a9dc (WPP_CMD_WORKOUT_STOP_0x6a9dc) compares
+      the TLV header's type against 2418 before calling it, and its 1 field read agree
+      with wpp/src/objects.rs's StartTime parse.
+  - name: wpp_obj_StoredSignalMeta_parse
+    address: 0x4f1f4
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_StoredSignalMeta *, out]]
+    notes: >
+      the object walk inlined into 0x6e21c (WPP_CMD_STORED_MEASURE_SIGNAL_GET), 0x6e3e8
+      (WPP_CMD_STORED_MEASURE_SIGNAL_DEL) compares the TLV header's type against 323
+      before calling it, and its 6 field reads agree with wpp/src/objects.rs's
+      StoredSignalMeta parse.
+  - name: wpp_obj_WorkoutGpsStatus_parse
+    address: 0x4f19c
+    ret: i32
+    args: [[void **, cursor], [u16, len], [struct wpp_WorkoutGpsStatus *, out]]
+    notes: >
+      the object walk inlined into 0x6a730 (WPP_CMD_WORKOUT_GPS_STATUS) compares the TLV
+      header's type against 321 before calling it, and its 1 field read agree with
+      wpp/src/objects.rs's WorkoutGpsStatus parse.
   # ---- WPP reply sizers --------------------------------------------------------
   # abi/protocol.py --emit-sizers-yaml: the stub the send path is handed in r2 at
   # the same call as the type's encoder in r3. Declaring the pair lets gen.py emit
@@ -3159,6 +3358,31 @@ structs:
     notes: >
       WPP object type 2523 (VasistasDbt), 9 bytes; encoder 0x9a878 (+0x0@0x9a894 +0x1@0x9a89c +0x2@0x9a8a4 +0x3@0x9a8ac +0x4@0x9a8b4 +0x5@0x9a8bc +0x6@0x9a8c4 +0x7@0x9a8cc +0x8@0x9a8d8).
 
+  # ---- WPP parsers the object walk reaches by a direct call --------------------
+  # A handler that inlines the TLV walk calls the parser itself, so the callback
+  # register autonames.py's wppobj class reads is never written; the type is the
+  # literal the inlined walk compares the TLV header against on the branch that
+  # reaches the call, and every one of these agrees with the crate field for field.
+  - name: wpp_CalibrationType
+    fields: [[u8, type]]
+    notes: >
+      WPP object type 2351 (CalibrationType), 1 bytes; parser 0x4f7e4 (+0x0@0x4f7ec).
+  - name: wpp_ImageData
+    fields: [["u8[0x41]", data]]
+    notes: >
+      WPP object type 2398 (ImageData), 65 bytes; parser 0x4fb0c (+0x0@0x4fb14).
+  - name: wpp_MeasureLiveAppStatus
+    fields: [[u8, app_live_screen_displayed]]
+    notes: >
+      WPP object type 2463 (MeasureLiveAppStatus), 1 bytes; parser 0x4ffdc (+0x0@0x4ffe4).
+  - name: wpp_NotificationAppDisplayInfo
+    fields: [[u8, mode], [u8, display], ["u8[0x41]", fields_order]]
+    notes: >
+      WPP object type 2405 (NotificationAppDisplayInfo), 67 bytes; parser 0x4fbc4 (+0x0@0x4fbd0, +0x1@0x4fbd8, +0x2@0x4fbe0).
+  - name: wpp_WorkoutGpsStatus
+    fields: [[u16, status]]
+    notes: >
+      WPP object type 321 (WorkoutGpsStatus), 2 bytes; parser 0x4f19c (+0x0@0x4f1a4).
   # ---- dblib entry layouts ----------------------------------------------------
   # Recovered from the code that reads each entry back; one struct per information
   # element whose reader determines a layout. The enum of ids is under enums:.

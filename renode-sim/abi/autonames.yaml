@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 4, helper: 421, libc: 98, logcb: 3, logline: 336, logtag: 8, module_functions: 1799, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {bleevt: 28, extlib: 4, helper: 422, libc: 98, logcb: 3, logline: 333, logtag: 8, module_functions: 1797, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 200, disagree: 14}
 
 functions:
@@ -363,11 +363,6 @@ functions:
     address: 0x34764
     class: shell
     evidence: "shell_cmd_table row 0x274a8: command 'xtal32m', run slot (+4)"
-  - name: rre_fonts_unsupported_font_type
-    address: 0x34df0
-    class: logline
-    evidence: "the only line 0x34df0 logs, wlog('[RRE FONTS] Unsupported font type (%i)') at 0x35ae8"
-    module: RRE_FONTS
   - name: invalid_irq
     address: 0x36a04
     class: logline
@@ -2467,11 +2462,6 @@ functions:
     class: logline
     evidence: "the only line 0x59584 logs, wlog('[SENSORS_SYNC][%s] Nothing to pop') at 0x596ce"
     module: SENSORS_SYNC
-  - name: sensors_sync_unsupported_sensor_type
-    address: 0x597f8
-    class: logline
-    evidence: "the only line 0x597f8 logs, wlog('[SENSORS_SYNC] Unsupported sensor_type %d') at 0x59810"
-    module: SENSORS_SYNC
   - name: WPP_CMD_SHORTCUT_SET__1
     address: 0x59914
     class: helper
@@ -3190,11 +3180,6 @@ functions:
     class: helper
     evidence: "only 0x64cf8 (FW_AVAILABLE__1) calls 0x64a0c; 38 bytes"
     module: CHUNKED_UPDATE
-  - name: chunked_update_not_aligned
-    address: 0x64bc8
-    class: logline
-    evidence: "the only line 0x64bc8 logs, wlog('[CHUNKED_UPDATE] not aligned') at 0x64bf2"
-    module: CHUNKED_UPDATE
   - name: FW_AVAILABLE__1
     address: 0x64cf8
     class: helper
@@ -3711,6 +3696,11 @@ functions:
     class: logline
     evidence: "the only line 0x6c6ac logs, wlog('auth failed') at 0x6c6c6"
     module: WPP
+  - name: wpp_not_enough_space_in_wpp__1
+    address: 0x6c708
+    class: helper
+    evidence: "only 0x6d250 (wpp_not_enough_space_in_wpp) calls 0x6c708; 106 bytes"
+    module: WPP
   - name: process_cmd_probe_challenge_continue
     address: 0x6c94c
     class: logline
@@ -3818,6 +3808,11 @@ functions:
     evidence: "wpp_cmd_table row 0x27a00: key 2476, label 'WPP_CMD_TRACKER_MOVE_HANDS_GET', CMD_TRACKER_MOVE_HANDS_GET in wpp/src/commands.rs"
     module: WPP
     also_named: [wpp_error_tracker_move_hands_not (logline)]
+  - name: wpp_not_enough_space_in_wpp
+    address: 0x6d250
+    class: logline
+    evidence: "the only line 0x6d250 logs, wlog('[WPP] Not enough space in wpp packet') at 0x6d298"
+    module: WPP
   - name: WPP_CMD_WUP_DEVICE_SET
     address: 0x6d38c
     class: wppcmd
