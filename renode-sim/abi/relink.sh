@@ -146,15 +146,20 @@ else
     # itself.
     rm -f "$OUT/appl-data.o"
 fi
-# The archives are the only part of the link line whose names neither
-# abi/boundary.yaml nor abi/replacements.yaml owns, so they are what the
-# partition has to be stopped from publishing a second definition of: the
-# blob's `__subdf3` section carries __aeabi_dadd as an interior label and
-# libgcc's _arm_addsubdf3.o defines it too. Both cuts of the object -- the
-# identity one and the real one -- get the same reservation, so the object the
-# byte-identical link proves is the object the real link takes.
+# Every name the link line already defines is one the partition must be stopped
+# from publishing a second definition of: the blob's `__subdf3` section carries
+# __aeabi_dadd as an interior label and libgcc's _arm_addsubdf3.o defines it
+# too, and the source kernel objects collide the same way -- the blob's copy of
+# the RTC2 tick setup at 0x74034 carries the map's name for it and
+# port_cmsis_systick.o defines vPortSetupTimerInterrupt as well. That one is
+# invisible from abi/boundary.yaml because nothing in Withings code calls it:
+# the only caller is vPortStartScheduler, which is library code itself. Both
+# cuts of the object -- the identity one and the real one -- get the same
+# reservation, so the object the byte-identical link proves is the object the
+# real link takes; the --gc branch reserves the same names a second time
+# through --also-linked, which is the roots argument and not this one.
 RESERVE_ARGS=""
-for a in $LIBS; do RESERVE_ARGS="$RESERVE_ARGS --reserve-defs $a"; done
+for a in $objs $LIBS; do RESERVE_ARGS="$RESERVE_ARGS --reserve-defs $a"; done
 
 REPLACE_ARGS="$REPLACE_ARGS" RESERVE_ARGS="$RESERVE_ARGS" LINK_ARCHIVES="$LIBS" ./identity.sh
 
