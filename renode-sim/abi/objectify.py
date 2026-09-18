@@ -12,6 +12,7 @@ proof this step rests on: nothing is moved, so any difference is a bug in the
 cutting.
 """
 
+import bisect
 import collections
 import json
 import os
@@ -151,6 +152,46 @@ def tiles_of(items):
     return covered
 
 
+def split_named(tiles, named):
+    """Cut every data tile at the interior points something names.
+
+    The partition's tile boundaries follow what the analysis could type, so an
+    object's head and the object after it land in one tile whenever the bytes
+    between them are a gap. Joining such a tile to the one above it (which is
+    what a run of data is) then puts both objects in one section, and the
+    section lives or dies on the head's references alone. A point something
+    names is an object's start, so the tile ends there.
+
+    Code and pool tiles are left whole: a pc-relative distance inside them is
+    not expressible as a relocation, and they are joined back together below in
+    any case.
+    """
+    points = sorted(named)
+    out = []
+    for tile in tiles:
+        if tile[3] not in ("data", "gap", "sliver"):
+            out.append(tile)
+            continue
+        lo = bisect.bisect_right(points, tile[0])
+        hi = bisect.bisect_left(points, tile[1])
+        at = tile[0]
+        for cut in points[lo:hi]:
+            piece = list(tile)
+            piece[0], piece[1] = at, cut
+            out.append(tuple(piece))
+            at = cut
+        if at != tile[0]:
+            piece = list(tile)
+            piece[0] = at
+            # The analysis named the head of the tile, not this remainder.
+            if len(piece) > 4:
+                piece[4] = ""
+            out.append(tuple(piece))
+        elif at == tile[0] and lo == hi:
+            out.append(tile)
+    return out
+
+
 class Union(object):
     def __init__(self, n):
         self.parent = list(range(n))
@@ -185,8 +226,8 @@ def build_sections(items, calls, reads, falls, pointer_words, strings, reserved,
     which means the real reader is still unknown.
     """
     functions = {f["start"]: f for f in items["functions"]}
-    tiles = tiles_of(items)
     named = set(named)
+    tiles = split_named(tiles_of(items), named)
     starts = [t[0] for t in tiles]
 
     def tile_of(addr):

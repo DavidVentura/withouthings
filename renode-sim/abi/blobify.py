@@ -797,12 +797,15 @@ def main():
     bits = bytes.fromhex(items["instruction_bytes"]["bits"])
     covered = bytes((bits[i >> 3] >> (i & 7)) & 1 for i in range(len(blob)))
     strings = objectify.string_runs(blob, covered)
-    # What a data tile has to be its own section for: a word names it, an `adr`
-    # computes it, the boundary or a fixed point needs the symbol at that
-    # address. Anything else in a run of data is a field of the object above it.
+    # What a data tile has to be its own section for: a word may hold its
+    # address, an `adr` computes it, a pc-relative load reads it from too far
+    # away for the reader to be known, the boundary or a fixed point needs the
+    # symbol at that address. Anything else in a run of data is a field of the
+    # object above it.
     named = set(w["target"] for w in words if w["class"] == "pointer")
     named |= set(w["value"] & ~1 for w in words if w["class"] == "pointer")
     named |= set(r["target"] for r in refs["pc_addresses"])
+    named |= set(t for _, t in reads)
     named |= set(a for a in reserved.values() if a >= 0)
     named |= set(int(str(f["addr"]), 0) for f in manifest["fixed_points"])
     named |= set(f["start"] for f in items["functions"])

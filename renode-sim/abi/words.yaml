@@ -46,6 +46,17 @@ reasons:
     table of them mixed with counts and flags, which is why the stride test
     could not see the slot.
 
+  ram_initialiser_source: >
+    The word is the flash source of a RAM initialiser: the function that reads
+    it reads two more pool words that are the destination's first and last
+    address, computes the length from them, and tail-calls memcpy. 0x36e40 is
+    read by 0x36e30 in the function at 0x36e1c, whose other two pool words are
+    0x200066a8 and 0x2000798c, and 0x2000798c - 0x200066a8 = 4836 is exactly
+    the distance from 0xefe58 to the end of the run the assert format string
+    opens. The shape test could not see it because the bytes at 0xefe58 are an
+    untyped gap and the value is even, and nothing else in the image names the
+    run, so the copy reads 4836 bytes that no relocation holds.
+
 overrides:
   - address: 0x2e8e0
     value: 0xc617a
@@ -833,3 +844,9 @@ overrides:
     target: 0x8090c
     addend: 0
     why: names_a_string_run
+  - address: 0x36e40
+    value: 0xefe58
+    class: pointer
+    target: 0xefe58
+    addend: 0
+    why: ram_initialiser_source
