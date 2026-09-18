@@ -699,8 +699,8 @@ functions:
     variant: app
     verdict: token_only
     masked_bytes: 12
-    divergence: "74 of 280 bytes differ outside the 12 a relocation owns, first at +0x4"
-    score: 0.886
+    divergence: "73 of 280 bytes differ outside the 12 a relocation owns, first at +0x4"
+    score: 0.898
     insns: 88
     how: direct
     links: [saadc_busy_check@0x7db08]
