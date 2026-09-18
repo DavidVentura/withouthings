@@ -20,6 +20,13 @@ confirmed by a masked comparison over the whole body. Starts are restricted to
 what the partition calls a function start plus even addresses inside its gap
 runs, since a body that begins mid-instruction is an accident of the anchor.
 
+A hit is then held to the call graph and the partition before it may name
+anything, because the bytes identify a shape and not a function: a call to a
+symbol of the same object is one the archive would bring with the body, so its
+image target has to be that symbol, and a body under 32 unrelocated bytes with
+no instruction of its own beyond the prologue, the calls and the return is a
+shape every wrapper in every library shares.
+
 Bodies with no byte-exact hit get the second pass, which is match.py's: the
 disassembly normalised so that branch displacements and pool loads carry no
 address, scored against the image. That finds the bodies Withings built from
@@ -282,13 +289,58 @@ def resolve(args):
     twice = collections.Counter((h["archive"], h["symbol"]) for h in resolved.values())
     solid = {a: h for a, h in resolved.items()
              if h["solid"] >= MIN_SOLID and twice[(h["archive"], h["symbol"])] == 1}
-    _RESOLVED[key] = (image, items, archives, solid, resolved, ambiguous, skipped)
+
+    # The bytes say the body is here; the call graph and the partition say
+    # whether it is this function. A hit that cannot survive both may not name
+    # anything: the image's 0x9bd0c is a Withings lock/operate/unlock wrapper
+    # whose ten unrelocated bytes are newlib's _tzset_r exactly, and the
+    # relocated branches are where the two part company.
+    claims = libc_check.name_index()
+    for addr, h in solid.items():
+        claims[addr].add(libc_check.base_name(h["symbol"]))
+    rules = libc_check.Rules([a for _, _, a in archives],
+                            libc_check.Image(args.export), claims, image)
+    refused = {}
+    for addr, h in sorted(solid.items()):
+        why = refuse(rules, addr, h)
+        if why:
+            refused[addr] = (h, why)
+    for addr in refused:
+        del solid[addr]
+    _RESOLVED[key] = (image, items, archives, solid, resolved, ambiguous,
+                      skipped, refused, rules)
     return _RESOLVED[key]
+
+
+def refuse(rules, addr, h):
+    """Why this hit may not name the address, or None.
+
+    A name is a claim about identity and a replacement is a claim about link
+    equivalence, so this refuses less than abi/libc_check.py's verdict does. An
+    address the instruction before falls through into is the second entry point
+    of a section libgcc exports twice and the name there is right; a callee the
+    repo already calls something else moves one call and leaves the body what it
+    is. Only the partition, a callee the archive would bring with the body, and
+    a shape too short to be anything settle what the address is called.
+    """
+    kind, reason = rules.entry(addr)
+    if kind == "bad_entry":
+        return reason
+    if not rules.bytes_are(h["symbol"], addr):
+        return None
+    bad, _, _ = rules.audit(h["symbol"], addr)
+    small = h["solid"] < libc_check.SMALL_BODY
+    if bad:
+        return "; ".join("+0x%x wants %s, %s" % b for b in bad)
+    if small and not rules.distinguishing(h["symbol"]):
+        return ("%d unrelocated bytes and no instruction beyond the prologue,"
+                " the calls and the return" % h["solid"])
+    return None
 
 
 def entries(args, cls):
     """The autonames entries for one class, from the archives it owns."""
-    _, _, _, solid, _, _, _ = resolve(args)
+    _, _, _, solid, _, _, _, _, _ = resolve(args)
     out = []
     for addr, h in sorted(solid.items()):
         if ARCHIVE_CLASS[h["archive"]] != cls:
@@ -303,6 +355,31 @@ def entries(args, cls):
             ev += "; the same body is also " + ", ".join(h["aliases"])
         out.append({"address": addr, "name": name, "class": cls, "evidence": ev})
     return out
+
+
+def screen(args, found):
+    """The autonames entries the call graph, the partition and the shape allow.
+
+    abi/autonames.py names a library body two ways, and the matcher's way scores
+    a normalised disassembly in which every branch has had its displacement
+    taken off. That is the evidence a lock/operate/unlock wrapper cannot fail:
+    0x9bd0c scored 1.00 over seven instructions against _tzset_r and is a
+    Withings SPI-flash wrapper, and the branches the score threw away are the
+    whole difference. So the same rules the byte search is held to are applied
+    to every libc and libm entry before it may name anything.
+    """
+    rules = resolve(args)[8]
+    kept, refused = [], []
+    for e in found:
+        ar = rules.archive_of(e["name"])
+        if ar is None:
+            kept.append(e)
+            continue
+        built, owned = ar.body(e["name"])
+        why = refuse(rules, e["address"],
+                     {"symbol": e["name"], "solid": len(built) - len(owned)})
+        (refused if why else kept).append((e, why) if why else e)
+    return kept, refused
 
 
 def main():
@@ -320,7 +397,8 @@ def main():
     ap.add_argument("--list", type=int, default=40)
     args = ap.parse_args()
 
-    image, items, archives, solid, resolved, ambiguous, skipped = resolve(args)
+    (image, items, archives, solid, resolved, ambiguous, skipped, refused,
+     _) = resolve(args)
     named, part = known_names(), partition_names(items)
     named_at = {}
     for addr, (who, cur) in named.items():
@@ -361,6 +439,10 @@ def main():
     print("     %d addresses are a tie between equal-sized bodies" % len(ambiguous))
     print("     %d carry fewer than %d unrelocated bytes, or land twice"
           % (len(weak), MIN_SOLID))
+    print("     %d carry the bytes and are refused by the call graph, the"
+          " partition or the shape" % len(refused))
+    for addr, (h, why) in sorted(refused.items()):
+        print("    refused  0x%05x  %-24s %s" % (addr, h["symbol"], why))
     perarc = collections.Counter(h["archive"] for h, _ in new)
     print("  new names per archive: %s"
           % ", ".join("%s %d" % kv for kv in sorted(perarc.items())))

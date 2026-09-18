@@ -71,34 +71,24 @@ functions:
       0x27da0 in a gap, six bytes the relayout was free to separate from the
       body. The entry is the xTaskCreateStatic at 0x73032, whose r0 pool word
       (0x73070) holds 0x27da1 and whose r1 names "IDLE".
-  - name: xTaskCreateStatic
-    address: 0x9e3dc
-    ret: void *
-    args: [[void *, pxTaskCode], [const char *, pcName], [u32, ulStackDepth],
-           [void *, pvParameters], [u32, uxPriority], [void *, puxStackBuffer],
-           [void *, pxTaskBuffer]]
-    notes: stock FreeRTOS prototype; r0=entry, r2=stack words, priority on the stack
-  - name: xQueueSemaphoreTake
-    address: 0x9e890
-    ret: i32
-    args: [[void *, xQueue], [u32, xTicksToWait]]
-    notes: 0xffffffff ticks = block forever
   - name: xQueueGenericSend
     address: 0x73a90
+    hand_library: >
+      queue.c's send is one of the five bodies abi/match.py never scored above
+      threshold, so this address is read and not measured; the matched library
+      bodies live in abi/matches.yaml and this is not one of them.
     ret: i32
     args: [[void *, xQueue], [const void *, pvItemToQueue], [u32, xTicksToWait],
            [i32, xCopyPosition]]
     notes: >
       called with a NULL handle by battery_sem_give before battery_task exists;
       machine.resc patches the sim around it
-  - name: xTaskNotifyWait
-    address: 0x7382c
-    ret: i32
-    args: [[u32, ulBitsToClearOnEntry], [u32, ulBitsToClearOnExit],
-           [u32 *, pulNotificationValue], [u32, xTicksToWait]]
-    notes: main's wait; the bit dispatcher is 0x4ec0c
   - name: vPortYield
     address: 0x9e46c
+    hand_library: >
+      the image's portYIELD is out of line, four instructions and a literal
+      pool, which is under abi/match.py's instruction floor; nothing in
+      abi/matches.yaml can supply it.
     ret: void
     args: []
     notes: >
@@ -106,11 +96,18 @@ functions:
       calling this address as vTaskDelay(ticks) would silently not delay.
   - name: vTaskStepTick
     address: 0x730ac
+    hand_library: >
+      inferred from its one call site, not from a body match; abi/matches.yaml
+      has no entry to take this from.
     ret: void
     args: [[u32, xTicksToJump]]
     notes: inferred from the tickless-idle catch-up call site at 0x73f82
   - name: xTaskIncrementTick
     address: 0x730bc
+    hand_library: >
+      read off the body's two tick-hook calls (see boundary.yaml's
+      vApplicationTickHook), which is what fixed configUSE_TICK_HOOK; the
+      matcher does not score it.
     ret: i32
     args: []
 
@@ -146,6 +143,10 @@ functions:
     notes: entry the three GATT write demuxes at 0x93654 funnel into
   - name: sd_ble_gatts_hvx_send
     address: 0x935c0
+    hand_library: >
+      not a library body at all: the Withings helper that fills
+      ble_gatts_hvx_params_t before the SVC thunk, so no archive and no
+      reference build can name it and abi/matches.yaml never will.
     ret: i32
     args: [[const void *, p_data], [u16, len], [u8, type]]
     notes: builds ble_gatts_hvx_params_t and issues svc 0xae via the thunk at 0x935b4
@@ -3357,6 +3358,25 @@ functions:
       caller and walks the whole line with it.
 
   # --- library bodies the partition or the name derivation got wrong ---
+  - name: spi_flash_locked_op
+    address: 0x9bd0c
+    supersedes: shell_cmd_spiflash__8
+    ret: i32
+    args: [[u32, arg]]
+    notes: >
+      Twenty-two bytes of which ten are not a relocated field, and those ten
+      are newlib's _tzset_r exactly: push, move the argument aside, call, move
+      it back, pop and tail-call. Every lock/operate/unlock wrapper and every
+      errno stub has that shape, so the bytes name nothing and the branches do.
+      These three go to 0x5b748, which takes the mutex at *0x0120e8f8 with
+      xQueueSemaphoreTake and an infinite timeout, to 0x5b6ec, an SPI-flash
+      operation that reaches spi_xfer_wait and is also called from
+      flash_detect_fn, and to 0x5b6a4, which gives the same mutex back with
+      xQueueGenericSend; the only caller is shell_cmd_spiflash. The argument
+      travels through r0 untouched into the operation, which is all the
+      wrapper does with it. Naming it here is what keeps the relink from
+      replacing a flash lock with tzset, where only the shell would have run
+      the difference.
   - name: setenv
     address: 0x8eb9c
     supersedes: _setenv_r

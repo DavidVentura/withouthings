@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 4, helper: 417, libc: 122, libm: 37, logcb: 3, logline: 332, logtag: 8, module_functions: 1782, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {bleevt: 28, extlib: 4, helper: 418, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 331, logtag: 8, module_functions: 1780, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 204, disagree: 14}
 
 functions:
@@ -3213,11 +3213,6 @@ functions:
     class: helper
     evidence: "only 0x64cf8 (FW_AVAILABLE__1) calls 0x64a0c; 38 bytes"
     module: CHUNKED_UPDATE
-  - name: chunked_update_not_aligned
-    address: 0x64bc8
-    class: logline
-    evidence: "the only line 0x64bc8 logs, wlog('[CHUNKED_UPDATE] not aligned') at 0x64bf2"
-    module: CHUNKED_UPDATE
   - name: FW_AVAILABLE__1
     address: 0x64cf8
     class: helper
@@ -4522,10 +4517,10 @@ functions:
     address: 0x91b00
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 22 insns, direct"
-  - name: __smakebuf_r__1
+  - name: __swsetup_r__1__1
     address: 0x91d1c
     class: helper
-    evidence: "only 0xa9072 (__smakebuf_r) calls 0x91d1c; 28 bytes"
+    evidence: "only 0xa9072 (__swsetup_r__1) calls 0x91d1c; 28 bytes"
   - name: __assert_func
     address: 0x91d3c
     class: libc
@@ -5737,12 +5732,6 @@ functions:
     evidence: "only 0x5bec4 (shell_cmd_spiflash) calls 0x9bcda; 24 bytes"
     proto: "uint32_t shell_cmd_spiflash__7(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
-  - name: _tzset_r
-    address: 0x9bd0c
-    class: libc
-    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 7 insns, direct"
-    header: arm-none-eabi/include/time.h
-    proto: "void _tzset_r (struct _reent *);"
   - name: shell_cmd_spiflash__8
     address: 0x9bd22
     class: helper
@@ -6317,10 +6306,10 @@ functions:
     address: 0xa8ff4
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 25 insns, direct"
-  - name: __smakebuf_r
+  - name: __swsetup_r__1
     address: 0xa9072
-    class: libc
-    evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.98 over 48 insns, direct"
+    class: helper
+    evidence: "only 0x8f6e0 (__swsetup_r) calls 0xa9072; 120 bytes"
   - name: __sccl
     address: 0xa912c
     class: libc

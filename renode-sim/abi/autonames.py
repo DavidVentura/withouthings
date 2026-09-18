@@ -1668,6 +1668,16 @@ def main():
                  if e["address"] in at or e["name"] not in moved]
         found += [e for e in bodies if e["address"] not in
                   {f["address"] for f in found}]
+        # The bytes and the score both say what a body looks like; neither says
+        # where its calls go. Every entry is held to the call graph, the
+        # partition and the shape before it may name an address.
+        found, refused = libc_find.screen(argparse.Namespace(
+            build=args.libc_build, root=ROOT, scratch="/tmp/libc_find",
+            export=args.export), found)
+        stats[cls + "_refused"] = len(refused)
+        for e, why in refused:
+            print("  refused %-24s 0x%05x  %s" % (e["name"], e["address"], why),
+                  file=sys.stderr)
         protos = prototypes([e["name"] for e in found],
                             [("arm-none-eabi/include",
                               os.path.join(LIBC_TC, "arm-none-eabi/include"))])
