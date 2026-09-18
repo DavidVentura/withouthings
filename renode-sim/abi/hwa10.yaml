@@ -3751,10 +3751,6 @@ structs:
       what fwblk_table_parse fills at 0x4cb5c..0x4cb66: the external-flash
       offset of the payload (the header offset plus 4), the u16 length from the
       header widened to a word, and the buffer holding header + payload + CRC32
-  - name: wpp_cmd_entry
-    fields: [[u32, id], [void *, handler], [const char *, name]]
-    notes: handler carries the Thumb bit as stored
-
   # --- WPP objects, in memory ---
   # One struct per wire object type, recovered by abi/protocol.py from the
   # codecs themselves: the encoder loads every field off r0 before handing it to
