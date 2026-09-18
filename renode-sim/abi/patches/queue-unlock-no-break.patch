@@ -1,0 +1,35 @@
+prvUnlockQueue's Tx loop does not break out when the receive list is empty.
+
+prvUnlockQueue (0x9e66c) walks cTxLock down and, for a queue that belongs to no
+queue set, tests xTasksWaitingToReceive. The release breaks out of the loop when
+that list is empty: `ldr r3, [r4, #0x24]; cbnz r3, <remove>` falls through to the
+loop exit. The image tests the same word and branches the other way -- `ldr r3,
+[r4, #0x24]; cmp r3, #0; beq <decrement>` at 0x9e6c8 -- so an empty list costs
+one more turn of the loop instead of ending it. Those two extra bytes are why
+the image's body is 124 where the release's is 122.
+
+The Rx loop below it keeps its break, in both. That asymmetry is what names the
+change as a source edit: one compiler and one set of flags cannot turn the break
+into a continue in one loop of a function and leave the other loop alone, and
+the block layout follows from it. With the break gone the loop body no longer
+exits, so GCC puts it out of line behind a `bgt` at 0x9e680 and keeps the lock
+store inline, which is the image's order and the other 68 differing bytes.
+
+Both sides sibling-call vPortExitCritical at the end (`pop.w {r4, r5, r6, lr}`
+then `b.w`); the earlier reading that only the image did was an artefact of
+comparing the two disassemblies by instruction index rather than by address.
+
+Measured: with the break removed the 124 bytes of prvUnlockQueue agree with the
+image once the relocated fields are masked (abi/body_check.py).
+
+--- a/queue.c
++++ b/queue.c
+@@ -2216,7 +2216,7 @@
+ 					}
+ 					else
+ 					{
+-						break;
++						mtCOVERAGE_TEST_MARKER();
+ 					}
+ 				}
+ 			}

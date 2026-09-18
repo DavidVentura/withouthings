@@ -1,0 +1,37 @@
+A task that deletes itself spins instead of returning.
+
+vTaskDelete (0x72f10) ends the self-delete arm with `b .` at 0x72f74: the
+inlined portYIELD_WITHIN_API raises the PendSV bit, does the dsb and the isb,
+and then branches to itself. The `pop {r4, r5, r6, pc}` sits at 0x72f8a, past
+the not-current-task block, and only the two tests that skip the yield reach
+it -- the cbz at 0x72f58 and the bne at 0x72f5e both target it. The release
+falls out of the yield into a pop at the merge point, and the six bytes of the
+body that differ are those two branch targets, the pop that became the branch,
+and the tail word.
+
+The loop is in the image's source, not in its compiler. Nothing GCC does turns
+a fallthrough into a branch to itself, and neither -O level, nor a hot, cold or
+optimize attribute on the function, nor __builtin_expect on either test of the
+tail, nor writing the tail as early returns moves the release's epilogue: all
+of them leave the same six bytes. The loop is also the reading the yield asks
+for, since the PendSV it raises cannot be taken until vPortExitCritical has
+already lowered BASEPRI, so without it the deleted task runs its own epilogue
+and returns through a TCB that is already on the termination list.
+
+Measured: with the loop the 148 bytes of vTaskDelete agree with the image once
+the relocated fields are masked (abi/body_check.py).
+
+--- a/tasks.c
++++ b/tasks.c
+@@ -1188,6 +1188,11 @@
+ 			{
+ 				configASSERT( uxSchedulerSuspended == 0 );
+ 				portYIELD_WITHIN_API();
++
++				/* A task that deletes itself never runs again. */
++				for( ;; )
++				{
++				}
+ 			}
+ 			else
+ 			{
