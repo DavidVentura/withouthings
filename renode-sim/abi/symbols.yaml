@@ -6952,15 +6952,215 @@ symbols:
   class: logline
   evidence: the only line 0x6eed8 logs, wlog('[WUI] Failed to push event 0x%08x')
     at 0x6eefe
+- address: 0x6f19c
+  name: picotls__6f19c
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f1c8
+  name: picotls__6f1c8
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f1fc
+  name: picotls__6f1fc
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f230
+  name: picotls__6f230
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f240
+  name: picotls__6f240
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f350
+  name: picotls__6f350
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f3a4
+  name: picotls__6f3a4
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f460
+  name: picotls__6f460
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x6f490
   name: mbedtls_x509_get_serial
   kind: function
   class: extlib
   evidence: mbedtls_Os, score 0.97 over 30 insns, direct
+- address: 0x6f4e0
+  name: picotls__6f4e0
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f5d4
+  name: picotls__6f5d4
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f734
+  name: picotls__6f734
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f76c
+  name: picotls__6f76c
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x6f7ac
+  name: picotls__6f7ac
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x7022c
+  name: ptls_verify_certificate
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 1616 bytes entered from verify_cert__1 0x468b8 and perso_crt_verify
+    0x5abbc and from nothing else; the certificate callback picotls takes, which
+    is why the entry is on this side of the boundary.
+- address: 0x7032c
+  name: picotls__7032c
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70394
+  name: picotls__70394
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x703d4
+  name: picotls__703d4
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70574
+  name: picotls__70574
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x705ac
+  name: picotls__705ac
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70600
+  name: picotls__70600
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x707c0
+  name: picotls__707c0
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x708a8
+  name: picotls__708a8
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70934
+  name: picotls__70934
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70990
+  name: picotls__70990
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70a28
+  name: picotls__70a28
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70a68
+  name: picotls__70a68
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70b28
+  name: picotls__70b28
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70be8
+  name: picotls__70be8
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x70c70
+  name: picotls__70c70
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x7159c
+  name: picotls__7159c
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x717bc
   name: ptls_send_alert
   kind: label
   class: prose
+- address: 0x71ca0
+  name: picotls__71ca0
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x7272c
+  name: picotls__7272c
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x72834
+  name: picotls__72834
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x72ac0
   name: ptls_handshake
   kind: label
@@ -7448,6 +7648,14 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x4ac90 (ecg_bad_diag_algo_version) calls 0x77af0; 4 bytes
+- address: 0x77af8
+  name: vendor_ecgsw2_configure
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'ecg_module_init 0x4a6f8''s callee, and the only entry that validates
+    the analog front end: "sampling frequency is not in the [%d, %d] range", "Gain
+    is not in the [%d, %d] range", "lfboost mode should be between %d and %d".'
 - address: 0x77df8
   name: ecg_filter_process_sample
   kind: function
@@ -7491,6 +7699,54 @@ symbols:
     array at rr+0x14, which is then sorted. Its caller passes the algorithm object''s
     ctx+0xe78, which is the same object ecg_algo_heart_rate_from_rr divides 60000
     by.'
+- address: 0x7838c
+  name: ecgsw2__7838c
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0x783c0
+  name: ecgsw2__783c0
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0x78428
+  name: ecgsw2__78428
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0x78590
+  name: ecgsw2__78590
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0x785f8
+  name: ecgsw2__785f8
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0x78724
+  name: ecgsw2__78724
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0x78834
+  name: ecgsw2__78834
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0x789c0
+  name: ecgsw2__789c0
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
 - address: 0x78f1c
   name: ecg_nn_classify
   kind: function
@@ -7502,6 +7758,30 @@ symbols:
     to provide an output" and trap (0x77964). The four floats it leaves at ctx+0x1f3c
     are what ecg_algo_finish divides by that count into the class probabilities,
     which are the "out=%d, %d, %d, %d" of the diagnosis line.'
+- address: 0x79138
+  name: ecgsw2__79138
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0x791fc
+  name: ecgsw2__791fc
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0x79278
+  name: ecgsw2__79278
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0x793a0
+  name: ecgsw2__793a0
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
 - address: 0x79560
   name: sleep_wake_algo_step
   kind: function
@@ -7510,6 +7790,18 @@ symbols:
   evidence: the call under algo_enabled(0xe) (0x7d6ba, 0x7d71e); id 14 is SLEEP_WAKE.
     The four HRV getters feed it on the stack (0x7d6ea..0x7d706). 1279 calls in
     the trace, one per popped slot.
+- address: 0x7a12c
+  name: arm_radix8_butterfly_f32
+  kind: function
+  class: hand
+  evidence: 'CMSIS-DSP. The archive-side search of abi/libc_find.py, run against
+    ARM-software/CMSIS-DSP built for this target at -Os, reproduces this body byte
+    for byte: 1260 bytes, no relocated field anywhere in it, zero differing bytes,
+    so every byte is evidence. It is the only CMSIS-DSP body the image carries --
+    arm_cfft_f32 and arm_rfft_fast_f32 do not reproduce at any optimisation level
+    -- so what is linked is the radix-8 butterfly and not the library''s own drivers.
+    Its sole caller is 0xa17f8, under hr_algo_process_sample 0xa22fc by way of 0x7b058,
+    which is the PPG chain''s FFT.'
 - address: 0x7a6e0
   name: spectrum_fft_input
   kind: function
@@ -9200,6 +9492,134 @@ symbols:
   class: logline
   evidence: the only line 0x8b924 logs, wlog('[WARNING] unknown type 0x%.4x !!')
     at 0x8bab0
+- address: 0x8bbc0
+  name: greenteg_cbta__8bbc0
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0x8bd04
+  name: vendor_greenteg_cbta_sample_convert
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'The one entry both instances share and the only one that takes the
+    configuration: the shell hands it the sixteen bytes at 0xb410c (sensitivity
+    bin ''J'', two unit factors of 1.0 and a zero offset) and two raw floats, and
+    it writes the two floats the update calls are then given. 0x42558 calls it the
+    same way before each update pair.'
+- address: 0x8bd94
+  name: vendor_greenteg_cbta_config_apply
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 0x42558 only; the second consumer of the configuration block
+- address: 0x8be68
+  name: vendor_greenteg_cbta_sport_reset
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 0x42974 only, beside the two inits
+- address: 0x8be78
+  name: vendor_greenteg_cbta_get_flag_a
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'eight bytes, 0x42558 only: one byte of state read back'
+- address: 0x8be84
+  name: vendor_greenteg_cbta_config_validate
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 0x42558 only; the one entry that calls __fpclassifyf, i.e. the one that
+    checks a configuration float is a number
+- address: 0x8bef8
+  name: vendor_greenteg_cbta_free_living_reset
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 0x42974 only, beside the two inits; clears its state with memset
+- address: 0x8bf08
+  name: vendor_greenteg_cbta_get_flag_b
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'eight bytes, 0x42558 only: the second byte of state read back'
+- address: 0x8bf48
+  name: vendor_greenteg_cbta_free_living_update
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: Six floats in s0..s5, called once per sample by 0x42558 and by the shell
+    test with (heat flux, skin temperature, ambient, and three copies of one more
+    float); returns the ready flag. Refuses to run before the init above has set
+    that flag.
+- address: 0x8bf94
+  name: vendor_greenteg_cbta_free_living_get
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'Takes the only pointer argument in the component and writes six bytes
+    through it -- a float and two bytes -- which is what the shell prints as "fl:
+    %d %lf" and what 0x42fb0 logs as FL{T, Q}.'
+- address: 0x8bfdc
+  name: vendor_greenteg_cbta_free_living_init
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 0x42974 calls it and logs "algorithm init failed" through "[BODY_TEMP][err]
+    FL %s" when it returns zero; it runs the constructor 0x8c230 over the free-living
+    state and sets the instance's ready flag.
+- address: 0x8c0cc
+  name: greenteg_cbta__8c0cc
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0x8c230
+  name: greenteg_cbta__8c230
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0x8c294
+  name: vendor_greenteg_cbta_sport_update
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: the free-living update's twin; same six floats, second state
+- address: 0x8c2e0
+  name: vendor_greenteg_cbta_sport_get
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'the free-living get''s twin; what the shell prints as "workout: %d
+    %lf" and 0x42fb0 logs as WO{T, Q}'
+- address: 0x8c31c
+  name: vendor_greenteg_cbta_sport_init
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: The free-living init's twin against the second state, over the constructor
+    0x8c774; 0x42974 logs its failure as "[BODY_TEMP][err] WO %s".
+- address: 0x8c340
+  name: greenteg_cbta__8c340
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0x8c500
+  name: greenteg_cbta__8c500
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0x8c774
+  name: greenteg_cbta__8c774
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
 - address: 0x8c8fc
   name: pow
   kind: function
@@ -13618,6 +14038,12 @@ symbols:
   class: wppcmd
   evidence: 'wpp_cmd_table row 0x27b80: key 2452, label ''WPP_CMD_EVENTS_DEL'',
     CMD_EVENTS_DEL in wpp/src/commands.rs'
+- address: 0x9d76a
+  name: picotls__9d76a
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x9d7ac
   name: mbedtls_pk_can_do
   kind: function
@@ -13628,15 +14054,87 @@ symbols:
   kind: function
   class: extlib
   evidence: mbedtls_Os, score 1.00 over 17 insns, direct
+- address: 0x9d8f8
+  name: picotls__9d8f8
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9d928
+  name: picotls__9d928
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9d96a
+  name: picotls__9d96a
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x9d9aa
   name: mbedtls_asn1_get_bitstring_null
   kind: function
   class: extlib
   evidence: mbedtls_Os, score 1.00 over 18 insns, direct
+- address: 0x9d9d2
+  name: picotls__9d9d2
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9da48
+  name: picotls__9da48
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9dae4
+  name: picotls__9dae4
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9df52
+  name: picotls__9df52
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9dfb8
+  name: picotls__9dfb8
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9dfd0
+  name: picotls__9dfd0
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9dffa
+  name: picotls__9dffa
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
+- address: 0x9e014
+  name: picotls__9e014
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x9e05e
   name: ptls_set_server_name
   kind: label
   class: prose
+- address: 0x9e1be
+  name: picotls__9e1be
+  kind: function
+  class: vendor
+  component: picotls
+  evidence: 'interior: reached only through picotls''s entries'
 - address: 0x9e284
   name: ptls_receive
   kind: label
@@ -13877,6 +14375,12 @@ symbols:
     rows - 1 rows it copies every column from the row below (`ldrh.w r7, [r5, r1,
     lsl #1]` against `strh r7, [r5], #2` at 0x9ee6c), with r1 the column count and
     r2 the row count. Dropping the oldest row of a history matrix is the whole body'
+- address: 0x9f084
+  name: ecgsw2__9f084
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
 - address: 0x9f3c4
   name: delay_f32_push_pop
   kind: function
@@ -14042,6 +14546,96 @@ symbols:
   evidence: '`return ctx->0 >= ctx->8 && ctx->b2c <= 30 * ctx->5c;` -- enough samples
     in and not past the measurement''s window. Every per-sample caller gates on
     it before reading an output, three times a sample between them.'
+- address: 0xa0de6
+  name: ecgsw2__a0de6
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa0e8c
+  name: ecgsw2__a0e8c
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa0ea0
+  name: ecgsw2__a0ea0
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa0f3c
+  name: ecgsw2__a0f3c
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa0f8e
+  name: ecgsw2__a0f8e
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa0f9e
+  name: ecgsw2__a0f9e
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa0ff6
+  name: ecgsw2__a0ff6
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa100a
+  name: ecgsw2__a100a
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa1086
+  name: ecgsw2__a1086
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa1158
+  name: ecgsw2__a1158
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa115c
+  name: ecgsw2__a115c
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa128c
+  name: ecgsw2__a128c
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa12aa
+  name: ecgsw2__a12aa
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa12cc
+  name: ecgsw2__a12cc
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
+- address: 0xa135c
+  name: ecgsw2__a135c
+  kind: function
+  class: vendor
+  component: ecgsw2
+  evidence: 'interior: reached only through ecgsw2''s entries'
 - address: 0xa17f8
   name: fft_complex_transform
   kind: function
@@ -15049,6 +15643,66 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x88868 (gui_notif_resources_available) calls 0xa70fc; 40 bytes
+- address: 0xa74b0
+  name: greenteg_cbta__a74b0
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0xa74de
+  name: greenteg_cbta__a74de
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0xa7532
+  name: greenteg_cbta__a7532
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0xa753a
+  name: greenteg_cbta__a753a
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0xa7a1c
+  name: greenteg_cbta__a7a1c
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0xa7a44
+  name: greenteg_cbta__a7a44
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0xa7ab4
+  name: greenteg_cbta__a7ab4
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0xa7aca
+  name: greenteg_cbta__a7aca
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0xa7b5c
+  name: greenteg_cbta__a7b5c
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
+- address: 0xa7c58
+  name: greenteg_cbta__a7c58
+  kind: function
+  class: vendor
+  component: greenteg_cbta
+  evidence: 'interior: reached only through greenteg_cbta''s entries'
 - address: 0xa7c6e
   name: sqrt
   kind: function

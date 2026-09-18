@@ -1,0 +1,128 @@
+/* HWA10 (ScanWatch 2) application firmware v3411: the vendor drops' ABI.
+ *
+ * What the libraries the firmware links but did not write take and return.
+ * Which addresses belong to which component is abi/vendor.yaml and the
+ * `component:` field of abi/symbols.yaml; this is the shapes, and only the
+ * shapes the interface uses. What happens inside a drop is not declared here
+ * and is not claimed anywhere: the interiors stay unnamed on purpose. */
+#ifndef WITHINGS_VENDOR_H
+#define WITHINGS_VENDOR_H
+
+/* --------------------------------------------- greenTEG CBTA (greenteg_cbta)
+
+   The core-body-temperature model. Two instances live in the library's own
+   RAM -- the free-living one and the sport one -- and the firmware never
+   holds a handle to either: every entry names its instance instead, which is
+   why there are two of each call and no context argument anywhere. */
+
+/* The calibration the firmware keeps for the sensor and hands to
+   vendor_greenteg_cbta_sample_convert. The shell's `greenteg test` passes the
+   sixteen bytes at 0xb410c, and the firmware's own copy is what "[GREENTEG]
+   CBTA parameters: bin: '%c', skin temp. offset: %d(x1000), heatflux offset:
+   %d(x100), integration factor: %d(x10000)" (0x4dafc) prints field for field,
+   in that order. The scale factors in that line are the log's, not the
+   struct's: the words here are floats and ones. */
+struct greenteg_cbta_config {
+    /* The sensitivity bin, one character. 0xb410c holds 'J'; the shell's
+       `greenteg bin set <c>` writes it and 0x4d7a4 rejects anything outside
+       the table with "[GREENTEG] Bad bin '%c'". Stored as a word. */
+    unsigned int sensitivity_bin;
+    float integration_factor;
+    float heatflux_offset;
+    float skin_temp_offset;
+};
+
+/* What a get call writes. The two byte fields are what "[BODY_TEMP][info]
+   Hourly stats" (0x42fb0) prints as FL{T=%u, Q=%u} and WO{T=%u, Q=%u} beside
+   the temperature, and what the shell prints as the "%d" of "fl: %d %lf".
+   0x8bf94 writes exactly six bytes through its argument: the word, then the
+   two bytes at +4 and +5. */
+struct greenteg_cbta_result {
+    float temperature_c;
+    unsigned char quality;
+    unsigned char state;
+};
+
+/* The two raw readings the watch takes, converted into the units the model
+   wants. The conversion is the library's, not the firmware's: 0x8bd04 is
+   handed the configuration and the two raw floats and writes these two. */
+struct greenteg_cbta_sample {
+    float heat_flux;
+    float skin_temperature;
+};
+
+/* Both inits return zero on failure, which is what the firmware logs as
+   "algorithm init failed"; both updates return the instance's ready flag. */
+int vendor_greenteg_cbta_free_living_init(void);
+int vendor_greenteg_cbta_sport_init(void);
+void vendor_greenteg_cbta_free_living_reset(void);
+void vendor_greenteg_cbta_sport_reset(void);
+
+/* The configuration in, the model's two inputs out. */
+void vendor_greenteg_cbta_sample_convert(const struct greenteg_cbta_config *cfg,
+                                         float *out_heat_flux,
+                                         float *out_skin_temperature,
+                                         float raw_heat_flux,
+                                         float raw_skin_temperature);
+void vendor_greenteg_cbta_config_apply(const struct greenteg_cbta_config *cfg);
+int vendor_greenteg_cbta_config_validate(const struct greenteg_cbta_config *cfg);
+
+/* One sample. The first two are the converted readings; the third is the
+   third float the shell sweeps independently of them, and the last three are
+   one value the shell passes three times, so what distinguishes them is not
+   established and they are declared as what the call passes. */
+int vendor_greenteg_cbta_free_living_update(float heat_flux,
+                                            float skin_temperature,
+                                            float ambient,
+                                            float aux_a, float aux_b,
+                                            float aux_c);
+int vendor_greenteg_cbta_sport_update(float heat_flux,
+                                      float skin_temperature,
+                                      float ambient,
+                                      float aux_a, float aux_b,
+                                      float aux_c);
+
+void vendor_greenteg_cbta_free_living_get(struct greenteg_cbta_result *out);
+void vendor_greenteg_cbta_sport_get(struct greenteg_cbta_result *out);
+
+unsigned char vendor_greenteg_cbta_get_flag_a(void);
+unsigned char vendor_greenteg_cbta_get_flag_b(void);
+
+/* --------------------------------------------------------- ECGSW2 (ecgsw2)
+
+   The ECG library, named by the firmware's own "[ECG DIAGNOSIS] ECGSW2"
+   lines. Unlike the greenTEG drop it is re-entrant: every call takes its
+   context, and there are two of them -- the session the diagnosis runs on,
+   embedded in ecg_session at +0x28, and the filter's own object at
+   0x20013c04. Both are the library's and neither is declared field by field.
+   ecg.h holds the entry prototypes and what each call does; what is here is
+   only what ecg.h had no shape for.
+
+   That the library is a drop and not firmware is not a shape and lives in
+   abi/vendor.yaml: it diagnoses itself through nrf_fprintf in plain English
+   where every Withings line goes to wlog behind a bracketed module tag, and
+   it is the only thing in the image that calls nrf_fprintf at all. */
+
+/* The 56 bytes ecg_algo_result_copy lifts out of the session at +0x10 and
+   ecg_task_state_machine puts into ecg_session+0x30d4. Its first four words
+   are the class probabilities the finish normalised, which is what "[ECG
+   DIAGNOSIS] ECGSW2 out=%d, %d, %d, %d, qrs_blocks_size=%li" prints. */
+#define ECGSW2_RESULT_BYTES 56
+
+struct ecgsw2_result {
+    unsigned char bytes[ECGSW2_RESULT_BYTES];
+};
+
+/* What vendor_ecgsw2_configure takes from ecg_module_init. The three ranges
+   it rejects are what name the three fields: "sampling frequency is not in
+   the [%d, %d] range", "Gain is not in the [%d, %d] range", "lfboost mode
+   should be between %d and %d". */
+struct ecgsw2_config {
+    long sampling_frequency_hz;
+    long gain;
+    long lfboost_mode;
+};
+
+extern int vendor_ecgsw2_configure(void *ctx, const struct ecgsw2_config *cfg);
+
+#endif
