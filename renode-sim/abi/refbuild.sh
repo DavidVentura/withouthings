@@ -275,7 +275,13 @@ build_variant() {
 NEWLIB=newlib-4.3.0.20230120
 NEWLIB_URL=https://sourceware.org/pub/newlib/$NEWLIB.tar.gz
 NEWLIB_CC=$ROOT/tc/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/bin
-NEWLIB_CFLAGS="-g -Os -ffunction-sections -fdata-sections -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16 -mthumb"
+# No -fdata-sections, which Arm's own newlib build does pass. The image's libm
+# is the measurement: __ieee754_sqrt (0x8cd6c) reads `one` and `tiny` as one
+# object at base and base+8, which only holds while the two sit in a shared
+# .rodata; with -fdata-sections each gets a section of its own, the body needs a
+# second pool word and r11 with it, and the register save mask changes. All four
+# libm bodies that differed -- sqrt, exp, expf and powf -- settle without it.
+NEWLIB_CFLAGS="-g -Os -ffunction-sections -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16 -mthumb"
 
 if [ ! -d "$ROOT/src/$NEWLIB" ]; then
     [ -f "$ROOT/dl/$NEWLIB.tar.gz" ] || curl -L -o "$ROOT/dl/$NEWLIB.tar.gz" "$NEWLIB_URL"
