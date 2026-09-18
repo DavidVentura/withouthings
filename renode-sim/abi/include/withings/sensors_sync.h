@@ -160,7 +160,228 @@ struct ppg_mode {
     unsigned int index;
 };
 
+/* the state of a transposed direct-form II IIR section, the filter the whole
+   sensor library is built out of: `n` coefficients in `b` and `a` and two
+   state buffers of n-1 floats that iir_df2t_step swaps at the end of every
+   call, so the one at +0xc is always the state the next call reads. Nothing
+   in the object is a reflection coefficient, which is what rules the lattice
+   readings out.
+   */
+struct iir_df2t {
+    int n;
+    const float *b;
+    const float *a;
+    float *state_out;
+    float *state_in;
+};
+
+/* the direct-form I sibling iir_df1_step keeps its history in: two rings of
+   `n` floats, the inputs in `x_hist` and the outputs in `y_hist`, shifted one
+   place per call. `y` is both the accumulator the loop builds and the result
+   the caller reads back. `warmup` picks how the rings are seeded before the
+   first full window: 1 and 2 each hold one of the two rings at the incoming
+   sample and anything else holds both.
+   */
+struct iir_df1 {
+    int seeded;
+    int n;
+    int warmup;
+    float y;
+    float *x_hist;
+    float *y_hist;
+    const float *den;
+    const float *num;
+};
+
+/* the deadband level tracker level_track_step owns: the last input, the level
+   that follows it only in jumps of at least the threshold, and the byte that
+   says the first sample has been seen.
+   */
+struct level_track {
+    int last;
+    int level;
+    unsigned char seeded;
+    unsigned char pad_9[0x3];
+};
+
+/* the FFT plan fft_real_split and fft_complex_transform work from. +0x10 is
+   the real point count the caller set up (512 for the HR chain, from the
+   `cmp.w r3, #0x200` in spectrum_fft_input) and +0 is the half of it
+   fft_real_split writes there before handing the complex transform its own
+   length; +0x14 is the twiddle table the split's vfma/vfms pairs index. The
+   bytes between are the complex transform's own stage tables and are not
+   declared, because only that one body reads them.
+   */
+struct fft_plan {
+    unsigned short n_complex;
+    unsigned char stages[0xe];
+    unsigned short n_points;
+    unsigned char pad_12[0x2];
+    const float *twiddles;
+};
+
+/* what spectrum_fft_input and spectrum_power_bins share: the input length, the
+   scale every output bin is multiplied by, the optional analysis window, the
+   complex buffer the transform writes and the padded input it reads, and the
+   plan itself at +0x20, which is the offset spectrum_fft_input adds before
+   calling fft_real_split.
+   */
+struct spectrum_plan {
+    int n_in;
+    unsigned int field_4;
+    float scale;
+    unsigned char windowed;
+    unsigned char pad_d[0x3];
+    const float *window;
+    float *fft_out;
+    float *fft_in;
+    unsigned int field_1c;
+    struct fft_plan fft;
+};
+
+/* the constants a spectrotrack is configured by, reached only as the enclosing
+   object's +0. +0x8 is the exponent spectrotrack_posterior_update tempers the
+   likelihood with and +0xc its bin count as a float; +0x10 and +0x14 are the
+   peak-weight floor and the spread ceiling spectrotrack_publish gates on and
+   +0x18 the sample level spectrotrack_grade_quality compares against. The
+   three (float, count) pairs at +0x8, +0x10 and +0x18 are what the refused
+   0xa304e selects between with an immediate 0, 1 or 2.
+   */
+struct spectrotrack_cfg {
+    float field_0;
+    float field_4;
+    float exponent;
+    float bins_f;
+    float peak_min;
+    float spread_max;
+    float quality_level;
+};
+
+/* a discrete distribution over one axis of values, which is what the HR chain
+   estimates a rate with. `weight` is `bins` floats that sum to one:
+   spectrotrack_posterior_update multiplies a smoothed, tempered likelihood
+   into it and renormalises, and the two estimators read a value out of it --
+   the peak's own axis value, or the weighted mean of the axis over a window of
+   `window` bins around the peak. `estimate`, `spread`, `peak` and `mean` are
+   what they leave behind, and spectrotrack_reset puts the whole array back to
+   a uniform 1/bins.
+   */
+struct spectrotrack {
+    unsigned char ready;
+    unsigned char pad_1[0x3];
+    int bins;
+    const float *axis;
+    float *weight;
+    int window;
+    float estimate;
+    float spread;
+    float peak;
+    float mean;
+    float *scratch_a;
+    float *scratch_b;
+    float *scratch_c;
+    unsigned char state_30[0xc4];
+    float published;
+    unsigned char valid;
+    unsigned char quality;
+    unsigned char pad_fa[0x2];
+};
+
+/* the object spectrotrack_feed, spectrotrack_publish and
+   spectrotrack_grade_quality take: the configuration and the tracker it drives.
+   The four-byte shift between the two is why those three name offsets four
+   higher than the estimators do.
+   */
+struct spectrotrack_slot {
+    const struct spectrotrack_cfg *cfg;
+    struct spectrotrack track;
+};
+
 /* functions */
+/* the complex FFT fft_real_split is built on: radix butterflies over the
+   plan's twiddle table, reached from nothing else in the image.
+   */
+extern int fft_complex_transform(struct fft_plan *plan, const float *in, float *out);
+/* the real-input transform: the complex transform over n/2 points plus the
+   conjugate-symmetric split, in that order for the forward direction and the
+   other order for the inverse. Its output is the packed real spectrum whose
+   first word holds DC and Nyquist together.
+   */
+extern int fft_real_split(struct fft_plan *plan, const float *in, float *out, int inverse);
+/* windows the n inputs, zeroes the rest of the 512-point buffer and runs
+   fft_real_split over it.
+   */
+extern int spectrum_fft_input(struct spectrum_plan *plan, int n, const float *x);
+/* the 257 scaled magnitude-squared bins of that packed spectrum, DC and
+   Nyquist taken from the single word that carries both.
+   */
+extern int spectrum_power_bins(struct spectrum_plan *plan, int bins, float *out);
+/* one sample through a transposed direct-form II section; returns y. */
+extern float iir_df2t_step(struct iir_df2t *f, float x);
+/* one sample through the direct-form I section; the result is also left in
+   `y` and at the head of the output ring.
+   */
+extern float iir_df1_step(struct iir_df1 *f, float x);
+/* a second copy of central_diff_step whose warm-up counter is a word. */
+extern float central_diff_step_i32(void *state, float x);
+/* moves the level only by jumps of at least `threshold` and returns what is
+   left of the input once the level is taken out.
+   */
+extern int level_track_step(struct level_track *t, int x, int threshold);
+/* stores `cfg[0] > x` as the byte at +4 and returns zero. */
+extern int threshold_flag_step(void *state, float x);
+/* the sum of the squared k-th difference of the array, k being the third
+   argument halved: 0 gives the energy, 1 the first-difference energy and 2 the
+   second, which are the spectral moments m0, m1 and m2.
+   */
+extern float vec_f32_diff_energy(int n, const float *x, int order2);
+/* m1 * m1 / (m0 * m2) from three vec_f32_diff_energy calls, refused to a
+   constant when the denominator underflows.
+   */
+extern float spectral_purity_index(int n, const float *x);
+/* out[i] = sum of kernel[j] * x[i+j] over a centred kernel, with the boundary
+   mode 0 dropping the tap, 1 repeating the first element and 2 mirroring.
+   */
+extern int vec_f32_convolve(int n, const float *x, int lo, const float *kernel, float *out, int klen, unsigned char mode);
+/* x[i] multiplied by powf(tab[2i], e) inside [lo, hi] and copied through
+   outside it.
+   */
+extern int vec_f32_band_weight_powf(int n, const float *tab, int lo, int hi, float e, float *out);
+/* sqrt of the weighted mean of the squared deviations from the weighted mean;
+   four of the vector primitives and a sqrtf, one per line.
+   */
+extern float vec_f32_weighted_stddev(int n, const float *x, const float *w, float *scratch);
+/* puts the weights back to a uniform 1/bins and clears every estimate. */
+extern int spectrotrack_reset(struct spectrotrack *t);
+/* stores the axis, the weights, the three scratch arrays and the estimator
+   window, then resets; refuses a window wider than the bin count.
+   */
+extern int spectrotrack_init(struct spectrotrack *t, int bins, const float *axis, float *weight, float *sa, float *sb, float *sc, int window);
+/* one multiplicative update: a smoothed likelihood raised to `e`, multiplied
+   into the weights, renormalised to sum one and clamped away from zero.
+   Refuses an exponent outside [0, 1].
+   */
+extern int spectrotrack_posterior_update(struct spectrotrack *t, int bins, float *scratch, int m, float e);
+/* the estimate as the axis value at the peak weight. */
+extern int spectrotrack_estimate_peak(struct spectrotrack *t);
+/* the estimate as the weighted mean of the axis over a window of bins around
+   the peak of the smoothed weights.
+   */
+extern int spectrotrack_estimate_centroid(struct spectrotrack *t);
+/* spectrotrack_posterior_update and then one of the two estimators, chosen by
+   the mode argument; -2 for any other mode.
+   */
+extern int spectrotrack_step(struct spectrotrack *t, int bins, float *scratch, int m, float e, unsigned char mode);
+/* publishes the estimate and sets the valid flag when the peak weight clears
+   the config's floor and the spread is under its ceiling; zeroes both
+   otherwise.
+   */
+extern int spectrotrack_publish(struct spectrotrack_slot *s);
+/* the quality byte: 2 - valid below the config's level, 0 above it. */
+extern int spectrotrack_grade_quality(struct spectrotrack_slot *s, float x);
+/* one sample into the slot: the step, then the publish, then the quality. */
+extern int spectrotrack_feed(struct spectrotrack_slot *s, float x);
+
 /* one sample into one of the two sensor rings. The body indexes a two-entry
    table of ring descriptors by the first argument and refuses anything above
    one (0x5971e), memcpys the sample into slot (write index * 0x4c) of the

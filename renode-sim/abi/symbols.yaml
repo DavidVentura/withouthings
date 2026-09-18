@@ -7017,6 +7017,17 @@ symbols:
   class: prose
   evidence: SHPR3 PendSV prio, rtc2_tick_init, FPCCR ASPEN|LSPEN, SCR |= SEVONPEND
     @0x740ac
+- address: 0x742c0
+  name: iir_df1_step
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'the direct-form I sibling, with the history kept in two rings: the
+    loop at 0x74366 accumulates num[i] * x[n-i] from the array at +0x1c and subtracts
+    den[i] * y[n-i] from the one at +0x18, the tail adds num[0]*x and divides by
+    den[0] (0x742f6..0x74306), and the result is stored both to +0xc and to the
+    head of the output ring. 0x7434a is the one-element shift of both rings and
+    +8 is the warm-up mode that decides how they are seeded'
 - address: 0x74394
   name: vec_f32_sum
   kind: function
@@ -7242,6 +7253,27 @@ symbols:
   evidence: the call under algo_enabled(0xe) (0x7d6ba, 0x7d71e); id 14 is SLEEP_WAKE.
     The four HRV getters feed it on the stack (0x7d6ea..0x7d706). 1279 calls in
     the trace, one per popped slot.
+- address: 0x7a6e0
+  name: spectrum_fft_input
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'windows and zero-pads: it refuses unless the length equals the plan''s
+    +0 (0x7a6e6), multiplies each of the n inputs by the window at +0x10 when the
+    flag at +0xc is set (0x7a700..0x7a708), writes zero for every index past n (0x7a72a)
+    up to the 0x200 the `cmp.w r3,#0x200` fixes, and hands the 512-point buffer
+    to fft_real_split'
+- address: 0x7a73c
+  name: spectrum_power_bins
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'the 0x101 = 257 magnitude-squared bins of a 512-point packed real spectrum,
+    which is what fixes the transform''s length: bin 0 from the DC word alone (0x7a74c..0x7a760),
+    the 255 interior bins as re*re + im*im doubled (the `vadd.f32 s15, s15, s15`
+    at 0x7a788) over the pairs from +8 to +0x7f8, and the last bin from the second
+    word of the packed pair, which is the Nyquist term (0x7a792). Every bin is scaled
+    by the plan''s +8. It refuses any length but 257 (0x7a742)'
 - address: 0x7aa60
   name: hr_algo_step
   kind: function
@@ -7252,6 +7284,84 @@ symbols:
     filter, sets warm once all four report ready (0x7aade), and on a full window
     converts the rate and the quality to bytes (0x7ac6c, 0x7ac88) and decides acceptability
     from the sample count and the distance to bpm_ref.
+- address: 0x7aee0
+  name: central_diff_step_i32
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'the same body as central_diff_step 0xa3256 -- x[n-1] at +0, x[n-2]
+    at +4, the first step emitting x[n] - x[n-1] and every later one (x[n] - x[n-2])
+    * 0.5 (the `vmov.f32 s12, #5.000000e-01` at 0x7af18) -- with the warm-up counter
+    at +8 held as a word rather than a halfword, so it is a second copy of the routine
+    in another translation unit and not another operation'
+- address: 0x7af28
+  name: window_zscore_step
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'window_f32_push, and once the window is full a vec_f32_stddev over
+    the whole of it (0x7af6c): the newest sample divided by that deviation goes
+    to +0x14 and the whole window divided by it goes to the buffer at +0x1c (0x7af96..0x7afb6),
+    with the divisor forced to 1.0 when its magnitude falls under the literal at
+    0x53fbc. Dividing a window by its own standard deviation is one operation and
+    the byte at +0x10 is the only thing that gates it'
+- address: 0x7afc0
+  name: vec_f32_diff_energy
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'the sum of the squared k-th difference over the array, with k taken
+    as the third argument shifted right by one (`asrs r2, r2, #1` at 0x7afc4): k
+    = 0 accumulates x[i]^2, k = 1 accumulates (x[i+1] - x[i])^2 (the `vsubeq` at
+    0x7afec) and k = 2 accumulates (x[i+2] - 2*x[i+1] + x[i])^2 (the `vfmsne` against
+    2.0 at 0x7afe8 and the `vaddne` at 0x7aff0). Those three sums are the spectral
+    moments m0, m1 and m2'
+- address: 0x7b004
+  name: spectral_purity_index
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: m1^2 / (m0 * m2) from three vec_f32_diff_energy calls with the orders
+    0, 4 and 2 (0x7b00c, 0x7b01a, 0x7b03a), refused to a constant when |m0 * m2|
+    falls under the literal at 0x54050. The ratio of the squared first moment to
+    the product of the zeroth and second is one number with one name, and hr_spectrum_step
+    stores it beside the window's standard deviation
+- address: 0x7b058
+  name: hr_spectrum_step
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'pushes both windows every sample and, once the counter at +0xc is a
+    multiple of the plan''s stride (0x7b08e..0x7b09e), builds the two spectra: 200
+    samples out of the PPG window (`movs r1, #0xc8`), spectral_purity_index into
+    +0xea8, spectrum_fft_input and spectrum_power_bins into the 257 bins at +0x334
+    normalised by vec_f32_normalise_sum, and vec_f32_stddev of the raw window into
+    +0xeac (0x7b0a8..0x7b0f8); then the same transform over the accelerometer window
+    into +0xa68, floored at the literal at 0x54174 and weighted by vec_f32_band_weight_powf
+    (0x7b10a..0x7b154). Two windows in, two normalised spectra and two scalars out'
+- address: 0x7b178
+  name: spectrotrack_posterior_update
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'one multiplicative update of the weights: the likelihood is built uniform
+    over the first m bins and zero after (0x7b1b8..0x7b1dc), smoothed by vec_f32_convolve,
+    raised to the exponent argument by vec_f32_powf after a vec_f32_normalise_sum,
+    multiplied into the weights by vec_f32_mul and renormalised again (0x7b1f6..0x7b222),
+    then every weight is clamped into [the literal at 0x54284, 1.0] (0x7b246..0x7b270).
+    It refuses an exponent outside [0, 1] (0x7b19a, 0x7b1a8), which is what makes
+    it a temperature'
+- address: 0x7b3dc
+  name: vec_f32_convolve
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'a 1-D convolution with a centred kernel and a boundary mode: the kernel
+    half-width is the kernel length halved and negated (0x7b3f4..0x7b3fe), each
+    output accumulates kernel[j] * x[i+j] by `vfma` (0x7b45c), and the mode byte
+    off the stack picks what happens past the edge -- 0 drops the tap, 1 takes the
+    first element (`vldr s15, [r1]` at 0x7b450) and 2 takes the mirror (`vldr s15,
+    [r8, #-4]` at 0x7b46c) -- with anything above 2 refused at 0x7b3f2'
 - address: 0x7b4b0
   name: hr_tempo_algo_step
   kind: function
@@ -13539,6 +13649,39 @@ symbols:
   evidence: '`return ctx->0 >= ctx->8 && ctx->b2c <= 30 * ctx->5c;` -- enough samples
     in and not past the measurement''s window. Every per-sample caller gates on
     it before reading an output, three times a sample between them.'
+- address: 0xa17f8
+  name: fft_complex_transform
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'the complex FFT the real transform is built on: 1738 bytes of radix
+    butterflies over the twiddle table the plan''s +0x14 points at, reached only
+    from fft_real_split and calling only its own stage bodies. No CMSIS-DSP or KissFFT
+    body matches it (matches.yaml), so it is Withings'' own'
+- address: 0xa1ec2
+  name: fft_real_split
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'the real-input wrapper: it halves the plan''s point count at +0x10
+    into +0, and either runs fft_complex_transform over N/2 complex points and then
+    splits the result (the r3 == 0 arm at 0xa1f82) or splits first and then transforms
+    (the forward arm). The split is the conjugate-symmetric recombination: for each
+    k it forms (a+b)/2 and (a-b)/2 against the mirror element at 0xa1f38..0xa1f7c
+    with the twiddle pair from +0x14 applied by vfma/vfms, and the DC term is the
+    lone (x0+x1)/2, (x0-x1)/2 pair at 0xa1ee8..0xa1f06, which is the packed real
+    spectrum''s DC-and-Nyquist word'
+- address: 0xa20c8
+  name: hr_algo_report_state
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: gathers a 0x34-byte record on its own stack out of fourteen fields spread
+    across the whole object -- the status at +0x2c80, the tracker's published value
+    and quality at +0x1910 and +0x1915, the channel bank's outputs, the result block's
+    bpm and quality at +0x2ec4..+0x2ec7 (0xa20d4..0xa2156) -- and hands it to 0x9b7a8
+    under the record id 0xba. hr_algo_process_sample calls it on every error exit
+    and once when the mode byte at +0x2c78 turns over, and it writes nothing back
 - address: 0xa22fc
   name: hr_algo_process_sample
   kind: function
@@ -13567,6 +13710,148 @@ symbols:
   evidence: resets the four filters of hr_algo_result, memsets its three 0x98-byte
     buffers and puts status back to -3 with bpm, quality and warm at zero (0xa257c..0xa2592).
     The mirror of hr_algo_step and nothing else.
+- address: 0xa2684
+  name: level_track_step
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'a deadband level tracker over {last input @0, level @4, seeded @8}:
+    d = x - last, and the level moves by d only when |d| reaches the threshold argument
+    (the `cmp r5, r2` and `addge r0, r0, r4` at 0xa269e), both fields are stored
+    back with one `strd` (0xa26a4) and the return is x - level. An accumulator that
+    takes only jumps above a threshold and returns the residue is what takes the
+    LED-current steps out of a raw PPG count, and it is the first thing hr_chan_filter_step
+    does to one'
+- address: 0xa2848
+  name: hr_chan_filter_step
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'one PPG channel''s front end and the only writer of that channel''s
+    output pair: level_track_step over the raw count, `vcvt.f32.s32` to a float,
+    central_diff_step_i32, and once that differentiator''s warm-up counter at +0x14
+    has saturated at 1 an iir_df1_step at +0x18 and a window_zscore_step at +0x58
+    (0xa2852..0xa287c); when the z-score''s full byte at +0x68 is set it copies
+    the scaled sample at +0x6c into +0x20c and marks +0x210 ready (0xa2880..0xa288c)'
+- address: 0xa2896
+  name: hr_channel_bank_step
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'the channel bank and the only writer of the two signals the rest of
+    the chain runs on. On the mode at +4 it drives either one hr_chan_filter_step
+    with the frame''s +8 or four at the stride 0x214 with the frame''s +0x44, +0x50,
+    +0x2c and +0x38 (0xa295c..0xa2978), and writes their mean -- the four outputs
+    at +0x214, +0x428, +0x63c and +0x850 added and multiplied by 0.25 (0xa2980..0xa29b2)
+    -- to +0x8a8. +0x8ac takes the accelerometer arm: sqrt of the sum of the three
+    squared axes (0xa28f0..0xa290e) through an iir_df1_step at +0x85c. The ready
+    bytes of the four channels are ANDed at 0xa29ba..0xa29d0'
+- address: 0xa2ae8
+  name: hr_spectrum_push_ppg
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: window_f32_push of the pair's first word into the window at +4 (0xa2aea,
+    0xa2aee); the pair hr_spectrum_step is handed is hr_channel_bank_step's +0x8a8
+    and +0x8ac, so the first word is the PPG channel mean
+- address: 0xa2af8
+  name: hr_spectrum_push_accel
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: window_f32_push of the same pair's second word into the window at +0x738
+    (0xa2afa, 0xa2afe), which is hr_channel_bank_step's +0x8ac, the filtered accelerometer
+    magnitude
+- address: 0xa2b0a
+  name: vec_f32_weighted_stddev
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: vec_f32_weighted_mean, then vec_f32_add_scalar of its negation, then
+    vec_f32_powf with the exponent 2, then vec_f32_weighted_mean again and sqrtf
+    -- the weighted standard deviation written out one primitive per step (0xa2b16..0xa2b50)
+- address: 0xa2b54
+  name: spectrotrack_reset
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: clears the ready byte at +0, fills the scratch array at +0x24 with 1/n
+    (the `vdiv.f32 s15, s13, s14` at 0x7b78 region 0xa2b78 and the store loop at
+    0xa2b82), copies it over the weights at +0xc while zeroing +0x28 and +0x2c (0xa2b98..0xa2bb4),
+    and zeroes +0x14, +0x18, +0x1c and +0x20. A uniform distribution and no estimate
+    is the tracker's initial state
+- address: 0xa2bbe
+  name: spectrotrack_init
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: stores the bin count at +4, the axis and weight pointers at +0xc, the
+    three scratch arrays and the window width (0xa2bd2..0xa2be2) and tail-calls
+    spectrotrack_reset; refuses when the window width exceeds the bin count
+- address: 0xa2bf4
+  name: spectrotrack_estimate_centroid
+  kind: label
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'the mode-1 arm: vec_f32_convolve smooths the weights, vec_f32_argmax
+    finds the peak, a window of +0x10 bins is clipped around it (0xa2c20..0xa2c40)
+    and vec_f32_weighted_mean over that window''s axis values gives +0x14, with
+    vec_f32_max and vec_f32_mean over the same window into +0x1c and +0x20 and vec_f32_weighted_stddev
+    into +0x18. Interpolating the peak against its neighbours is what separates
+    it from the mode-0 arm, which takes the bin itself'
+- address: 0xa2c9e
+  name: spectrotrack_estimate_peak
+  kind: label
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: vec_f32_argmax over the weights, the axis value at that index into +0x14
+    (0xa2cbc), vec_f32_max into +0x1c, the weight at the peak into +0x20 and vec_f32_weighted_stddev
+    into +0x18. The mode-0 arm of spectrotrack_step; the partition gave it no function
+    of its own
+- address: 0xa2ce6
+  name: spectrotrack_step
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: spectrotrack_posterior_update and then one of the two estimators on
+    the mode byte off the stack -- 1 tail-calls spectrotrack_estimate_centroid,
+    0 tail-calls spectrotrack_estimate_peak, anything else is -2 (0xa2cf4..0xa2d0e)
+- address: 0xa2d14
+  name: spectrotrack_publish
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'the only writer of the published pair, over the enclosing object: +0xfc
+    is 1 and +0xf8 takes the estimate at +0x18 when the peak weight at +0x20 is
+    above the config''s +0x10 and the spread at +0x1c is below its +0x14, and both
+    are zero otherwise (0xa2d26..0xa2d4c). A strong enough peak and a tight enough
+    distribution is what lets the estimate out, and the two thresholds are the only
+    reason either field ever moves'
+- address: 0xa2d54
+  name: spectrotrack_grade_quality
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'the only writer of the enclosing object''s +0xfd: `2 - valid` when
+    the sample is at or below the config''s +0x18 and 0 when it is above (0xa2d62..0xa2d70).
+    One byte, one comparison against one configured constant'
+- address: 0xa2ddc
+  name: spectrotrack_feed
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'one sample through the enclosing object: spectrotrack_step over the
+    tracker at +4 with the config''s exponent at +8 and its bin count at +0xc converted
+    to an integer (0xa2dee), then spectrotrack_publish and spectrotrack_grade_quality,
+    both skipped when the step failed. It is named for the published estimate, flag
+    and quality it leaves behind because it is three operations and no one of them'
+- address: 0xa30b2
+  name: threshold_flag_step
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: '`cfg[0] > x` as a byte at +4 and nothing else (0xa30b8, 0xa30c6); three
+    instructions of comparison over one configured constant'
 - address: 0xa30fe
   name: window_f32_push
   kind: function
@@ -13590,6 +13875,15 @@ symbols:
   class: hand
   module: sensors_sync
   evidence: window_f32_push over the same object with a byte element (`strb`).
+- address: 0xa31c6
+  name: vec_f32_band_weight_powf
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'out[i] = x[i] for every i outside [lo, hi] and x[i] * powf(tab[2i],
+    e) inside it (0xa3212..0xa3222), the table strided by eight bytes (`lsl #3`);
+    it refuses a negative exponent (0xa31ee), a band wider than the array or a length
+    below twice the upper bound (0xa31dc, 0xa31e2)'
 - address: 0xa3256
   name: central_diff_step
   kind: function
@@ -13598,6 +13892,21 @@ symbols:
   evidence: 'two delay stores and a subtract: the object keeps x[n-1] at +0 and
     x[n-2] at +4 behind a three-valued warm-up counter at +8, emits x[n] - x[n-1]
     on the first full step and (x[n] - x[n-2]) * 0.5 afterwards.'
+- address: 0xa3298
+  name: iir_df2t_step
+  kind: function
+  class: sensor
+  module: SENSORS_SYNC
+  evidence: 'a transposed direct-form II IIR step, not a lattice: with b = +4, a
+    = +8, and the two state buffers at +0xc and +0x10, it forms y = b[0]*x + s[0]
+    (the `vfma.f32 s0, s15, s14` at 0xa32b6), then s''[i] = s[i+1] + b[i+1]*x -
+    a[i+1]*y for i below n-1 (the vfma/vfms pair at 0xa32f8..0xa3302) and s''[n-2]
+    = b[n-1]*x - a[n-1]*y with no carried state, which is the last tap of the transposed
+    form (0xa32cc..0xa32e4). The `strd r12, r6, [r0, #12]` at 0xa32e8 swaps the
+    two buffers, so the ping-pong is where the new state is written and nothing
+    else, and the returned s0 is y. Levinson-Durbin, a lattice and a Goertzel bank
+    are all refuted by it: there is no reflection coefficient, no forward/backward
+    error pair and no per-bin recurrence'
 - address: 0xa330c
   name: running_max3_step
   kind: function
