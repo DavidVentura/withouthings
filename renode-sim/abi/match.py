@@ -423,6 +423,28 @@ class Verifier(object):
                                                % (at, callee, want, got))
         return ("exact" if built == there else "masked"), len(owned), ""
 
+    def settle(self, symbol, addr, variant, addr_of, reach=8):
+        """-> (address, verdict, masked, why), sliding the body if that settles it.
+
+        The token alignment fixes the address from the first instruction whose
+        normalised form matched, and a prologue GCC spelled differently on the
+        two sides puts that a few instructions into the body: prvIdleTask was
+        recorded six bytes past its `push`, where 67 of its 124 bytes differ,
+        while at its real start every byte agrees. The byte comparison is the
+        verdict this file publishes, so where it settles a nearby address it
+        also decides the address.
+        """
+        verdict, masked, why = self.verdict(symbol, addr, variant, addr_of)
+        if verdict in ("exact", "masked", "absent"):
+            return addr, verdict, masked, why
+        for delta in range(-reach, reach + 1, 2):
+            if not delta:
+                continue
+            v, m, w = self.verdict(symbol, addr + delta, variant, addr_of)
+            if v in ("exact", "masked"):
+                return addr + delta, v, m, w
+        return addr, verdict, masked, why
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -633,7 +655,13 @@ def main():
     verifier = Verifier(args.image)
     counts = collections.Counter()
     for name, m in sorted(resolved.items()):
-        verdict, masked, why = verifier.verdict(name, m["address"], m["variant"], addr_of)
+        settled, verdict, masked, why = verifier.settle(
+            name, m["address"], m["variant"], addr_of)
+        if settled != m["address"]:
+            print("  SLIDE  %-28s 0x%-7x -> 0x%x (the byte verdict settles there)"
+                  % (name, m["address"], settled))
+            m["address"] = settled
+            addr_of[name] = settled
         if verdict not in ("exact", "masked"):
             m["divergence"] = why
             verdict = "token_only" if verdict != "refuted" else "refuted"

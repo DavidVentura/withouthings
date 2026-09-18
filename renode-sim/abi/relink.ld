@@ -17,10 +17,11 @@ MEMORY
      * relink_image.py takes the placed address out of the ELF rather than
      * trusting this number. */
     LIB   (rx)  : ORIGIN = 0x000f1180, LENGTH = 0x0000ae80
-    /* facts.yaml's LIBRARY_RAM: room for the source heap_4's 16 KB ucHeap, and
-     * 0x2003a000 is still 0x5000 below the deepest the main stack reached in a
-     * 600 s run. */
-    LRAM  (rw)  : ORIGIN = 0x20034000, LENGTH = 0x00006000
+    /* facts.yaml's LIBRARY_RAM: room for the source heap_4's ucHeap, which is
+     * 35000 bytes because that is what the image's is. It starts 0x200 above
+     * the highest static a 600 s run wrote and ends 0x6000 below the deepest
+     * the main stack reached in the same run. */
+    LRAM  (rw)  : ORIGIN = 0x2002b000, LENGTH = 0x0000e000
 }
 
 ENTRY(Reset_Handler)
@@ -88,6 +89,12 @@ SECTIONS
      * fragment names them first and they stay where they were. */
     /DISCARD/ : { *(.ARM.exidx*) *(.comment) *(.note*) *(.debug*) }
 }
+
+/* configTASK_RETURN_ADDRESS. The LR pxPortInitialiseStack puts under a new task
+ * is 0x97f25 in the image, and 0x97f24 is a bare `udf #0`: a task that returns
+ * traps. The address belongs to no named body -- it is one instruction that
+ * nothing calls -- so the port binds to it here rather than through a name. */
+PROVIDE(vTaskReturnTrap = 0x97f25);
 
 /* The blob reaches __stdio_exit_handler as __sf + 0x138 -- it is the word after
  * the three FILEs, in the same translation unit -- and abi/replacements.yaml's

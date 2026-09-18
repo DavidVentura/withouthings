@@ -392,10 +392,20 @@ NEWLIB_SRC=$ROOT/src/$NEWLIB
 # is already populated.
 # ONLY= skips the builds, so it would also report archives this run never had a
 # chance to rebuild; the check belongs to a run that builds them.
-if [ -z "${ONLY:-}" ] || [ "${1:-}" = --check ]; then
+# --check is the gate; a plain run reports and carries on, because the archives
+# are one measurement among several and the app build is the rest of them. ONLY=
+# skips the newlib builds, so it would report archives the run never had a chance
+# to rebuild, and reports nothing. libc.a's code bytes also move with $ROOT:
+# three assert paths are __FILE__ strings in .rodata, so the same source built
+# under a longer directory name is a larger archive by exactly the extra
+# characters, and the recorded number is the one $HOME/ref-build gives.
+if [ "${1:-}" = --check ]; then
     check_newlib
+    exit $?
 fi
-if [ "${1:-}" = --check ]; then exit 0; fi
+if [ -z "${ONLY:-}" ]; then
+    check_newlib || true
+fi
 
 
 # ---- libm as a matchable ELF ------------------------------------------------
@@ -415,8 +425,12 @@ fi
 # evidence for each; abi/config-relink/nrfx_glue.h the two glue macros. The
 # `app` build below compiles the driver out of this tree and abi/body_check.py
 # checks the result against the image, which is what pins all three.
+# Re-staged every run, the way abi/stage.sh re-stages the kernel: a tree built
+# once and kept is a tree whose patches nobody re-applies, and an edit to
+# abi/patches/nrfx/ would then be measured against the tree from before it.
 SAADC_SRC=$ROOT/nrfx/nrfx-2.1.0-withings
-if [ -d "$ROOT/nrfx/nrfx-2.1.0" ] && [ ! -d "$SAADC_SRC" ]; then
+if [ -d "$ROOT/nrfx/nrfx-2.1.0" ]; then
+    rm -rf "$SAADC_SRC"
     cp -r "$ROOT/nrfx/nrfx-2.1.0" "$SAADC_SRC"
     for p in "$HERE"/patches/nrfx/*.patch; do
         (cd "$SAADC_SRC" && patch -p1 -s < "$p")

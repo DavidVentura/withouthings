@@ -25,7 +25,7 @@ meta:
   # is a fact about one body and one build, so adding references can add
   # candidates but cannot unsettle one. token_only entries are carried by
   # the alignment score alone and are not settled.
-  verdicts: {exact: 17, masked: 80, token_only: 24}
+  verdicts: {exact: 20, masked: 97, token_only: 7}
   ties: 0
   # Two recipes, because the image has two builds in it, and the hunt
   # that found them is over: FreeRTOS and nrfx across four kernel
@@ -41,11 +41,10 @@ meta:
 
 functions:
   - name: prvIdleTask
-    address: 0x27da6
+    address: 0x27da0
     variant: app
-    verdict: token_only
+    verdict: masked
     masked_bytes: 52
-    divergence: "67 of 124 bytes differ outside the 52 a relocation owns, first at +0x0"
     score: 0.925
     insns: 40
     how: direct
@@ -135,11 +134,10 @@ functions:
   - name: __ieee754_exp
     address: 0x2ad58
     variant: toolchain
-    verdict: token_only
-    masked_bytes: 164
-    divergence: "432 of 756 bytes differ outside the 164 a relocation owns, first at +0x8"
-    score: 0.935
-    insns: 231
+    verdict: masked
+    masked_bytes: 156
+    score: 1.000
+    insns: 227
     how: direct
     links: []
   - name: __ieee754_log
@@ -192,23 +190,21 @@ functions:
   - name: prvInsertBlockIntoFreeList
     address: 0x519b8
     variant: app
-    verdict: token_only
+    verdict: masked
     masked_bytes: 8
-    divergence: "21 of 76 bytes differ outside the 8 a relocation owns, first at +0x22"
-    score: 0.853
+    score: 0.971
     insns: 34
     how: direct
     links: []
   - name: pvPortMalloc
     address: 0x51a04
     variant: app
-    verdict: token_only
-    masked_bytes: 36
-    divergence: "188 of 248 bytes differ outside the 36 a relocation owns, first at +0xa"
-    score: 0.848
-    insns: 92
+    verdict: masked
+    masked_bytes: 40
+    score: 0.978
+    insns: 91
     how: direct
-    links: [vTaskSuspendAll@0x73084]
+    links: [vTaskSuspendAll@0x73084, prvInsertBlockIntoFreeList@0x519b8, xTaskResumeAll@0x731dc]
     header: external/freertos/source/include/portable.h
     proto: "void *pvPortMalloc( size_t xSize );"
   - name: vPortFree
@@ -317,10 +313,9 @@ functions:
   - name: xTaskIncrementTick
     address: 0x730bc
     variant: app
-    verdict: token_only
+    verdict: masked
     masked_bytes: 68
-    divergence: "8 of 288 bytes differ outside the 68 a relocation owns, first at +0x0"
-    score: 0.968
+    score: 0.989
     insns: 95
     how: direct
     links: [prvResetNextTaskUnblockTime@0x72eec, uxListRemove@0x9e55a, uxListRemove@0x9e55a, vListInsertEnd@0x9e516]
@@ -390,7 +385,6 @@ functions:
     insns: 11
     how: direct
     links: [vListInsert@0x9e52c, prvAddCurrentTaskToDelayedList@0x72e40]
-    ambiguous_with: [vTaskPlaceOnUnorderedEventList]
     header: external/freertos/source/include/task.h
     proto: "void vTaskPlaceOnEventList( List_t * const pxEventList, const TickType_t xTicksToWait );"
   - name: xTaskRemoveFromEventList
@@ -441,14 +435,12 @@ functions:
   - name: vTaskGetInfo
     address: 0x73504
     variant: app
-    verdict: token_only
+    verdict: masked
     masked_bytes: 16
-    divergence: "73 of 120 bytes differ outside the 16 a relocation owns, first at +0xa"
-    score: 0.942
-    insns: 52
+    score: 1.000
+    insns: 54
     how: direct
-    links: []
-    broken_links: 1
+    links: [vTaskSuspendAll@0x73084, xTaskResumeAll@0x731dc, eTaskGetState@0x72fa4]
     header: external/freertos/source/include/task.h
     proto: "void vTaskGetInfo( TaskHandle_t xTask, TaskStatus_t *pxTaskStatus, BaseType_t xGetFreeStackSpace, eTaskState eState );"
   - name: uxTaskGetStackHighWaterMark
@@ -507,10 +499,9 @@ functions:
   - name: vTaskPriorityDisinheritAfterTimeout
     address: 0x73748
     variant: app
-    verdict: token_only
+    verdict: masked
     masked_bytes: 16
-    divergence: "16 of 104 bytes differ outside the 16 a relocation owns, first at +0x46"
-    score: 0.854
+    score: 1.000
     insns: 41
     how: direct
     links: [uxListRemove@0x9e55a, vListInsertEnd@0x9e516]
@@ -574,27 +565,23 @@ functions:
   - name: xQueueGenericSend
     address: 0x73a90
     variant: app
-    verdict: token_only
-    masked_bytes: 88
-    divergence: "169 of 264 bytes differ outside the 88 a relocation owns, first at +0x4"
-    score: 0.826
-    insns: 92
+    verdict: masked
+    masked_bytes: 96
+    score: 0.990
+    insns: 104
     how: direct
-    links: [vPortExitCritical@0x73e5c]
-    broken_links: 5
+    links: [vPortEnterCritical@0x73e3c, prvCopyDataToQueue@0x9e590, xTaskRemoveFromEventList@0x733ec, vPortExitCritical@0x73e5c, prvNotifyQueueSetContainer@0x9e5f6, vPortExitCritical@0x73e5c, vTaskInternalSetTimeOutState@0x7345c, vPortExitCritical@0x73e5c, vTaskSuspendAll@0x73084, vPortEnterCritical@0x73e3c, vPortExitCritical@0x73e5c, xTaskCheckForTimeOut@0x73474, vPortEnterCritical@0x73e3c, vPortExitCritical@0x73e5c, vTaskPlaceOnEventList@0x733cc, prvUnlockQueue@0x9e66c, xTaskResumeAll@0x731dc, vPortExitCritical@0x73e5c, prvUnlockQueue@0x9e66c, xTaskResumeAll@0x731dc, prvUnlockQueue@0x9e66c, xTaskResumeAll@0x731dc]
     header: external/freertos/source/include/queue.h
     proto: "BaseType_t xQueueGenericSend( QueueHandle_t xQueue, const void * const pvItemToQueue, TickType_t xTicksToWait, const BaseType_t xCopyPosition );"
   - name: xQueueReceive
     address: 0x73c64
     variant: app
-    verdict: token_only
-    masked_bytes: 80
-    divergence: "151 of 238 bytes differ outside the 80 a relocation owns, first at +0x4"
-    score: 0.827
-    insns: 81
+    verdict: masked
+    masked_bytes: 88
+    score: 1.000
+    insns: 92
     how: direct
-    links: [vPortExitCritical@0x73e5c, prvUnlockQueue@0x9e66c, xTaskResumeAll@0x731dc]
-    broken_links: 3
+    links: [vPortEnterCritical@0x73e3c, prvCopyDataFromQueue@0x9e640, xTaskRemoveFromEventList@0x733ec, vPortExitCritical@0x73e5c, vPortExitCritical@0x73e5c, vTaskInternalSetTimeOutState@0x7345c, vPortExitCritical@0x73e5c, vTaskSuspendAll@0x73084, vPortEnterCritical@0x73e3c, vPortExitCritical@0x73e5c, xTaskCheckForTimeOut@0x73474, prvIsQueueEmpty@0x9e57a, vTaskPlaceOnEventList@0x733cc, prvUnlockQueue@0x9e66c, xTaskResumeAll@0x731dc, prvUnlockQueue@0x9e66c, xTaskResumeAll@0x731dc, prvUnlockQueue@0x9e66c, xTaskResumeAll@0x731dc, prvIsQueueEmpty@0x9e57a]
     ambiguous_with: [xQueuePeek]
     header: external/freertos/source/include/queue.h
     proto: "BaseType_t xQueueReceive( QueueHandle_t xQueue, void * const pvBuffer, TickType_t xTicksToWait );"
@@ -608,13 +595,12 @@ functions:
     links: []
   - name: pxPortInitialiseStack
     address: 0x73e10
-    variant: app+graph
-    verdict: token_only
+    variant: app
+    verdict: masked
     masked_bytes: 4
-    divergence: "19 of 36 bytes differ outside the 4 a relocation owns, first at +0x5"
-    score: 0.700
-    insns: 10
-    how: propagated from prvInitialiseNewTask.constprop.0
+    score: 1.000
+    insns: 12
+    how: direct
     links: []
     header: external/freertos/source/include/portable.h
     proto: "StackType_t *pxPortInitialiseStack( StackType_t *pxTopOfStack, TaskFunction_t pxCode, void *pvParameters, BaseType_t xRunPrivileged );"
@@ -708,6 +694,18 @@ functions:
     links: [nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a]
     header: modules/nrfx/drivers/include/nrfx_saadc.h
     proto: "nrfx_err_t nrfx_saadc_init(nrfx_saadc_config_t const * p_config, nrfx_saadc_event_handler_t event_handler);"
+  - name: nrfx_saadc_channels_config
+    address: 0x7dd10
+    variant: app
+    verdict: token_only
+    masked_bytes: 12
+    divergence: "74 of 280 bytes differ outside the 12 a relocation owns, first at +0x4"
+    score: 0.886
+    insns: 88
+    how: direct
+    links: [saadc_busy_check@0x7db08]
+    header: modules/nrfx/drivers/include/nrfx_saadc_v2.h
+    proto: "nrfx_err_t nrfx_saadc_channels_config(nrfx_saadc_channel_t const * p_channels, uint32_t channel_count);"
   - name: nrfx_saadc_simple_mode_set
     address: 0x7de34
     variant: app
@@ -719,6 +717,17 @@ functions:
     links: [saadc_busy_check@0x7db08, saadc_channel_count_get@0x7dc88, saadc_generic_mode_set@0x7db24]
     header: modules/nrfx/drivers/include/nrfx_saadc_v2.h
     proto: "nrfx_err_t nrfx_saadc_simple_mode_set(uint32_t channel_mask, nrf_saadc_resolution_t resolution, nrf_saadc_oversample_t oversampling, nrfx_saadc_event_handler_t event_handler);"
+  - name: nrfx_saadc_advanced_mode_set
+    address: 0x7de94
+    variant: app
+    verdict: masked
+    masked_bytes: 16
+    score: 0.984
+    insns: 61
+    how: direct
+    links: [saadc_busy_check@0x7db08, saadc_channel_count_get@0x7dc88, saadc_generic_mode_set@0x7db24]
+    header: modules/nrfx/drivers/include/nrfx_saadc_v2.h
+    proto: "nrfx_err_t nrfx_saadc_advanced_mode_set(uint32_t channel_mask, nrf_saadc_resolution_t resolution, nrfx_saadc_adv_config_t const * p_config, nrfx_saadc_event_handler_t event_handler);"
   - name: nrfx_saadc_buffer_set
     address: 0x7df40
     variant: app
@@ -730,6 +739,17 @@ functions:
     links: []
     header: modules/nrfx/drivers/include/nrfx_saadc_v2.h
     proto: "nrfx_err_t nrfx_saadc_buffer_set(nrf_saadc_value_t * p_buffer, uint16_t size);"
+  - name: nrfx_saadc_mode_trigger
+    address: 0x7dfb8
+    variant: app
+    verdict: masked
+    masked_bytes: 28
+    score: 0.992
+    insns: 123
+    how: direct
+    links: [nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a]
+    header: modules/nrfx/drivers/include/nrfx_saadc_v2.h
+    proto: "nrfx_err_t nrfx_saadc_mode_trigger(void);"
   - name: nrfx_saadc_abort
     address: 0x7e108
     variant: app
@@ -755,10 +775,9 @@ functions:
   - name: SAADC_IRQHandler
     address: 0x7e16c
     variant: app
-    verdict: token_only
+    verdict: masked
     masked_bytes: 28
-    divergence: "10 of 316 bytes differ outside the 28 a relocation owns, first at +0xbe"
-    score: 0.983
+    score: 1.000
     insns: 118
     how: direct
     links: [nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a, nrf_saadc_event_clear.constprop.0@0xa4e3a, saadc_event_limits_handle@0x7dc2c, saadc_event_limits_handle@0x7dc2c, nrf_saadc_event_clear.constprop.0@0xa4e3a]
@@ -842,11 +861,10 @@ functions:
   - name: __ieee754_sqrt
     address: 0x8cd6c
     variant: toolchain
-    verdict: token_only
-    masked_bytes: 40
-    divergence: "104 of 428 bytes differ outside the 40 a relocation owns, first at +0x2"
-    score: 0.968
-    insns: 158
+    verdict: masked
+    masked_bytes: 36
+    score: 1.000
+    insns: 157
     how: direct
     links: []
   - name: round
@@ -869,21 +887,19 @@ functions:
   - name: __ieee754_expf
     address: 0x8cfe4
     variant: toolchain
-    verdict: token_only
-    masked_bytes: 20
-    divergence: "283 of 412 bytes differ outside the 20 a relocation owns, first at +0x1c"
-    score: 0.783
-    insns: 106
+    verdict: masked
+    masked_bytes: 12
+    score: 0.990
+    insns: 102
     how: direct
     links: []
   - name: __ieee754_powf
     address: 0x8d170
     variant: toolchain
-    verdict: token_only
-    masked_bytes: 32
-    divergence: "754 of 1436 bytes differ outside the 32 a relocation owns, first at +0x2a"
-    score: 0.663
-    insns: 386
+    verdict: masked
+    masked_bytes: 24
+    score: 0.745
+    insns: 381
     how: direct
     links: [__ieee754_sqrtf@0xa7e98]
   - name: scalbnf
@@ -918,10 +934,9 @@ functions:
   - name: prvInitialiseNewTask.constprop.0
     address: 0x9e34c
     variant: app
-    verdict: token_only
+    verdict: masked
     masked_bytes: 16
-    divergence: "2 of 144 bytes differ outside the 16 a relocation owns, first at +0x2c"
-    score: 0.961
+    score: 1.000
     insns: 51
     how: direct
     links: [vListInitialiseItem@0x9e510, vListInitialiseItem@0x9e510, pxPortInitialiseStack@0x73e10]
@@ -981,9 +996,8 @@ functions:
   - name: vListInsertEnd
     address: 0x9e516
     variant: app
-    verdict: token_only
-    divergence: "4 of 22 bytes differ outside the 0 a relocation owns, first at +0xc"
-    score: 0.818
+    verdict: exact
+    score: 1.000
     insns: 11
     how: direct
     links: []
@@ -992,9 +1006,8 @@ functions:
   - name: vListInsert
     address: 0x9e52c
     variant: app
-    verdict: token_only
-    divergence: "4 of 46 bytes differ outside the 0 a relocation owns, first at +0x14"
-    score: 0.909
+    verdict: exact
+    score: 1.000
     insns: 22
     how: direct
     links: []
@@ -1003,10 +1016,9 @@ functions:
   - name: uxListRemove
     address: 0x9e55a
     variant: app
-    verdict: token_only
-    divergence: "27 of 36 bytes differ outside the 0 a relocation owns, first at +0x8"
-    score: 0.706
-    insns: 17
+    verdict: exact
+    score: 1.000
+    insns: 15
     how: direct
     links: []
     header: external/freertos/source/include/list.h
@@ -1055,7 +1067,7 @@ functions:
     divergence: "70 of 122 bytes differ outside the 36 a relocation owns, first at +0x14"
     score: 0.622
     insns: 45
-    how: propagated from xQueueReceive
+    how: propagated from xQueueGenericSend
     links: [vPortEnterCritical@0x73e3c, vPortExitCritical@0x73e5c]
   - name: xQueueGenericReset
     address: 0x9e6e8
@@ -1274,12 +1286,12 @@ functions:
     links: []
 
 library_ranges:  # spans of the image the matches bracket
-  - {start: 0x27da6, end: 0x27e50, matched: 3}
+  - {start: 0x27da0, end: 0x27e50, matched: 3}
   - {start: 0x2a7e0, end: 0x2b040, matched: 9}
   - {start: 0x2bdf8, end: 0x2c9a8, matched: 4}
   - {start: 0x519b8, end: 0x51afc, matched: 3}
   - {start: 0x72d40, end: 0x74034, matched: 40}
-  - {start: 0x7db08, end: 0x7e16c, matched: 10}
+  - {start: 0x7db08, end: 0x7e16c, matched: 13}
   - {start: 0x81220, end: 0x812a8, matched: 2}
   - {start: 0x8c8fc, end: 0x8d6f8, matched: 12}
   - {start: 0x8f42c, end: 0x8f42c, matched: 1}
@@ -1288,6 +1300,7 @@ library_ranges:  # spans of the image the matches bracket
   - {start: 0xa7c6e, end: 0xa7ee0, matched: 11}
 
 unmatched_image:  # call targets inside those spans with no symbol
+  - 0x27da6
   - 0x27dc8
   - 0x27de0
   - 0x2a8c8
@@ -1329,10 +1342,7 @@ unmatched_image:  # call targets inside those spans with no symbol
   - 0x73d78
   - 0x73dfc
   - 0x7db1c
-  - 0x7dd10
-  - 0x7de94
   - 0x7dfaa
-  - 0x7dfb8
   - 0x8ca1c
   - 0x8cab8
   - 0x8caea
@@ -1382,7 +1392,7 @@ unmatched_reference:
   - __ieee754_jn  # best 0.19
   - __ieee754_lgamma_r  # best 0.22
   - __ieee754_log10  # best 0.41
-  - __ieee754_pow  # best 0.53
+  - __ieee754_pow  # best 0.52
   - __ieee754_remainder  # best 0.25
   - __ieee754_scalb  # best 0.32
   - __ieee754_sinh  # best 0.26
@@ -1405,7 +1415,7 @@ unmatched_reference:
   - asin  # best 0.68
   - asinf  # best 0.48
   - asinh  # best 0.23
-  - atan  # best 0.28
+  - atan  # best 0.35
   - atanh  # best 0.48
   - cacos  # best 0.33
   - cacosl  # best 0.39
@@ -1462,13 +1472,11 @@ unmatched_reference:
   - nrf_clock_event_clear  # best 0.89
   - nrf_drv_power_sd_usbevt_enable  # best 0.09
   - nrf_gpiote_event_clear  # best 0.90
-  - nrfx_saadc_advanced_mode_set  # best 0.52
-  - nrfx_saadc_mode_trigger  # best 0.60
+  - nrfx_pwm_simple_playback  # best 0.32
   - nrfx_wdt_feed  # best 0.45
-  - pone  # best 0.24
+  - pone  # best 0.25
   - prs_box_get  # best 0.44
-  - prvTaskExitError  # best 0.58
-  - pzero  # best 0.24
+  - pzero  # best 0.25
   - qone  # best 0.24
   - qzero  # best 0.24
   - remainder  # best 0.97
@@ -1483,7 +1491,7 @@ unmatched_reference:
   - tanh  # best 0.25
   - truncf  # best 0.38
   - vTaskNotifyGiveFromISR  # best 0.55
-  - vTaskPlaceOnUnorderedEventList  # best 0.71
+  - vTaskPlaceOnUnorderedEventList  # best 0.64
   - vTaskPrioritySet  # best 0.23
   - vTaskRemoveFromUnorderedEventList  # best 0.66
   - vTaskResume  # best 0.44
@@ -1491,6 +1499,7 @@ unmatched_reference:
   - with_errno  # best 0.64
   - xEventGroupSync  # best 0.31
   - xEventGroupWaitBits  # best 0.24
+  - xPortStartScheduler  # best 0.58
   - xQueueCreateMutex  # best 0.73
   - xQueueGenericCreate  # best 0.48
   - xQueueGiveMutexRecursive  # best 0.32

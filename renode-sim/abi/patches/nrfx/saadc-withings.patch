@@ -9,6 +9,12 @@ the driver look unrecoverable. The timer-driven mode with SAMPLERATE and
 OVERSAMPLE and the two-buffer EasyDMA handover the sim work found are stock
 nrfx 2.x advanced mode, not a Withings addition.
 
+The already-configured test shifts an unsigned value. channels_configured is a
+uint8_t, so `>> ch` promotes it to int and GCC emits `asr`; the image has `lsr`
+at 0x7dd60. The two are the same arithmetic on a value that cannot be negative,
+so nothing but the cast decides which instruction comes out, and with it one
+more byte of nrfx_saadc_channels_config agrees.
+
 Build, measured the same way: GCC 13.2.Rel1 (the toolchain that also builds
 the image's newlib 4.3.0.20230120) at -Os, without -fno-builtin, and
 abi/config-relink/nrfx_glue.h for the two glue macros. Under that
@@ -107,7 +113,7 @@ GCC 12.3, 13.3 or 14.2.
 -        if (m_cb.channels_configured & (1 << p_channels[i].channel_index))
 +        uint8_t ch = p_channels[i].channel_index;
 +
-+        if ((m_cb.channels_configured >> ch) & 1)
++        if (((uint32_t)m_cb.channels_configured >> ch) & 1)
          {
              // This channel is already configured!
              return NRFX_ERROR_INVALID_PARAM;
