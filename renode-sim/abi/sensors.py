@@ -36,7 +36,11 @@ import symbols as symmap  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 GHIDRA = os.path.join(HERE, "out", "ghidra")
 CLASS = "sensor"
-MODULE = "SENSORS_SYNC"
+# The log-tag partition's module where it has one. A handful of these bodies
+# are shared primitives the partition never reached, and claiming a module for
+# them would be inventing evidence, so they take the header they are declared
+# in instead.
+HEADER_MODULE = "sensors_sync"
 
 # address, name, kind, evidence; `calls` are callee addresses the body must
 # still reach and `reads` are literal-pool values it must still load.
@@ -179,6 +183,42 @@ ROWS = [
                   " vec_f32_weighted_mean again and sqrtf -- the weighted"
                   " standard deviation written out one primitive per step"
                   " (0xa2b16..0xa2b50)"),
+
+    # --- the integer and ring primitives the other algorithms share ---------
+    dict(address=0x9EA3E, name="vec_i32_mean", kind="function",
+         evidence="the sum of n words walked backwards from the end"
+                  " (`ldr r4, [r1, #-4]!` at 0x9ea4c) divided by n with `sdiv`;"
+                  " zero for n == 0. vec_f32_mean over integers"),
+    dict(address=0x9EA5C, name="vec_i32_max", kind="function",
+         evidence="x[0], then `movlt` on each element that runs higher"
+                  " (0x9ea6e..0x9ea72); the integer vec_f32_max, and like it"
+                  " it returns the value and not the index"),
+    dict(address=0x9ECF2, name="delay_i32_push_pop", kind="function",
+         evidence="the integer delay_f32_push_pop over {wrapped @0, head @4,"
+                  " capacity @8, int * @0xc}: the head advances and, on"
+                  " reaching the capacity, resets to zero with the wrapped flag"
+                  " set by the one `strdeq` at 0x9ed02; then the slot's old"
+                  " value is returned and the new one stored over it (0x9ed0a,"
+                  " 0x9ed0e), so one call is both the push and the sample"
+                  " leaving the line"),
+    dict(address=0xA0312, name="window_pair_push", kind="function",
+         evidence="window_f32_push with an eight-byte element and the fields in"
+                  " delay_f32_push_pop's order: {capacity @0, head @4, void *"
+                  " @8, full @0xc}. The head wraps to zero at capacity - 1"
+                  " (0xa0328..0xa032c), the pair arrives in two registers and"
+                  " is stored with one `stm` (0xa0336), and full is set the"
+                  " first time the head lands on the last slot (0xa033c)"),
+    dict(address=0xA02DC, name="ring3_prev_index", kind="function",
+         evidence="the index at +8 less one, and 2 when it is already zero"
+                  " (0xa02de..0xa02e6); the predecessor in a three-slot ring"
+                  " and nothing else"),
+    dict(address=0x9EE58, name="mat_u16_drop_first_row", kind="function",
+         evidence="a row-major halfword matrix shifted up one row: for each of"
+                  " the first rows - 1 rows it copies every column from the row"
+                  " below (`ldrh.w r7, [r5, r1, lsl #1]` against"
+                  " `strh r7, [r5], #2` at 0x9ee6c), with r1 the column count"
+                  " and r2 the row count. Dropping the oldest row of a history"
+                  " matrix is the whole body"),
 
     # --- the distribution tracker the HR chain estimates a rate with ---------
     # Its object is one array of weights over one axis of values, multiplied by
@@ -356,6 +396,8 @@ def load_analysis():
         items = json.load(fh)
     with open(os.path.join(GHIDRA, "references.json")) as fh:
         refs = json.load(fh)
+    with open(os.path.join(GHIDRA, "modules.json")) as fh:
+        modules = json.load(fh)["functions"]
     starts = dict((f["start"], f) for f in items["functions"])
     calls, pool = {}, {}
     for call in refs["calls"]:
@@ -365,7 +407,7 @@ def load_analysis():
     for word in refs["words"]:
         for reader in word["readers"]:
             pool.setdefault(reader, set()).add(word["value"])
-    return starts, calls, pool
+    return starts, calls, pool, modules
 
 
 def checked(rows):
@@ -376,7 +418,8 @@ def checked(rows):
     reads. A body that no longer calls what the reading says it calls is a
     different body, and naming it would be the stale claim winning.
     """
-    starts, calls, pool = load_analysis()
+    starts, calls, pool, modules = load_analysis()
+    partition = dict((a, v["module"]) for a, v in modules.items())
     out, complaints = [], []
     for row in rows:
         at = row["address"]
@@ -404,7 +447,8 @@ def checked(rows):
                                  ", ".join("0x%x" % v for v in absent)))
             continue
         out.append(dict(address=at, name=row["name"], kind=row["kind"],
-                        **{"class": CLASS, "module": MODULE,
+                        **{"class": CLASS,
+                           "module": partition.get("0x%x" % at, HEADER_MODULE),
                            "evidence": row["evidence"]}))
     return out, complaints
 
