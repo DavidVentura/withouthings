@@ -1,0 +1,30 @@
+TaskStatus_t carries the task's current stack pointer.
+
+vTaskGetInfo (0x73504) stores pxTCB->pxTopOfStack, the TCB's first word, into
+the status structure at +0x20, between pxStackBase and the high-water mark,
+which sits at +0x24 instead of +0x20 as a result. The store is in source order:
+it follows the pxStackBase assignment and precedes xTaskNumber. Nothing in the
+SDK's kernel writes that field; the newer upstream kernels put pxTopOfStack and
+pxEndOfStack there together under configRECORD_STACK_HIGH_ADDRESS, and this
+image has only the first of the two.
+
+--- a/include/task.h
++++ b/include/task.h
+@@ -136,6 +136,7 @@
+ 	UBaseType_t uxBasePriority;		/* The priority to which the task will return if the task's current priority has been inherited to avoid unbounded priority inversion when obtaining a mutex.  Only valid if configUSE_MUTEXES is defined as 1 in FreeRTOSConfig.h. */
+ 	uint32_t ulRunTimeCounter;		/* The total run time allocated to the task so far, as defined by the run time stats clock.  See http://www.freertos.org/rtos-run-time-stats.html.  Only valid when configGENERATE_RUN_TIME_STATS is defined as 1 in FreeRTOSConfig.h. */
+ 	StackType_t *pxStackBase;		/* Points to the lowest address of the task's stack area. */
++	StackType_t *pxTopOfStack;		/* The task's current stack pointer. */
+ 	uint16_t usStackHighWaterMark;	/* The minimum amount of stack space that has remained for the task since the task was created.  The closer this value is to zero the closer the task has come to overflowing its stack. */
+ } TaskStatus_t;
+ 
+--- a/tasks.c
++++ b/tasks.c
+@@ -3507,6 +3507,7 @@
+ 		pxTaskStatus->pcTaskName = ( const char * ) &( pxTCB->pcTaskName [ 0 ] );
+ 		pxTaskStatus->uxCurrentPriority = pxTCB->uxPriority;
+ 		pxTaskStatus->pxStackBase = pxTCB->pxStack;
++		pxTaskStatus->pxTopOfStack = pxTCB->pxTopOfStack;
+ 		pxTaskStatus->xTaskNumber = pxTCB->uxTCBNumber;
+ 
+ 		#if ( configUSE_MUTEXES == 1 )
