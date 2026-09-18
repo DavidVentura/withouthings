@@ -6346,9 +6346,8 @@ symbols:
 - address: 0x730ac
   name: vTaskStepTick
   kind: function
-  class: hand
-  module: freertos
-  evidence: inferred from the tickless-idle catch-up call site at 0x73f82
+  class: match
+  evidence: app, score 1.00 over 6 insns, direct
 - address: 0x730bc
   name: xTaskIncrementTick
   kind: function

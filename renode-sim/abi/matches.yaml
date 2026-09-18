@@ -27,14 +27,15 @@ meta:
   # the alignment score alone and are not settled.
   verdicts: {exact: 17, masked: 80, token_only: 24}
   ties: 0
-  # Candidates tried against the hard-float blocks in SENSORS_SYNC and
-  # ECG and rejected on bodies, not on constant tables: CMSIS-DSP 1.9.0
-  # (CMSIS 5.7.0), 1.10.0 (CMSIS 5.9.0) and 1.14.4 at -Os and -O2, whose
-  # only hit was one 17-instruction arm_rfft_*_fast_init_f64 body that
-  # eight of its own transform sizes share, and KissFFT 131.1.0, which
-  # reached no candidate position at all. The libm that does match is
-  # newlib 4.3.0.20230120 built by abi/refbuild.sh with the image's own
-  # flags, and none of its bodies lands in either block.
+  # Two recipes, because the image has two builds in it, and the hunt
+  # that found them is over: FreeRTOS and nrfx across four kernel
+  # versions, two nrfx trees, GCC 9/12.3/13.2/13.3/14.2, -Os/-O2/-O3 and
+  # three assert flavours; newlib across reent-small and single-thread;
+  # CMSIS-DSP 1.9.0/1.10.0/1.14.4 and KissFFT 131.1.0 against the
+  # hard-float blocks in SENSORS_SYNC and ECG, which reached one
+  # 17-instruction body eight of its own transform sizes share and
+  # nothing else. abi/refbuild.sh builds only the two that won; git
+  # history has the rest.
   # accuracy against the addresses abi/symbols.yaml already establishes by hand
   known_set: {correct: 13, wrong: 0, missing: 5, precision: 1.00, recall: 0.72}
 
