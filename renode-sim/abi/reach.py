@@ -33,6 +33,9 @@ import yaml
 
 from elftools.elf.elffile import ELFFile
 
+import shapes
+import symbols
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIM = os.path.dirname(HERE)
 OUT = os.path.join(SIM, "out", "reach")
@@ -153,23 +156,14 @@ class Export(object):
             self.references = json.load(fh)
         with open(os.path.join(HERE, "out", "ghidra", "items.json")) as fh:
             self.function_starts = set(f["start"] for f in json.load(fh)["functions"])
-        with open(os.path.join(HERE, "autonames.yaml")) as fh:
-            self.autonames = yaml.safe_load(fh)["functions"]
         with open(os.path.join(HERE, "boundary.yaml")) as fh:
             boundary = yaml.safe_load(fh)
         self.library = [tuple(r) for r in boundary["library_ranges"]]
         with open(os.path.join(HERE, "out", "ghidra", "words.json")) as fh:
             self.words = json.load(fh)
-        with open(os.path.join(HERE, "hwa10.yaml")) as fh:
-            self.manifest = yaml.safe_load(fh)
-        self.named = {f["address"]: f["name"] for f in self.autonames}
-        self.tables = {t["name"]: t for t in self.manifest["tables"]}
-        self.structs = {t["name"]: t for t in self.manifest["table_structs"]}
-        # A row's call target may be declared as one of the manifest's function
-        # pointer typedefs rather than as a bare void *; either way it is the
-        # slot a root is taken from.
-        self.typedefs = {t["name"] for t in self.manifest.get("typedefs", [])}
-        self.functions = {f["name"]: f["address"] for f in self.manifest["functions"]}
+        self.symbols = symbols.load()
+        self.named = {s.address: s.name for s in self.symbols.of_kind("function")}
+        self.tables = {t.name: t for t in shapes.load().tables(self.symbols)}
 
     def word(self, addr):
         return struct.unpack_from("<I", self.image, addr - APP_BASE)[0]
@@ -233,7 +227,7 @@ def rule_tasks(export, image, group, spec):
     is the entry to cut, because it is the only reference to the task body and
     dropping the task means dropping the create call that reads it.
     """
-    creators = {export.functions["xTaskCreateStatic"]: "xTaskCreateStatic",
+    creators = {export.symbols.address("xTaskCreateStatic"): "xTaskCreateStatic",
                 0x9E410: "xTaskCreate"}
     roots = []
     for call in sorted(export.references["calls"], key=lambda c: c["from"]):
@@ -256,24 +250,23 @@ def rule_command_table(export, image, group, spec, table, prefix):
     """One root per function slot of a dispatch-table row.
 
     A row is a root because the walker reaches the table without a reference the
-    object can see (hwa10.yaml: no literal pool holds the wpp table's address),
-    so per-command exclusivity is only computable if each row stands alone. The
-    columns come from the row struct the manifest declares, so the WPP table's
-    {id, handler, name} and the shell's {name, run, help} read the same way.
+    object can see (no literal pool holds the wpp table's address), so
+    per-command exclusivity is only computable if each row stands alone. The
+    columns come from the row struct the header declares, so the WPP table's
+    {id, handler, name} and the shell's {name, run, help} read the same way: a
+    pointer at a string is the label, a pointer at code is a handler slot, and
+    a word-wide number is the command the row answers.
     """
-    spec = spec.get("table") or export.tables[table]
-    fields = export.structs[spec["entry"]]["fields"]
+    spec = export.tables[table]
     roots = []
-    for i in range(spec["count"]):
-        row = spec["address"] + i * spec["stride"]
-        cols = {fname: export.word(row + 4 * j)
-                for j, (_, fname) in enumerate(fields)}
-        types = {fname: ftype for ftype, fname in fields}
-        key = next((cols[f] for f, t in types.items() if t == "u32"), None)
-        label = next((export.string(cols[f]) for f, t in types.items()
-                      if t == "const char *"), None)
-        slots = [f for f, t in types.items()
-                 if t == "void *" or t in export.typedefs]
+    for row in spec.rows():
+        cols = {f.name: export.word(row + f.offset) for f in spec.row.fields}
+        key = next((cols[f.name] for f in spec.row.fields
+                    if f.kind == shapes.SCALAR and f.size == 4), None)
+        label = next((export.string(cols[f.name]) for f in spec.row.fields
+                      if f.points_to == "char"), None)
+        slots = [f.name for f in spec.row.fields
+                 if f.points_to in ("code", "void")]
         for fname in slots:
             handler = cols[fname]
             if not handler & 1 or not export.in_image(handler):
@@ -296,20 +289,20 @@ def rule_command_table(export, image, group, spec, table, prefix):
 def rule_device_table(export, image, group, spec, table):
     """One root per function slot of a device row, named by the row's address."""
     spec = export.tables[table]
-    fields = export.structs[spec["entry"]]["fields"]
     roots = []
-    for i in range(spec["count"]):
-        row = spec["address"] + i * spec["stride"]
-        offset = 0
-        for ftype, fname in fields:
-            value = export.word(row + offset) if ftype != "u16" else 0
-            offset += 2 if ftype == "u16" else 4
-            if ftype != "void *" or fname == "bus" or not value & 1:
+    for row in spec.rows():
+        for f in spec.row.fields:
+            # The bus the row hangs off is a device, not an entry point, and a
+            # string column is a name; what is left is the driver's own slots.
+            if f.points_to not in ("code", "void") or f.name == "bus":
+                continue
+            value = export.word(row + f.offset)
+            if not value & 1:
                 continue
             roots.append(Root(
-                group, "%s_%x_%s" % (table.split("_")[0], row, fname), value & ~1,
-                "%s row 0x%08x field %s = 0x%08x" % (table, row, fname, value),
-                None, image, entry=row + offset - 4))
+                group, "%s_%x_%s" % (table.split("_")[0], row, f.name), value & ~1,
+                "%s row 0x%08x field %s = 0x%08x" % (table, row, f.name, value),
+                None, image, entry=row + f.offset))
     return roots
 
 

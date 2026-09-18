@@ -21,12 +21,12 @@ COMMON="-Os -ffunction-sections -fdata-sections -fno-strict-aliasing -fno-builti
  -fshort-enums -std=gnu99 -g3 -w -DNRF52840_XXAA -DFLOAT_ABI_HARD -DS140
  -DSOFTDEVICE_PRESENT -DNRF_SD_BLE_API_VERSION=7 -DFREERTOS -DSWI_DISABLE0"
 
-# The SDK port hardcodes RTC1 as the tick source; this firmware's tick is RTC2
-# (symbols.txt 0x74034 writes RTC2 PRESCALER 0x20, and vector 52 is the tick
-# ISR). The macro is an unconditional #define, so the header is rewritten into
-# the build directory and shadowed on the include path rather than -D'd.
-sed -e 's/NRF_RTC1/NRF_RTC2/' -e 's/RTC1_IRQn/RTC2_IRQn/' \
-    "$PORT/CMSIS/nrf52/portmacro_cmsis.h" > "$OUT/portmacro_cmsis.h"
+# The tick-source correction, out of abi/facts.yaml: the reference port
+# hardcodes an RTC this firmware does not tick on, and the macro is an
+# unconditional #define, so the header is rewritten into the build directory and
+# shadowed on the include path rather than -D'd. The evidence for which RTC it
+# is lives with the correction rather than here.
+python3 refbuild_fix.py --port "$PORT" --out "$OUT"
 
 # The kernel is compiled out of a staged copy so abi/patches/ can recover the
 # changes Withings made to it; each patch is -p1 against the kernel source dir.
@@ -121,18 +121,17 @@ if [ -n "${DATA:-}" ]; then
 fi
 REPLACE_ARGS="$REPLACE_ARGS" ./identity.sh
 
-# The replacement sources, compiled against the same generated header the rest
-# of the new code uses (out/hwa10.h) plus out/replace.h, which the identity run
-# above wrote from replacements.yaml so the prototype and the evidence for it
-# live together. They are built here rather than after the placement because
+# The replacement sources, compiled against the hand headers the rest of the
+# new code uses (abi/include/withings) plus out/replace.h, which the identity
+# run above wrote from replacements.yaml so the prototype and the evidence for
+# it live together. They are built here rather than after the placement because
 # the --gc walk needs every object on the link line: a section whose only
 # keeper is a replacement body is kept by the real link and looks dead to a
 # walk that enters the app alone.
-python3 gen.py --out ../out > /dev/null
 while read -r src; do
     [ -n "$src" ] || continue
     o="$OUT/replace_$(basename "$src" .c).o"
-    "$GCC-gcc" $ARCH $COMMON -I../out -c "$src" -o "$o"
+    "$GCC-gcc" $ARCH $COMMON -I../out -Iinclude -c "$src" -o "$o"
     objs="$objs $o"
 done < ../out/replace-sources.txt
 # Every object and archive the link will see, so the --gc walk enters the blob

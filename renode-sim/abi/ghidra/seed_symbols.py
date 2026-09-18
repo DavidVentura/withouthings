@@ -10,7 +10,6 @@
 # @category HWA10
 
 import json
-import re
 
 from java.math import BigInteger
 from ghidra.app.cmd.disassemble import ArmDisassembleCommand
@@ -33,30 +32,22 @@ EXTERNAL_BLOCKS = [
     ("ppb", 0xE0000000, 0x100000),
 ]
 
-SEED_TYPES = {
-    "u32": UnsignedIntegerDataType(), "i32": UnsignedIntegerDataType(),
-    "u16": UnsignedShortDataType(), "i16": UnsignedShortDataType(),
-    "u8": ByteDataType(), "i8": ByteDataType(), "char": ByteDataType(),
-}
+# The seed carries a width and a shape, never a C spelling: the compiler has
+# already read the header and the three shapes below are all Ghidra needs to lay
+# the rows out. A scalar of a width Ghidra has no integer for stays bytes.
+SCALARS = {4: UnsignedIntegerDataType(), 2: UnsignedShortDataType(),
+           1: ByteDataType()}
 
 
-# The manifest writes a length however it reads best at the declaration, and a
-# run measured off an address is written in hex: `u8[0x23a4]` used to match
-# nothing here and seed nothing, while abi/gen.py's own ARRAY accepted both all
-# along, so the C header had the array and Ghidra did not.
-FIELD_ARRAY = re.compile(r"^(.*)\[(0x[0-9a-fA-F]+|\d+)\]$")
-
-
-def field_type(t):
-    t = t.strip()
-    if t.endswith("*"):
+def shape_type(shape):
+    """The Ghidra data type of one seeded field, or None where there is none."""
+    if shape["kind"] == "pointer":
         return PointerDataType()
-    m = FIELD_ARRAY.match(t)
-    if m:
-        base = field_type(m.group(1))
-        return None if base is None else ArrayDataType(base, int(m.group(2), 0),
+    if shape["kind"] == "array":
+        base = SCALARS.get(shape["unit"])
+        return None if base is None else ArrayDataType(base, shape["count"],
                                                        base.getLength())
-    return SEED_TYPES.get(t)
+    return SCALARS.get(shape["size"])
 
 
 def addr(value):
@@ -104,11 +95,12 @@ def apply_table(entry, category):
         createLabel(addr(entry["address"]), entry["name"], True, SourceType.USER_DEFINED)
         return
     struct = StructureDataType(category, entry["entry"], 0)
-    for ftype, fname in fields:
-        dt = field_type(ftype)
+    for shape in fields:
+        dt = shape_type(shape)
         if dt is None:
-            raise RuntimeError("seed table %s: unmapped field type %r" % (entry["name"], ftype))
-        struct.add(dt, dt.getLength(), fname, None)
+            raise RuntimeError("seed table %s: no type for field %s"
+                               % (entry["name"], shape["name"]))
+        struct.add(dt, dt.getLength(), shape["name"], None)
     if struct.getLength() != entry["stride"]:
         raise RuntimeError("seed table %s: struct is %d bytes, manifest stride is %d"
                            % (entry["name"], struct.getLength(), entry["stride"]))
@@ -181,7 +173,16 @@ for lab in seed["labels"]:
     createLabel(addr(lab["address"]), lab["name"], True, SourceType.USER_DEFINED)
     counts["labels"] += 1
 for g in seed["data"]:
-    dt = field_type(g["type"])
+    # A global is laid out from its width and its count alone; a struct global
+    # stays a label, because the partition reads its fields through the header
+    # and Ghidra would only be repeating the declaration.
+    dt = None
+    if g["kind"] == "pointer":
+        dt = PointerDataType()
+    elif g["kind"] == "scalar":
+        dt = SCALARS.get(g["size"] // g["count"])
+    if dt is not None and g["count"] > 1:
+        dt = ArrayDataType(dt, g["count"], dt.getLength())
     if dt is not None:
         at = addr(g["address"])
         clearListing(at, at.add(dt.getLength() - 1))

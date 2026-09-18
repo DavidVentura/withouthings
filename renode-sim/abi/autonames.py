@@ -39,7 +39,8 @@ The same log tags give a module partition (which file a function came from),
 which abi/out/ghidra/modules.json carries and every entry above records.
 
 Nothing here guesses: every entry carries the evidence that produced it, and
-abi/gen.py refuses any name that contradicts hwa10.yaml or matches.yaml.
+abi/migrate.py refuses any name that contradicts a hand entry of
+abi/symbols.yaml or a body match.
 """
 
 import argparse
@@ -1318,7 +1319,7 @@ def derived_prototypes(ex, entries):
 
 # ---------------------------------------------------- classes: wppcmd, shell
 
-# The anchor hwa10.yaml already carries; the walk finds the table's real extent.
+# The anchor the address map already carries; the walk finds the table's real extent.
 WPP_ANCHOR = 0x27994
 TABLE_STRIDE = 12
 # The WPP column is a protocol command number (the wpp crate's map tops out in
@@ -1472,32 +1473,28 @@ def wpp_protocol_constants():
 # ------------------------------------------------------------------- output
 
 def cross_check(entries):
-    """Compare against the two hand-maintained maps; never overwrite either.
+    """Compare against the hand half of the address map; never overwrite it.
 
     Returns the agreements, the disagreements, and the entries that are safe to
-    emit: an address hwa10.yaml already names is dropped, because the manifest is
-    the source of truth for what gets linked and a second name for the same
-    function is a finding to read, not an entry to generate.
+    emit: an address a hand entry already names is dropped, because a hand entry
+    is the source of truth for what gets linked and a second name for the same
+    function is a finding to read, not an entry to generate. A prose entry names
+    an address without saying what kind of thing is there, so it is compared
+    against but does not stop a derivation.
     """
-    hand = {}
-    sym = os.path.join(SIM, "symbols.txt")
-    for line in open(sym):
-        line = line.split("#")[0].strip()
-        if not line:
-            continue
-        parts = line.split()
-        if len(parts) >= 2 and parts[0].startswith("0x"):
-            hand.setdefault(int(parts[0], 16), parts[1])
-    import yaml
-    manifest = yaml.safe_load(open(os.path.join(HERE, "hwa10.yaml")))
-    in_manifest = {fn["address"] & ~1: fn["name"] for fn in manifest["functions"]}
-    hand.update(in_manifest)
+    sys.path.insert(0, HERE)
+    import symbols as symmap
+    smap = symmap.load()
+    by_hand = {s.address: s.name for s in smap.of_class(symmap.HAND)
+               if s.kind == "function"}
+    hand = {s.address: s.name for s in smap.of_class("prose")}
+    hand.update(by_hand)
     agree, disagree, emit = [], [], []
     for e in entries:
         was = hand.get(e["address"])
         if was is not None:
             (agree if was == e["name"] else disagree).append((e, was))
-        if e["address"] not in in_manifest:
+        if e["address"] not in by_hand:
             emit.append(e)
     return agree, disagree, emit
 
@@ -1542,7 +1539,7 @@ def write_yaml(path, entries, agree, disagree, stats):
             lines.append("    proto: %s" % yaml_str(e["proto"]))
         if e.get("proto_derived"):
             lines.append("    proto_derived: %s" % yaml_str(e["proto_derived"]))
-    lines += ["", "# Addresses symbols.txt or hwa10.yaml already names, and what this run",
+    lines += ["", "# Addresses abi/symbols.yaml already names by hand, and what this run",
               "# derived for them. A disagreement is a finding: one of the two is wrong."]
     lines.append("agrees_with_hand_map:")
     for e, was in sorted(agree, key=lambda x: x[0]["address"]):

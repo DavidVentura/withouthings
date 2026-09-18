@@ -1,33 +1,30 @@
 #!/usr/bin/env python3
 """Boot progress bar from a Renode PC execution trace.
 
-Usage:  python3 coverage.py <trace.bin[.gz]> [symbols.txt]
+Usage:  python3 coverage.py <trace.bin[.gz]> [abi/symbols.yaml]
 
 Renode trace format: b"ReTrace" + 3 header bytes, then 5-byte entries
 (little-endian u32 PC + 1 flag byte). Reads the whole run, and reports the
-known functions (from symbols.txt) in first-execution order plus the loop the
-run ends stuck in. Coverage, not logs, is the progress signal.
+known functions (from the address map) in first-execution order plus the loop
+the run ends stuck in. Coverage, not logs, is the progress signal.
 """
 import sys, gzip, struct, bisect, pathlib
 
 HERE = pathlib.Path(__file__).parent
+sys.path.insert(0, str(HERE / "abi"))
+
+import symbols as symmap
 
 
 def load_symbols(path):
-    syms = []
-    for line in open(path):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split(None, 2)
-        if len(parts) < 2 or not parts[0].startswith("0x"):
-            continue
-        addr = int(parts[0], 16)
-        name = parts[1]
-        note = parts[2] if len(parts) > 2 else ""
-        syms.append((addr, name, note))
-    syms.sort()
-    return syms
+    """(address, name, evidence) for every name the map holds, in address order.
+
+    A trace is a list of program counters and nothing else, so every kind of
+    entry is useful here: a label the prose map left untyped is as good an
+    anchor as a function the header declares.
+    """
+    return sorted((s.address, s.name, s.evidence or "")
+                  for s in symmap.load(path).symbols)
 
 
 def nearest(syms, addrs, pc):
@@ -53,7 +50,7 @@ def open_trace(path):
 
 def main():
     trace = sys.argv[1]
-    symfile = sys.argv[2] if len(sys.argv) > 2 else str(HERE / "symbols.txt")
+    symfile = sys.argv[2] if len(sys.argv) > 2 else str(HERE / "abi" / "symbols.yaml")
     syms = load_symbols(symfile)
     addrs = [s[0] for s in syms]
     symset = set(addrs)

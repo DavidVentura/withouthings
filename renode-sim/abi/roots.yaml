@@ -14,7 +14,7 @@ groups:
   - group: vector_table
     derive: vector_table
     evidence: >
-      abi/hwa10.yaml fixed_points: the application vector table at 0x27000, read
+      abi/facts.yaml fixed_points: the application vector table at 0x27000, read
       by the MBR, the SoftDevice and the bootloader. Every word is an
       R_ARM_ABS32 in the object, so the handlers come out of the object itself.
 
@@ -29,14 +29,14 @@ groups:
   - group: wpp_cmd_table
     derive: wpp_cmd_table
     evidence: >
-      abi/hwa10.yaml wpp_cmd_table: 156 rows of {u32 id, handler|1, const char
+      abi/symbols.yaml wpp_cmd_table: 156 rows of {u32 id, handler|1, const char
       *name} at 0x274b4. No literal pool holds the table's address, so the rows
       are roots; each row is listed separately so per-command cost is visible.
 
   - group: shell_cmd_table
     derive: shell_cmd_table
     evidence: >
-      abi/hwa10.yaml shell_cmd_table: 79 rows of {const char *name, run, help}
+      abi/symbols.yaml shell_cmd_table: 79 rows of {const char *name, run, help}
       at 0x27100, the pair of pool words every reader of the table loads
       (0x5a270 holds the head and 0x5a274 the end) with the reader's own stride
       of 12. Both entry points are roots: the walk at 0x5a224 calls +4 for the
@@ -46,13 +46,13 @@ groups:
   - group: i2c_device_table
     derive: i2c_device_table
     evidence: >
-      abi/hwa10.yaml i2c_device_table at 0xb22c4, 7 rows of i2c_device; fn0..fn3
+      abi/symbols.yaml i2c_device_table at 0xb22c4, 7 rows of i2c_device; fn0..fn3
       are the per-device entry points the bus layer calls through the row.
 
   - group: spi_device_table
     derive: spi_device_table
     evidence: >
-      abi/hwa10.yaml spi_device_table at 0xb2438. The row carries no function
+      abi/symbols.yaml spi_device_table at 0xb2438. The row carries no function
       slot (bus, cs_pin, mode, state, name), so this group is empty by
       construction and the SPI devices are reached through their drivers.
 

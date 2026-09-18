@@ -48,10 +48,12 @@ each is a decision with a name:
                      multiplied by before it is added to the address a pool
                      word holds, which is the same number.
 
-  declared_table    abi/hwa10.yaml names the tables whose shape is known from
-                    somewhere other than the image's own references -- the WPP
-                    and shell dispatch tables, which no literal-pool word names
-                    at all -- and gives each one a struct. A word of such a
+  declared_table    abi/symbols.yaml names the tables whose shape is known
+                    from somewhere other than the image's own references -- the
+                    WPP and shell dispatch tables, which no literal-pool word
+                    names at all -- and a header declares each one's row
+                    struct, which abi/shapes.py reads back out of the compiler.
+                    A word of such a
                     table is typed by the declaration, and the declaration is
                     also a root for the reachability walk, because a table
                     nothing names is exactly what that walk would otherwise
@@ -239,47 +241,7 @@ def addressish(value):
             or (value & 1 and APP_BASE <= (value & ~1) < APP_END))
 
 
-WIDTHS = {"u8": 1, "u16": 2, "u32": 4, "i8": 1, "i16": 2, "i32": 4}
-
-
-def field_map(fields, typedefs=()):
-    """{offset: is a 4-byte pointer} for one hwa10.yaml struct.
-
-    A field whose type is one of the manifest's typedefs is a function pointer,
-    which is a pointer word like any other.
-    """
-    out, at = {}, 0
-    for kind, _ in fields:
-        kind = str(kind)
-        if kind.endswith("*") or kind in typedefs:
-            width, pointer = 4, True
-        elif "[" in kind:
-            base, _, count = kind.partition("[")
-            width, pointer = WIDTHS[base] * int(count.rstrip("]")), False
-        else:
-            width, pointer = WIDTHS[kind], False
-        out[at] = pointer
-        at += width
-    return out, at
-
-
-def declared_tables(manifest):
-    """(start, stride, count, {offset: is a pointer}) for every declared table."""
-    structs = dict((s["name"], s["fields"]) for s in manifest["table_structs"])
-    typedefs = {t["name"] for t in manifest.get("typedefs", [])}
-    out = []
-    for table in manifest["tables"]:
-        fields, size = field_map(structs[table["entry"]], typedefs)
-        if size != table["stride"]:
-            raise SystemExit("abi/hwa10.yaml: %s is %d bytes but %s has a"
-                             " stride of %d" % (table["entry"], size,
-                                                table["name"], table["stride"]))
-        out.append((table["address"], table["stride"], table["count"], fields,
-                    table["name"]))
-    return out
-
-
-def analyse(items, refs, rows, blob, manifest):
+def analyse(items, refs, rows, blob, tables):
     """{word address: (class, signal, note)} for the review words it decides."""
     runs = Runs(items)
     in_run = collections.defaultdict(list)
@@ -301,8 +263,7 @@ def analyse(items, refs, rows, blob, manifest):
     def word_at(addr):
         return int.from_bytes(blob[addr - APP_BASE:addr - APP_BASE + 4], "little")
 
-    declared = declared_tables(manifest)
-    seeds = [start for start, _, _, _, _ in declared]
+    seeds = [t.address for t in tables]
     for row in rows:
         if row["class"] == "pointer" or row["kind"] in ("pool", "jumptable"):
             seeds.append(row["value"])
@@ -323,14 +284,16 @@ def analyse(items, refs, rows, blob, manifest):
     hinted = reader_strides(rows, runs)
     decided = {}
     by_addr = dict((row["addr"], row) for row in rows)
-    for start, stride, count, fields, name in declared:
-        for at in range(start, start + stride * count, 4):
+    for table in tables:
+        fields = table.pointer_map()
+        for at in range(table.address, table.end, 4):
             row = by_addr.get(at)
             if row is None or row["class"] != "review":
                 continue
-            note = "%s at 0x%x, stride %d, field +%d" % (name, start, stride,
-                                                         (at - start) % stride)
-            if fields.get((at - start) % stride):
+            note = "%s at 0x%x, stride %d, field +%d" % (
+                table.name, table.address, table.stride,
+                (at - table.address) % table.stride)
+            if fields.get((at - table.address) % table.stride):
                 decided[at] = ("pointer", "declared_table_pointer", note)
                 trusted.add(row["value"])
             else:

@@ -8,8 +8,8 @@ Three independent checks, each reported as counts plus the exceptions:
   * every `bl` target in out/appl.dis is a Ghidra function start. A target that
     is not is either a Ghidra miss or a `bl` the linear sweep read out of data,
     and which one it is follows from where the target lands in the partition.
-  * every named address in symbols.txt, hwa10.yaml, matches.yaml and
-    autonames.yaml coincides with a function or item start.
+  * every address abi/symbols.yaml names coincides with a function or item
+    start, whichever of the map's classes the name came from.
   * abi/boundary.yaml's per-target call and tail-call counts equal the calls and
     jumps Ghidra recorded into the same targets.
 """
