@@ -74,6 +74,11 @@ MULTILIB = "thumb/v7e-m+fp/hard"
 LIBDIR = os.path.join(LIBC_TC, "arm-none-eabi/lib", MULTILIB)
 LIBGCC_GLOB = os.path.join(LIBC_TC, "lib/gcc/arm-none-eabi")
 LIBC_ARCHIVES = ["libc_nano.a", "libc.a", "libm.a"]
+# The prebuilt libm.a is a different build of the same source: the image's
+# math is Withings' own newlib compiled with the image's flags, and the libm
+# abi/refbuild.sh builds from that source reaches bodies the archive does not
+# (sin, cos, exp, log, pow, sqrt and their kernels), so both are offered.
+LIBM_VARIANTS = ["libm_nano-big", "libm_nano-small"]
 
 # Prebuilt, so they can be matched without building anything.
 EXT_ARCHIVES = [
@@ -1622,6 +1627,8 @@ def main():
                     libgcc = cand
         sources = [("%s %s" % (LIBC_TC_LABEL, a), os.path.join(LIBDIR, a))
                    for a in LIBC_ARCHIVES]
+        sources += [("newlib %s libm" % v.split("_")[1],
+                     os.path.join(ROOT, "build", v, "ref.elf")) for v in LIBM_VARIANTS]
         if libgcc:
             sources.append(("%s libgcc.a" % LIBC_TC_LABEL, libgcc))
         found = library_names(img, sources, "libc", args.threshold,

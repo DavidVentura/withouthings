@@ -37,6 +37,101 @@ functions:
     insns: 28
     how: direct
     links: [vTaskSwitchContext@0x7333c]
+  - name: exp
+    address: 0x2a7e0
+    variant: libm_nano-big
+    score: 1.000
+    insns: 37
+    how: direct
+    links: [__ieee754_exp@0x2ad58, finite@0xa7d74]
+  - name: log
+    address: 0x2a870
+    variant: libm_nano-big
+    score: 1.000
+    insns: 39
+    how: direct
+    links: [__ieee754_log@0x2b040, nan@0x2aa40]
+    ambiguous_with: [log10, cosh, j0, j1, jn]
+  - name: cos
+    address: 0x2a8f0
+    variant: libm_nano-big
+    score: 1.000
+    insns: 50
+    how: direct
+    links: [__kernel_cos@0x2aa50, __ieee754_rem_pio2@0x2bdf8, __kernel_cos@0x2aa50, __kernel_sin@0x2abe0, __kernel_cos@0x2aa50, __kernel_sin@0x2abe0]
+  - name: sin
+    address: 0x2a998
+    variant: libm_nano-big
+    score: 1.000
+    insns: 51
+    how: direct
+    links: [__kernel_sin@0x2abe0, __ieee754_rem_pio2@0x2bdf8, __kernel_sin@0x2abe0, __kernel_cos@0x2aa50, __kernel_sin@0x2abe0, __kernel_cos@0x2aa50]
+    ambiguous_with: [tan]
+  - name: nan
+    address: 0x2aa40
+    variant: libm_nano-big+graph
+    score: 1.000
+    insns: 3
+    how: propagated from log
+    links: []
+  - name: __kernel_cos
+    address: 0x2aa50
+    variant: libm_nano-big
+    score: 0.992
+    insns: 120
+    how: direct
+    links: []
+  - name: __kernel_sin
+    address: 0x2abe0
+    variant: libm_nano-big
+    score: 0.991
+    insns: 115
+    how: direct
+    links: []
+  - name: __ieee754_exp
+    address: 0x2ad58
+    variant: libm_nano-big
+    score: 0.935
+    insns: 231
+    how: direct
+    links: []
+  - name: __ieee754_log
+    address: 0x2b040
+    variant: libm_nano-big
+    score: 1.000
+    insns: 281
+    how: direct
+    links: []
+  - name: __ieee754_rem_pio2
+    address: 0x2bdf8
+    variant: libm_nano-big
+    score: 0.822
+    insns: 343
+    how: direct
+    links: [fabs@0xa7e9e]
+  - name: scalbn
+    address: 0x2c1f0
+    variant: libm_nano-big
+    score: 1.000
+    insns: 77
+    how: direct
+    links: []
+  - name: __kernel_rem_pio2
+    address: 0x2c320
+    variant: libm_nano-big
+    score: 0.951
+    insns: 577
+    how: direct
+    links: []
+    broken_links: 1
+  - name: floor
+    address: 0x2c9a8
+    variant: libm_nano-big
+    score: 0.989
+    insns: 90
+    how: direct
+    links: []
+    ambiguous_with: [ceil]
   - name: pvPortMalloc
     address: 0x51a04
     variant: Os_a0
@@ -266,6 +361,91 @@ functions:
     links: []
     header: integration/nrfx/legacy/nrf_drv_power.h
     proto: "void nrf_drv_power_uninit(void);"
+  - name: pow
+    address: 0x8c8fc
+    variant: libm_nano-big
+    score: 1.000
+    insns: 79
+    how: direct
+    links: [finite@0xa7d74, finite@0xa7d74, finite@0xa7d74, finite@0xa7d74, finite@0xa7d74, finite@0xa7d74]
+  - name: expf
+    address: 0x8c9dc
+    variant: libm_nano-big
+    score: 1.000
+    insns: 28
+    how: direct
+    links: [__ieee754_expf@0x8cfe4, finitef@0xa7dde]
+  - name: sqrtf
+    address: 0x8ca48
+    variant: libm_nano-big
+    score: 0.941
+    insns: 17
+    how: direct
+    links: [__ieee754_sqrtf@0xa7e98]
+    ambiguous_with: [remainderf, acoshf, fmodf]
+  - name: __fpclassifyd
+    address: 0x8ca84
+    variant: libm_nano-big
+    score: 1.000
+    insns: 28
+    how: direct
+    links: []
+  - name: expm1f
+    address: 0x8cacc
+    variant: libm_nano-big
+    score: 0.994
+    insns: 161
+    how: direct
+    links: []
+  - name: __fpclassifyf
+    address: 0x8cd1c
+    variant: libm_nano-big
+    score: 0.952
+    insns: 21
+    how: direct
+    links: []
+  - name: __ieee754_sqrt
+    address: 0x8cd6c
+    variant: libm_nano-big
+    score: 0.968
+    insns: 158
+    how: direct
+    links: []
+  - name: round
+    address: 0x8cf10
+    variant: libm_nano-big
+    score: 1.000
+    insns: 51
+    how: direct
+    links: []
+  - name: roundf
+    address: 0x8cf9c
+    variant: libm_nano-big
+    score: 1.000
+    insns: 26
+    how: direct
+    links: []
+  - name: __ieee754_expf
+    address: 0x8cfe4
+    variant: libm_nano-big
+    score: 0.783
+    insns: 106
+    how: direct
+    links: []
+  - name: __ieee754_powf
+    address: 0x8d170
+    variant: libm_nano-big
+    score: 0.663
+    insns: 386
+    how: direct
+    links: [__ieee754_sqrtf@0xa7e98]
+  - name: scalbnf
+    address: 0x8d6f8
+    variant: libm_nano-big
+    score: 0.983
+    insns: 58
+    how: direct
+    links: []
   - name: nrf_fprintf
     address: 0x8f42c
     variant: Os_a0
@@ -430,20 +610,125 @@ functions:
     ambiguous_with: [nrf_saadc_event_clear.constprop.0, nrf_gpiote_event_clear, nrf_clock_event_clear]
     header: modules/nrfx/hal/nrf_saadc.h
     proto: "void nrf_saadc_event_clear(nrf_saadc_event_t event);"
+  - name: sqrt
+    address: 0xa7c6e
+    variant: libm_nano-big
+    score: 1.000
+    insns: 31
+    how: direct
+    links: [__ieee754_sqrt@0x8cd6c]
+    ambiguous_with: [remainder, acosh, fmod, acos, asin]
+  - name: powf
+    address: 0xa7cc6
+    variant: libm_nano-big
+    score: 0.981
+    insns: 54
+    how: direct
+    links: [__ieee754_powf@0x8d170, finitef@0xa7dde, finitef@0xa7dde, finitef@0xa7dde, finitef@0xa7dde, finitef@0xa7dde, finitef@0xa7dde]
+  - name: finite
+    address: 0xa7d74
+    variant: libm_nano-big
+    score: 1.000
+    insns: 8
+    how: direct
+    links: []
+  - name: fmax
+    address: 0xa7d8a
+    variant: libm_nano-big
+    score: 1.000
+    insns: 25
+    how: direct
+    links: [__fpclassifyd@0x8ca84, __fpclassifyd@0x8ca84]
+    ambiguous_with: [fmin]
+  - name: finitef
+    address: 0xa7dde
+    variant: libm_nano-big
+    score: 1.000
+    insns: 7
+    how: direct
+    links: []
+  - name: fmaxf
+    address: 0xa7df2
+    variant: libm_nano-big
+    score: 1.000
+    insns: 18
+    how: direct
+    links: [__fpclassifyf@0x8cd1c, __fpclassifyf@0x8cd1c]
+  - name: fminf
+    address: 0xa7e2c
+    variant: libm_nano-big
+    score: 1.000
+    insns: 18
+    how: direct
+    links: [__fpclassifyf@0x8cd1c, __fpclassifyf@0x8cd1c]
+  - name: with_errnof
+    address: 0xa7e66
+    variant: libm_nano-big
+    score: 1.000
+    insns: 9
+    how: direct
+    links: []
+  - name: __ieee754_sqrtf
+    address: 0xa7e98
+    variant: libm_nano-big+graph
+    score: 1.000
+    insns: 2
+    how: propagated from __ieee754_powf
+    links: []
+  - name: fabs
+    address: 0xa7e9e
+    variant: libm_nano-big+graph
+    score: 1.000
+    insns: 5
+    how: propagated from __ieee754_rem_pio2
+    links: []
+  - name: xflow
+    address: 0xa7ee0
+    variant: libm_nano-big
+    score: 1.000
+    insns: 17
+    how: direct
+    links: []
 
 library_ranges:  # spans of the image the matches bracket
   - {start: 0x27da6, end: 0x27e50, matched: 3}
+  - {start: 0x2a7e0, end: 0x2b040, matched: 9}
+  - {start: 0x2bdf8, end: 0x2c9a8, matched: 4}
   - {start: 0x51a04, end: 0x51afc, matched: 2}
   - {start: 0x72eb0, end: 0x73e5c, matched: 22}
   - {start: 0x7db08, end: 0x7e138, matched: 4}
   - {start: 0x81220, end: 0x812a8, matched: 2}
+  - {start: 0x8c8fc, end: 0x8d6f8, matched: 12}
   - {start: 0x8f42c, end: 0x8f42c, matched: 1}
   - {start: 0x9e32c, end: 0x9ea2e, matched: 20}
   - {start: 0xa4e3a, end: 0xa4e3a, matched: 1}
+  - {start: 0xa7c6e, end: 0xa7ee0, matched: 11}
 
 unmatched_image:  # call targets inside those spans with no symbol
   - 0x27dc8
   - 0x27de0
+  - 0x2a8c8
+  - 0x2a926
+  - 0x2a9d0
+  - 0x2ad9e
+  - 0x2ada8
+  - 0x2addc
+  - 0x2af30
+  - 0x2afaa
+  - 0x2beaa
+  - 0x2c134
+  - 0x2c216
+  - 0x2c26a
+  - 0x2c286
+  - 0x2c308
+  - 0x2c38c
+  - 0x2c3a6
+  - 0x2c4ce
+  - 0x2c54e
+  - 0x2c56e
+  - 0x2c6e0
+  - 0x2c79c
+  - 0x2c7d6
   - 0x51aac
   - 0x72f10
   - 0x73094
@@ -485,6 +770,34 @@ unmatched_image:  # call targets inside those spans with no symbol
   - 0x7dfaa
   - 0x7dfb8
   - 0x7e108
+  - 0x8ca1c
+  - 0x8cab8
+  - 0x8caea
+  - 0x8cb1e
+  - 0x8cbca
+  - 0x8cc0a
+  - 0x8cc9c
+  - 0x8cd4a
+  - 0x8cedc
+  - 0x8cf74
+  - 0x8cff8
+  - 0x8d018
+  - 0x8d028
+  - 0x8d0d0
+  - 0x8d0ee
+  - 0x8d1ca
+  - 0x8d22c
+  - 0x8d2bc
+  - 0x8d368
+  - 0x8d3a6
+  - 0x8d4de
+  - 0x8d4e2
+  - 0x8d4fc
+  - 0x8d500
+  - 0x8d516
+  - 0x8d666
+  - 0x8d670
+  - 0x8d68c
   - 0x9e46c
   - 0x9e49a
   - 0x9e510
@@ -494,11 +807,101 @@ unmatched_image:  # call targets inside those spans with no symbol
   - 0x9e88c
   - 0x9ea10
   - 0x9ea22
+  - 0xa7e06
+  - 0xa7eae
 
 unmatched_reference:
   - SAADC_IRQHandler  # best 0.36
+  - __ieee754_acos  # best 0.25
+  - __ieee754_acosh  # best 0.34
+  - __ieee754_asin  # best 0.25
+  - __ieee754_atanh  # best 0.30
+  - __ieee754_cosh  # best 0.31
+  - __ieee754_hypot  # best 0.27
+  - __ieee754_j0  # best 0.30
+  - __ieee754_j1  # best 0.32
+  - __ieee754_jn  # best 0.19
+  - __ieee754_lgamma_r  # best 0.22
+  - __ieee754_log10  # best 0.41
+  - __ieee754_pow  # best 0.53
+  - __ieee754_remainder  # best 0.25
+  - __ieee754_scalb  # best 0.32
+  - __ieee754_sinh  # best 0.26
+  - __ieee754_y0  # best 0.24
+  - __ieee754_y1  # best 0.28
+  - __ieee754_yn  # best 0.20
+  - __kernel_standard  # best 0.23
+  - __kernel_tan  # best 0.27
+  - __math_divzero  # best 0.56
+  - __math_invalid  # best 0.32
+  - _ctans  # best 0.32
+  - _ctansl  # best 0.32
+  - _redupi  # best 0.38
+  - _redupif  # best 0.39
+  - _redupil  # best 0.38
+  - acos  # best 0.68
+  - acosf  # best 0.48
+  - acosh  # best 0.94
+  - acoshf  # best 0.72
   - app_error_fault_handler  # best 0.47
+  - asin  # best 0.68
+  - asinf  # best 0.48
+  - asinh  # best 0.23
+  - atan  # best 0.28
+  - atanh  # best 0.48
+  - cacos  # best 0.33
+  - cacosl  # best 0.39
+  - casin  # best 0.32
+  - casinl  # best 0.32
+  - catan  # best 0.30
+  - catanl  # best 0.30
+  - cbrt  # best 0.28
+  - ccos  # best 0.32
+  - ccosh  # best 0.34
+  - ccoshl  # best 0.34
+  - ccosl  # best 0.32
+  - ceil  # best 0.80
+  - cexp  # best 0.33
+  - cexpl  # best 0.33
+  - cosf  # best 0.46
+  - cosh  # best 0.75
+  - coshf  # best 0.52
+  - cpow  # best 0.26
+  - cpowl  # best 0.26
+  - cproj  # best 0.19
+  - cprojl  # best 0.19
+  - csin  # best 0.33
+  - csinh  # best 0.34
+  - csinhl  # best 0.34
+  - csinl  # best 0.33
+  - csqrt  # best 0.22
+  - csqrtl  # best 0.22
+  - ctan  # best 0.25
+  - ctanh  # best 0.35
+  - ctanhl  # best 0.35
+  - ctanl  # best 0.25
   - eTaskGetState.part.0  # best 0.44
+  - erf  # best 0.24
+  - erfc  # best 0.27
+  - expm1  # best 0.21
+  - fmin  # best 1.00
+  - fmod  # best 0.81
+  - fmodf  # best 0.67
+  - j0  # best 0.75
+  - j0f  # best 0.55
+  - j1  # best 0.75
+  - j1f  # best 0.52
+  - jn  # best 0.75
+  - jnf  # best 0.55
+  - ldexp  # best 0.19
+  - lgamma_r  # best 0.40
+  - log10  # best 0.97
+  - log10f  # best 0.42
+  - log1p  # best 0.26
+  - logb  # best 0.29
+  - logf  # best 0.42
+  - modf  # best 0.17
+  - nextafter  # best 0.18
   - nrf_clock_event_clear  # best 0.89
   - nrf_drv_power_sd_usbevt_enable  # best 0.09
   - nrf_drv_power_usbevt_init  # best 0.39
@@ -507,11 +910,26 @@ unmatched_reference:
   - nrfx_saadc_advanced_mode_set  # best 0.45
   - nrfx_saadc_init  # best 0.38
   - nrfx_saadc_simple_mode_set  # best 0.50
+  - pone  # best 0.24
   - prs_box_get  # best 0.37
   - prvAddCurrentTaskToDelayedList  # best 0.41
   - prvAddNewTaskToReadyList  # best 0.52
   - prvInsertBlockIntoFreeList  # best 0.59
+  - pzero  # best 0.24
+  - qone  # best 0.24
+  - qzero  # best 0.24
+  - remainder  # best 0.97
+  - remainderf  # best 0.76
+  - remquo  # best 0.08
+  - rint  # best 0.10
+  - scalb  # best 0.37
+  - scalbln  # best 0.39
+  - scalblnf  # best 0.30
   - sd_state_evt_handler  # best 0.30
+  - sinf  # best 0.49
+  - tan  # best 0.70
+  - tanh  # best 0.25
+  - truncf  # best 0.38
   - ulTaskGenericNotifyTake  # best 0.74
   - vTaskDelay  # best 0.55
   - vTaskDelete  # best 0.58
@@ -523,6 +941,7 @@ unmatched_reference:
   - vTaskRemoveFromUnorderedEventList  # best 0.37
   - vTaskSuspend  # best 0.12
   - vTaskSwitchContext.part.0  # best 0.23
+  - with_errno  # best 0.64
   - xQueueCreateMutex  # best 0.73
   - xQueueGenericCreate  # best 0.60
   - xQueueGenericCreateStatic  # best 0.41
@@ -539,4 +958,11 @@ unmatched_reference:
   - xTaskPriorityInherit  # best 0.23
   - xTaskRemoveFromEventList  # best 0.50
   - xTimerCreateTimerTask  # best 0.57
+  - xflowf  # best 0.00
+  - y0  # best 0.64
+  - y0f  # best 0.41
+  - y1  # best 0.64
+  - y1f  # best 0.41
+  - yn  # best 0.64
+  - ynf  # best 0.41
 

@@ -2864,6 +2864,299 @@ functions:
       It is the r2 the send path is handed alongside wpp_obj_WppString_encode
       in r3 at 0x6ec2e.
 
+  # The algorithm registry at 0xb48d8 gives every algorithm an id and a name, and
+  # algo_dispatch_sample gates each of its per-algorithm calls on algo_enabled of
+  # one immediate id, so the id in front of the call names the function it
+  # guards. The display run under a live HR burst (spi1.max86173 Worn true,
+  # HeartRateBpm 70, 700 s virtual) calls the eight the log starts exactly once
+  # per popped slot: 1279 calls each, against 1279 sensors_sync_slot_to_algo and
+  # 1279 algo_dispatch_sample, and never any of the ids the log does not start.
+  - name: worn_algo_step
+    address: 0x75d6c
+    ret: void
+    args: [[void *, algo], [const struct algo_sample_frame *, frame], [u32, flag]]
+    notes: >
+      the call algo_dispatch_sample makes under algo_enabled(9) (0x7d502,
+      0x7d51a); id 9 is WORN in algo_registry. 1279 calls in the HR trace, one
+      per popped slot.
+  - name: motion_detection_algo_step
+    address: 0x29fe8
+    ret: void
+    args: [[void *, algo], [const void *, axes]]
+    notes: >
+      the call under algo_enabled(8) (0x7d51e, 0x7d546); id 8 is MOTION_DETECTION.
+      Its argument is a four-byte copy of the frame's axes built on the caller's
+      stack, not the frame itself.
+  - name: ppg_heart_beats_algo_step
+    address: 0xa053e
+    ret: void
+    args: [[void *, algo], [const struct algo_sample_frame *, frame]]
+    notes: the call under algo_enabled(0xc) (0x7d54a, 0x7d55a); id 12 is PPG_HEART_BEATS.
+  - name: ppg_arrhythmia_algo_step
+    address: 0x76460
+    ret: void
+    args: [[void *, algo], [float, a], [float, b], [float, c], [float, d], [const struct algo_sample_frame *, frame]]
+    notes: >
+      the call under algo_enabled(7) (0x7d55e, 0x7d584); id 7 is PPG_ARRHYTHMIA.
+      Five values are read out of the HR algorithm's object and passed alongside
+      the frame (0x7d566..0x7d582).
+  - name: hr_algo_process_sample
+    address: 0xa22fc
+    ret: void
+    args: [[void *, algo], [const struct algo_sample_frame *, frame]]
+    notes: >
+      the per-sample half of the heart-rate algorithm: algo_dispatch_sample
+      reaches it under algo_enabled(3) and, when 3 is off, under algo_enabled(2)
+      through the same block (0x7d588, 0x7d5a4, 0x7d644), which are
+      HR_SPECTROTRACK and HR_BURST, and it is the only caller of hr_algo_step.
+      The trace has 1131 calls of this against 38 of hr_algo_step, so the
+      per-sample chain runs here and the result is written once per window.
+  - name: hr_tempo_algo_step
+    address: 0x7b4b0
+    ret: void
+    args: [[void *, algo], [const struct algo_sample_frame *, frame]]
+    notes: the call under algo_enabled(4) (0x7d5a8, 0x7d5b8); id 4 is HR_TEMPO.
+  - name: ppg_hrv_algo_step
+    address: 0xa45a4
+    ret: void
+    args: [[void *, algo], [const struct algo_sample_frame *, frame]]
+    notes: >
+      the call under algo_enabled(0x11) (0x7d5bc, 0x7d5cc); id 17 is PPG_HRV. It
+      is the root of the beat detector: its only callee chain in the trace is
+      0x7d778 and ppg_hrv_peak_detect, 2262 and 9016 calls against 1131 samples.
+  - name: spo2_multi_algo_step
+    address: 0x7c71c
+    ret: void
+    args: [[void *, algo], [const struct algo_sample_frame *, frame], [i32, state], [u32, first]]
+    notes: >
+      the call under the second algo_enabled(5) (0x7d5f6, 0x7d608); id 5 is
+      SPO2_MULTI. The block it sits in is entered for id 5 or, when 5 is off, for
+      id 6 (0x7d650), but this call is re-gated on 5 alone.
+  - name: spo2_mono_algo_step
+    address: 0x2a038
+    ret: void
+    args: [[void *, algo], [const struct algo_sample_frame *, frame], [i32, state]]
+    notes: the call under algo_enabled(6) (0x7d60c, 0x7d63e); id 6 is SPO2_MONO.
+  - name: ppg_br_algo_step
+    address: 0xa0012
+    ret: void
+    args: [[void *, algo], [const struct algo_sample_frame *, frame]]
+    notes: the call under algo_enabled(0xa) (0x7d65a, 0x7d672); id 10 is PPG_BR.
+  - name: ppg_apnea_algo_step
+    address: 0x74ab8
+    ret: void
+    args: [[void *, algo], [const struct algo_sample_frame *, frame], [i32, beat], [void *, hr]]
+    notes: the call under algo_enabled(0xb) (0x7d676, 0x7d6b6); id 11 is PPG_APNEA.
+  - name: sleep_wake_algo_step
+    address: 0x79560
+    ret: void
+    args: [[void *, algo], [i32, beats], [u32, a], [u32, b]]
+    notes: >
+      the call under algo_enabled(0xe) (0x7d6ba, 0x7d71e); id 14 is SLEEP_WAKE.
+      The four HRV getters feed it on the stack (0x7d6ea..0x7d706). 1279 calls in
+      the trace, one per popped slot.
+  - name: ppg_rr_algo_step
+    address: 0x7710c
+    ret: void
+    args: [[void *, algo], [const struct algo_sample_frame *, frame], [i32, beat]]
+    notes: the call under algo_enabled(0x12) (0x7d722, 0x7d73e); id 18 is PPG_RR.
+  - name: sensors_sync_get_rate_hz
+    address: 0x31ea8
+    ret: u16
+    notes: >
+      one halfword load out of a global and nothing else; its only caller is
+      algo_manager_feed_sample, which divides the result by 25 to decide which
+      samples reach algo_dispatch_sample. 1279 calls in the trace, one per
+      popped slot, immediately before each algo_dispatch_sample.
+  - name: ppg_hrv_peak_detect
+    address: 0x7d858
+    ret: void
+    args: [[void *, det], [float, sample]]
+    notes: >
+      a peak detector by shape, reached only from ppg_hrv_algo_step through
+      0x7d778 (9016 calls against 1131 samples): it pushes the sample into a
+      30-slot delay line (0x7d870), decays the running threshold by a constant
+      and clamps it at 2.0 (0x7d884..0x7d89a), and once the line is full compares
+      the sample fourteen back (0x7d8b4) against the fourteen before it and the
+      fourteen after it (the two loops at 0x7d8cc and 0x7d8e6), declaring a peak
+      only when it is strictly the largest and above the threshold.
+
+  # The block at 0x741e8..0x7d9b8 and 0x9ea5c..0xa49d8 that the log-tag partition
+  # calls SENSORS_SYNC carries Withings' own hard-float primitive library: no
+  # reference build matches a body in it (see abi/matches.yaml's note on the
+  # dsp*_ and kissfft_ variants), and each of these is a whole function whose
+  # instruction sequence is the shape and nothing else.
+  - name: vec_f32_sum
+    address: 0x74394
+    ret: float
+    args: [[u32, n], [const float *, x]]
+    notes: zero, then `vldmia`/`vadd.f32` over n words and return the accumulator.
+  - name: vec_f32_mean
+    address: 0x743b0
+    ret: float
+    args: [[u32, n], [const float *, x]]
+    notes: vec_f32_sum divided by n as a float, zero for n == 0.
+  - name: vec_f32_stddev
+    address: 0x743d8
+    ret: float
+    args: [[u32, n], [const float *, x]]
+    notes: >
+      vec_f32_mean, then `vfma` of (x[i] - mean) with itself over the array
+      (0x743ee), divided by n and passed through the double sqrt; the population
+      deviation, zero for n == 0.
+  - name: vec_f32_weighted_mean
+    address: 0x74434
+    ret: i32
+    args: [[u32, n], [const float *, x], [const float *, w], [float *, out]]
+    notes: >
+      vec_f32_sum of the weights, refused when its magnitude is below the
+      constant at 0x4d48c, then `vfma` of x[i] with w[i] (0x7445e) divided by
+      that sum.
+  - name: vec_f32_min
+    address: 0x74494
+    ret: float
+    args: [[u32, n], [const float *, x]]
+    notes: the first element, then `vmovmi` on each `vcmp` that runs lower.
+  - name: vec_f32_max
+    address: 0x744c0
+    ret: float
+    args: [[u32, n], [const float *, x]]
+    notes: the first element, then `vmovgt` on each `vcmp` that runs higher.
+  - name: vec_f32_div_scalar
+    address: 0x744ec
+    ret: i32
+    args: [[u32, n], [const float *, x], [float *, out], [float, d]]
+    notes: >
+      out[i] = x[i] / d over n words, refused when |d| is below the constant at
+      0x4d520. It is the tail call vec_f32_normalise_sum ends in.
+  - name: vec_f32_add_scalar
+    address: 0x9f594
+    ret: i32
+    args: [[u32, n], [const float *, x], [float *, out], [float, s]]
+    notes: out[i] = x[i] + s over n words.
+  - name: vec_f32_mul
+    address: 0x9f5ae
+    ret: i32
+    args: [[u32, n], [const float *, a], [const float *, b], [float *, out]]
+    notes: out[i] = a[i] * b[i] over n words, three cursors advancing together.
+  - name: vec_f32_argmax
+    address: 0x9f562
+    ret: i32
+    args: [[u32, n], [const float *, x]]
+    notes: >
+      the running maximum's index, kept in a counter the `movgt` copies out
+      (0x9f57c); -1 for n == 0. The value itself is never returned, which is what
+      separates it from vec_f32_max.
+  - name: vec_f32_normalise_sum
+    address: 0x9f5cc
+    ret: i32
+    args: [[u32, n], [const float *, x], [float *, out]]
+    notes: >
+      refuses with -2 on the first negative element (0x9f5dc), then divides the
+      array by its own vec_f32_sum through vec_f32_div_scalar, so the result sums
+      to one.
+  - name: vec_f32_powf
+    address: 0x9f606
+    ret: i32
+    args: [[u32, n], [const float *, x], [float *, out], [float, e]]
+    notes: >
+      out[i] = powf(x[i], e) over n words, the exponent held in s16 across the
+      loop, refused on the first NaN the `vcmp` of the result with itself finds.
+  - name: ewma_step
+    address: 0x9ecae
+    ret: float
+    args: [[float, x], [float, state], [float, alpha]]
+    notes: >
+      (1 - alpha) * state + alpha * x in five instructions, the one-pole
+      exponential filter the whole sensor path is built out of: the chain at
+      0x74cd8 alone steps eight of them and takes the difference of consecutive
+      stages, which is a lowpass and a highpass per channel.
+  - name: slew_limit_step
+    address: 0x9fea2
+    ret: float
+    args: [[float, target], [float, state], [float, step]]
+    notes: >
+      moves state one step towards target and clamps at target: the two arms add
+      or subtract step and take the result only while it has not overshot
+      (0x9feba, 0x9fece).
+  - name: central_diff_step
+    address: 0xa3256
+    ret: float
+    args: [[void *, state], [float, x]]
+    notes: >
+      two delay stores and a subtract: the object keeps x[n-1] at +0 and x[n-2]
+      at +4 behind a three-valued warm-up counter at +8, emits x[n] - x[n-1] on
+      the first full step and (x[n] - x[n-2]) * 0.5 afterwards.
+  - name: running_max3_step
+    address: 0xa330c
+    ret: float
+    args: [[void *, state], [float, x]]
+    notes: >
+      the maximum of the last three samples, kept with two delay slots and three
+      fmaxf calls: the departing sample is compared against the maximum of the
+      two that stay (0xa336e), so the window's maximum is recomputed only when
+      the one leaving held it.
+  - name: accum_i64_add
+    address: 0x9edc8
+    ret: i32
+    args: [[void *, acc], [i32, x]]
+    notes: a 64-bit sum at +0 and a 64-bit count at +8, both incremented.
+  - name: accum_i64_mean_reset
+    address: 0x9ede8
+    ret: i32
+    args: [[void *, acc]]
+    notes: >
+      the sum divided by the count through __aeabi_ldivmod, then both back to
+      zero; the mirror of accum_i64_add.
+  - name: accum_f32_add
+    address: 0x9ee12
+    ret: i32
+    args: [[void *, acc], [float, x]]
+    notes: a float sum at +0 and an i32 count at +4, both incremented.
+  - name: accum_f32_mean_reset
+    address: 0x9ee28
+    ret: float
+    args: [[void *, acc]]
+    notes: the sum divided by the count as a float, then both back to zero.
+  - name: window_f32_push
+    address: 0xa30fe
+    ret: i32
+    args: [[void *, win], [float, x]]
+    notes: >
+      the window object is {full u8 @0, capacity i32 @4, head i32 @8, float *
+      @0xc}: advance head modulo capacity, store, and set full the first time
+      head reaches capacity - 1.
+  - name: window_u8_push
+    address: 0xa319e
+    ret: i32
+    args: [[void *, win], [u8, x]]
+    notes: window_f32_push over the same object with a byte element (`strb`).
+  - name: window_f32_copy_out
+    address: 0xa3128
+    ret: i32
+    args: [[void *, win], [i32, n], [float *, out]]
+    notes: >
+      the window in chronological order: it starts at head + 1 and wraps, so the
+      oldest sample comes first. Refuses unless n is exactly the capacity (-1),
+      the window is full (-3) and the destination is not the window's own buffer
+      (-4).
+  - name: delay_f32_push_pop
+    address: 0x9f3c4
+    ret: float
+    args: [[void *, line], [float, x]]
+    notes: >
+      a second window layout, {capacity i32 @0, float * @4, head i32 @8, full u8
+      @0xc}: it returns the value it overwrites, so one call is both the push and
+      the sample leaving the line.
+  - name: delay_f32_tap
+    address: 0x9f3f4
+    ret: float
+    args: [[void *, line], [i32, k]]
+    notes: >
+      the element k after the oldest, (head + 1 + k) modulo capacity, over the
+      same object delay_f32_push_pop writes. ppg_hrv_peak_detect is its only
+      caller and walks the whole line with it.
+
 globals:
   - name: xTickCount
     address: 0x20021920

@@ -489,3 +489,91 @@ build_newlib() {
 }
 build_newlib newlib-nano-big
 build_newlib newlib-nano-small --enable-newlib-reent-small --enable-newlib-reent-check-verify
+
+# ---- CMSIS-DSP and KissFFT --------------------------------------------------
+# Candidates for the float and signal-processing blocks inside SENSORS_SYNC and
+# ECG, which are hard-float VFP code no struct layout reaches. An earlier verdict
+# ruled CMSIS-DSP out from its constant tables alone; these variants put the
+# bodies in front of abi/match.py. Releases span the plausible build window:
+# CMSIS 5.7.0 (DSP 1.9.0), CMSIS 5.9.0 (DSP 1.10.0) and the standalone v1.14.4.
+DSP_SRC=$ROOT/src/dsp
+DSP_TAGS="5.7.0 5.9.0 1.14.4"
+DSP_URL=https://github.com/ARM-software/CMSIS-DSP/archive/refs/tags
+KISS_URL=https://github.com/mborgerding/kissfft/archive/refs/tags/131.1.0.tar.gz
+
+mkdir -p "$DSP_SRC"
+for t in $DSP_TAGS; do
+    [ -d "$DSP_SRC/CMSIS-DSP-$t" ] && continue
+    f=$ROOT/dl/cmsis-dsp-$t.tar.gz
+    v=$t; case "$t" in 1.*) v=v$t ;; esac
+    [ -s "$f" ] || curl -L -o "$f" "$DSP_URL/$v.tar.gz"
+    tar xf "$f" -C "$DSP_SRC"
+done
+if [ ! -d "$DSP_SRC/kissfft-131.1.0" ]; then
+    [ -s "$ROOT/dl/kissfft-131.1.0.tar.gz" ] || curl -L -o "$ROOT/dl/kissfft-131.1.0.tar.gz" "$KISS_URL"
+    tar xf "$ROOT/dl/kissfft-131.1.0.tar.gz" -C "$DSP_SRC"
+fi
+
+# ARM_MATH_CM4 with __FPU_PRESENT is the image's core; the CMSIS-Core headers
+# come from the SDK, which is where the image's own would have come from.
+build_cmsisdsp() {
+    local name="$1" src="$2"; shift 2
+    local od="$OUT/$name"
+    [ -d "$src" ] || return 0
+    rm -rf "$od"; mkdir -p "$od"
+    local dinc="-I$src/Include -I$src/PrivateInclude -I$SDK/components/toolchain/cmsis/include"
+    local ddef="-DARM_MATH_CM4 -D__FPU_PRESENT=1 -DNRF52840_XXAA -D__GNUC_PYTHON__=0"
+    local objs=""
+    for s in $(find "$src/Source" -name '*.c' | sort); do
+        # Each Source subdirectory carries an umbrella .c that #includes all its
+        # siblings, so compiling it too gives every body twice.
+        [ "$(basename "$s" .c)" = "$(basename "$(dirname "$s")")" ] && continue
+        local o="$od/$(echo "${s#$src/Source/}" | tr / _ | sed 's/\.c$/.o/')"
+        if "$GCC-gcc" $ARCH $COMMON "$@" $ddef $dinc -c "$s" -o "$o" 2>>"$od/err.log"; then
+            objs="$objs $o"
+        else
+            echo "  skip $s" >> "$od/skipped.log"
+        fi
+    done
+    [ -n "$objs" ] || return 0
+    "$GCC-ld" -r -o "$od/ref.elf" $objs
+    printf '%-14s %3d objs  %s\n' "$name" "$(echo $objs | wc -w)" "$od/ref.elf"
+}
+for t in $DSP_TAGS; do
+    tag=$(echo "$t" | tr . _)
+    build_cmsisdsp "dsp${tag}_Os" "$DSP_SRC/CMSIS-DSP-$t" -Os
+    build_cmsisdsp "dsp${tag}_O2" "$DSP_SRC/CMSIS-DSP-$t" -O2
+done
+
+build_kissfft() {
+    local name="$1"; shift
+    local src=$DSP_SRC/kissfft-131.1.0
+    local od="$OUT/$name"
+    [ -d "$src" ] || return 0
+    rm -rf "$od"; mkdir -p "$od"
+    local objs=""
+    for s in "$src"/kiss_fft.c "$src"/kiss_fftr.c "$src"/kiss_fftnd.c "$src"/kiss_fftndr.c; do
+        local o="$od/$(basename "$s" .c).o"
+        if "$GCC-gcc" $ARCH $COMMON "$@" -DFIXED_POINT=0 -I"$src" -c "$s" -o "$o" 2>>"$od/err.log"; then
+            objs="$objs $o"
+        fi
+    done
+    [ -n "$objs" ] || return 0
+    "$GCC-ld" -r -o "$od/ref.elf" $objs
+    printf '%-14s %3d objs  %s\n' "$name" "$(echo $objs | wc -w)" "$od/ref.elf"
+}
+build_kissfft kissfft_Os -Os
+build_kissfft kissfft_O2 -O2
+
+# ---- newlib libm as a matchable ELF ----------------------------------------
+# abi/autonames.py matches the Arm prebuilt libm.a; these turn the libm built
+# here (the full-precision one, from Withings' own newlib version) into a
+# ref.elf so abi/match.py can search the SENSORS_SYNC and ECG blocks for it.
+for n in newlib-nano-big newlib-nano-small; do
+    a=$OUT/$n/arm-none-eabi/newlib/libm.a
+    [ -f "$a" ] || continue
+    d=$OUT/libm_${n#newlib-}
+    mkdir -p "$d"
+    "$GCC-ld" -r --whole-archive -o "$d/ref.elf" "$a"
+    printf '%-14s %s\n' "libm_${n#newlib-}" "$d/ref.elf"
+done

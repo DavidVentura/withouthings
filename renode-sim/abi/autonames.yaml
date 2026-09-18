@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: gcc-arm-none-eabi-9-2020-q2-update (SDK reference build)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 4, helper: 414, libc: 98, logcb: 3, logline: 332, logtag: 8, module_functions: 1799, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {bleevt: 28, extlib: 4, helper: 416, libc: 123, logcb: 3, logline: 331, logtag: 8, module_functions: 1797, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 200, disagree: 14}
 
 functions:
@@ -27,17 +27,75 @@ functions:
     class: logline
     evidence: "the only line 0x27f60 logs, wlog('[UI][GAUGE] Error, angle %f is not valid as to is lower than %f') at 0x27f9a"
     module: UI
-  - name: shell_cmd_calib_test__3__1
-    address: 0x2aa40
+  - name: exp
+    address: 0x2a7e0
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 37 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "double exp (double);"
+  - name: log
+    address: 0x2a870
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 39 insns, direct"
+    also_matched: [log10]
+    header: arm-none-eabi/include/math.h
+    proto: "double log (double);"
+  - name: cos
+    address: 0x2a8f0
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 50 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "double cos (double);"
+  - name: sin
+    address: 0x2a998
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 51 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "double sin (double);"
+  - name: __kernel_cos
+    address: 0x2aa50
+    class: libc
+    evidence: "newlib nano-big libm, score 0.99 over 120 insns, direct"
+  - name: __kernel_sin
+    address: 0x2abe0
+    class: libc
+    evidence: "newlib nano-big libm, score 0.99 over 115 insns, direct"
+  - name: __ieee754_exp
+    address: 0x2ad58
+    class: libc
+    evidence: "newlib nano-big libm, score 0.94 over 231 insns, direct"
+  - name: __ieee754_log
+    address: 0x2b040
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 281 insns, direct"
+  - name: pow__1
+    address: 0x2b3b0
     class: helper
-    evidence: "only 0xa7f12 (shell_cmd_calib_test__3) calls 0x2aa40; 6 bytes"
-    module: SHELL
+    evidence: "only 0x8c8fc (pow) calls 0x2b3b0; 2342 bytes"
+  - name: __ieee754_rem_pio2
+    address: 0x2bdf8
+    class: libc
+    evidence: "newlib nano-big libm, score 0.82 over 343 insns, propagated from cos"
   - name: scalbn
     address: 0x2c1f0
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 77 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "double scalbn (double, int);"
+  - name: __ieee754_rem_pio2__1
+    address: 0x2c308
+    class: helper
+    evidence: "only 0x2bdf8 (__ieee754_rem_pio2) calls 0x2c308; 24 bytes"
+  - name: __kernel_rem_pio2
+    address: 0x2c320
+    class: libc
+    evidence: "newlib nano-big libm, score 0.95 over 577 insns, direct"
+  - name: floor
+    address: 0x2c9a8
+    class: libc
+    evidence: "newlib nano-big libm, score 0.99 over 90 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "double floor (double);"
   - name: __cvt__1
     address: 0x2d668
     class: helper
@@ -3145,11 +3203,6 @@ functions:
     class: helper
     evidence: "only 0x64cf8 (FW_AVAILABLE__1) calls 0x64a0c; 38 bytes"
     module: CHUNKED_UPDATE
-  - name: chunked_update_not_aligned
-    address: 0x64bc8
-    class: logline
-    evidence: "the only line 0x64bc8 logs, wlog('[CHUNKED_UPDATE] not aligned') at 0x64bf2"
-    module: CHUNKED_UPDATE
   - name: FW_AVAILABLE__1
     address: 0x64cf8
     class: helper
@@ -4136,18 +4189,66 @@ functions:
     class: logline
     evidence: "the only line 0x8b924 logs, wlog('[WARNING] unknown type 0x%.4x !!') at 0x8bab0"
     module: WARNING
+  - name: pow
+    address: 0x8c8fc
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 79 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "double pow (double, double);"
+  - name: expf
+    address: 0x8c9dc
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 28 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "float expf (float);"
+  - name: sqrtf
+    address: 0x8ca48
+    class: libc
+    evidence: "newlib nano-big libm, score 0.94 over 17 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "float sqrtf (float);"
   - name: __fpclassifyd
     address: 0x8ca84
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 28 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "int __fpclassifyd (double);"
+  - name: expm1f
+    address: 0x8cacc
+    class: libc
+    evidence: "newlib nano-big libm, score 0.99 over 161 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "float expm1f (float);"
   - name: __fpclassifyf
     address: 0x8cd1c
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.95 over 21 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "int __fpclassifyf (float);"
+  - name: __ieee754_sqrt
+    address: 0x8cd6c
+    class: libc
+    evidence: "newlib nano-big libm, score 0.97 over 158 insns, direct"
+  - name: round
+    address: 0x8cf10
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 51 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "double round (double);"
+  - name: roundf
+    address: 0x8cf9c
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 26 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "float roundf (float);"
+  - name: __ieee754_expf
+    address: 0x8cfe4
+    class: libc
+    evidence: "newlib nano-big libm, score 0.78 over 106 insns, propagated from expf"
+  - name: __ieee754_powf
+    address: 0x8d170
+    class: libc
+    evidence: "newlib nano-big libm, score 0.66 over 386 insns, propagated from powf"
   - name: scalbnf
     address: 0x8d6f8
     class: libc
@@ -5843,6 +5944,19 @@ functions:
     class: helper
     evidence: "only 0x88868 (gui_notif_resources_available) calls 0xa70fc; 40 bytes"
     module: GUI
+  - name: sqrt
+    address: 0xa7c6e
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 31 insns, direct"
+    also_matched: [remainder, acosh]
+    header: arm-none-eabi/include/math.h
+    proto: "double sqrt (double);"
+  - name: powf
+    address: 0xa7cc6
+    class: libc
+    evidence: "newlib nano-big libm, score 0.98 over 54 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "float powf (float, float);"
   - name: finite
     address: 0xa7d74
     class: libc
@@ -5855,10 +5969,30 @@ functions:
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 1.00 over 7 insns, direct"
     header: arm-none-eabi/include/math.h
     proto: "int finitef (float);"
+  - name: fmaxf
+    address: 0xa7df2
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 18 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "float fmaxf (float, float);"
+  - name: fminf
+    address: 0xa7e2c
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 18 insns, direct"
+    header: arm-none-eabi/include/math.h
+    proto: "float fminf (float, float);"
   - name: with_errnof
     address: 0xa7e66
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libm.a, score 1.00 over 9 insns, direct"
+  - name: __ieee754_powf__1
+    address: 0xa7eae
+    class: helper
+    evidence: "only 0x8d170 (__ieee754_powf) calls 0xa7eae; 14 bytes"
+  - name: xflow
+    address: 0xa7ee0
+    class: libc
+    evidence: "newlib nano-big libm, score 1.00 over 17 insns, direct"
   - name: shell_cmd_calib_test__3
     address: 0xa7f12
     class: helper
