@@ -1,0 +1,67 @@
+The blocking queue API starts with Withings' ASSERT_NO_PENDING_ISR.
+
+Six bodies in queue.c open with a loop over NVIC->IABR[0..7] that logs
+"!! ASSERT_NO_PENDING_ISR FAILED (%d,%p,%8.8x)!!" and then spins if any word is
+non-zero: xQueueGenericCreate (line 400), xQueueCreateMutex (523),
+xQueueGiveMutexRecursive (617), one more at 673, xQueueGenericSend (773) and
+xQueueReceive (1288). The loop bounds are the two pool words at 0x73d6c and
+0x73d70 (0xe000e320 and 0xe000e300) and the string is at 0xe5d50. It is not
+configASSERT: configASSERT is undefined in this build and none of its argument
+checks appear anywhere.
+
+The two bodies this patch covers are the two the byte verdict measures. The line
+number is an immediate in the image and Withings' file has more lines above the
+macro than the SDK's, so a #line marker carries the image's own number and is
+restored after.
+
+--- a/queue.c
++++ b/queue.c
+@@ -35,6 +35,28 @@
+ #define MPU_WRAPPERS_INCLUDED_FROM_API_FILE
+ 
+ #include "FreeRTOS.h"
++
++/* Withings own precondition on the blocking queue API: nothing may be running
++   in interrupt context when it is called. Every non-ISR entry point starts with
++   it, and the six sites the image has all report the same string. The line
++   numbers are Withings own file's and are immediates in the image, so the
++   #line markers below carry them. */
++extern void vAssertCalled( const char *pcFormat, ... );
++#define ASSERT_NO_PENDING_ISR()                                                \
++    do {                                                                       \
++        volatile uint32_t *pulActive;                                          \
++        for( pulActive = &NVIC->IABR[ 0 ];                                     \
++             pulActive < &NVIC->IABR[ 8 ];                                     \
++             pulActive++ )                                                     \
++        {                                                                      \
++            if( *pulActive != 0UL )                                            \
++            {                                                                  \
++                vAssertCalled( "!! ASSERT_NO_PENDING_ISR FAILED (%d,%p,%8.8x)!!\\n", \
++                               __LINE__, pulActive, *pulActive );              \
++                for( ;; ) {}                                                   \
++            }                                                                  \
++        }                                                                      \
++    } while( 0 )
+ #include "task.h"
+ #include "queue.h"
+ 
+@@ -729,6 +751,9 @@
+ TimeOut_t xTimeOut;
+ Queue_t * const pxQueue = ( Queue_t * ) xQueue;
+ 
++#line 773
++	ASSERT_NO_PENDING_ISR();
++#line 732
+ 	configASSERT( pxQueue );
+ 	configASSERT( !( ( pvItemToQueue == NULL ) && ( pxQueue->uxItemSize != ( UBaseType_t ) 0U ) ) );
+ 	configASSERT( !( ( xCopyPosition == queueOVERWRITE ) && ( pxQueue->uxLength != 1 ) ) );
+@@ -1243,6 +1268,9 @@
+ TimeOut_t xTimeOut;
+ Queue_t * const pxQueue = ( Queue_t * ) xQueue;
+ 
++#line 1288
++	ASSERT_NO_PENDING_ISR();
++#line 1246
+ 	/* Check the pointer is not NULL. */
+ 	configASSERT( ( pxQueue ) );
+ 

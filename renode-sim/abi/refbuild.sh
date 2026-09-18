@@ -217,7 +217,12 @@ DEFS="-DNRF52840_XXAA -DBOARD_PCA10056 -DFLOAT_ABI_HARD -DCONFIG_GPIO_AS_PINRESE
  -DAPP_FIFO_ENABLED=1 -DNRF_LOG_ENABLED=0"
 
 ARCH="-mcpu=cortex-m4 -mthumb -mabi=aapcs -mfpu=fpv4-sp-d16 -mfloat-abi=hard"
-COMMON="-ffunction-sections -fdata-sections -fno-strict-aliasing -fno-builtin
+# No -fno-strict-aliasing: the image's own code is the measurement. With strict
+# aliasing off GCC has to reload a field it just stored through another pointer,
+# and seven bodies carry that reload where the image does not -- uxListRemove
+# (0x9e55a) is the clearest, keeping pxNext and pxPrevious in the registers the
+# ldrd loaded them into across both list stores. Turning it on settles all seven.
+COMMON="-ffunction-sections -fdata-sections -fno-builtin
  -fshort-enums -std=gnu99 -g3 -w"
 build_variant() {
     local name="$1"; shift
@@ -415,17 +420,20 @@ fi
 # REF_ASSERT=0 leaves configASSERT undefined. It is not a guess: the logging
 # flavour (3) costs nine of the kernel bodies that otherwise reproduce, and the
 # empty one (2) costs ten.
+# APP_NAME/APP_EXTRA exist so a hypothesis about the image's compiler settings is
+# a build directory of its own, measured beside `app` rather than replacing it.
+APP_NAME=${APP_NAME:-app}
 SKIP_SRC="modules/nrfx/drivers/src/nrfx_saadc.c"
-build_variant app -Os -fcommon -DREF_ASSERT=0 -DconfigUSE_TIMERS=0
-if want app; then
+build_variant "$APP_NAME" -Os -fcommon -DREF_ASSERT=0 -DconfigUSE_TIMERS=0 ${APP_EXTRA:-}
+if want "$APP_NAME"; then
     SAADC_INC="-I$SAADC_SRC -I$SAADC_SRC/hal -I$SAADC_SRC/drivers -I$SAADC_SRC/drivers/include -I$SAADC_SRC/soc"
     # -fno-builtin is deliberately not passed: the image's channels_config calls
     # memset for the pselp/pseln reset, which only the builtin emits.
-    "$GCC-gcc" $ARCH -ffunction-sections -fdata-sections -fno-strict-aliasing \
+    "$GCC-gcc" $ARCH -ffunction-sections -fdata-sections \
         -fshort-enums -std=gnu99 -g3 -w -Os $DEFS -I"$HERE/config-relink" \
-        $SAADC_INC $INC \
-        -c "$SAADC_SRC/drivers/src/nrfx_saadc.c" -o "$OUT/app/nrfx_saadc.o" 2>>"$OUT/app/err.log"
-    "$GCC-ld" -r -o "$OUT/app/merged.elf" "$OUT/app/ref.elf" "$OUT/app/nrfx_saadc.o"
-    mv "$OUT/app/merged.elf" "$OUT/app/ref.elf"
+        $SAADC_INC $INC ${APP_EXTRA:-} \
+        -c "$SAADC_SRC/drivers/src/nrfx_saadc.c" -o "$OUT/$APP_NAME/nrfx_saadc.o" 2>>"$OUT/$APP_NAME/err.log"
+    "$GCC-ld" -r -o "$OUT/$APP_NAME/merged.elf" "$OUT/$APP_NAME/ref.elf" "$OUT/$APP_NAME/nrfx_saadc.o"
+    mv "$OUT/$APP_NAME/merged.elf" "$OUT/$APP_NAME/ref.elf"
 fi
 SKIP_SRC=
