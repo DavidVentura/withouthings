@@ -1,0 +1,206 @@
+# The vendor libraries the image links, named by their entry points.
+#
+# A component is declared by its entries alone. abi/survey.py computes what
+# each one owns -- the unnamed functions no path from anywhere else in the
+# image can reach without passing through one of the entries -- and refuses a
+# declaration whose closure calls Withings code or reaches the log ring,
+# because those are the two things a vendor drop does not do.
+#
+# The entries carry a name and the evidence that names them, which is always
+# their caller: the firmware's own function that hands the component its input
+# and the one that reads its output. The interiors do not get names; they get
+# `component:` in abi/symbols.yaml, which is what makes abi/coverage.py report
+# them as a vendor interior rather than as unnamed code. The shapes the entries
+# take and return are C and live in abi/include/withings/vendor.h.
+
+components:
+
+  # ------------------------------------------------------------- greenTEG
+  # greenTEG's core-body-temperature algorithm (CBTA). greenTEG AG sells the
+  # sensor (the heat-flux element behind the caseback) together with the model
+  # that turns heat flux and skin temperature into a core temperature, and the
+  # firmware carries the model as a built object: it logs nothing, it calls
+  # nothing of Withings', it computes in single-precision float throughout and
+  # reaches only sqrtf, fmaxf, expf, expm1f, __fpclassifyf and memset.
+  #
+  # The name is the image's own. `[GREENTEG] CBTA parameters: bin: '%c', skin
+  # temp. offset: %d(x1000), heatflux offset: %d(x100), integration factor:
+  # %d(x10000)` is the configuration the wrapper keeps for it, the shell's
+  # `greenteg` command calls itself "GreenTEG (Core Body Temperature Algo)",
+  # and the two instances the wrapper drives are named by the two lines the
+  # shell's `greenteg test` prints against them, FREE_LIVING_ALGORITHM and
+  # SPORT.
+  - name: greenteg_cbta
+    what: >
+      greenTEG core-body-temperature model, two instances (free-living and
+      sport), fed heat flux and skin temperature once a second and read for a
+      temperature with a quality.
+    evidence: >
+      Bound on one side by shell_cmd_greenteg 0x4dc8c's test arm 0x4d5d8,
+      which initialises both instances, drives them for 9000 seconds of
+      synthesised heat flux and skin temperature and prints "fl: %d %lf" and
+      "workout: %d %lf"; and on the other by the firmware's own body
+      temperature module, 0x42974 ("[BODY_TEMP][info] Reset Algorithms", "FL
+      algorithm init failed", "WO algorithm init failed") and 0x42558, whose
+      sibling 0x42fb0 logs the whole interface in one line: "Hourly stats:
+      status=%u, last{worn_ts=%u, bpm=%u, skinT=%u, Hflux=%d, FL{T=%u, Q=%u},
+      WO{T=%u, Q=%u}}" -- skin temperature and heat flux in, temperature and
+      quality out, per instance.
+    entries:
+      - address: 0x8bfdc
+        name: vendor_greenteg_cbta_free_living_init
+        evidence: >
+          0x42974 calls it and logs "algorithm init failed" through
+          "[BODY_TEMP][err] FL %s" when it returns zero; it runs the
+          constructor 0x8c230 over the free-living state and sets the
+          instance's ready flag.
+      - address: 0x8bf48
+        name: vendor_greenteg_cbta_free_living_update
+        evidence: >
+          Six floats in s0..s5, called once per sample by 0x42558 and by the
+          shell test with (heat flux, skin temperature, ambient, and three
+          copies of one more float); returns the ready flag. Refuses to run
+          before the init above has set that flag.
+      - address: 0x8bf94
+        name: vendor_greenteg_cbta_free_living_get
+        evidence: >
+          Takes the only pointer argument in the component and writes six
+          bytes through it -- a float and two bytes -- which is what the shell
+          prints as "fl: %d %lf" and what 0x42fb0 logs as FL{T, Q}.
+      - address: 0x8c31c
+        name: vendor_greenteg_cbta_sport_init
+        evidence: >
+          The free-living init's twin against the second state, over the
+          constructor 0x8c774; 0x42974 logs its failure as "[BODY_TEMP][err]
+          WO %s".
+      - address: 0x8c294
+        name: vendor_greenteg_cbta_sport_update
+        evidence: "the free-living update's twin; same six floats, second state"
+      - address: 0x8c2e0
+        name: vendor_greenteg_cbta_sport_get
+        evidence: >
+          the free-living get's twin; what the shell prints as
+          "workout: %d %lf" and 0x42fb0 logs as WO{T, Q}
+      - address: 0x8bd04
+        name: vendor_greenteg_cbta_sample_convert
+        evidence: >
+          The one entry both instances share and the only one that takes the
+          configuration: the shell hands it the sixteen bytes at 0xb410c
+          (sensitivity bin 'J', two unit factors of 1.0 and a zero offset) and
+          two raw floats, and it writes the two floats the update calls are
+          then given. 0x42558 calls it the same way before each update pair.
+      - address: 0x8bd94
+        name: vendor_greenteg_cbta_config_apply
+        evidence: "0x42558 only; the second consumer of the configuration block"
+      - address: 0x8be84
+        name: vendor_greenteg_cbta_config_validate
+        evidence: >
+          0x42558 only; the one entry that calls __fpclassifyf, i.e. the one
+          that checks a configuration float is a number
+      - address: 0x8be68
+        name: vendor_greenteg_cbta_sport_reset
+        evidence: "0x42974 only, beside the two inits"
+      - address: 0x8bef8
+        name: vendor_greenteg_cbta_free_living_reset
+        evidence: "0x42974 only, beside the two inits; clears its state with memset"
+      - address: 0x8be78
+        name: vendor_greenteg_cbta_get_flag_a
+        evidence: "eight bytes, 0x42558 only: one byte of state read back"
+      - address: 0x8bf08
+        name: vendor_greenteg_cbta_get_flag_b
+        evidence: "eight bytes, 0x42558 only: the second byte of state read back"
+
+  # ------------------------------------------------------------- ECGSW2
+  # The ECG diagnosis library. Withings' own code calls it ECGSW2 ("[ECG
+  # DIAGNOSIS] ECGSW2 out=%d, %d, %d, %d, qrs_blocks_size=%li", "[ECG
+  # DIAGNOSIS] ECGSW2 WS Diagnosis: %li", "[ECG DIAGNOSIS] ECGSW2 HR: %d") and
+  # feeds it through a session handle. It is a drop and not firmware: its
+  # diagnostics go to nrf_fprintf and not to wlog -- it is the only thing in
+  # the image that calls nrf_fprintf, __assert_func aside -- and they are
+  # plain English sentences ("ERROR: sampling frequency is not in the [%li,
+  # %li] range") where every Withings line carries a bracketed module tag.
+  - name: ecgsw2
+    what: >
+      The ECG signal chain and diagnosis: a filter, QRS detection and feature
+      extraction, RR intervals, and a neural network that classifies the beat
+      morphology into the regulatory label the watch reports.
+    evidence: >
+      Driven entirely by the ECG task: ecg_module_init 0x4a6f8 and
+      ecg_acquisition_start 0x4a4d8 configure it, ecg_adc_block_handler
+      0x49d78 pushes samples, ecg_sample_ring_flush 0x49ff8 drains the tail
+      and ecg_task_state_machine 0x4a068 reads the result. It carries its own
+      neural network (ecg_nn_classify 0x78f1c, "Neural network failed to
+      provide an output") and its own QRS feature stage ("[QRS FEATURES] %s").
+    entries:
+      - address: 0x77af8
+        name: vendor_ecgsw2_configure
+        evidence: >
+          ecg_module_init 0x4a6f8's callee, and the only entry that validates
+          the analog front end: "sampling frequency is not in the [%d, %d]
+          range", "Gain is not in the [%d, %d] range", "lfboost mode should be
+          between %d and %d".
+      - address: 0x775dc
+        name: ecg_algo_init
+        evidence: >
+          ecg_acquisition_start 0x4a4d8's callee and ecg_algo_reset 0xa0d80's;
+          re-checks the sampling frequency and the gain and memsets the
+          session.
+      - address: 0x77688
+        name: ecg_algo_process_sample
+        evidence: >
+          ecg_adc_block_handler 0x49d78 calls it per sample; refuses past the
+          configured duration ("Samples beyond the default %li seconds
+          duration are ignored").
+      - address: 0x77768
+        name: ecg_algo_finish
+        evidence: >
+          ecg_task_state_machine 0x4a068 calls it once at the end of the
+          recording ("Finish function must be called only once after %li
+          samples are processed"); it runs the network through argmax_f32
+          0x9eb0a and turns the class into the regulatory label ("HR cat is
+          '%li' (neither low nor very high)").
+      - address: 0x77a18
+        name: ecg_algo_heart_rate
+        evidence: >
+          ecg_task_state_machine 0x4a068; returns the word at session+0x28 and
+          refuses before the finish ("Can't read heart rate before fully
+          processing the signal"). What "[ECG DIAGNOSIS] ECGSW2 HR: %d" prints.
+      - address: 0x77a80
+        name: ecg_algo_diagnosis
+        evidence: >
+          ecg_task_state_machine 0x4a068; the word at session+0x44, refused
+          before the finish ("Can't read regulatory label category before
+          fully processing the signal"). What "ECGSW2 WS Diagnosis: %li"
+          prints.
+      - address: 0x77aac
+        name: ecg_algo_result_copy
+        evidence: >
+          ecg_task_state_machine 0x4a068; copies the 56 bytes at session+0x10
+          into the caller's buffer, refused before the finish ("Can't get
+          diagnostic before fully processing the signal"). Those 56 bytes are
+          the "out=%d, %d, %d, %d, qrs_blocks_size=%li" line.
+      - address: 0x77a44
+        name: ecg_algo_heart_rate_from_rr
+        evidence: >
+          ecg_adc_block_handler 0x49d78 calls it for the live reading:
+          round(60000.0f / session->mean_rr_ms) once at least seven intervals
+          are in, zero before. The 60000.0f is at 0x77a7c.
+      - address: 0x77df8
+        name: ecg_filter_process_sample
+        evidence: "ecg_adc_block_handler 0x49d78; the filter stage's per-sample entry"
+      - address: 0x78114
+        name: ecg_filter_flush_last_sample
+        evidence: >
+          ecg_sample_ring_flush 0x49ff8; "Too many calls to the 'finish'
+          function."
+      - address: 0x78150
+        name: ecg_filter_output
+        evidence: >
+          ecg_adc_block_handler 0x49d78 and ecg_sample_ring_flush 0x49ff8;
+          "trying to read an input but no input is available"
+      - address: 0xa0d80
+        name: ecg_algo_reset
+        evidence: "already named ecg_algo_reset in the map; re-runs the init"
+      - address: 0xa0d9e
+        name: ecg_algo_output_ready
+        evidence: "already named ecg_algo_output_ready in the map"

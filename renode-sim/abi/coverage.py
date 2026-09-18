@@ -24,14 +24,25 @@ OUT = os.path.join(HERE, "out", "ghidra")
 # derivation and is reported under its own rule's name.
 LABELS = {symmap.HAND: "hand (manifest)", "match": "library match"}
 
+# A vendor component's entries are named and its interiors are not, and the
+# difference is the whole point of the two buckets: the interior bytes are
+# explained -- they belong to a library the firmware did not write and reaches
+# only through the entries -- without any claim about what each body does.
+VENDOR_ENTRY, VENDOR_INTERIOR = "vendor entry", "vendor interior"
+
 
 def main():
     items = json.load(open(os.path.join(OUT, "items.json")))
     smap = symmap.load()
     # A label is a name for an address, not a claim that a function starts
     # there, so it explains nothing about a function and is left out.
-    named = {s.address: LABELS.get(s.klass, "derived: " + s.klass)
-             for s in smap.of_kind("function")}
+    named = {}
+    for s in smap.of_kind("function"):
+        if s.klass == "vendor":
+            named[s.address] = (VENDOR_INTERIOR if s.name.startswith(s.component)
+                                else VENDOR_ENTRY)
+        else:
+            named[s.address] = LABELS.get(s.klass, "derived: " + s.klass)
 
     kinds = {}
     for f in items["functions"]:

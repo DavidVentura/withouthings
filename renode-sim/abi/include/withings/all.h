@@ -21,6 +21,7 @@
 #include "withings/sensors.h"
 #include "withings/sensors_sync.h"
 #include "withings/shell.h"
+#include "withings/vendor.h"
 #include "withings/wlog.h"
 #include "withings/wpp.h"
 #include "withings/wpp_objects.h"

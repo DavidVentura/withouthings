@@ -34,8 +34,8 @@ yaml.add_representer(
     collections.OrderedDict,
     lambda d, v: d.represent_mapping("tag:yaml.org,2002:map", v.items()))
 
-ORDER = ["address", "name", "aliases", "kind", "class", "module", "corrects",
-         "supersedes", "evidence"]
+ORDER = ["address", "name", "aliases", "kind", "class", "module", "component",
+         "corrects", "supersedes", "evidence"]
 
 HEADER = """\
 # HWA10 (ScanWatch 2) application firmware v3411 -- the address map.
@@ -91,7 +91,7 @@ HAND = "hand"
 # bodies: the call-graph rule finds an encoder by its first two writes, while
 # abi/protocol.py carries the type id, the byte count and the field layout it
 # recovered, so where both reach an address the measured one keeps it.
-RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "string",
+RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "vendor", "string",
         "wppcmd", "codec", "wppobj", "wuiview", "store", "shell", "logtag",
         "logcb", "bleevt", "logline", "helper", "prose"]
 
@@ -113,6 +113,9 @@ class Symbol(object):
         self.kind = row["kind"]
         self.klass = row["class"]
         self.module = row.get("module")
+        # Which vendor component owns the address, for the entries a
+        # declaration names and for the interiors it only encloses.
+        self.component = row.get("component")
         self.evidence = row.get("evidence")
         self.corrects = row.get("corrects")
         self.supersedes = row.get("supersedes")
