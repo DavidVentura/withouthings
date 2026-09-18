@@ -1640,8 +1640,9 @@ functions:
     ret: i32
     args: [[const void *, cfg]]
     notes: >
-      takes the ECG mutex at +0x10c, moves the state byte to 2, copies the nine
-      words of the caller's configuration into the module's own globals
+      takes the ECG mutex at +0x10c, moves the state byte to 2, copies the five
+      words (20 bytes, the loop at 0x4a54c..0x4a562; both callers build a
+      20-byte stack struct) of the caller's configuration into the session
       (0x4a534..0x4a548), requests the high-frequency clock through the
       SoftDevice (svc 66 at 0x4a558) and posts state 1; its callers outside the
       module are the shell's ecg command and the WPP measure-start helper.
