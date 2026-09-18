@@ -2810,15 +2810,17 @@ symbols:
 - address: 0x4ed90
   name: wpp_obj_Null_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 256 (Null)
+  evidence: 'WPP object type 256 (Null), 0 bytes: the parse body, its field layout
+    read off the cursor primitives it calls. requested by CMD_REQUEST_FW_CHUNK (0x6530c).'
 - address: 0x4edb0
   name: wpp_obj_Cmderror_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 272 (Cmderror)
+  evidence: 'WPP object type 272 (Cmderror), 8 bytes: the parse body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x4ede8
   name: WPP_CMD_STORED_MEASURE_SIGNAL_GET__1
   kind: function
@@ -2832,9 +2834,10 @@ symbols:
 - address: 0x4ee88
   name: wpp_obj_DebugDumpMask_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 286 (DebugDumpMask)
+  evidence: 'WPP object type 286 (DebugDumpMask), 4 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_DEBUG_SET (0x6d610).'
 - address: 0x4eeb4
   name: wpp_asked_locale__1
   kind: function
@@ -2843,75 +2846,95 @@ symbols:
 - address: 0x4eee4
   name: wpp_obj_ProbeChallenge_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 290 (ProbeChallenge)
+  evidence: 'WPP object type 290 (ProbeChallenge), 130 bytes: the parse body, its
+    field layout read off the cursor primitives it calls.'
 - address: 0x4ef24
   name: wpp_obj_ProbeChallengeResponse_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 291 (ProbeChallengeResponse)
+  evidence: 'WPP object type 291 (ProbeChallengeResponse), 65 bytes: the parse body,
+    its field layout read off the cursor primitives it calls.'
 - address: 0x4ef54
   name: wpp_obj_AlarmId_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 294 (AlarmId)
+  evidence: 'WPP object type 294 (AlarmId), 1 bytes: the parse body, its field layout
+    read off the cursor primitives it calls. requested by CMD_UPDATE_ALARM (0x3d300).'
 - address: 0x4ef80
   name: wpp_obj_PlsStation_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 297 (PlsStation)
+  evidence: 'WPP object type 297 (PlsStation), 8 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_PLS_GET (0x567f8),
+    CMD_PLS_RM (0x5691c), CMD_PLS_SET (0x56890).'
 - address: 0x4efb8
   name: wpp_obj_AppProbe_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 298 (AppProbe)
+  evidence: 'WPP object type 298 (AppProbe), 8 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_PROBE (0x6c84c).'
 - address: 0x4eff8
   name: wpp_obj_FactoryResetMode_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 302 (FactoryResetMode)
+  evidence: 'WPP object type 302 (FactoryResetMode), 4 bytes: the parse body, its
+    field layout read off the cursor primitives it calls. requested by CMD_FACTORY_RESET
+    (0x4be38).'
 - address: 0x4f024
   name: wpp_obj_TrackerWearPos_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 303 (TrackerWearPos)
+  evidence: 'WPP object type 303 (TrackerWearPos), 1 bytes: the parse body, its
+    field layout read off the cursor primitives it calls. requested by CMD_SET_TRACKER_WEAR_POS
+    (0x6d134).'
 - address: 0x4f050
   name: wpp_obj_FeatureMask_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 307 (FeatureMask)
+  evidence: 'WPP object type 307 (FeatureMask), 4 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_FEATURE_MASK_SET
+    (0x6cb24).'
 - address: 0x4f07c
   name: wpp_obj_AccountKey_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 309 (AccountKey)
+  evidence: 'WPP object type 309 (AccountKey), 69 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_ASSOCIATION_KEYS_SET
+    (0x3b5a8).'
 - address: 0x4f0b8
   name: wpp_obj_AdvKey_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 310 (AdvKey)
+  evidence: 'WPP object type 310 (AdvKey), 65 bytes: the parse body, its field layout
+    read off the cursor primitives it calls. requested by CMD_ASSOCIATION_KEYS_SET
+    (0x3b5a8).'
 - address: 0x4f0e8
   name: wpp_obj_SensorId_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 312 (SensorId)
+  evidence: 'WPP object type 312 (SensorId), 65 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_SENSOR_ID_SET
+    (0x6d0e0).'
 - address: 0x4f118
   name: wpp_obj_HrAutoAlgo_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 314 (HrAutoAlgo)
+  evidence: 'WPP object type 314 (HrAutoAlgo), 1 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_HR_AUTO_ALGORITHM_SET
+    (0x4eaf4).'
 - address: 0x4f144
   name: WPP_CMD_WORKOUT_SCREEN_SET__1
   kind: function
@@ -2922,32 +2945,41 @@ symbols:
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x6a730 (WPP_CMD_WORKOUT_GPS_STATUS) compares
-    the TLV header's type against 321 before calling it, and its 1 field read agree
-    with wpp/src/objects.rs's WorkoutGpsStatus parse.
+  evidence: 'the object walk inlined into 0x6a730 (WPP_CMD_WORKOUT_GPS_STATUS) compares
+    the TLV header''s type against 321 before calling it, and its 1 field read agree
+    with wpp/src/objects.rs''s WorkoutGpsStatus parse. Not one of abi/protocol.py''s
+    codec bodies: the walk is inlined into the handler, so there is no encoder to
+    pair it with and the name is a hand reading, which is why the entry stays hand.'
 - address: 0x4f1c8
   name: wpp_obj_Silent_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 322 (Silent)
+  evidence: 'WPP object type 322 (Silent), 1 bytes: the parse body, its field layout
+    read off the cursor primitives it calls. requested by CMD_FW_AVAILABLE (0x650e8),
+    CMD_SET_ALARM (0x3cc70), CMD_UPDATE_ALARM (0x3d300).'
 - address: 0x4f1f4
   name: wpp_obj_StoredSignalMeta_parse
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x6e21c (WPP_CMD_STORED_MEASURE_SIGNAL_GET),
-    0x6e3e8 (WPP_CMD_STORED_MEASURE_SIGNAL_DEL) compares the TLV header's type against
-    323 before calling it, and its 6 field reads agree with wpp/src/objects.rs's
-    StoredSignalMeta parse.
+  evidence: 'the object walk inlined into 0x6e21c (WPP_CMD_STORED_MEASURE_SIGNAL_GET),
+    0x6e3e8 (WPP_CMD_STORED_MEASURE_SIGNAL_DEL) compares the TLV header''s type
+    against 323 before calling it, and its 6 field reads agree with wpp/src/objects.rs''s
+    StoredSignalMeta parse. Not one of abi/protocol.py''s codec bodies: the walk
+    is inlined into the handler, so there is no encoder to pair it with and the
+    name is a hand reading, which is why the entry stays hand.'
 - address: 0x4f24c
   name: wpp_obj_Id_parse
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x4c1a4 (WPP_CMD_FEATURE_TAGS_SET_DEPRECATED_V2),
-    0x5eaac (WPP_CMD_THRESHOLDS_SET) compares the TLV header's type against 325
-    before calling it, and its 1 field read agree with wpp/src/objects.rs's Id parse.
+  evidence: 'the object walk inlined into 0x4c1a4 (WPP_CMD_FEATURE_TAGS_SET_DEPRECATED_V2),
+    0x5eaac (WPP_CMD_THRESHOLDS_SET) compares the TLV header''s type against 325
+    before calling it, and its 1 field read agree with wpp/src/objects.rs''s Id
+    parse. Not one of abi/protocol.py''s codec bodies: the walk is inlined into
+    the handler, so there is no encoder to pair it with and the name is a hand reading,
+    which is why the entry stays hand.'
 - address: 0x4f278
   name: WPP_CMD_CUSTO_SCREEN_SET__1
   kind: function
@@ -2961,21 +2993,26 @@ symbols:
 - address: 0x4f308
   name: wpp_obj_Gpio_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 516 (Gpio)
+  evidence: 'WPP object type 516 (Gpio), 6 bytes: the parse body, its field layout
+    read off the cursor primitives it calls. requested by CMD_GPIO (0x7e604).'
 - address: 0x4f360
   name: wpp_obj_Uint32_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 518 (Uint32)
+  evidence: 'WPP object type 518 (Uint32), 4 bytes: the parse body, its field layout
+    read off the cursor primitives it calls. requested by CMD_ECG_TEST (0x4b410),
+    CMD_HR_MEASURE (0x624e4), CMD_WUP_DEVICE_SET (0x6d38c).'
 - address: 0x4f38c
   name: wpp_obj_WppString_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 519 (WppString)
+  evidence: 'WPP object type 519 (WppString), 65 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_MAX8617X_FACTORY_STATS_START
+    (0x53728).'
 - address: 0x4f3bc
   name: WPP_CMD_GET_LIGHT_SENSOR__1
   kind: function
@@ -2984,57 +3021,73 @@ symbols:
 - address: 0x4f3e8
   name: wpp_obj_UpdateFirmware_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1025 (UpdateFirmware)
+  evidence: 'WPP object type 1025 (UpdateFirmware), 8 bytes: the parse body, its
+    field layout read off the cursor primitives it calls. requested by CMD_UP_FIRMWARE_START
+    (0x6e62c).'
 - address: 0x4f420
   name: wpp_obj_TimeSet_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1281 (TimeSet)
+  evidence: 'WPP object type 1281 (TimeSet), 16 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_TIME_SET (0x5e2f8).'
 - address: 0x4f46c
   name: wpp_obj_TrackerUser_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1283 (TrackerUser)
+  evidence: 'WPP object type 1283 (TrackerUser), 85 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_TRACKER_USER_SET
+    (0x60528).'
 - address: 0x4f4d0
   name: wpp_obj_WamVasistasGet_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1286 (WamVasistasGet)
+  evidence: 'WPP object type 1286 (WamVasistasGet), 6 bytes: the parse body, its
+    field layout read off the cursor primitives it calls. requested by CMD_WAM_VASISTAS_GET
+    (0x33ea8).'
 - address: 0x4f508
   name: wpp_obj_WamScreensList_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1289 (WamScreensList)
+  evidence: 'WPP object type 1289 (WamScreensList), 24 bytes: the parse body, its
+    field layout read off the cursor primitives it calls. requested by CMD_WAM_SCREENS_LIST
+    (0x34160).'
 - address: 0x4f534
   name: wpp_obj_HandsMove_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1292 (HandsMove)
+  evidence: 'WPP object type 1292 (HandsMove), 4 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_HANDS_MOVE
+    (0x448c0).'
 - address: 0x4f56c
   name: wpp_obj_TrackerGoal_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1297 (TrackerGoal)
+  evidence: 'WPP object type 1297 (TrackerGoal), 8 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_TRACKER_GOAL_SET
+    (0x608a8).'
 - address: 0x4f5a4
   name: wpp_obj_Alarm_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1298 (Alarm)
+  evidence: 'WPP object type 1298 (Alarm), 7 bytes: the parse body, its field layout
+    read off the cursor primitives it calls. requested by CMD_UPDATE_ALARM (0x3d300).'
 - address: 0x4f604
   name: wpp_obj_UserSecret_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1299 (UserSecret)
+  evidence: 'WPP object type 1299 (UserSecret), 65 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_TRACKER_USER_SET
+    (0x60528).'
 - address: 0x4f634
   name: WPP_CMD_SET_MULTI_ALARM__1
   kind: function
@@ -3043,9 +3096,11 @@ symbols:
 - address: 0x4f664
   name: wpp_obj_VasistasType_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1301 (VasistasType)
+  evidence: 'WPP object type 1301 (VasistasType), 4 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_WAM_VASISTAS_GET
+    (0x33ea8).'
 - address: 0x4f690
   name: WPP_CMD_SCREEN_LIST_SET__1
   kind: function
@@ -3054,21 +3109,27 @@ symbols:
 - address: 0x4f6f0
   name: wpp_obj_AlarmEnabled_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2329 (AlarmEnabled)
+  evidence: 'WPP object type 2329 (AlarmEnabled), 1 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_SET_ALARM_ENABLED
+    (0x3cec0).'
 - address: 0x4f71c
   name: wpp_obj_CalibrationSession_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2332 (CalibrationSession)
+  evidence: 'WPP object type 2332 (CalibrationSession), 8 bytes: the parse body,
+    its field layout read off the cursor primitives it calls. requested by CMD_RUN_PARAMETERS_SET
+    (0x60670), CMD_WALK_PARAMETERS_SET (0x606cc).'
 - address: 0x4f754
   name: wpp_obj_AppProbeOsVersion_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2344 (AppProbeOsVersion)
+  evidence: 'WPP object type 2344 (AppProbeOsVersion), 2 bytes: the parse body,
+    its field layout read off the cursor primitives it calls. requested by CMD_PROBE
+    (0x6c84c).'
 - address: 0x4f7ac
   name: WPP_CMD_MCU_TEMP_CAL_SET__1
   kind: function
@@ -3079,10 +3140,12 @@ symbols:
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x94b52 (WPP_CMD_CALIBRATION_GET), 0x94bba
-    (WPP_CMD_CALIBRATION_SET) compares the TLV header's type against 2351 before
-    calling it, and its 1 field read agree with wpp/src/objects.rs's CalibrationType
-    parse.
+  evidence: 'the object walk inlined into 0x94b52 (WPP_CMD_CALIBRATION_GET), 0x94bba
+    (WPP_CMD_CALIBRATION_SET) compares the TLV header''s type against 2351 before
+    calling it, and its 1 field read agree with wpp/src/objects.rs''s CalibrationType
+    parse. Not one of abi/protocol.py''s codec bodies: the walk is inlined into
+    the handler, so there is no encoder to pair it with and the name is a hand reading,
+    which is why the entry stays hand.'
 - address: 0x4f810
   name: WPP_CMD_CALIBRATION_SET__1
   kind: function
@@ -3091,15 +3154,19 @@ symbols:
 - address: 0x4f850
   name: wpp_obj_CustomizationIdGet_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2357 (CustomizationIdGet)
+  evidence: 'WPP object type 2357 (CustomizationIdGet), 4 bytes: the parse body,
+    its field layout read off the cursor primitives it calls. requested by CMD_CUSTOMIZATION_ID
+    (0x46c3c).'
 - address: 0x4f87c
   name: wpp_obj_CustomizationIdSet_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2358 (CustomizationIdSet)
+  evidence: 'WPP object type 2358 (CustomizationIdSet), 4 bytes: the parse body,
+    its field layout read off the cursor primitives it calls. requested by CMD_CUSTOMIZATION_ID
+    (0x46c3c).'
 - address: 0x4f8a8
   name: WPP_CMD_SET_LUMINOSITY_LEVEL__1
   kind: function
@@ -3108,9 +3175,10 @@ symbols:
 - address: 0x4f8e0
   name: wpp_obj_SpiFlashCmd_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2372 (SpiFlashCmd)
+  evidence: 'WPP object type 2372 (SpiFlashCmd), 16 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_SPI_FLASH (0x5bda4).'
 - address: 0x4f92c
   name: wpp_h_m__1
   kind: function
@@ -3119,45 +3187,59 @@ symbols:
 - address: 0x4f96c
   name: wpp_obj_BatteryStateOpt_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2388 (BatteryStateOpt)
+  evidence: 'WPP object type 2388 (BatteryStateOpt), 4 bytes: the parse body, its
+    field layout read off the cursor primitives it calls. requested by CMD_BATTERY_PERCENT
+    (0x408ac).'
 - address: 0x4f998
   name: wpp_obj_ScreenState_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2389 (ScreenState)
+  evidence: 'WPP object type 2389 (ScreenState), 1 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_SCREEN_STATE_SET
+    (0x686fc).'
 - address: 0x4f9c4
   name: wpp_obj_Steps_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2390 (Steps)
+  evidence: 'WPP object type 2390 (Steps), 4 bytes: the parse body, its field layout
+    read off the cursor primitives it calls. requested by CMD_DISPLAYED_DELTA_SET
+    (0x6cc74).'
 - address: 0x4f9f0
   name: wpp_obj_Calories_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2391 (Calories)
+  evidence: 'WPP object type 2391 (Calories), 4 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_DISPLAYED_DELTA_SET
+    (0x6cc74).'
 - address: 0x4fa1c
   name: wpp_obj_Distance_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2392 (Distance)
+  evidence: 'WPP object type 2392 (Distance), 4 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_DISPLAYED_DELTA_SET
+    (0x6cc74).'
 - address: 0x4fa48
   name: wpp_obj_InfoType_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2394 (InfoType)
+  evidence: 'WPP object type 2394 (InfoType), 1 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_DISPLAYED_INFO_GET
+    (0x6cd40).'
 - address: 0x4fa74
   name: wpp_obj_Duration_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2395 (Duration)
+  evidence: 'WPP object type 2395 (Duration), 4 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_TRACKER_SLEEP_DURATION_SET
+    (0x5ff70).'
 - address: 0x4faa0
   name: WPP_CMD_GLYPH_GET__1
   kind: function
@@ -3168,25 +3250,31 @@ symbols:
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x6b224 (WPP_CMD_WORKOUT_SCREEN_SET), 0x6b6d8
-    (WPP_CMD_CUSTO_SCREEN_SET) compares the TLV header's type against 2397 before
-    calling it, and its 3 field reads agree with wpp/src/objects.rs's ImageMetadata
-    parse.
+  evidence: 'the object walk inlined into 0x6b224 (WPP_CMD_WORKOUT_SCREEN_SET),
+    0x6b6d8 (WPP_CMD_CUSTO_SCREEN_SET) compares the TLV header''s type against 2397
+    before calling it, and its 3 field reads agree with wpp/src/objects.rs''s ImageMetadata
+    parse. Not one of abi/protocol.py''s codec bodies: the walk is inlined into
+    the handler, so there is no encoder to pair it with and the name is a hand reading,
+    which is why the entry stays hand.'
 - address: 0x4fb0c
   name: wpp_obj_ImageData_parse
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x560c8 (WPP_CMD_GLYPH_GET), 0x6b224 (WPP_CMD_WORKOUT_SCREEN_SET),
-    0x6b6d8 (WPP_CMD_CUSTO_SCREEN_SET) compares the TLV header's type against 2398
-    before calling it, and its 1 field read agree with wpp/src/objects.rs's ImageData
-    parse.
+  evidence: 'the object walk inlined into 0x560c8 (WPP_CMD_GLYPH_GET), 0x6b224 (WPP_CMD_WORKOUT_SCREEN_SET),
+    0x6b6d8 (WPP_CMD_CUSTO_SCREEN_SET) compares the TLV header''s type against 2398
+    before calling it, and its 1 field read agree with wpp/src/objects.rs''s ImageData
+    parse. Not one of abi/protocol.py''s codec bodies: the walk is inlined into
+    the handler, so there is no encoder to pair it with and the name is a hand reading,
+    which is why the entry stays hand.'
 - address: 0x4fb3c
   name: wpp_obj_Version_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2401 (Version)
+  evidence: 'WPP object type 2401 (Version), 1 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_WAM_VASISTAS_GET
+    (0x33ea8).'
 - address: 0x4fb68
   name: WPP_CMD_DEBUG_DUMP__1
   kind: function
@@ -3197,32 +3285,41 @@ symbols:
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x55b8c (NOTIFICATION_APP_ENABLED_SET)
-    compares the TLV header's type against 2404 before calling it, and its 1 field
-    read agree with wpp/src/objects.rs's NotificationAppId parse.
+  evidence: 'the object walk inlined into 0x55b8c (NOTIFICATION_APP_ENABLED_SET)
+    compares the TLV header''s type against 2404 before calling it, and its 1 field
+    read agree with wpp/src/objects.rs''s NotificationAppId parse. Not one of abi/protocol.py''s
+    codec bodies: the walk is inlined into the handler, so there is no encoder to
+    pair it with and the name is a hand reading, which is why the entry stays hand.'
 - address: 0x4fbc4
   name: wpp_obj_NotificationAppDisplayInfo_parse
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x55b8c (NOTIFICATION_APP_ENABLED_SET)
-    compares the TLV header's type against 2405 before calling it, and its 3 field
-    reads agree with wpp/src/objects.rs's NotificationAppDisplayInfo parse.
+  evidence: 'the object walk inlined into 0x55b8c (NOTIFICATION_APP_ENABLED_SET)
+    compares the TLV header''s type against 2405 before calling it, and its 3 field
+    reads agree with wpp/src/objects.rs''s NotificationAppDisplayInfo parse. Not
+    one of abi/protocol.py''s codec bodies: the walk is inlined into the handler,
+    so there is no encoder to pair it with and the name is a hand reading, which
+    is why the entry stays hand.'
 - address: 0x4fc08
   name: wpp_obj_CacheType_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2408 (CacheType)
+  evidence: 'WPP object type 2408 (CacheType), 1 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_CACHE_INVALIDATE
+    (0x55d18).'
 - address: 0x4fc34
   name: wpp_obj_ActivitySubcategory_parse
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x6a864 (WPP_CMD_WORKOUT_START_0x6a864),
-    0x6a9dc (WPP_CMD_WORKOUT_STOP_0x6a9dc) compares the TLV header's type against
-    2409 before calling it, and its 1 field read agree with wpp/src/objects.rs's
-    ActivitySubcategory parse.
+  evidence: 'the object walk inlined into 0x6a864 (WPP_CMD_WORKOUT_START_0x6a864),
+    0x6a9dc (WPP_CMD_WORKOUT_STOP_0x6a9dc) compares the TLV header''s type against
+    2409 before calling it, and its 1 field read agree with wpp/src/objects.rs''s
+    ActivitySubcategory parse. Not one of abi/protocol.py''s codec bodies: the walk
+    is inlined into the handler, so there is no encoder to pair it with and the
+    name is a hand reading, which is why the entry stays hand.'
 - address: 0x4fc60
   name: WPP_CMD_WORKOUT_LIVE_DATA__1
   kind: function
@@ -3241,9 +3338,11 @@ symbols:
 - address: 0x4fce4
   name: wpp_obj_FwInfo_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2414 (FwInfo)
+  evidence: 'WPP object type 2414 (FwInfo), 32 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_FW_AVAILABLE
+    (0x650e8).'
 - address: 0x4fd30
   name: WPP_CMD_REQUEST_FW_CHUNK__1
   kind: function
@@ -3254,30 +3353,39 @@ symbols:
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x3d088 (WPP_CMD_SET_MULTI_ALARM), 0x6a864
+  evidence: 'the object walk inlined into 0x3d088 (WPP_CMD_SET_MULTI_ALARM), 0x6a864
     (WPP_CMD_WORKOUT_START_0x6a864), 0x6a9dc (WPP_CMD_WORKOUT_STOP_0x6a9dc) compares
-    the TLV header's type against 2418 before calling it, and its 1 field read agree
-    with wpp/src/objects.rs's StartTime parse.
+    the TLV header''s type against 2418 before calling it, and its 1 field read
+    agree with wpp/src/objects.rs''s StartTime parse. Not one of abi/protocol.py''s
+    codec bodies: the walk is inlined into the handler, so there is no encoder to
+    pair it with and the name is a hand reading, which is why the entry stays hand.'
 - address: 0x4fda4
   name: wpp_obj_EndTime_parse
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x3d088 (WPP_CMD_SET_MULTI_ALARM), 0x6a9dc
-    (WPP_CMD_WORKOUT_STOP_0x6a9dc) compares the TLV header's type against 2419 before
-    calling it, and its 1 field read agree with wpp/src/objects.rs's EndTime parse.
+  evidence: 'the object walk inlined into 0x3d088 (WPP_CMD_SET_MULTI_ALARM), 0x6a9dc
+    (WPP_CMD_WORKOUT_STOP_0x6a9dc) compares the TLV header''s type against 2419
+    before calling it, and its 1 field read agree with wpp/src/objects.rs''s EndTime
+    parse. Not one of abi/protocol.py''s codec bodies: the walk is inlined into
+    the handler, so there is no encoder to pair it with and the name is a hand reading,
+    which is why the entry stays hand.'
 - address: 0x4fdd0
   name: wpp_obj_TestScreen_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2421 (TestScreen)
+  evidence: 'WPP object type 2421 (TestScreen), 1 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_TEST_SCREEN_SET
+    (0x68740).'
 - address: 0x4fdfc
   name: wpp_obj_ChallengeRequest_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2422 (ChallengeRequest)
+  evidence: 'WPP object type 2422 (ChallengeRequest), 1 bytes: the parse body, its
+    field layout read off the cursor primitives it calls. requested by CMD_PROBE
+    (0x6c84c).'
 - address: 0x4fe28
   name: WPP_CMD_DEBUG_DUMP__2
   kind: function
@@ -3286,30 +3394,38 @@ symbols:
 - address: 0x4fe54
   name: wpp_obj_FactoryMode_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2425 (FactoryMode)
+  evidence: 'WPP object type 2425 (FactoryMode), 4 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_FACTORY_MODE_SET
+    (0x4c988).'
 - address: 0x4fe80
   name: wpp_obj_GlanceStatus_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2426 (GlanceStatus)
+  evidence: 'WPP object type 2426 (GlanceStatus), 1 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_GLANCE_SET
+    (0x4d2b8).'
 - address: 0x4feac
   name: wpp_obj_MeasureCategory_parse
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x54238 (WPP_CMD_MEASURE_START_0x54238),
+  evidence: 'the object walk inlined into 0x54238 (WPP_CMD_MEASURE_START_0x54238),
     0x54380 (WPP_CMD_MEASURE_STOP_0x54380), 0x54418 (WPP_CMD_MEASURE_START_0x54418)
-    compares the TLV header's type against 2427 before calling it, and its 1 field
-    read agree with wpp/src/objects.rs's MeasureCategory parse.
+    compares the TLV header''s type against 2427 before calling it, and its 1 field
+    read agree with wpp/src/objects.rs''s MeasureCategory parse. Not one of abi/protocol.py''s
+    codec bodies: the walk is inlined into the handler, so there is no encoder to
+    pair it with and the name is a hand reading, which is why the entry stays hand.'
 - address: 0x4fed8
   name: wpp_obj_AltimeterCompensation_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2432 (AltimeterCompensation)
+  evidence: 'WPP object type 2432 (AltimeterCompensation), 4 bytes: the parse body,
+    its field layout read off the cursor primitives it calls. requested by CMD_GET_PRESSURE_TEMPERATURE
+    (0x3de08).'
 - address: 0x4ff04
   name: WPP_CMD_WORKOUT_START_0x6a864__1
   kind: function
@@ -3318,15 +3434,18 @@ symbols:
 - address: 0x4ff44
   name: wpp_obj_RebootOptional_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2443 (RebootOptional)
+  evidence: 'WPP object type 2443 (RebootOptional), 1 bytes: the parse body, its
+    field layout read off the cursor primitives it calls. requested by CMD_REBOOT
+    (0x6522c).'
 - address: 0x4ff70
   name: wpp_obj_MtuWpp_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2448 (MtuWpp)
+  evidence: 'WPP object type 2448 (MtuWpp), 2 bytes: the parse body, its field layout
+    read off the cursor primitives it calls. requested by CMD_MTU_EXCH (0x6d2e0).'
 - address: 0x4ff9c
   name: feature_tags_skip_userid_no_slot_left__2
   kind: function
@@ -3338,10 +3457,12 @@ symbols:
   kind: function
   class: hand
   module: wpp
-  evidence: the object walk inlined into 0x54238 (WPP_CMD_MEASURE_START_0x54238),
-    0x54418 (WPP_CMD_MEASURE_START_0x54418) compares the TLV header's type against
-    2463 before calling it, and its 1 field read agree with wpp/src/objects.rs's
-    MeasureLiveAppStatus parse.
+  evidence: 'the object walk inlined into 0x54238 (WPP_CMD_MEASURE_START_0x54238),
+    0x54418 (WPP_CMD_MEASURE_START_0x54418) compares the TLV header''s type against
+    2463 before calling it, and its 1 field read agree with wpp/src/objects.rs''s
+    MeasureLiveAppStatus parse. Not one of abi/protocol.py''s codec bodies: the
+    walk is inlined into the handler, so there is no encoder to pair it with and
+    the name is a hand reading, which is why the entry stays hand.'
 - address: 0x50034
   name: WPP_CMD_BOOTSTRAP_REDIRECT__2
   kind: function
@@ -3366,9 +3487,11 @@ symbols:
 - address: 0x50164
   name: wpp_obj_Boolean_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2474 (Boolean)
+  evidence: 'WPP object type 2474 (Boolean), 1 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_WORKOUT_ALWAYS_ON_SET
+    (0x6ab54).'
 - address: 0x50190
   name: WPP_CMD_INACTIVITY_CFG_SET__1
   kind: function
@@ -3377,45 +3500,59 @@ symbols:
 - address: 0x501e0
   name: wpp_obj_Stairs_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2490 (Stairs)
+  evidence: 'WPP object type 2490 (Stairs), 4 bytes: the parse body, its field layout
+    read off the cursor primitives it calls. requested by CMD_DISPLAYED_DELTA_SET
+    (0x6cc74).'
 - address: 0x5020c
   name: wpp_obj_MoveHands_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2491 (MoveHands)
+  evidence: 'WPP object type 2491 (MoveHands), 1 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_TRACKER_MOVE_HANDS_SET
+    (0x6d038).'
 - address: 0x50238
   name: wpp_obj_DeviceChallengeRequest_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2498 (DeviceChallengeRequest)
+  evidence: 'WPP object type 2498 (DeviceChallengeRequest), 65 bytes: the parse
+    body, its field layout read off the cursor primitives it calls. requested by
+    CMD_DEVICE_CHALLENGE (0x6d50c).'
 - address: 0x50268
   name: wpp_obj_FactoryTestDsc_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2501 (FactoryTestDsc)
+  evidence: 'WPP object type 2501 (FactoryTestDsc), 8 bytes: the parse body, its
+    field layout read off the cursor primitives it calls. requested by CMD_FACTORY_TEST
+    (0x30294).'
 - address: 0x502a8
   name: wpp_obj_GreentegSensitivityBin_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2506 (GreentegSensitivityBin)
+  evidence: 'WPP object type 2506 (GreentegSensitivityBin), 65 bytes: the parse
+    body, its field layout read off the cursor primitives it calls. requested by
+    CMD_GREENTEG_SENSITIVITY_BIN_SET (0x4d7f8).'
 - address: 0x502d8
   name: wpp_obj_DigitalCrownScaleFactor_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2507 (DigitalCrownScaleFactor)
+  evidence: 'WPP object type 2507 (DigitalCrownScaleFactor), 4 bytes: the parse
+    body, its field layout read off the cursor primitives it calls. requested by
+    CMD_DIGITAL_CROWN_CALIB (0x49a50).'
 - address: 0x50310
   name: wpp_obj_SymptomType_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2508 (SymptomType)
+  evidence: 'WPP object type 2508 (SymptomType), 2 bytes: the parse body, its field
+    layout read off the cursor primitives it calls. requested by CMD_GET_SYMPTOMS
+    (0x67818).'
 - address: 0x5033c
   name: WPP_CMD_SET_SYMPTOMS__1
   kind: function
@@ -3429,15 +3566,19 @@ symbols:
 - address: 0x503f4
   name: wpp_obj_VibratorSetSimple_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2511 (VibratorSetSimple)
+  evidence: 'WPP object type 2511 (VibratorSetSimple), 5 bytes: the parse body,
+    its field layout read off the cursor primitives it calls. requested by CMD_VIBRATOR
+    (0x66f3c).'
 - address: 0x50434
   name: wpp_obj_GreentegIntegrationFactor_parse
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2518 (GreentegIntegrationFactor)
+  evidence: 'WPP object type 2518 (GreentegIntegrationFactor), 4 bytes: the parse
+    body, its field layout read off the cursor primitives it calls. requested by
+    CMD_GREENTEG_INTEGRATION_FACTOR_SET (0x4d9b0).'
 - address: 0x50460
   name: wpp_error_protocol_is_not_supported
   kind: function
@@ -5232,6 +5373,12 @@ symbols:
   kind: label
   class: prose
   evidence: streams image, memcmp 20B vs stored digest
+- address: 0x64bc8
+  name: chunked_update_not_aligned
+  kind: function
+  class: logline
+  evidence: the only line 0x64bc8 logs, wlog('[CHUNKED_UPDATE] not aligned') at
+    0x64bf2
 - address: 0x64cf8
   name: FW_AVAILABLE__1
   kind: function
@@ -8750,7 +8897,7 @@ symbols:
 - address: 0x98f16
   name: wpp_obj_Null_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Null''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Null_encode in r3 at
@@ -8758,7 +8905,7 @@ symbols:
 - address: 0x98f32
   name: wpp_obj_BatteryPercent_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count BatteryPercent''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_BatteryPercent_encode
@@ -8766,7 +8913,7 @@ symbols:
 - address: 0x98f36
   name: wpp_obj_Cmderror_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Cmderror''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Cmderror_encode in r3
@@ -8774,7 +8921,7 @@ symbols:
 - address: 0x98f3a
   name: wpp_obj_StoredMeasureMeta_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count StoredMeasureMeta''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_StoredMeasureMeta_encode
@@ -8782,7 +8929,7 @@ symbols:
 - address: 0x98f3e
   name: wpp_obj_StoredMeasureData_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count StoredMeasureData''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_StoredMeasureData_encode
@@ -8790,7 +8937,7 @@ symbols:
 - address: 0x98f42
   name: wpp_obj_ConnectReason_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count ConnectReason''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_ConnectReason_encode
@@ -8798,7 +8945,7 @@ symbols:
 - address: 0x98f4a
   name: wpp_obj_DebugDumpData_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count DebugDumpData''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_DebugDumpData_encode
@@ -8806,7 +8953,7 @@ symbols:
 - address: 0x98f50
   name: wpp_obj_DebugDumpType_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count DebugDumpType''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_DebugDumpType_encode
@@ -8814,7 +8961,7 @@ symbols:
 - address: 0x98f54
   name: wpp_obj_LocaleSet_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count LocaleSet''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_LocaleSet_encode in r3
@@ -8822,7 +8969,7 @@ symbols:
 - address: 0x98f5a
   name: wpp_obj_ProbeChallenge_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count ProbeChallenge''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_ProbeChallenge_encode
@@ -8830,7 +8977,7 @@ symbols:
 - address: 0x98f66
   name: wpp_obj_ProbeChallengeResponse_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count ProbeChallengeResponse''s reply carries, a `movs r0,
     #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_ProbeChallengeResponse_encode
@@ -8838,7 +8985,7 @@ symbols:
 - address: 0x98f6c
   name: wpp_obj_BatteryVoltageMv_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count BatteryVoltageMv''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_BatteryVoltageMv_encode
@@ -8846,7 +8993,7 @@ symbols:
 - address: 0x98f70
   name: wpp_obj_DebugDumpIgnoreData_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count DebugDumpIgnoreData''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_DebugDumpIgnoreData_encode
@@ -8854,7 +9001,7 @@ symbols:
 - address: 0x98f74
   name: wpp_obj_NbAlarm_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count NbAlarm''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_NbAlarm_encode in r3
@@ -8862,7 +9009,7 @@ symbols:
 - address: 0x98f78
   name: wpp_obj_PlsReturnCode_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count PlsReturnCode''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_PlsReturnCode_encode
@@ -8870,7 +9017,7 @@ symbols:
 - address: 0x98f7c
   name: wpp_obj_PlsStation_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count PlsStation''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_PlsStation_encode
@@ -8878,7 +9025,7 @@ symbols:
 - address: 0x98f80
   name: wpp_obj_FactoryState_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count FactoryState''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_FactoryState_encode
@@ -8886,7 +9033,7 @@ symbols:
 - address: 0x98f84
   name: wpp_obj_TrackerWearPos_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count TrackerWearPos''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_TrackerWearPos_encode
@@ -8894,7 +9041,7 @@ symbols:
 - address: 0x98f88
   name: wpp_obj_FeatureMask_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count FeatureMask''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_FeatureMask_encode
@@ -8902,7 +9049,7 @@ symbols:
 - address: 0x98f8c
   name: wpp_obj_McuId_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count McuId''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_McuId_encode in r3 at
@@ -8910,7 +9057,7 @@ symbols:
 - address: 0x98f90
   name: wpp_obj_SoftdeviceVersion_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count SoftdeviceVersion''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_SoftdeviceVersion_encode
@@ -8918,7 +9065,7 @@ symbols:
 - address: 0x98f94
   name: wpp_obj_HrAutoAlgo_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count HrAutoAlgo''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_HrAutoAlgo_encode
@@ -8926,7 +9073,7 @@ symbols:
 - address: 0x98f98
   name: wpp_obj_WorkoutScreenList_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count WorkoutScreenList''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_WorkoutScreenList_encode
@@ -8934,7 +9081,7 @@ symbols:
 - address: 0x98f9c
   name: wpp_obj_SyncRequest_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count SyncRequest''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_SyncRequest_encode
@@ -8942,7 +9089,7 @@ symbols:
 - address: 0x98fa0
   name: wpp_obj_StoredSignalMeta_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count StoredSignalMeta''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_StoredSignalMeta_encode
@@ -8950,7 +9097,7 @@ symbols:
 - address: 0x98fa4
   name: wpp_obj_StoredSignalData_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count StoredSignalData''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_StoredSignalData_encode
@@ -8958,14 +9105,14 @@ symbols:
 - address: 0x98faa
   name: wpp_obj_Id_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Id''s reply carries, a `movs r0, #N; bx lr` stub. It
     is the r2 the send path is handed alongside wpp_obj_Id_encode in r3 at 0x5136e.'
 - address: 0x98fae
   name: wpp_obj_StoredSignalMetaExtend_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count StoredSignalMetaExtend''s reply carries, a `movs r0,
     #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_StoredSignalMetaExtend_encode
@@ -8973,7 +9120,7 @@ symbols:
 - address: 0x98fb2
   name: wpp_obj_UnitConversionParameters_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count UnitConversionParameters''s reply carries, a `movs r0,
     #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_UnitConversionParameters_encode
@@ -8981,7 +9128,7 @@ symbols:
 - address: 0x98fb6
   name: wpp_obj_AlgorithmVersion_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count AlgorithmVersion''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_AlgorithmVersion_encode
@@ -8989,7 +9136,7 @@ symbols:
 - address: 0x98fba
   name: wpp_obj_FirmwareVersion_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count FirmwareVersion''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_FirmwareVersion_encode
@@ -8997,7 +9144,7 @@ symbols:
 - address: 0x98fbe
   name: wpp_obj_Gpio_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Gpio''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Gpio_encode in r3 at
@@ -9005,7 +9152,7 @@ symbols:
 - address: 0x98fc2
   name: wpp_obj_Uint32_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Uint32''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Uint32_encode in r3 at
@@ -9013,7 +9160,7 @@ symbols:
 - address: 0x98fc6
   name: wpp_obj_WppString_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count WppString''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_WppString_encode in r3
@@ -9021,7 +9168,7 @@ symbols:
 - address: 0x98fcc
   name: wpp_obj_Int32_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Int32''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Int32_encode in r3 at
@@ -9029,14 +9176,14 @@ symbols:
 - address: 0x98fd0
   name: wpp_obj_Mac_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Mac''s reply carries, a `movs r0, #N; bx lr` stub. It
     is the r2 the send path is handed alongside wpp_obj_Mac_encode in r3 at 0x6d5f0.'
 - address: 0x98fd6
   name: wpp_obj_TimeSet_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count TimeSet''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_TimeSet_encode in r3
@@ -9044,7 +9191,7 @@ symbols:
 - address: 0x98fda
   name: wpp_obj_TimeSetReply_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count TimeSetReply''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_TimeSetReply_encode
@@ -9052,7 +9199,7 @@ symbols:
 - address: 0x98fde
   name: wpp_obj_TrackerUser_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count TrackerUser''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_TrackerUser_encode
@@ -9060,18 +9207,15 @@ symbols:
 - address: 0x98fe4
   name: wpp_obj_BatteryStatus_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: '`movs r0, #0xe; bx lr` -- BatteryStatus''s ten data bytes plus the
-    four-byte header. It is the r2 wpp_cmd_battery_status loads at 0x6caca alongside
-    the encoder in r3, which is the only thing that ties this one-instruction stub
-    to this object type; the constants around it (0x98fe8 returns 0x18, 0x98fec
-    0x1d, 0x98ff0 0xb) are the same stub for other types and are left unnamed because
-    no call site has been read for them.'
+  evidence: 'the byte count BatteryStatus''s reply carries, a `movs r0, #N; bx lr`
+    stub. It is the r2 the send path is handed alongside wpp_obj_BatteryStatus_encode
+    in r3 at 0x6cad2.'
 - address: 0x98fe8
   name: wpp_obj_WamDailyActivities_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count WamDailyActivities''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_WamDailyActivities_encode
@@ -9079,7 +9223,7 @@ symbols:
 - address: 0x98fec
   name: wpp_obj_WamScreensList_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count WamScreensList''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_WamScreensList_encode
@@ -9087,7 +9231,7 @@ symbols:
 - address: 0x98ff0
   name: wpp_obj_Alarm_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Alarm''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Alarm_encode in r3 at
@@ -9095,7 +9239,7 @@ symbols:
 - address: 0x98ff4
   name: wpp_obj_Name_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Name''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Name_encode in r3 at
@@ -9103,7 +9247,7 @@ symbols:
 - address: 0x98ffa
   name: wpp_obj_WamVasistasHead_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count WamVasistasHead''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_WamVasistasHead_encode
@@ -9111,7 +9255,7 @@ symbols:
 - address: 0x98ffe
   name: wpp_obj_WamVasistasDuration_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count WamVasistasDuration''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_WamVasistasDuration_encode
@@ -9119,7 +9263,7 @@ symbols:
 - address: 0x99002
   name: wpp_obj_WamVasistasAwake_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count WamVasistasAwake''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_WamVasistasAwake_encode
@@ -9127,7 +9271,7 @@ symbols:
 - address: 0x99006
   name: wpp_obj_WamVasistasWalk_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count WamVasistasWalk''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_WamVasistasWalk_encode
@@ -9135,7 +9279,7 @@ symbols:
 - address: 0x9900a
   name: wpp_obj_WamVasistasRun_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count WamVasistasRun''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_WamVasistasRun_encode
@@ -9143,7 +9287,7 @@ symbols:
 - address: 0x9900e
   name: wpp_obj_WamVasistasSleep_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count WamVasistasSleep''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_WamVasistasSleep_encode
@@ -9151,7 +9295,7 @@ symbols:
 - address: 0x9901a
   name: wpp_obj_WamVasistasMetCalEarned_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count WamVasistasMetCalEarned''s reply carries, a `movs r0,
     #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_WamVasistasMetCalEarned_encode
@@ -9159,7 +9303,7 @@ symbols:
 - address: 0x9901e
   name: wpp_obj_VasistasActiRecoV1V2_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count VasistasActiRecoV1V2''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_VasistasActiRecoV1V2_encode
@@ -9167,7 +9311,7 @@ symbols:
 - address: 0x99022
   name: wpp_obj_VasistasSwimType_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count VasistasSwimType''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_VasistasSwimType_encode
@@ -9175,7 +9319,7 @@ symbols:
 - address: 0x99026
   name: wpp_obj_ReturnCode_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count ReturnCode''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_ReturnCode_encode
@@ -9183,7 +9327,7 @@ symbols:
 - address: 0x9902a
   name: wpp_obj_AlarmEnabled_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count AlarmEnabled''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_AlarmEnabled_encode
@@ -9191,7 +9335,7 @@ symbols:
 - address: 0x9902e
   name: wpp_obj_VasistasHeartrate_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count VasistasHeartrate''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_VasistasHeartrate_encode
@@ -9199,7 +9343,7 @@ symbols:
 - address: 0x99032
   name: wpp_obj_AncsStatus_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count AncsStatus''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_AncsStatus_encode
@@ -9207,7 +9351,7 @@ symbols:
 - address: 0x99036
   name: wpp_obj_TempCalReply_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count TempCalReply''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_TempCalReply_encode
@@ -9215,7 +9359,7 @@ symbols:
 - address: 0x9903e
   name: wpp_obj_LightSensorReply_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count LightSensorReply''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_LightSensorReply_encode
@@ -9223,7 +9367,7 @@ symbols:
 - address: 0x99042
   name: wpp_obj_CustomizationIdGet_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count CustomizationIdGet''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_CustomizationIdGet_encode
@@ -9231,7 +9375,7 @@ symbols:
 - address: 0x9904a
   name: wpp_obj_LuminosityLevel_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count LuminosityLevel''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_LuminosityLevel_encode
@@ -9239,7 +9383,7 @@ symbols:
 - address: 0x9904e
   name: wpp_obj_LiveHr_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count LiveHr''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_LiveHr_encode in r3 at
@@ -9247,7 +9391,7 @@ symbols:
 - address: 0x99052
   name: wpp_obj_UnknownSteps_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count UnknownSteps''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_UnknownSteps_encode
@@ -9255,7 +9399,7 @@ symbols:
 - address: 0x9905a
   name: wpp_obj_Steps_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Steps''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Steps_encode in r3 at
@@ -9263,7 +9407,7 @@ symbols:
 - address: 0x9905e
   name: wpp_obj_Calories_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Calories''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Calories_encode in r3
@@ -9271,7 +9415,7 @@ symbols:
 - address: 0x99062
   name: wpp_obj_Distance_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Distance''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Distance_encode in r3
@@ -9279,7 +9423,7 @@ symbols:
 - address: 0x99066
   name: wpp_obj_Duration_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Duration''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Duration_encode in r3
@@ -9287,7 +9431,7 @@ symbols:
 - address: 0x9906e
   name: wpp_obj_ImageMetadata_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count ImageMetadata''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_ImageMetadata_encode
@@ -9295,7 +9439,7 @@ symbols:
 - address: 0x99072
   name: wpp_obj_Version_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Version''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Version_encode in r3
@@ -9303,7 +9447,7 @@ symbols:
 - address: 0x99076
   name: wpp_obj_NotificationAppInfo_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count NotificationAppInfo''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_NotificationAppInfo_encode
@@ -9311,7 +9455,7 @@ symbols:
 - address: 0x9907c
   name: wpp_obj_NotificationAppId_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count NotificationAppId''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_NotificationAppId_encode
@@ -9319,7 +9463,7 @@ symbols:
 - address: 0x99082
   name: wpp_obj_NotificationAppHashIdVersion_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count NotificationAppHashIdVersion''s reply carries, a `movs
     r0, #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_NotificationAppHashIdVersion_encode
@@ -9327,7 +9471,7 @@ symbols:
 - address: 0x99086
   name: wpp_obj_NotificationAppHashIdCrc32_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count NotificationAppHashIdCrc32''s reply carries, a `movs
     r0, #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_NotificationAppHashIdCrc32_encode
@@ -9335,7 +9479,7 @@ symbols:
 - address: 0x9908a
   name: wpp_obj_ActivitySubcategory_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count ActivitySubcategory''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_ActivitySubcategory_encode
@@ -9343,7 +9487,7 @@ symbols:
 - address: 0x9908e
   name: wpp_obj_Timestamp_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Timestamp''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Timestamp_encode in r3
@@ -9351,7 +9495,7 @@ symbols:
 - address: 0x99092
   name: wpp_obj_FwChunkRequest_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count FwChunkRequest''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_FwChunkRequest_encode
@@ -9359,7 +9503,7 @@ symbols:
 - address: 0x99096
   name: wpp_obj_StartTime_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count StartTime''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_StartTime_encode in r3
@@ -9367,7 +9511,7 @@ symbols:
 - address: 0x9909a
   name: wpp_obj_EndTime_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count EndTime''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_EndTime_encode in r3
@@ -9375,7 +9519,7 @@ symbols:
 - address: 0x9909e
   name: wpp_obj_Status_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Status''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Status_encode in r3 at
@@ -9383,7 +9527,7 @@ symbols:
 - address: 0x990a2
   name: wpp_obj_DebugDumpAnchor_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count DebugDumpAnchor''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_DebugDumpAnchor_encode
@@ -9391,7 +9535,7 @@ symbols:
 - address: 0x990a6
   name: wpp_obj_FactoryMode_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count FactoryMode''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_FactoryMode_encode
@@ -9399,7 +9543,7 @@ symbols:
 - address: 0x990aa
   name: wpp_obj_GlanceStatus_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count GlanceStatus''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_GlanceStatus_encode
@@ -9407,7 +9551,7 @@ symbols:
 - address: 0x990ae
   name: wpp_obj_MeasureCategory_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count MeasureCategory''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_MeasureCategory_encode
@@ -9415,7 +9559,7 @@ symbols:
 - address: 0x990b2
   name: wpp_obj_MeasureLiveMeta_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count MeasureLiveMeta''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_MeasureLiveMeta_encode
@@ -9423,7 +9567,7 @@ symbols:
 - address: 0x990bc
   name: wpp_obj_MeasureStopReason_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count MeasureStopReason''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_MeasureStopReason_encode
@@ -9431,7 +9575,7 @@ symbols:
 - address: 0x990c0
   name: wpp_obj_PressureTemperature_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count PressureTemperature''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_PressureTemperature_encode
@@ -9439,7 +9583,7 @@ symbols:
 - address: 0x990cc
   name: wpp_obj_PauseState_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count PauseState''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_PauseState_encode
@@ -9447,7 +9591,7 @@ symbols:
 - address: 0x990d0
   name: wpp_obj_RebootOptional_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count RebootOptional''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_RebootOptional_encode
@@ -9455,7 +9599,7 @@ symbols:
 - address: 0x990d4
   name: wpp_obj_DigitalCrownMotionDelta_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count DigitalCrownMotionDelta''s reply carries, a `movs r0,
     #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_DigitalCrownMotionDelta_encode
@@ -9463,7 +9607,7 @@ symbols:
 - address: 0x990d8
   name: wpp_obj_MtuWpp_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count MtuWpp''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_MtuWpp_encode in r3 at
@@ -9471,7 +9615,7 @@ symbols:
 - address: 0x990dc
   name: wpp_obj_MtuTls_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count MtuTls''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_MtuTls_encode in r3 at
@@ -9479,7 +9623,7 @@ symbols:
 - address: 0x990e0
   name: wpp_obj_MtuAttBle_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count MtuAttBle''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_MtuAttBle_encode in r3
@@ -9487,7 +9631,7 @@ symbols:
 - address: 0x990e4
   name: wpp_obj_Heartrate_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Heartrate''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Heartrate_encode in r3
@@ -9495,7 +9639,7 @@ symbols:
 - address: 0x990f4
   name: wpp_obj_ShortcutAction_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count ShortcutAction''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_ShortcutAction_encode
@@ -9508,7 +9652,7 @@ symbols:
 - address: 0x9910a
   name: wpp_obj_NotificationsDisplayState_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count NotificationsDisplayState''s reply carries, a `movs
     r0, #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_NotificationsDisplayState_encode
@@ -9516,7 +9660,7 @@ symbols:
 - address: 0x99112
   name: wpp_obj_EventV2_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count EventV2''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_EventV2_encode in r3
@@ -9524,7 +9668,7 @@ symbols:
 - address: 0x99116
   name: wpp_obj_Boolean_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Boolean''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Boolean_encode in r3
@@ -9532,7 +9676,7 @@ symbols:
 - address: 0x9911a
   name: wpp_obj_InactivityCfg_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count InactivityCfg''s reply carries, a `movs r0, #N; bx lr`
     stub. It is the r2 the send path is handed alongside wpp_obj_InactivityCfg_encode
@@ -9540,7 +9684,7 @@ symbols:
 - address: 0x9911e
   name: wpp_obj_AlgoParam_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count AlgoParam''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_AlgoParam_encode in r3
@@ -9548,7 +9692,7 @@ symbols:
 - address: 0x99122
   name: wpp_obj_Stairs_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count Stairs''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_Stairs_encode in r3 at
@@ -9556,7 +9700,7 @@ symbols:
 - address: 0x99126
   name: wpp_obj_MoveHands_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count MoveHands''s reply carries, a `movs r0, #N; bx lr` stub.
     It is the r2 the send path is handed alongside wpp_obj_MoveHands_encode in r3
@@ -9564,7 +9708,7 @@ symbols:
 - address: 0x9912a
   name: wpp_obj_WorkoutMaxNumber_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count WorkoutMaxNumber''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_WorkoutMaxNumber_encode
@@ -9572,7 +9716,7 @@ symbols:
 - address: 0x9912e
   name: wpp_obj_SkinTemperatureMeasureResult_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count SkinTemperatureMeasureResult''s reply carries, a `movs
     r0, #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_SkinTemperatureMeasureResult_encode
@@ -9580,7 +9724,7 @@ symbols:
 - address: 0x99132
   name: wpp_obj_FluxSensorMeasureResult_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count FluxSensorMeasureResult''s reply carries, a `movs r0,
     #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_FluxSensorMeasureResult_encode
@@ -9588,7 +9732,7 @@ symbols:
 - address: 0x99136
   name: wpp_obj_DeviceChallengeReply_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count DeviceChallengeReply''s reply carries, a `movs r0, #N;
     bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_DeviceChallengeReply_encode
@@ -9596,7 +9740,7 @@ symbols:
 - address: 0x99148
   name: wpp_obj_FactoryTestDsc_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count FactoryTestDsc''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_FactoryTestDsc_encode
@@ -9604,7 +9748,7 @@ symbols:
 - address: 0x99156
   name: wpp_obj_GreentegSensitivityBin_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count GreentegSensitivityBin''s reply carries, a `movs r0,
     #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_GreentegSensitivityBin_encode
@@ -9612,7 +9756,7 @@ symbols:
 - address: 0x99160
   name: wpp_obj_SymptomListItem_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count SymptomListItem''s reply carries, a `movs r0, #N; bx
     lr` stub. It is the r2 the send path is handed alongside wpp_obj_SymptomListItem_encode
@@ -9620,7 +9764,7 @@ symbols:
 - address: 0x99166
   name: wpp_obj_CycleTrackingMenstruationStart_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count CycleTrackingMenstruationStart''s reply carries, a `movs
     r0, #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_CycleTrackingMenstruationStart_encode
@@ -9628,7 +9772,7 @@ symbols:
 - address: 0x9916a
   name: wpp_obj_GreentegIntegrationFactor_size
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
   evidence: 'the byte count GreentegIntegrationFactor''s reply carries, a `movs
     r0, #N; bx lr` stub. It is the r2 the send path is handed alongside wpp_obj_GreentegIntegrationFactor_encode
@@ -9636,789 +9780,999 @@ symbols:
 - address: 0x9917a
   name: wpp_obj_Null_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 256 (Null)
+  evidence: 'WPP object type 256 (Null), 0 bytes: the encode body, its field layout
+    read off the cursor primitives it calls. replied by CMD_DEBUG_DUMP (0x6dfa8).'
 - address: 0x99216
   name: wpp_obj_BatteryPercent_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 263 (BatteryPercent)
+  evidence: 'WPP object type 263 (BatteryPercent), 2 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_BATTERY_PERCENT
+    (0x408ac).'
 - address: 0x9923a
   name: wpp_obj_Cmderror_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 272 (Cmderror)
+  evidence: 'WPP object type 272 (Cmderror), 8 bytes: the encode body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x99266
   name: wpp_obj_StoredMeasureMeta_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 278 (StoredMeasureMeta)
+  evidence: 'WPP object type 278 (StoredMeasureMeta), 28 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_STORED_MEASURE_SIGNAL_GET
+    (0x6e21c).'
 - address: 0x992ae
   name: wpp_obj_StoredMeasureData_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 279 (StoredMeasureData)
+  evidence: 'WPP object type 279 (StoredMeasureData), 8 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_STORED_MEASURE_SIGNAL_GET
+    (0x6e21c).'
 - address: 0x992e4
   name: wpp_obj_ConnectReason_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 280 (ConnectReason)
+  evidence: 'WPP object type 280 (ConnectReason), 2 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_CONNECT_REASON
+    (0x6c9bc).'
 - address: 0x99308
   name: wpp_obj_UserUnit_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 281 (UserUnit)
+  evidence: 'WPP object type 281 (UserUnit), 6 bytes: the encode body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x99346
   name: wpp_obj_DebugDumpData_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 285 (DebugDumpData)
+  evidence: 'WPP object type 285 (DebugDumpData), 65 bytes: the encode body, its
+    field layout read off the cursor primitives it calls.'
 - address: 0x9936c
   name: wpp_obj_DebugDumpType_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 287 (DebugDumpType)
+  evidence: 'WPP object type 287 (DebugDumpType), 8 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_DEBUG_DUMP
+    (0x6dfa8).'
 - address: 0x99398
   name: wpp_obj_LocaleSet_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 289 (LocaleSet)
+  evidence: 'WPP object type 289 (LocaleSet), 65 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_LOCALE_GET (0x512a4).'
 - address: 0x993be
   name: wpp_obj_ProbeChallenge_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 290 (ProbeChallenge)
+  evidence: 'WPP object type 290 (ProbeChallenge), 130 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_PROBE (0x6c84c).'
 - address: 0x993f4
   name: wpp_obj_ProbeChallengeResponse_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 291 (ProbeChallengeResponse)
+  evidence: 'WPP object type 291 (ProbeChallengeResponse), 65 bytes: the encode
+    body, its field layout read off the cursor primitives it calls.'
 - address: 0x9941a
   name: wpp_obj_BatteryVoltageMv_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 292 (BatteryVoltageMv)
+  evidence: 'WPP object type 292 (BatteryVoltageMv), 2 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_BATTERY_PERCENT
+    (0x408ac).'
 - address: 0x99440
   name: wpp_obj_DebugDumpIgnoreData_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 293 (DebugDumpIgnoreData)
+  evidence: 'WPP object type 293 (DebugDumpIgnoreData), 4 bytes: the encode body,
+    its field layout read off the cursor primitives it calls.'
 - address: 0x99464
   name: wpp_obj_NbAlarm_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 295 (NbAlarm)
+  evidence: 'WPP object type 295 (NbAlarm), 1 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_GET_ALARM_SETTINGS
+    (0x3ce48).'
 - address: 0x99488
   name: wpp_obj_PlsReturnCode_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 296 (PlsReturnCode)
+  evidence: 'WPP object type 296 (PlsReturnCode), 16 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_PLS_GET
+    (0x567f8), CMD_PLS_RM (0x5691c), CMD_PLS_SET (0x56890).'
 - address: 0x994c4
   name: wpp_obj_PlsStation_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 297 (PlsStation)
+  evidence: 'WPP object type 297 (PlsStation), 8 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_PLS_GET (0x567f8).'
 - address: 0x994f0
   name: wpp_obj_FactoryState_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 300 (FactoryState)
+  evidence: 'WPP object type 300 (FactoryState), 1 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_PROBE (0x6c84c).'
 - address: 0x99514
   name: wpp_obj_TrackerWearPos_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 303 (TrackerWearPos)
+  evidence: 'WPP object type 303 (TrackerWearPos), 1 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_GET_TRACKER_WEAR_POS
+    (0x6cf48), CMD_MEASURE_START (0x54238), CMD_STORED_MEASURE_SIGNAL_GET (0x6e21c).'
 - address: 0x99538
   name: wpp_obj_FeatureMask_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 307 (FeatureMask)
+  evidence: 'WPP object type 307 (FeatureMask), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_FEATURE_MASK_GET
+    (0x6caec), CMD_GET_ALARM_SETTINGS (0x3ce48).'
 - address: 0x9955c
   name: wpp_obj_McuId_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 311 (McuId)
+  evidence: 'WPP object type 311 (McuId), 8 bytes: the encode body, its field layout
+    read off the cursor primitives it calls. replied by CMD_FACTORY_PROBE (0x6cb84).'
 - address: 0x99588
   name: wpp_obj_SoftdeviceVersion_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 313 (SoftdeviceVersion)
+  evidence: 'WPP object type 313 (SoftdeviceVersion), 12 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_FACTORY_PROBE
+    (0x6cb84).'
 - address: 0x995bc
   name: wpp_obj_HrAutoAlgo_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 314 (HrAutoAlgo)
+  evidence: 'WPP object type 314 (HrAutoAlgo), 1 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_HR_AUTO_ALGORITHM_GET
+    (0x4eb40).'
 - address: 0x995e0
   name: wpp_obj_WorkoutScreenList_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 316 (WorkoutScreenList)
+  evidence: 'WPP object type 316 (WorkoutScreenList), 32 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_WORKOUT_SCREEN_LIST_GET
+    (0x6b0e4).'
 - address: 0x99606
   name: wpp_obj_SyncRequest_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 320 (SyncRequest)
+  evidence: 'WPP object type 320 (SyncRequest), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x99632
   name: wpp_obj_StoredSignalMeta_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 323 (StoredSignalMeta)
+  evidence: 'WPP object type 323 (StoredSignalMeta), 8 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_MEASURE_START
+    (0x54238), CMD_STORED_MEASURE_SIGNAL_GET (0x6e21c).'
 - address: 0x9967e
   name: wpp_obj_StoredSignalData_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 324 (StoredSignalData)
+  evidence: 'WPP object type 324 (StoredSignalData), 65 bytes: the encode body,
+    its field layout read off the cursor primitives it calls.'
 - address: 0x996a4
   name: wpp_obj_Id_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 325 (Id)
+  evidence: 'WPP object type 325 (Id), 4 bytes: the encode body, its field layout
+    read off the cursor primitives it calls.'
 - address: 0x996c8
   name: wpp_obj_StoredSignalMetaExtend_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 326 (StoredSignalMetaExtend)
+  evidence: 'WPP object type 326 (StoredSignalMetaExtend), 12 bytes: the encode
+    body, its field layout read off the cursor primitives it calls. replied by CMD_MEASURE_START
+    (0x54238), CMD_STORED_MEASURE_SIGNAL_GET (0x6e21c).'
 - address: 0x996fc
   name: wpp_obj_UnitConversionParameters_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 327 (UnitConversionParameters)
+  evidence: 'WPP object type 327 (UnitConversionParameters), 12 bytes: the encode
+    body, its field layout read off the cursor primitives it calls. replied by CMD_MEASURE_START
+    (0x54238), CMD_STORED_MEASURE_SIGNAL_GET (0x6e21c).'
 - address: 0x99730
   name: wpp_obj_AlgorithmVersion_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 329 (AlgorithmVersion)
+  evidence: 'WPP object type 329 (AlgorithmVersion), 8 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_STORED_MEASURE_SIGNAL_GET
+    (0x6e21c), CMD_WAM_VASISTAS_GET (0x33ea8).'
 - address: 0x9975c
   name: wpp_obj_FirmwareVersion_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 330 (FirmwareVersion)
+  evidence: 'WPP object type 330 (FirmwareVersion), 4 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_STORED_MEASURE_SIGNAL_GET
+    (0x6e21c).'
 - address: 0x99780
   name: wpp_obj_Gpio_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 516 (Gpio)
+  evidence: 'WPP object type 516 (Gpio), 6 bytes: the encode body, its field layout
+    read off the cursor primitives it calls. replied by CMD_GPIO (0x7e604).'
 - address: 0x997d8
   name: wpp_obj_Uint32_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 518 (Uint32)
+  evidence: 'WPP object type 518 (Uint32), 4 bytes: the encode body, its field layout
+    read off the cursor primitives it calls. replied by CMD_SCREEN_SETTINGS_GET
+    (0x3433c).'
 - address: 0x997fc
   name: wpp_obj_WppString_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 519 (WppString)
+  evidence: 'WPP object type 519 (WppString), 65 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_EVENTS_GET_V2
+    (0x6ec6c).'
 - address: 0x99822
   name: wpp_obj_Int32_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 535 (Int32)
+  evidence: 'WPP object type 535 (Int32), 4 bytes: the encode body, its field layout
+    read off the cursor primitives it calls. replied by CMD_CLASSIFICATION_REGION_GET
+    (0x6d188).'
 - address: 0x99846
   name: wpp_obj_Mac_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1043 (Mac)
+  evidence: 'WPP object type 1043 (Mac), 65 bytes: the encode body, its field layout
+    read off the cursor primitives it calls. replied by CMD_GATEWAY_MAC_GET (0x6d598).'
 - address: 0x9986c
   name: wpp_obj_TimeSet_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1281 (TimeSet)
+  evidence: 'WPP object type 1281 (TimeSet), 16 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_TIME_GET (0x5e3e0).'
 - address: 0x998a8
   name: wpp_obj_TimeSetReply_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1282 (TimeSetReply)
+  evidence: 'WPP object type 1282 (TimeSetReply), 4 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_TIME_SET
+    (0x5e2f8).'
 - address: 0x998cc
   name: wpp_obj_TrackerUser_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1283 (TrackerUser)
+  evidence: 'WPP object type 1283 (TrackerUser), 85 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_TRACKER_USER_GET
+    (0x6060c).'
 - address: 0x9991e
   name: wpp_obj_BatteryStatus_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1284 (BatteryStatus)
+  evidence: 'WPP object type 1284 (BatteryStatus), 12 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_BATTERY_STATUS
+    (0x6ca90).'
 - address: 0x9995a
   name: wpp_obj_WamDailyActivities_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1287 (WamDailyActivities)
+  evidence: 'WPP object type 1287 (WamDailyActivities), 20 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_WAM_DISPLAYED_INFO_GET
+    (0x6cbf8).'
 - address: 0x9999e
   name: wpp_obj_WamScreensList_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1289 (WamScreensList)
+  evidence: 'WPP object type 1289 (WamScreensList), 24 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_WAM_SCREENS_LIST_GET
+    (0x341d8).'
 - address: 0x999c4
   name: wpp_obj_Alarm_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1298 (Alarm)
+  evidence: 'WPP object type 1298 (Alarm), 7 bytes: the encode body, its field layout
+    read off the cursor primitives it calls. replied by CMD_GET_MULTI_ALARM (0x3d05c).'
 - address: 0x99a18
   name: wpp_obj_Name_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1300 (Name)
+  evidence: 'WPP object type 1300 (Name), 65 bytes: the encode body, its field layout
+    read off the cursor primitives it calls. replied by CMD_GET_MULTI_ALARM (0x3d05c).'
 - address: 0x99a3e
   name: wpp_obj_WamVasistasHead_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1537 (WamVasistasHead)
+  evidence: 'WPP object type 1537 (WamVasistasHead), 4 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_DISPLAYED_INFO_GET
+    (0x6cd40), CMD_WAM_VASISTAS_GET (0x33ea8).'
 - address: 0x99a62
   name: wpp_obj_WamVasistasDuration_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1538 (WamVasistasDuration)
+  evidence: 'WPP object type 1538 (WamVasistasDuration), 2 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_WAM_VASISTAS_GET
+    (0x33ea8).'
 - address: 0x99a86
   name: wpp_obj_WamVasistasAwake_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1539 (WamVasistasAwake)
+  evidence: 'WPP object type 1539 (WamVasistasAwake), 16 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_WAM_VASISTAS_GET
+    (0x33ea8).'
 - address: 0x99ac2
   name: wpp_obj_WamVasistasWalk_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1540 (WamVasistasWalk)
+  evidence: 'WPP object type 1540 (WamVasistasWalk), 2 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_WAM_VASISTAS_GET
+    (0x33ea8).'
 - address: 0x99ae6
   name: wpp_obj_WamVasistasRun_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1541 (WamVasistasRun)
+  evidence: 'WPP object type 1541 (WamVasistasRun), 2 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_WAM_VASISTAS_GET
+    (0x33ea8).'
 - address: 0x99b0a
   name: wpp_obj_WamVasistasSleep_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1543 (WamVasistasSleep)
+  evidence: 'WPP object type 1543 (WamVasistasSleep), 2 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_WAM_VASISTAS_GET
+    (0x33ea8).'
 - address: 0x99b2e
   name: wpp_obj_WamVasistasMetCal_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1544 (WamVasistasMetCal)
+  evidence: 'WPP object type 1544 (WamVasistasMetCal), 4 bytes: the encode body,
+    its field layout read off the cursor primitives it calls.'
 - address: 0x99b5a
   name: wpp_obj_VasistasSwimV1_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1545 (VasistasSwimV1)
+  evidence: 'WPP object type 1545 (VasistasSwimV1), 5 bytes: the encode body, its
+    field layout read off the cursor primitives it calls.'
 - address: 0x99b86
   name: wpp_obj_WamVasistasMetCalEarned_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1546 (WamVasistasMetCalEarned)
+  evidence: 'WPP object type 1546 (WamVasistasMetCalEarned), 4 bytes: the encode
+    body, its field layout read off the cursor primitives it calls. replied by CMD_WAM_VASISTAS_GET
+    (0x33ea8).'
 - address: 0x99bb2
   name: wpp_obj_VasistasActiRecoV1V2_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1547 (VasistasActiRecoV1V2)
+  evidence: 'WPP object type 1547 (VasistasActiRecoV1V2), 4 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_WAM_VASISTAS_GET
+    (0x33ea8).'
 - address: 0x99bde
   name: wpp_obj_VasistasSwimType_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 1549 (VasistasSwimType)
+  evidence: 'WPP object type 1549 (VasistasSwimType), 1 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_WAM_VASISTAS_GET
+    (0x33ea8).'
 - address: 0x99c02
   name: wpp_obj_ReturnCode_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2328 (ReturnCode)
+  evidence: 'WPP object type 2328 (ReturnCode), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_FW_AVAILABLE
+    (0x650e8), CMD_REQUEST_FW_CHUNK (0x6530c), CMD_VIBRATOR (0x66f3c).'
 - address: 0x99c26
   name: wpp_obj_AlarmEnabled_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2329 (AlarmEnabled)
+  evidence: 'WPP object type 2329 (AlarmEnabled), 1 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_GET_ALARM_ENABLED
+    (0x3ce94).'
 - address: 0x99c4a
   name: wpp_obj_VasistasHeartrate_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2345 (VasistasHeartrate)
+  evidence: 'WPP object type 2345 (VasistasHeartrate), 4 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_WAM_VASISTAS_GET
+    (0x33ea8).'
 - address: 0x99c7e
   name: wpp_obj_AncsStatus_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2346 (AncsStatus)
+  evidence: 'WPP object type 2346 (AncsStatus), 1 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_REMOTE_NOTIFICATIONS_CONFIG_GET
+    (0x3f1e4).'
 - address: 0x99ca2
   name: wpp_obj_TempCalReply_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2350 (TempCalReply)
+  evidence: 'WPP object type 2350 (TempCalReply), 12 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_MCU_TEMP_CAL_GET
+    (0x53db4).'
 - address: 0x99cd6
   name: wpp_obj_CalibrationPoint_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2352 (CalibrationPoint)
+  evidence: 'WPP object type 2352 (CalibrationPoint), 12 bytes: the encode body,
+    its field layout read off the cursor primitives it calls.'
 - address: 0x99d0a
   name: wpp_obj_LightSensorReply_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2356 (LightSensorReply)
+  evidence: 'WPP object type 2356 (LightSensorReply), 8 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_GET_LIGHT_SENSOR
+    (0x50658).'
 - address: 0x99d36
   name: wpp_obj_CustomizationIdGet_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2357 (CustomizationIdGet)
+  evidence: 'WPP object type 2357 (CustomizationIdGet), 4 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_CUSTOMIZATION_ID
+    (0x46c3c).'
 - address: 0x99d5a
   name: wpp_obj_CustomizationIdSet_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2358 (CustomizationIdSet)
+  evidence: 'WPP object type 2358 (CustomizationIdSet), 4 bytes: the encode body,
+    its field layout read off the cursor primitives it calls.'
 - address: 0x99d7e
   name: wpp_obj_LuminosityLevel_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2359 (LuminosityLevel)
+  evidence: 'WPP object type 2359 (LuminosityLevel), 2 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_GET_LUMINOSITY_LEVEL
+    (0x340f8).'
 - address: 0x99daa
   name: wpp_obj_LiveHr_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2369 (LiveHr)
+  evidence: 'WPP object type 2369 (LiveHr), 1 bytes: the encode body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x99dce
   name: wpp_obj_UnknownSteps_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2370 (UnknownSteps)
+  evidence: 'WPP object type 2370 (UnknownSteps), 4 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_UNKNOWN_DATA_GET
+    (0x6cc50).'
 - address: 0x99df2
   name: wpp_obj_SpiFlashChunk_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2373 (SpiFlashChunk)
+  evidence: 'WPP object type 2373 (SpiFlashChunk), 16 bytes: the encode body, its
+    field layout read off the cursor primitives it calls.'
 - address: 0x99e18
   name: wpp_obj_Steps_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2390 (Steps)
+  evidence: 'WPP object type 2390 (Steps), 4 bytes: the encode body, its field layout
+    read off the cursor primitives it calls. replied by CMD_DISPLAYED_INFO_GET (0x6cd40).'
 - address: 0x99e3c
   name: wpp_obj_Calories_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2391 (Calories)
+  evidence: 'WPP object type 2391 (Calories), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_DISPLAYED_INFO_GET
+    (0x6cd40).'
 - address: 0x99e60
   name: wpp_obj_Distance_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2392 (Distance)
+  evidence: 'WPP object type 2392 (Distance), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_DISPLAYED_INFO_GET
+    (0x6cd40).'
 - address: 0x99e84
   name: wpp_obj_Duration_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2395 (Duration)
+  evidence: 'WPP object type 2395 (Duration), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_DISPLAYED_INFO_GET
+    (0x6cd40).'
 - address: 0x99ea8
   name: wpp_obj_GlyphId_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2396 (GlyphId)
+  evidence: 'WPP object type 2396 (GlyphId), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x99ecc
   name: wpp_obj_ImageMetadata_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2397 (ImageMetadata)
+  evidence: 'WPP object type 2397 (ImageMetadata), 3 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_WORKOUT_SCREEN_LIST_GET
+    (0x6b0e4).'
 - address: 0x99f00
   name: wpp_obj_Version_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2401 (Version)
+  evidence: 'WPP object type 2401 (Version), 1 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_SCREEN_SETTINGS_GET
+    (0x3433c), CMD_WAM_VASISTAS_GET (0x33ea8).'
 - address: 0x99f24
   name: wpp_obj_NotificationAppInfo_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2403 (NotificationAppInfo)
+  evidence: 'WPP object type 2403 (NotificationAppInfo), 66 bytes: the encode body,
+    its field layout read off the cursor primitives it calls.'
 - address: 0x99f54
   name: wpp_obj_NotificationAppId_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2404 (NotificationAppId)
+  evidence: 'WPP object type 2404 (NotificationAppId), 65 bytes: the encode body,
+    its field layout read off the cursor primitives it calls.'
 - address: 0x99f7a
   name: wpp_obj_NotificationAppHashIdVersion_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2406 (NotificationAppHashIdVersion)
+  evidence: 'WPP object type 2406 (NotificationAppHashIdVersion), 1 bytes: the encode
+    body, its field layout read off the cursor primitives it calls. replied by CMD_NOTIFICATION_APP_ENABLED_GET
+    (0x55ae4).'
 - address: 0x99f9e
   name: wpp_obj_NotificationAppHashIdCrc32_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2407 (NotificationAppHashIdCrc32)
+  evidence: 'WPP object type 2407 (NotificationAppHashIdCrc32), 4 bytes: the encode
+    body, its field layout read off the cursor primitives it calls.'
 - address: 0x99fc2
   name: wpp_obj_ActivitySubcategory_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2409 (ActivitySubcategory)
+  evidence: 'WPP object type 2409 (ActivitySubcategory), 2 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_WAM_VASISTAS_GET
+    (0x33ea8), CMD_WORKOUT_START (0x6ad30), CMD_WORKOUT_STATUS (0x6aab4).'
 - address: 0x99fe8
   name: wpp_obj_Timestamp_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2410 (Timestamp)
+  evidence: 'WPP object type 2410 (Timestamp), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x9a00c
   name: wpp_obj_FwChunkRequest_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2415 (FwChunkRequest)
+  evidence: 'WPP object type 2415 (FwChunkRequest), 14 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_FW_AVAILABLE
+    (0x650e8).'
 - address: 0x9a050
   name: wpp_obj_StartTime_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2418 (StartTime)
+  evidence: 'WPP object type 2418 (StartTime), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_GET_MULTI_ALARM
+    (0x3d05c), CMD_WORKOUT_START (0x6ad30), CMD_WORKOUT_STATUS (0x6aab4).'
 - address: 0x9a074
   name: wpp_obj_EndTime_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2419 (EndTime)
+  evidence: 'WPP object type 2419 (EndTime), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_GET_MULTI_ALARM
+    (0x3d05c), CMD_WORKOUT_START (0x6ad30).'
 - address: 0x9a098
   name: wpp_obj_Status_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2420 (Status)
+  evidence: 'WPP object type 2420 (Status), 1 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_WORKOUT_STATUS
+    (0x6aab4).'
 - address: 0x9a0be
   name: wpp_obj_DebugDumpAnchor_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2424 (DebugDumpAnchor)
+  evidence: 'WPP object type 2424 (DebugDumpAnchor), 4 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_DEBUG_DUMP
+    (0x6dfa8).'
 - address: 0x9a0e2
   name: wpp_obj_FactoryMode_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2425 (FactoryMode)
+  evidence: 'WPP object type 2425 (FactoryMode), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_FACTORY_MODE_GET
+    (0x4c9f4).'
 - address: 0x9a106
   name: wpp_obj_GlanceStatus_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2426 (GlanceStatus)
+  evidence: 'WPP object type 2426 (GlanceStatus), 1 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_GLANCE_GET
+    (0x4d314).'
 - address: 0x9a12a
   name: wpp_obj_MeasureCategory_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2427 (MeasureCategory)
+  evidence: 'WPP object type 2427 (MeasureCategory), 2 bytes: the encode body, its
+    field layout read off the cursor primitives it calls.'
 - address: 0x9a150
   name: wpp_obj_MeasureLiveMeta_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2428 (MeasureLiveMeta)
+  evidence: 'WPP object type 2428 (MeasureLiveMeta), 4 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_MEASURE_START
+    (0x54238).'
 - address: 0x9a174
   name: wpp_obj_MeasureLiveEcg_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2429 (MeasureLiveEcg)
+  evidence: 'WPP object type 2429 (MeasureLiveEcg), 65 bytes: the encode body, its
+    field layout read off the cursor primitives it calls.'
 - address: 0x9a19a
   name: wpp_obj_MeasureStopReason_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2430 (MeasureStopReason)
+  evidence: 'WPP object type 2430 (MeasureStopReason), 4 bytes: the encode body,
+    its field layout read off the cursor primitives it calls.'
 - address: 0x9a1be
   name: wpp_obj_PressureTemperature_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2431 (PressureTemperature)
+  evidence: 'WPP object type 2431 (PressureTemperature), 40 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_GET_PRESSURE_TEMPERATURE
+    (0x3de08).'
 - address: 0x9a1f4
   name: wpp_obj_ActivityLap_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2436 (ActivityLap)
+  evidence: 'WPP object type 2436 (ActivityLap), 1 bytes: the encode body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x9a21a
   name: wpp_obj_ActivityPause_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2438 (ActivityPause)
+  evidence: 'WPP object type 2438 (ActivityPause), 1 bytes: the encode body, its
+    field layout read off the cursor primitives it calls.'
 - address: 0x9a240
   name: wpp_obj_PauseState_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2439 (PauseState)
+  evidence: 'WPP object type 2439 (PauseState), 12 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_WORKOUT_START
+    (0x6ad30), CMD_WORKOUT_STATUS (0x6aab4).'
 - address: 0x9a276
   name: wpp_obj_RebootOptional_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2443 (RebootOptional)
+  evidence: 'WPP object type 2443 (RebootOptional), 1 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_REBOOT
+    (0x6522c).'
 - address: 0x9a29a
   name: wpp_obj_DigitalCrownMotionDelta_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2445 (DigitalCrownMotionDelta)
+  evidence: 'WPP object type 2445 (DigitalCrownMotionDelta), 4 bytes: the encode
+    body, its field layout read off the cursor primitives it calls. replied by CMD_DIGITAL_CROWN_CALIB
+    (0x49a50).'
 - address: 0x9a2ca
   name: wpp_obj_MtuWpp_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2448 (MtuWpp)
+  evidence: 'WPP object type 2448 (MtuWpp), 2 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_MTU_EXCH (0x6d2e0).'
 - address: 0x9a2ee
   name: wpp_obj_MtuTls_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2449 (MtuTls)
+  evidence: 'WPP object type 2449 (MtuTls), 2 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_MTU_EXCH (0x6d2e0).'
 - address: 0x9a312
   name: wpp_obj_MtuAttBle_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2450 (MtuAttBle)
+  evidence: 'WPP object type 2450 (MtuAttBle), 2 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_MTU_EXCH (0x6d2e0).'
 - address: 0x9a336
   name: wpp_obj_Heartrate_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2452 (Heartrate)
+  evidence: 'WPP object type 2452 (Heartrate), 1 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_HR_MEASURE (0x624e4).'
 - address: 0x9a35a
   name: wpp_obj_VasistasSpo2_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2453 (VasistasSpo2)
+  evidence: 'WPP object type 2453 (VasistasSpo2), 6 bytes: the encode body, its
+    field layout read off the cursor primitives it calls.'
 - address: 0x9a38e
   name: wpp_obj_VasistasFlags_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2461 (VasistasFlags)
+  evidence: 'WPP object type 2461 (VasistasFlags), 4 bytes: the encode body, its
+    field layout read off the cursor primitives it calls.'
 - address: 0x9a3ba
   name: wpp_obj_VasistasAhi_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2464 (VasistasAhi)
+  evidence: 'WPP object type 2464 (VasistasAhi), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x9a3ea
   name: wpp_obj_ShortcutAction_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2465 (ShortcutAction)
+  evidence: 'WPP object type 2465 (ShortcutAction), 1 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_SHORTCUT_GET
+    (0x59aa8).'
 - address: 0x9a40e
   name: wpp_obj_NotificationsDisplayState_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2471 (NotificationsDisplayState)
+  evidence: 'WPP object type 2471 (NotificationsDisplayState), 1 bytes: the encode
+    body, its field layout read off the cursor primitives it calls. replied by CMD_REMOTE_NOTIFICATIONS_CONFIG_GET
+    (0x3f1e4).'
 - address: 0x9a432
   name: wpp_obj_LocalNotification_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2472 (LocalNotification)
+  evidence: 'WPP object type 2472 (LocalNotification), 5 bytes: the encode body,
+    its field layout read off the cursor primitives it calls.'
 - address: 0x9a45e
   name: wpp_obj_EventV2_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2473 (EventV2)
+  evidence: 'WPP object type 2473 (EventV2), 12 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_EVENTS_GET_V2
+    (0x6ec6c).'
 - address: 0x9a492
   name: wpp_obj_Boolean_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2474 (Boolean)
+  evidence: 'WPP object type 2474 (Boolean), 1 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_WORKOUT_ALWAYS_ON_GET
+    (0x6abb0).'
 - address: 0x9a4b6
   name: wpp_obj_InactivityCfg_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2477 (InactivityCfg)
+  evidence: 'WPP object type 2477 (InactivityCfg), 5 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_INACTIVITY_CFG_GET
+    (0x5efe0).'
 - address: 0x9a4fa
   name: wpp_obj_AlgoParam_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2489 (AlgoParam)
+  evidence: 'WPP object type 2489 (AlgoParam), 8 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_STORED_MEASURE_SIGNAL_GET
+    (0x6e21c).'
 - address: 0x9a528
   name: wpp_obj_Stairs_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2490 (Stairs)
+  evidence: 'WPP object type 2490 (Stairs), 4 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_DISPLAYED_INFO_GET
+    (0x6cd40).'
 - address: 0x9a54c
   name: wpp_obj_MoveHands_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2491 (MoveHands)
+  evidence: 'WPP object type 2491 (MoveHands), 1 bytes: the encode body, its field
+    layout read off the cursor primitives it calls. replied by CMD_TRACKER_MOVE_HANDS_GET
+    (0x6d1ec).'
 - address: 0x9a570
   name: wpp_obj_WorkoutMaxNumber_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2493 (WorkoutMaxNumber)
+  evidence: 'WPP object type 2493 (WorkoutMaxNumber), 1 bytes: the encode body,
+    its field layout read off the cursor primitives it calls. replied by CMD_WORKOUT_SETTINGS_GET
+    (0x6abd8).'
 - address: 0x9a594
   name: wpp_obj_SkinTemperatureMeasureResult_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2496 (SkinTemperatureMeasureResult)
+  evidence: 'WPP object type 2496 (SkinTemperatureMeasureResult), 6 bytes: the encode
+    body, its field layout read off the cursor primitives it calls. replied by CMD_SKIN_TEMPERATURE_MEASURE
+    (0x5e724).'
 - address: 0x9a5ce
   name: wpp_obj_FluxSensorMeasureResult_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2497 (FluxSensorMeasureResult)
+  evidence: 'WPP object type 2497 (FluxSensorMeasureResult), 8 bytes: the encode
+    body, its field layout read off the cursor primitives it calls. replied by CMD_FLUX_SENSOR_MEASURE
+    (0x5b63c).'
 - address: 0x9a5fa
   name: wpp_obj_DeviceChallengeReply_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2499 (DeviceChallengeReply)
+  evidence: 'WPP object type 2499 (DeviceChallengeReply), 136 bytes: the encode
+    body, its field layout read off the cursor primitives it calls. replied by CMD_DEVICE_CHALLENGE
+    (0x6d50c).'
 - address: 0x9a63a
   name: wpp_obj_DeviceChallengeSignature_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2500 (DeviceChallengeSignature)
+  evidence: 'WPP object type 2500 (DeviceChallengeSignature), 65 bytes: the encode
+    body, its field layout read off the cursor primitives it calls.'
 - address: 0x9a660
   name: wpp_obj_FactoryTestDsc_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2501 (FactoryTestDsc)
+  evidence: 'WPP object type 2501 (FactoryTestDsc), 8 bytes: the encode body, its
+    field layout read off the cursor primitives it calls. replied by CMD_FACTORY_TEST_GET
+    (0x30254).'
 - address: 0x9a694
   name: wpp_obj_VasistasCbt_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2502 (VasistasCbt)
+  evidence: 'WPP object type 2502 (VasistasCbt), 8 bytes: the encode body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x9a6c8
   name: wpp_obj_Max86173ChannelStats_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2505 (Max86173ChannelStats)
+  evidence: 'WPP object type 2505 (Max86173ChannelStats), 85 bytes: the encode body,
+    its field layout read off the cursor primitives it calls.'
 - address: 0x9a73c
   name: wpp_obj_GreentegSensitivityBin_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2506 (GreentegSensitivityBin)
+  evidence: 'WPP object type 2506 (GreentegSensitivityBin), 65 bytes: the encode
+    body, its field layout read off the cursor primitives it calls. replied by CMD_GREENTEG_SENSITIVITY_BIN_GET
+    (0x4d768).'
 - address: 0x9a762
   name: wpp_obj_DigitalCrownScaleFactor_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2507 (DigitalCrownScaleFactor)
+  evidence: 'WPP object type 2507 (DigitalCrownScaleFactor), 4 bytes: the encode
+    body, its field layout read off the cursor primitives it calls.'
 - address: 0x9a78e
   name: wpp_obj_SymptomListItem_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2509 (SymptomListItem)
+  evidence: 'WPP object type 2509 (SymptomListItem), 77 bytes: the encode body,
+    its field layout read off the cursor primitives it calls.'
 - address: 0x9a7d0
   name: wpp_obj_CycleTrackingMenstruationStart_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2512 (CycleTrackingMenstruationStart)
+  evidence: 'WPP object type 2512 (CycleTrackingMenstruationStart), 4 bytes: the
+    encode body, its field layout read off the cursor primitives it calls. replied
+    by CMD_CYCLE_TRACKING_GET_MANUAL_LOG_START_OF_MENSTRUATION (0x47228).'
 - address: 0x9a7f4
   name: wpp_obj_GreentegIntegrationFactor_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2518 (GreentegIntegrationFactor)
+  evidence: 'WPP object type 2518 (GreentegIntegrationFactor), 4 bytes: the encode
+    body, its field layout read off the cursor primitives it calls. replied by CMD_GREENTEG_INTEGRATION_FACTOR_GET
+    (0x4da60).'
 - address: 0x9a818
   name: wpp_obj_VasistasHrv_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2520 (VasistasHrv)
+  evidence: 'WPP object type 2520 (VasistasHrv), 7 bytes: the encode body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x9a854
   name: wpp_obj_VasistasRr_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2521 (VasistasRr)
+  evidence: 'WPP object type 2521 (VasistasRr), 2 bytes: the encode body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x9a878
   name: wpp_obj_VasistasDbt_encode
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 2523 (VasistasDbt)
+  evidence: 'WPP object type 2523 (VasistasDbt), 9 bytes: the encode body, its field
+    layout read off the cursor primitives it calls.'
 - address: 0x9a8dc
   name: wpp_lite_state_disc_or_not_slave__1
   kind: function
@@ -10434,9 +10788,10 @@ symbols:
 - address: 0x9a918
   name: wpp_obj_Null_encode_copy_0x9a918
   kind: function
-  class: hand
+  class: codec
   module: wpp_objects
-  evidence: WPP object type 256 (Null)
+  evidence: 'WPP object type 256 (Null), 0 bytes: the encode body, its field layout
+    read off the cursor primitives it calls. replied by CMD_DEBUG_DUMP (0x6dfa8).'
 - address: 0x9a930
   name: wpp_put_u8
   kind: function

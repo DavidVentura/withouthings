@@ -1484,14 +1484,17 @@ def cross_check(entries):
     """Compare against the hand half of the address map; never overwrite it.
 
     Returns the agreements, the disagreements, and the entries that are safe to
-    emit: an address a hand entry already names is dropped, because a hand entry
-    is the source of truth for what gets linked and a second name for the same
+    emit: an address a hand entry or a codec entry already names is dropped,
+    because a hand entry is the source of truth for what gets linked and a second name for the same
     function is a finding to read, not an entry to generate. A prose entry names
     an address without saying what kind of thing is there, so it is compared
     against but does not stop a derivation.
     """
     smap = symmap.load()
-    by_hand = {s.address: s.name for s in smap.of_class(symmap.HAND)
+    # abi/protocol.py owns the codec bodies, and its reading of them is the
+    # stronger one, so they are compared against here and not emitted.
+    by_hand = {s.address: s.name
+               for s in smap.of_class(symmap.HAND, "codec")
                if s.kind == "function"}
     hand = {s.address: s.name for s in smap.of_class("prose")}
     hand.update(by_hand)
@@ -1579,20 +1582,36 @@ def yaml_str(s):
     return '"%s"' % s.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def prior_addresses(export):
-    """The addresses this script named in the run that seeded the export.
+# Every rule this script runs, as the class each writes into abi/symbols.yaml.
+DEFAULT_CLASSES = ("svc,syscall,libc,libm,extlib,string,logtag,logcb,wppcmd,"
+                   "shell,bleevt,wppobj,logline,helper")
+
+
+# The map classes a derivation owns. A function the seed carries under one of
+# them is named by a rule and not by the image, so the rules may re-derive it;
+# anything else in the seed is a hand or a body-match name and is left alone.
+DERIVED_CLASSES = frozenset(DEFAULT_CLASSES.split(",")) | {"codec"}
+
+
+def prior_addresses(export, classes=None):
+    """The addresses a derivation named in the run that seeded the export.
 
     Read from the export's own seed.json rather than from autonames.yaml, so it
     is the seed the partition was actually built with; taking it from the file
     this run is about to overwrite would make the answer depend on run order.
+    The seed records each name's map class, so the classes a rule owns are what
+    says a seeded name came from a rule: without this the second analysis run
+    after a name reaches the map sees its own output as the image's own naming,
+    stops deriving it, and the rewrite then takes it out of the map.
     """
     import json
     path = os.path.join(export, "seed.json")
     if not os.path.exists(path):
         return set()
     doc = json.load(open(path))
+    classes = DERIVED_CLASSES if classes is None else set(classes)
     return {fn["address"] for fn in doc.get("functions", ())
-            if fn.get("source") == "autonames"}
+            if fn.get("source") in classes}
 
 
 def main():
@@ -1600,9 +1619,7 @@ def main():
     ap.add_argument("--image", default=os.path.join(SIM, "appl.bin"))
     ap.add_argument("--dis", default=os.path.join(SIM, "out", "appl.dis"))
     ap.add_argument("--out", default=os.path.join(HERE, "autonames.yaml"))
-    ap.add_argument("--classes",
-                    default="svc,syscall,libc,libm,extlib,string,logtag,logcb,wppcmd,shell,"
-                            "bleevt,wppobj,logline,helper")
+    ap.add_argument("--classes", default=DEFAULT_CLASSES)
     ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"),
                     help="abi/ghidra/analyze.sh's export; the partition and call graph")
     ap.add_argument("--modules", default=os.path.join(HERE, "out", "ghidra", "modules.json"))
@@ -1618,7 +1635,7 @@ def main():
         sys.exit("autonames: %s missing (run renode-sim/mkdis.sh)" % args.dis)
     want = set(args.classes.split(","))
     img = Image(args.image, args.dis)
-    ex = Export(args.export, prior_addresses(args.export))
+    ex = Export(args.export, prior_addresses(args.export, want))
     if not ex.ok:
         print("autonames: no export under %s; the classes that need the partition "
               "and the call graph are skipped" % args.export, file=sys.stderr)

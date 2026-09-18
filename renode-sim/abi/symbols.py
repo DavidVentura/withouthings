@@ -87,9 +87,13 @@ HAND = "hand"
 # `supersedes` are for.
 # `prose` is last: it names an address without saying what is there, so it is
 # something to compare a derivation against and not something that stops one.
+# `codec` sits above `wppobj` because they are two readings of the same
+# bodies: the call-graph rule finds an encoder by its first two writes, while
+# abi/protocol.py carries the type id, the byte count and the field layout it
+# recovered, so where both reach an address the measured one keeps it.
 RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "string",
-        "wppcmd", "wppobj", "shell", "logtag", "logcb", "bleevt", "logline",
-        "helper", "prose"]
+        "wppcmd", "codec", "wppobj", "shell", "logtag", "logcb", "bleevt",
+        "logline", "helper", "prose"]
 
 
 def outranks(klass, other):

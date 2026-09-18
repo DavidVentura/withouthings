@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 0, helper: 418, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 331, logtag: 8, module_functions: 1780, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {bleevt: 28, extlib: 0, helper: 416, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 332, logtag: 8, module_functions: 1782, modules: 183, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 111, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 202, disagree: 1}
 
 functions:
@@ -3213,6 +3213,11 @@ functions:
     class: helper
     evidence: "only 0x64cf8 (FW_AVAILABLE__1) calls 0x64a0c; 38 bytes"
     module: CHUNKED_UPDATE
+  - name: chunked_update_not_aligned
+    address: 0x64bc8
+    class: logline
+    evidence: "the only line 0x64bc8 logs, wlog('[CHUNKED_UPDATE] not aligned') at 0x64bf2"
+    module: CHUNKED_UPDATE
   - name: FW_AVAILABLE__1
     address: 0x64cf8
     class: helper
@@ -3966,10 +3971,6 @@ functions:
     class: logline
     evidence: "the only line 0x6eed8 logs, wlog('[WUI] Failed to push event 0x%08x') at 0x6eefe"
     module: WUI
-  - name: dropped_log__1__1
-    address: 0x73320
-    class: helper
-    evidence: "only 0x50f6c (dropped_log__1) calls 0x73320; 24 bytes"
   - name: WPP_CMD_STORED_MEASURE_SIGNAL_GET__3__1
     address: 0x765c4
     class: helper
@@ -5884,11 +5885,6 @@ functions:
     class: wppcmd
     command: 2452
     evidence: "wpp_cmd_table row 0x27b80: key 2452, label 'WPP_CMD_EVENTS_DEL', CMD_EVENTS_DEL in wpp/src/commands.rs"
-  - name: ecg_err_no_sample_queue__4
-    address: 0x9ea10
-    class: helper
-    evidence: "only 0x85e68 (ecg_err_no_sample_queue) calls 0x9ea10; 18 bytes"
-    module: ECG
   - name: sd_app_evt_wait
     address: 0x9ea3a
     class: svc

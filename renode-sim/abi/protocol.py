@@ -2,6 +2,7 @@
 """The WPP wire format as the firmware writes it, against the crate's decoder.
 
     python3 abi/protocol.py            # -> abi/out/protocol/{objects,commands}.json
+                                       #    and the codec class of abi/symbols.yaml
     python3 abi/protocol.py --struct-uses ecg=0x20011668 [--module ECG]
 
 Two questions, one image and one crate each.
@@ -50,6 +51,11 @@ ROOT = os.path.dirname(SIM)
 sys.path.insert(0, HERE)
 
 import autonames as A  # noqa: E402
+import symbols as symmap  # noqa: E402
+
+# The class this run owns in abi/symbols.yaml, and the only one it rewrites.
+MAP_CLASS = "codec"
+
 
 # The cursor primitives, established by their bodies at 0x9a930..0x9a9be: each
 # stores through *cursor and advances it by the width it wrote, so the name is
@@ -531,38 +537,61 @@ def header_text(structs, sizers, enc_names):
     return "\n".join(out) + "\n"
 
 
-def symbols_yaml(structs, sizers, enc_names):
-    """The codec addresses as abi/symbols.yaml entries, a block to paste.
+def command_evidence(commands):
+    """{type id: (commands that request it, commands that reply it)}.
 
-    The map is hand-edited for everything it says about a name, so this prints
-    the entries rather than rewriting the file; re-running it against a later
-    export is how an address is re-checked.
+    A codec body has no call site of its own -- the encoders are handed to the
+    send path as a function pointer and the parsers are reached through the TLV
+    walk -- so the call site that means anything is the command whose handler
+    the walk reports the type under.
     """
-    lines = []
+    requested = collections.defaultdict(list)
+    replied = collections.defaultdict(list)
+    for c in commands:
+        label = "%s (%s)" % (c["crate_name"] or c["label"], c["handler"])
+        for tid in c["request_types"]:
+            requested[tid].append(label)
+        for tid in c["reply_types"]:
+            replied[tid].append(label)
+    return requested, replied
+
+
+def map_entries(structs, sizers, enc_names, commands):
+    """Every codec body as an abi/symbols.yaml row of class `codec`.
+
+    These 304 addresses are a measurement, not a hand reading: the type id and
+    the byte count come off the literals the body writes into the object header,
+    the field layout off the cursor primitives it calls, and the sizer off the
+    r2/r3 pair the send path is handed. abi/symbols.py's `codec` class is what
+    this run owns there, so re-running it against a later export refreshes them
+    and a body that stops being recovered leaves the map with it.
+    """
+    requested, replied = command_evidence(commands)
+    rows = []
     for tid in sorted(structs):
         r = structs[tid]
         for side, name, at in codec_names(r):
-            lines += ["- address: %s" % at,
-                      "  name: %s" % name,
-                      "  kind: function",
-                      "  class: codec",
-                      "  module: wpp_objects",
-                      "  evidence: WPP object type %d (%s), %s"
-                      % (tid, r["rust"], side)]
+            where = replied[tid] if side == "encode" else requested[tid]
+            verb = "replied by" if side == "encode" else "requested by"
+            ev = ("WPP object type %d (%s), %d bytes: the %s body, its field"
+                  " layout read off the cursor primitives it calls."
+                  % (tid, r["rust"], r["size"], side))
+            if where:
+                ev += " %s %s." % (verb, ", ".join(sorted(set(where))))
+            rows.append({"address": int(at, 16), "name": name,
+                         "kind": "function", "class": MAP_CLASS,
+                         "module": "wpp_objects", "evidence": ev})
     for enc in sorted(sizers, key=lambda a: enc_names[a]):
         size, sites = sizers[enc]
         rust = enc_names[enc][len("wpp_obj_"):-len("_encode")]
-        lines += ["- address: 0x%x" % size,
-                  "  name: wpp_obj_%s_size" % rust,
-                  "  kind: function",
-                  "  class: codec",
-                  "  module: wpp_objects",
-                  "  evidence: >-",
-                  "      the byte count %s's reply carries, a `movs r0, #N;" % rust,
-                  "      bx lr` stub. It is the r2 the send path is handed",
-                  "      alongside wpp_obj_%s_encode in r3 at %s."
-                  % (rust, ", ".join("0x%x" % a for a in sites))]
-    return "\n".join(lines)
+        rows.append({
+            "address": size, "name": "wpp_obj_%s_size" % rust,
+            "kind": "function", "class": MAP_CLASS, "module": "wpp_objects",
+            "evidence": "the byte count %s's reply carries, a `movs r0, #N; bx"
+                        " lr` stub. It is the r2 the send path is handed"
+                        " alongside wpp_obj_%s_encode in r3 at %s."
+                        % (rust, rust, ", ".join("0x%x" % a for a in sites))})
+    return rows
 
 
 # ---------------------------------------------------------- structs by module
@@ -869,8 +898,6 @@ def main():
                         HERE, "include", "withings", "wpp_objects.h"),
                     help="write the layouts, the codecs and the typed send path"
                          " as the generated header, committed as generated")
-    ap.add_argument("--emit-symbols",
-                    help="write the codec addresses as an abi/symbols.yaml block")
     ap.add_argument("--struct-uses", action="append", default=[], metavar="NAME=ADDR",
                     help="report every field access made through this global")
     ap.add_argument("--module", action="append", default=[],
@@ -962,10 +989,6 @@ def main():
         with open(args.emit_header, "w") as fh:
             fh.write(header_text(structs, sizers, enc_names))
         print(args.emit_header)
-    if args.emit_symbols:
-        with open(args.emit_symbols, "w") as fh:
-            fh.write(symbols_yaml(structs, sizers, enc_names) + "\n")
-        print(args.emit_symbols)
 
     table = A.walk_table(img, A.WPP_ANCHOR, lambda r: r["key"] < A.WPP_ID_MAX)
     handlers = {r["handler"]: r for r in table}
@@ -1013,6 +1036,17 @@ def main():
           % (cpath, len(cout), len(known),
              sum(1 for c in cout if not c["crate_name"]),
              len(set(cmds) - {r["key"] for r in table})))
+
+    # The records above are the measurement; the map is where a name goes.
+    # A codec name the map already carries at another address, or an address it
+    # already calls something else with evidence this run does not outrank, is a
+    # refusal rather than a second entry.
+    try:
+        added = symmap.load().rewrite(map_entries(structs, sizers, enc_names, cout),
+                                      {MAP_CLASS})
+    except symmap.Refusal as err:
+        sys.exit("abi/protocol.py: abi/symbols.yaml: %s" % err)
+    print("wrote %d %s entries to abi/symbols.yaml" % (added, MAP_CLASS))
 
     bad = [r for r in out if r["write_match"] or r["parse_match"]]
     print("%s: %d object types in the image (%d encoders, %d parsers), "
