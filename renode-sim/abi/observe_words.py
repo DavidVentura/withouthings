@@ -289,11 +289,11 @@ def write_scenario(name, spec, runtime, sites):
     # unobserved, and it is the first instructions of a boot the other three
     # scenarios observe from reset.
     if spec.get("update"):
-        head += ["include @update-test.resc", "pause"]
+        head += ["include @scripts/update-test.resc", "pause"]
     elif spec["pipe"]:
-        head += ["include @wpp-pipe.resc", "pause"]
+        head += ["include @scripts/wpp-pipe.resc", "pause"]
     else:
-        head.append("include @machine.resc")
+        head.append("include @scripts/machine.resc")
     head.append("")
     # A pipe run is driven from outside: the client connects, does its work and
     # the driver sends `quit` over the monitor port, so the script neither runs
@@ -344,10 +344,12 @@ def run_scenario(name, spec, runtime):
     if os.path.exists(uart):
         os.remove(uart)
     log = open(os.path.join(runtime, "out", "observe", "%s.log" % name), "w")
+    # No $ORIGIN: an include rebinds it to the included script's own directory,
+    # so the rig's outputs are named against the working directory instead.
     command = [renode_binary(), "--console", "--disable-xwt",
-               "-e", "$ORIGIN=@%s; include @%s" % (runtime, script)]
+               "-e", "include @%s" % script]
     if spec.get("update"):
-        # update-test.resc reads the rig of the image the bootloader installs,
+        # scripts/update-test.resc reads the rig of the image the bootloader installs,
         # which for this run is the image it booted.
         subprocess.check_call(
             [sys.executable, os.path.join(HERE, "rig.py"),
@@ -524,7 +526,10 @@ def ensure_reasons(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runtime", required=True,
-                    help="the scratch copy of renode-sim the runs happen in")
+                    help="the scratch copy of renode-sim the runs happen in;"
+                         " it carries renode-sim's scripts/ and models/"
+                         " directories, because Renode resolves an @path"
+                         " against the working directory")
     ap.add_argument("--export", default=os.path.join(HERE, "out", "ghidra"))
     ap.add_argument("--image", default=os.path.join(SIM, "appl.bin"))
     ap.add_argument("--facts", default=os.path.join(HERE, "words.yaml"))

@@ -192,7 +192,7 @@ variables:
     symbol: xTickCount
     stock: 0x20021920
     why: >
-      FreeRTOS's tick counter, which display-run.resc reports at the end of a
+      FreeRTOS's tick counter, which scripts/display-run.resc reports at the end of a
       run. In the image it is a queue.c static at 0x20021920, the pool word
       xTaskIncrementTick loads at 0x731b4; in a relink against the source
       kernel it is wherever the link put the kernel's own, so a number read

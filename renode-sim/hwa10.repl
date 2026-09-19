@@ -23,7 +23,7 @@ rtc1: Timers.NrfRtc @ sysbus 0x40011000
     numberOfEvents: 3
     -> nvic@17
     preinit:
-        include @NrfRtc.cs
+        include @models/NrfRtc.cs
 
 rtc2: Timers.NRF52840_RTC @ sysbus 0x40024000
     numberOfEvents: 4
@@ -34,7 +34,7 @@ wdt: Timers.NRF52840_Watchdog @ sysbus 0x40010000
 
 ppi: Miscellaneous.NrfPpi @ sysbus 0x4001F000
     preinit:
-        include @NrfPpi.cs
+        include @models/NrfPpi.cs
 
 flash: Memory.MappedMemory @ sysbus 0x0
     size: 0x100000
@@ -52,7 +52,7 @@ ram: Memory.MappedMemory @ { sysbus 0x800000; sysbus 0x20000000 }
 clock: Miscellaneous.NrfClockReady @ sysbus 0x40000000
     -> nvic@0
     preinit:
-        include @NrfClock.cs
+        include @models/NrfClock.cs
 
 twi0: I2C.NRF52840_I2C @ sysbus 0x40003000
     -> nvic@0x3
@@ -61,33 +61,33 @@ spi2: SPI.NrfSpimCapture @ sysbus 0x40023000
     PollReply: 0x66
     -> nvic@0x23
     preinit:
-        include @NrfSpim.cs
+        include @models/NrfSpim.cs
 
 // The accelerometer shares SPIM2 with the flash; the controller tells them
 // apart by chip select, so this is registered at its CS pin number.
 adxl367: Sensors.Adxl367 @ spi2 16
     0 -> gpio0@27
     preinit:
-        include @NrfAdxl367.cs
+        include @models/NrfAdxl367.cs
 
 spi3: SPI.OledSpimCapture @ sysbus 0x4002F000
     -> nvic@47
     preinit:
-        include @OledSpim.cs
+        include @models/OledSpim.cs
 
 saadc: Analog.NrfSaadc @ sysbus 0x40007000
     -> nvic@7
     preinit:
-        include @NrfSaadc.cs
+        include @models/NrfSaadc.cs
 
 nvmc: MTD.NrfNvmc @ sysbus 0x4001E000
     preinit:
-        include @NrfNvmc.cs
+        include @models/NrfNvmc.cs
 
 temp: Sensors.NrfTemp @ sysbus 0x4000C000
     -> nvic@12
     preinit:
-        include @NrfTemp.cs
+        include @models/NrfTemp.cs
 
 // The three hands. Each motor is one PWM instance driving the two ends of its
 // winding on channels 0 and 2 and the common on channel 1; the model reads the
@@ -98,13 +98,13 @@ hands: Miscellaneous.NrfHands @ sysbus
     minutePins: "P1.1 P1.4 P1.7"
     trackerPins: "P1.3 P0.9 P0.10"
     preinit:
-        include @NrfHands.cs
+        include @models/NrfHands.cs
 
 pwm0: Miscellaneous.NrfPwm @ sysbus 0x4001C000
     -> nvic@28
     Hands: hands
     preinit:
-        include @NrfPwm.cs
+        include @models/NrfPwm.cs
 
 pwm1: Miscellaneous.NrfPwm @ sysbus 0x40021000
     -> nvic@33
@@ -121,7 +121,7 @@ gpio0: GPIOPort.NrfGpio @ sysbus 0x50000500
     15 -> spi2@15
     16 -> spi2@16
     preinit:
-        include @NrfGpio.cs
+        include @models/NrfGpio.cs
 
 gpio1: GPIOPort.NrfGpio @ sysbus 0x50000800
     9 -> spi3@9
@@ -133,7 +133,7 @@ keys: Input.KeyPadInput @ sysbus
     activeLevel: ActiveLevel.Low
     0 -> gpio1@11
     preinit:
-        include @KeyInput.cs
+        include @models/KeyInput.cs
 
 gpiote: GPIOPort.NRF52840_GPIOTasksEvents @ sysbus 0x40006000
     port0: gpio0
@@ -146,7 +146,7 @@ gpiote: GPIOPort.NRF52840_GPIOTasksEvents @ sysbus 0x40006000
 spi1: SPI.NrfSpimBus @ sysbus 0x40004000
     -> nvic@4
     preinit:
-        include @NrfSpimBus.cs
+        include @models/NrfSpimBus.cs
 
 // The optical front end is the only device on SPIM1; its chip select is P0.26
 // and its interrupt is P1.14, which the driver configures as a pulled-up input
@@ -154,35 +154,35 @@ spi1: SPI.NrfSpimBus @ sysbus 0x40004000
 max86173: Sensors.Max86173 @ spi1 0
     0 -> gpio1@14
     preinit:
-        include @NrfMax86173.cs
+        include @models/NrfMax86173.cs
 
 crown: Sensors.Crown @ twi0 0x79
     -> gpio1@13
     preinit:
-        include @NrfCrown.cs
+        include @models/NrfCrown.cs
 
 bq25180: Sensors.BQ25180 @ twi0 0x6A
     preinit:
-        include @NrfBq25180.cs
+        include @models/NrfBq25180.cs
 
 tmp117: Sensors.TMP117 @ twi0 0x48
     preinit:
-        include @NrfTmp117.cs
+        include @models/NrfTmp117.cs
 
 ads1115: Sensors.ADS1115 @ twi0 0x49
     preinit:
-        include @NrfAds1115.cs
+        include @models/NrfAds1115.cs
 
 apds9306: Sensors.APDS9306 @ twi0 0x52
     preinit:
-        include @NrfApds9306.cs
+        include @models/NrfApds9306.cs
 
 // Row 5 of the firmware's I2C device table. Row 6 at 0x76 is an MS5837, which
 // the altimeter takes instead above hardware revision 0x6f; this watch is below
 // it, so only the MS5849 is fitted.
 ms5849: Sensors.MS5849 @ twi0 0x77
     preinit:
-        include @NrfMs58xx.cs
+        include @models/NrfMs58xx.cs
 
 timer0: Timers.NRF52840_Timer @ sysbus 0x40008000
     numberOfEvents: 4
@@ -213,7 +213,7 @@ pdm: Sound.NRF52840_PDM @ sysbus 0x4001D000
 radio: Wireless.NrfRadio @ sysbus 0x40001000
     -> nvic@1
     preinit:
-        include @NrfRadio.cs
+        include @models/NrfRadio.cs
 
 rng: Miscellaneous.NRF52840_RNG @ sysbus 0x4000D000
     -> nvic@13
@@ -256,4 +256,4 @@ wppPipe: Miscellaneous.WppPipe @ sysbus
     wppServiceContext: 0x20017f28
     sdEventIrq: 22
     preinit:
-        include @WppPipe.cs
+        include @models/WppPipe.cs

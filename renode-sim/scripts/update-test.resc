@@ -4,7 +4,7 @@
 :  application downloaded into internal flash, and the application is re-patched
 :  on the way in.
 
-include @machine.resc
+include @scripts/machine.resc
 
 # UICR.NRFFW[0] holds the bootloader start address the MBR reads, and boot.resc
 # leaves it erased so the MBR forwards to the SoftDevice. This run arms it only

@@ -2,7 +2,7 @@
 :description: Everything both run scripts share: boot images, the memory patches
 :  the sim needs, and the peripheral inputs. Include this, then RunFor or start.
 
-include @boot.resc
+include @scripts/boot.resc
 logLevel 3
 
 # --- known-good boot patch set ---

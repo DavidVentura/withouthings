@@ -55,13 +55,13 @@ python3 abi/rig.py --image out/flash-relinked.bin --symbols out/relink/relinked.
 Batch run (headless, 60 s of virtual time in ~15 s, output in `out/`):
 
 ```bash
-renode --disable-xwt --console -e "include @display-run.resc" < <(sleep 1000)
+renode --disable-xwt --console -e "include @scripts/display-run.resc" < <(sleep 1000)
 ```
 
 Interactive run:
 
 ```bash
-renode --console --port 12345 -e "include @live.resc"
+renode --console --port 12345 -e "include @scripts/live.resc"
 printf 'keys Tap "Enter"\n' | nc -q 1 localhost 12345
 printf 'twi0.crown Rotate 1\n' | nc -q 1 localhost 12345
 ```
@@ -69,11 +69,11 @@ printf 'twi0.crown Rotate 1\n' | nc -q 1 localhost 12345
 To validate the network protocol via TCP:
 
 ```bash
-renode --disable-xwt --console -e "include @wpp-pipe.resc" < <(sleep 1000)
+renode --disable-xwt --console -e "include @scripts/wpp-pipe.resc" < <(sleep 1000)
 cargo run -p wpp-sim-client -- --secret-from-dump external_flash.bin   # once out/uart0.log shows "Add WPPS chars."
 ```
 
-There's a hardcoded 30s start-up delay on the firmware, `live.resc` patches that out.
+There's a hardcoded 30s start-up delay on the firmware, `scripts/live.resc` patches that out.
 
 If you want to render the screen capture .bin files to png:
 
@@ -89,9 +89,10 @@ To read the disassembly, build it with `mkdis.sh`; it writes `out/appl.dis` and
 
 To find where the boot stalls, generate hooks for a code range with
 `calltrace.py 0x2e700 0x2e900 > out/hooks.resc`, include that file in a copy of
-`display-run.resc`, and look at the last function entered.
+`scripts/display-run.resc`, and look at the last function entered.
 
-The peripheral models are the `Nrf*.cs` and `OledSpim.cs` files, one per
-peripheral; the run script sets their inputs (battery volts, temperature).
-The earlier bring-up scripts (`boot.resc`, `run-logs.resc`, `trace.resc`,
-`logs.resc`, `coverage.py`) still work but `display-run.resc` replaced them.
+The peripheral models are the `models/Nrf*.cs` and `models/OledSpim.cs` files,
+one per peripheral; the run script sets their inputs (battery volts,
+temperature). The earlier bring-up scripts (`scripts/boot.resc`,
+`scripts/run-logs.resc`, `scripts/trace.resc`, `scripts/logs.resc`,
+`coverage.py`) still work but `scripts/display-run.resc` replaced them.

@@ -5,8 +5,8 @@
 # the GUI — init tasks block on peripheral driver ISRs (TWI/SPI/GPIO) not brought
 # up here. Every line below the first RunFor is a fidelity hack (see NOTES.md).
 
-include @boot.resc
-include @_shortcuts.resc
+include @scripts/boot.resc
+include @scripts/_shortcuts.resc
 
 # count RTC2 ticks and PendSV switches
 cpu AddHook 0x73e70 "g=globals(); g['t']=g.get('t',0)+1"

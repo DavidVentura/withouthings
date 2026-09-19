@@ -15,9 +15,11 @@ sysbus LoadBinary $image 0x0
 # external SPI-NOR content (untracked dump; see README) served by spi2's flash model
 sysbus.spi2 LoadImage @external_flash.bin
 
-# capture wlog UART to file
-sysbus.uart0 CreateFileBackend $ORIGIN/out/uart0.log true
-sysbus.uart1 CreateFileBackend $ORIGIN/out/uart1.log true
+# capture wlog UART to file. Renode resolves an output path against the
+# directory of the script that names it, not the working directory, so the
+# rig's out/ is reached from scripts/ rather than named outright.
+sysbus.uart0 CreateFileBackend $ORIGIN/../out/uart0.log true
+sysbus.uart1 CreateFileBackend $ORIGIN/../out/uart1.log true
 
 # Erased UICR: NRFFW[0] is the MBR's bootloader start address and NRFFW[1] its
 # parameter page, and an erased word is what tells the MBR to forward to the

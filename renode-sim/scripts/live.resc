@@ -4,7 +4,7 @@
 :  --disable-xwt and with --port 12345, then e.g.
 :    printf 'twi0.crown Rotate 1\n' | nc -q 1 localhost 12345
 
-include @machine.resc
+include @scripts/machine.resc
 
 runMacro $fastStartup
 

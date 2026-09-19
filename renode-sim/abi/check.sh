@@ -50,8 +50,11 @@ wanted() {
 
 # A Renode run needs a directory of its own: two instances in one directory
 # overwrite each other's out/uart0.log. Every regular file of renode-sim/ is
-# symlinked in, so the scripts, the platform, the peripheral models and the two
-# flash images are the repo's own and only out/ is per-run.
+# symlinked in, plus the scripts/ and models/ directories whole, so the scripts,
+# the platform, the peripheral models and the two flash images are the repo's
+# own and only out/ is per-run. Renode resolves every `@path` against the
+# working directory rather than the including file, so the scratch copy has to
+# carry the same directory shape as renode-sim/ and not a flattened one.
 rig_dir() {
     local name=$1 image=$2 symbols=$3
     local dir=$RIGS/$name
@@ -62,6 +65,8 @@ rig_dir() {
         [ -f "$f" ] && ln -s "$f" "$dir/$(basename "$f")"
     done
     set -f
+    ln -s "$SIM/scripts" "$dir/scripts"
+    ln -s "$SIM/models" "$dir/models"
     cp "$image" "$dir/out/flash-relinked.bin"
     python3 rig.py --image "$image" --symbols "$symbols" \
         --out "$dir/out/rig" > "$dir/out/rig.log" 2>&1 || return 1
@@ -71,7 +76,7 @@ rig_dir() {
 display_run() {
     local dir=$1
     (cd "$dir" && "$RENODE" --disable-xwt --console \
-        -e '$image=@out/flash-relinked.bin' -e "include @display-run.resc" \
+        -e '$image=@out/flash-relinked.bin' -e "include @scripts/display-run.resc" \
         > out/renode.log 2>&1 < <(sleep 600))
     grep -q "=== display-run done ===" "$dir/out/renode.log"
 }

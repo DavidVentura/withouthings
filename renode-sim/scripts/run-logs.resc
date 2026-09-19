@@ -8,7 +8,7 @@
 #    semaphore is forced non-blocking so logs flush.
 #  - wlog is captured by hooking the ring putchar (0x56e8e) and printing bytes.
 
-include @boot.resc
+include @scripts/boot.resc
 
 sysbus WriteWord 0x9301e 0x2000
 cpu PerformanceInMips 200

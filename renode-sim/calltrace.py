@@ -4,7 +4,7 @@
     python3 calltrace.py 0x2e700 0x2e900 > out/trace-init.resc
     python3 calltrace.py --module ECG > out/trace-ecg.resc
     python3 calltrace.py --module ECG --count > out/trace-ecg-count.resc
-    renode ... -e "include @display-run.resc-like setup; include @out/trace-init.resc; emulation RunFor \"3\""
+    renode ... -e "include @scripts/display-run.resc-like setup; include @out/trace-init.resc; emulation RunFor \"3\""
 
 Reads out/appl.dis (run mkdis.sh first). Each hooked callee prints its address, the
 caller's return address and the virtual time in microseconds. This is how the boot's

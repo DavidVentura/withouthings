@@ -116,22 +116,28 @@ fn renode_binary() -> PathBuf {
 /// A scratch copy of the rig: Renode writes its outputs next to the scripts it
 /// runs, and the models and images are large, so everything is symlinked and
 /// only the scripts are copied.
+///
+/// Renode resolves every `@path` against the working directory and not against
+/// the file that names it, so the copy reproduces renode-sim's directory shape:
+/// scripts/ is a real directory of copied scripts and models/ is one symlink.
 fn scratch(source: &Path) -> PathBuf {
     let directory = repository().join("target/update-test");
     let _ = fs::remove_dir_all(&directory);
     fs::create_dir_all(directory.join("out/frames")).expect("the scratch directory is creatable");
+    fs::create_dir_all(directory.join("scripts")).expect("the scratch directory is creatable");
+    for entry in fs::read_dir(source.join("scripts")).expect("renode-sim/scripts is readable") {
+        let entry = entry.unwrap();
+        fs::copy(entry.path(), directory.join("scripts").join(entry.file_name()))
+            .expect("the script copies");
+    }
     for entry in fs::read_dir(source).expect("renode-sim is readable") {
         let entry = entry.unwrap();
         let name = entry.file_name();
-        if name == "out" {
+        if name == "out" || name == "scripts" {
             continue;
         }
         let target = directory.join(&name);
-        if entry.path().extension().is_some_and(|e| e == "resc") {
-            fs::copy(entry.path(), &target).expect("the script copies");
-        } else {
-            std::os::unix::fs::symlink(entry.path(), &target).expect("the link is creatable");
-        }
+        std::os::unix::fs::symlink(entry.path(), &target).expect("the link is creatable");
     }
     directory
 }
@@ -254,7 +260,7 @@ impl Rig {
 /// One update scenario: which flash image the watch starts from, what package
 /// is pushed, and what the watch must report before and after.
 struct Case {
-    /// The monitor's `$image`, or None for `boot.resc`'s own default.
+    /// The monitor's `$image`, or None for `scripts/boot.resc`'s own default.
     image: Option<PathBuf>,
     /// The `appl` part to package, or None to keep the stock package's.
     appl: Option<PathBuf>,
@@ -364,8 +370,8 @@ fn run_update(case: &Case) -> Option<(Renode, PathBuf)> {
     }
 
     let script = match &case.image {
-        Some(image) => format!("$image=@{}; include @update-test.resc", image.display()),
-        None => "include @update-test.resc".to_string(),
+        Some(image) => format!("$image=@{}; include @scripts/update-test.resc", image.display()),
+        None => "include @scripts/update-test.resc".to_string(),
     };
     let log = fs::File::create(directory.join("log")).unwrap();
     let mut child = Command::new(&renode)

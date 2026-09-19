@@ -2,7 +2,7 @@
 :description: Boots, runs 60 s of virtual time as fast as the host allows, and
 :  leaves the watch log, the OLED frames and an integrity check in out/.
 
-include @machine.resc
+include @scripts/machine.resc
 
 # idle time costs nothing without real-time pacing: 60 s virtual in ~15 s wall
 emulation SetAdvanceImmediately true
@@ -11,7 +11,7 @@ echo "=== display-run done ==="
 echo "protected region words changed:"; sysbus.nvmc VerifyProtectedRegion
 echo "tick:"; sysbus ReadDoubleWord $xTickCount
 echo "pc:"; cpu PC
-sysbus.spi3 DumpStream $ORIGIN/out/oled_stream.txt
-sysbus.spi3 DumpPixels $ORIGIN/out/oled_pixels.bin
-sysbus.spi3 DumpFrames $ORIGIN/out/frames 64
+sysbus.spi3 DumpStream $ORIGIN/../out/oled_stream.txt
+sysbus.spi3 DumpPixels $ORIGIN/../out/oled_pixels.bin
+sysbus.spi3 DumpFrames $ORIGIN/../out/frames 64
 quit

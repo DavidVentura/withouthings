@@ -1,4 +1,4 @@
-include @boot.resc
+include @scripts/boot.resc
 
 cpu AddHook 0x8f494 """
 a=cpu.GetRegisterUnsafe(0).RawValue

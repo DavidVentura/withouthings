@@ -2,10 +2,10 @@
 :description: Batch run with a WPP link into the firmware and no radio peer.
 :  The pipe listens on 127.0.0.1:7788, framing [len u16 big-endian][payload];
 :  a TCP connection stands for the BLE one. Drive it with wpp-sim-client:
-:    renode --disable-xwt --console -e "include @wpp-pipe.resc"
+:    renode --disable-xwt --console -e "include @scripts/wpp-pipe.resc"
 :    cargo run -p wpp-sim-client            # once out/uart0.log has "Add WPPS chars."
 
-include @machine.resc
+include @scripts/machine.resc
 
 runMacro $fastStartup
 
