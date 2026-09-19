@@ -725,6 +725,43 @@ struct debug_dump_ram_item {
     int (*count)(void);
 };
 
+/* The debug dump's own context, 84 bytes twelve bodies index off one base --
+   the WPP command, the two acks, the dblib and raw-data walks. The offsets
+   and widths are theirs; +32, +52 and +64 are half-word and the rest word or
+   byte, none of them is used as a load or store base, and the +84 end is the
+   next addressed word.
+   */
+struct debug_dump_ctx {
+    unsigned char unknown_0;
+    unsigned char pad_1[3];
+    unsigned int unknown_4;
+    unsigned int unknown_8;
+    unsigned int unknown_12;
+    unsigned int unknown_16;
+    unsigned int unknown_20;
+    unsigned int unknown_24;
+    unsigned int unknown_28;
+    unsigned short unknown_32;
+    unsigned char pad_34[2];
+    unsigned int unknown_36;
+    unsigned int unknown_40;
+    unsigned int unknown_44;
+    unsigned int unknown_48;
+    unsigned short unknown_52;
+    unsigned char pad_54[2];
+    unsigned int unknown_56;
+    unsigned int unknown_60;
+    unsigned short unknown_64;
+    unsigned char pad_66[2];
+    unsigned int unknown_68;
+    unsigned int unknown_72;
+    unsigned char unknown_76;
+    unsigned char pad_77[3];
+    unsigned int unknown_80;
+};
+
+extern struct debug_dump_ctx debug_dump_struct_20020b78;
+
 /* tables */
 /* the six RAM-backed items the debug dump streams, in the order it walks
    them. Bounds are the pair (0x27cec, 0x27d34) debug_dump_dblib_ram__2 loads

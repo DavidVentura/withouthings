@@ -738,6 +738,35 @@ extern unsigned short sensors_sync_rd;
    */
 extern unsigned int sensors_sync_exception_flags;
 
+/* The tracker's live counters, 14 words the whole module indexes off one
+   base: the four "[TRACKER_LIVE][STEPS|DIST|CCALO|STAIRS] ... " lines at
+   0x5f3ea, 0x5f568, 0x5f4b0 and 0x5f72c print their groups out of it, the
+   `certain steps`, `unknown steps`, `distance` and `ccalo` lines at
+   0x60124..0x60148 print single fields, and 23 bodies reach it at +0 through
+   +52 in steps of four, every one of them a word-wide load or store. Nothing
+   dereferences any of them, so none is a pointer; which counter each word is
+   the log lines do not settle, because the same word answers to more than one
+   of them.
+   */
+struct tracker_live_counters {
+    unsigned int unknown_0;
+    unsigned int unknown_4;
+    unsigned int unknown_8;
+    unsigned int unknown_12;
+    unsigned int unknown_16;
+    unsigned int unknown_20;
+    unsigned int unknown_24;
+    unsigned int unknown_28;
+    unsigned int unknown_32;
+    unsigned int unknown_36;
+    unsigned int unknown_40;
+    unsigned int unknown_44;
+    unsigned int unknown_48;
+    unsigned int unknown_52;
+};
+
+extern struct tracker_live_counters tracker_struct_2001fce0;
+
 /* tables */
 /* the ten MAX86173 measurement configurations by name --
    MULTIPPG_LONG_MEASURE__ACC, MULTIPPG__ACC, MULTIPPG_MONO_LONG_MEASURE__

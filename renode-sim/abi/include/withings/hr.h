@@ -339,4 +339,21 @@ extern struct hr_algo_result hr_algo_result_block;
 extern struct hr_measure_ctx hr_measure_ctx;
 extern struct hr_screen_data hr_screen_data;
 
+/* The SpO2 module's context, 16 bytes eleven bodies share: a flag at +0 read
+   nine times, a word at +4 the "[SPO2] Tried to store measure with invalid
+   timestamp" line prints, a byte at +9 and a word at +12. Nothing reaches
+   +1..+3, +8 or +10..+11, and +16 is the next addressed word.
+   */
+struct spo2_ctx {
+    unsigned char unknown_0;
+    unsigned char pad_1[3];
+    unsigned int unknown_4;
+    unsigned char pad_8[1];
+    unsigned char unknown_9;
+    unsigned char pad_10[2];
+    unsigned int unknown_12;
+};
+
+extern struct spo2_ctx spo2_struct_2001ff30;
+
 #endif
