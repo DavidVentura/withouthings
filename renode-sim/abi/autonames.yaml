@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {accessor: 31, bleevt: 28, bymodule: 157, bymodule_contested: 17, extlib: 0, helper: 647, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1821, modules: 179, prototypes_derived: 34, provenance: 480, provenance_body_call_sites_disagree_or_say_nothing: 643, provenance_body_field: 10, provenance_body_global: 25, provenance_body_literal: 103, provenance_body_more_than_one_named_global_in_its_own_pool: 115, provenance_body_no_named_global_in_its_own_pool: 1342, provenance_body_param: 107, provenance_body_reaches_one_global_and_dereferences_none_of_it: 39, provenance_body_the_displacement_names_no_declared_field: 9, provenance_body_the_offset_it_accesses_names_no_declared_field: 9, provenance_body_unknown: 927, provenance_leaf_call_sites_disagree_or_say_nothing: 404, provenance_leaf_field: 5, provenance_leaf_global: 17, provenance_leaf_literal: 58, provenance_leaf_more_than_one_named_global_in_its_own_pool: 21, provenance_leaf_no_named_global_in_its_own_pool: 877, provenance_leaf_param: 40, provenance_leaf_reaches_one_global_and_dereferences_none_of_it: 16, provenance_leaf_the_displacement_names_no_declared_field: 4, provenance_leaf_the_offset_it_accesses_names_no_declared_field: 9, provenance_leaf_unknown: 571, provenance_named_check: 113, provenance_named_copy: 3, provenance_named_get: 107, provenance_named_on_no_verb_: 15, provenance_named_set: 117, provenance_named_update: 127, role: 4, shared: 20, shell: 156, shell_table_rows: 79, slot: 134, string: 20, svc: 79, syscall: 9, vector: 54, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114, wrapper: 37}
+  counts: {accessor: 31, bleevt: 28, bymodule: 149, bymodule_contested: 18, extlib: 0, helper: 687, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1821, modules: 179, prototypes_derived: 36, provenance: 490, provenance_body_call_sites_disagree_or_say_nothing: 643, provenance_body_field: 10, provenance_body_global: 30, provenance_body_literal: 97, provenance_body_more_than_one_named_global_in_its_own_pool: 117, provenance_body_no_named_global_in_its_own_pool: 1331, provenance_body_param: 107, provenance_body_reaches_one_global_and_dereferences_none_of_it: 45, provenance_body_the_displacement_names_no_declared_field: 9, provenance_body_the_offset_it_accesses_names_no_declared_field: 9, provenance_body_unknown: 927, provenance_leaf_call_sites_disagree_or_say_nothing: 404, provenance_leaf_field: 5, provenance_leaf_global: 24, provenance_leaf_literal: 51, provenance_leaf_more_than_one_named_global_in_its_own_pool: 22, provenance_leaf_no_named_global_in_its_own_pool: 865, provenance_leaf_param: 40, provenance_leaf_reaches_one_global_and_dereferences_none_of_it: 19, provenance_leaf_the_displacement_names_no_declared_field: 4, provenance_leaf_the_offset_it_accesses_names_no_declared_field: 9, provenance_leaf_unknown: 571, provenance_named_check: 111, provenance_named_copy: 2, provenance_named_get: 115, provenance_named_on_no_verb_: 16, provenance_named_set: 119, provenance_named_update: 129, role: 4, shared: 22, shell: 156, shell_table_rows: 79, slot: 134, string: 20, svc: 79, syscall: 9, vector: 54, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114, wrapper: 37}
   known_addresses: {agree: 194, disagree: 0}
 
 functions:
@@ -31,6 +31,10 @@ functions:
     address: 0x28cb8
     class: provenance
     evidence: "0x28cb8 reaches sn19020x6_half_20024dac through its own literal pool and no other named global; the body updates through it"
+  - name: algo_manager_ctx_get
+    address: 0x29984
+    class: provenance
+    evidence: "0x29984 reaches algo_manager_ctx through its own literal pool and no other named global; the body gets through it"
   - name: hr_measure_on_algo_result__1__1
     address: 0x299c0
     class: helper
@@ -46,10 +50,10 @@ functions:
     class: helper
     evidence: "only 0x75d6c (worn_algo_step) calls 0x29f50; 100 bytes"
     module: SENSORS_SYNC
-  - name: alti_struct_2001fcbc_check_2__1
+  - name: sensors_sync_push_accel__1__1
     address: 0x29fc8
     class: helper
-    evidence: "only 0x5f5c8 (alti_struct_2001fcbc_check_2) calls 0x29fc8; 24 bytes"
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__1) calls 0x29fc8; 24 bytes"
   - name: spo2_mono_algo_step__4__1
     address: 0x2a480
     class: helper
@@ -159,7 +163,7 @@ functions:
     evidence: "newlib-nano-ll libc.a, 2884 bytes of the built body reproduced at 0x2d668 with the 440 bytes a relocation owns masked"
     header: arm-none-eabi/include/stdlib.h
     proto: "char * _dtoa_r (struct _reent *, double, int, int, int *, int*, char**);"
-  - name: rambkp_block_check_1
+  - name: rambkp_block_check
     address: 0x2e982
     class: provenance
     evidence: "0x2e982 reaches rambkp_block through its own literal pool and no other named global; the body checks through it"
@@ -453,10 +457,6 @@ functions:
   - address: 0x3111c
     class: bymodule
     evidence: "0x3111c reaches only rambkp_block"
-    module: BOOT
-  - address: 0x3119c
-    class: bymodule
-    evidence: "0x3119c reaches only rambkp_block"
     module: BOOT
   - name: activity_vasistas_migration_base_set
     address: 0x313d8
@@ -1474,10 +1474,10 @@ functions:
     address: 0x3b990
     class: provenance
     evidence: "0x3b990 reaches acq_ptr_200182f0 through its own literal pool and no other named global; the body gets through it"
-  - name: alti_struct_2001fcbc_check_2__2
+  - name: sensors_sync_push_accel__1__2
     address: 0x3ba0c
     class: helper
-    evidence: "only 0x5f5c8 (alti_struct_2001fcbc_check_2) calls 0x3ba0c; 218 bytes"
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__1) calls 0x3ba0c; 218 bytes"
   - name: adxl367_power_check
     address: 0x3baf0
     class: string
@@ -1846,10 +1846,6 @@ functions:
     evidence: "wpp_cmd_table row 0x27ba4: key 321, label 'WPP_CMD_SYNC_REQUEST', CMD_SYNC_REQUEST in wpp/src/commands.rs"
     module: SYNC
     also_named: [sync_bg_response_time (logline)]
-  - address: 0x3ff48
-    class: bymodule
-    evidence: "0x3ff48 every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
   - name: shell_help_background_sync
     address: 0x3ffa4
     class: shell
@@ -1899,10 +1895,6 @@ functions:
     class: bymodule
     evidence: "0x40274 reaches only battery_curve_bounds, battery_state"
     module: BAT
-  - address: 0x40398
-    class: bymodule
-    evidence: "0x40398 every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
   - name: battery_table_20018b68_check
     address: 0x40414
     class: provenance
@@ -3079,10 +3071,22 @@ functions:
     evidence: "wpp_cmd_table row 0x27688: key 2425, label 'WPP_CMD_ECG_TEST', CMD_ECG_TEST in wpp/src/commands.rs"
     module: WPP
     also_named: [wpp_could_not_read_nb_values (logline)]
+  - address: 0x4b48c
+    class: bymodule
+    evidence: "0x4b48c reaches only dbt_algo_ctx"
+    module: DBT
   - name: dbt_unkown_state_for_timer_handler
     address: 0x4b5f8
     class: logline
     evidence: "the only line 0x4b5f8 logs, wlog('[DBT] Unkown state for timer handler') at 0x4b640"
+    module: DBT
+  - address: 0x4b65c
+    class: bymodule
+    evidence: "0x4b65c every caller is a body this rule placed in DBT: 0x4b7d0"
+    module: DBT
+  - address: 0x4b738
+    class: bymodule
+    evidence: "0x4b738 every caller is a body this rule placed in DBT: 0x4b7d0"
     module: DBT
   - name: wui_flag_200271cd_set
     address: 0x4b7ac
@@ -3092,8 +3096,8 @@ functions:
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - address: 0x4b7d0
     class: bymodule
-    evidence: "0x4b7d0 every caller is a body this rule placed in ALGO_MANAGER: 0x4ec0c"
-    module: ALGO_MANAGER
+    evidence: "0x4b7d0 reaches only dbt_algo_ctx"
+    module: DBT
   - name: on_event_dbt_meas__1__1
     address: 0x4bab8
     class: helper
@@ -3159,14 +3163,10 @@ functions:
     class: logline
     evidence: "the only line 0x4bef8 logs, wlog('[FEATURE_TAGS] Nothings stored') at 0x4bf12"
     module: FEATURE_TAGS
-  - name: feature_tags_struct_2001a26c_check
-    address: 0x4bf28
-    class: provenance
-    evidence: "0x4bf28 reaches feature_tags_struct_2001a26c through its own literal pool and no other named global; the body checks through it"
-  - name: feature_tags_struct_2001a26c_copy
-    address: 0x4bf68
-    class: provenance
-    evidence: "0x4bf68 reaches feature_tags_struct_2001a26c through its own literal pool and no other named global; the body copys through it"
+  - address: 0x4bf28
+    class: bymodule
+    evidence: "0x4bf28 calls only feature_tags_nothings_stored"
+    module: FEATURE_TAGS
   - name: shell_cmd_feature_tags
     address: 0x4bfcc
     class: shell
@@ -3243,26 +3243,18 @@ functions:
     class: provenance
     evidence: "0x4cbe8 reaches rambkp_block through its own literal pool and no other named global; the body updates through it"
     module: UPDATE_CHOOSING_BLOCK
-  - name: rambkp_block_check_1__1
+  - name: rambkp_block_check__1
     address: 0x4cd94
     class: helper
-    evidence: "only 0x2e982 (rambkp_block_check_1) calls 0x4cd94; 6 bytes"
-  - name: alti_struct_2001fcbc_check_2__3__1
-    address: 0x4cda0
-    class: helper
-    evidence: "only 0x4d214 (alti_struct_2001fcbc_check_2__3) calls 0x4cda0; 48 bytes"
-  - name: rambkp_block_check_1__2
+    evidence: "only 0x2e982 (rambkp_block_check) calls 0x4cd94; 6 bytes"
+  - name: rambkp_block_check__2
     address: 0x4cdd4
     class: helper
-    evidence: "only 0x2e982 (rambkp_block_check_1) calls 0x4cdd4; 38 bytes"
-  - name: alti_struct_2001fcbc_check_2__3__2
-    address: 0x4ce8c
-    class: helper
-    evidence: "only 0x4d214 (alti_struct_2001fcbc_check_2__3) calls 0x4ce8c; 892 bytes"
-  - name: alti_struct_2001fcbc_check_2__3
+    evidence: "only 0x2e982 (rambkp_block_check) calls 0x4cdd4; 38 bytes"
+  - name: sensors_sync_push_accel__1__3
     address: 0x4d214
     class: helper
-    evidence: "only 0x5f5c8 (alti_struct_2001fcbc_check_2) calls 0x4d214; 160 bytes"
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__1) calls 0x4d214; 160 bytes"
   - name: GLANCE_SET
     address: 0x4d2b8
     class: wppcmd
@@ -3401,10 +3393,10 @@ functions:
     class: logline
     evidence: "the only line 0x4e9d4 logs, wlog('[HR_COMPRESSION] Store %lu, %ubpm, %us') at 0x4ea4e"
     module: HR_COMPRESSION
-  - name: rambkp_block_check_1__3
+  - name: rambkp_block_check__3
     address: 0x4ea68
     class: helper
-    evidence: "only 0x2e982 (rambkp_block_check_1) calls 0x4ea68; 34 bytes"
+    evidence: "only 0x2e982 (rambkp_block_check) calls 0x4ea68; 34 bytes"
   - name: dblib_setting_0xe2_get_1
     address: 0x4ea90
     class: provenance
@@ -3441,7 +3433,7 @@ functions:
     module: I2C
   - address: 0x4ec0c
     class: bymodule
-    evidence: "0x4ec0c reaches only algo_manager_struct_200201d4"
+    evidence: "0x4ec0c reaches only algo_manager_ctx, algo_manager_struct_200201d4"
     module: ALGO_MANAGER
   - name: WPP_CMD_STORED_MEASURE_SIGNAL_GET__1
     address: 0x4ede8
@@ -4403,10 +4395,10 @@ functions:
     class: slot
     evidence: "0x576d4 is the mark slot of post_update_hooks row 4 (word 0x27cb8); nothing calls it"
     module: RAW
-  - name: rambkp_block_check_2__1
+  - name: main_task__8__1
     address: 0x5771c
     class: helper
-    evidence: "only 0x57ba8 (rambkp_block_check_2) calls 0x5771c; 62 bytes"
+    evidence: "only 0x57ba8 (main_task__8) calls 0x5771c; 62 bytes"
     module: INIT
   - name: rambkp_block_set_11
     address: 0x57764
@@ -4421,6 +4413,10 @@ functions:
     address: 0x578d8
     class: helper
     evidence: "only 0x5819c (error_no_oldest_rawdata_found) calls 0x578d8; 22 bytes"
+  - address: 0x578f4
+    class: bymodule
+    evidence: "0x578f4 reaches only raw_data_ring"
+    module: RAW_DATA
   - name: not_aligned_on_a_sector
     address: 0x57b24
     class: logline
@@ -4429,10 +4425,10 @@ functions:
     address: 0x57b4c
     class: helper
     evidence: "only 0x5819c (error_no_oldest_rawdata_found) calls 0x57b4c; 38 bytes"
-  - name: rambkp_block_check_2
+  - name: main_task__8
     address: 0x57ba8
-    class: provenance
-    evidence: "0x57ba8 reaches rambkp_block through its own literal pool and no other named global; the body checks through it"
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x57ba8; 636 bytes"
     module: INIT
   - name: debug_dump_struct_20020b78_update_5__1
     address: 0x57f00
@@ -4494,10 +4490,6 @@ functions:
     class: provenance
     evidence: "0x58d70 reaches respiratory_scan_struct_20007100 through its own literal pool and no other named global; the body sets through it"
     module: M
-  - address: 0x58d88
-    class: bymodule
-    evidence: "0x58d88 every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
   - name: respiratory_scan_allow_measure
     address: 0x58f74
     class: logline
@@ -4842,10 +4834,6 @@ functions:
     class: bymodule
     evidence: "0x5e024 reaches only time_delta, time_flag_20026bd9"
     module: TIME
-  - address: 0x5e174
-    class: bymodule
-    evidence: "0x5e174 every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
   - name: shell_cmd_time
     address: 0x5e18c
     class: shell
@@ -5101,14 +5089,14 @@ functions:
     address: 0x5f584
     class: helper
     evidence: "only 0x3bee4 (adxl367_mutex_update_1) calls 0x5f584; 14 bytes"
-  - name: alti_struct_2001fcbc_check_2__4
+  - name: sensors_sync_push_accel__1__4
     address: 0x5f590
     class: helper
-    evidence: "only 0x5f5c8 (alti_struct_2001fcbc_check_2) calls 0x5f590; 52 bytes"
-  - name: alti_struct_2001fcbc_check_2
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__1) calls 0x5f590; 52 bytes"
+  - name: sensors_sync_push_accel__1
     address: 0x5f5c8
-    class: provenance
-    evidence: "0x5f5c8 reaches alti_struct_2001fcbc through its own literal pool and no other named global; the body checks through it"
+    class: helper
+    evidence: "only 0x3bd10 (sensors_sync_push_accel) calls 0x5f5c8; 240 bytes"
   - name: tracker_struct_2001fce0_unknown_48_get
     address: 0x5f6ec
     class: accessor
@@ -5136,14 +5124,10 @@ functions:
     address: 0x5f76c
     class: helper
     evidence: "only 0x2f860 (auto_burst_flag_20024f3d_check_1) calls 0x5f76c; 22 bytes"
-  - name: alti_struct_2001fcbc_check_3
+  - name: alti_struct_2001fcbc_check_2
     address: 0x5f7a4
     class: provenance
     evidence: "0x5f7a4 reaches alti_struct_2001fcbc through its own literal pool and no other named global; the body checks through it"
-  - address: 0x5f7cc
-    class: bymodule
-    evidence: "0x5f7cc every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
   - name: tracker_struct_2001fce0_update
     address: 0x5f970
     class: provenance
@@ -5392,6 +5376,10 @@ functions:
     class: shell
     evidence: "shell_cmd_table row 0x2716c: command 'calib_test', run slot (+4)"
     module: SHELL
+  - address: 0x616e4
+    class: bymodule
+    evidence: "0x616e4 reaches only algo_manager_ctx"
+    module: ALGO_MANAGER
   - name: spo2_struct_2001ff30_unknown_12_get_1
     address: 0x616f0
     class: provenance
@@ -5456,6 +5444,10 @@ functions:
     address: 0x61c90
     class: provenance
     evidence: "0x61c90 reaches spo2_struct_2001ff30 through its own literal pool and no other named global; the body checks through it"
+  - name: algo_manager_ctx_set_1
+    address: 0x61cb4
+    class: provenance
+    evidence: "0x61cb4 reaches algo_manager_ctx through its own literal pool and no other named global; the body sets through it"
   - name: spo2_post_update
     address: 0x61cc0
     class: logline
@@ -5591,6 +5583,10 @@ functions:
     class: provenance
     evidence: "0x638a4 reaches ppg_dbt_mutex through its own literal pool and no other named global; the body gets through it"
     module: PPG_DBT
+  - address: 0x638b8
+    class: bymodule
+    evidence: "0x638b8 reaches only algo_manager_ctx"
+    module: ALGO_MANAGER
   - name: on_event_dbt_meas__2
     address: 0x638c4
     class: helper
@@ -5677,7 +5673,7 @@ functions:
     class: helper
     evidence: "only 0x642d4 (tsm_tried_to_release_mode_while) calls 0x64290; 16 bytes"
     module: TSM
-  - name: main_task__8
+  - name: main_task__9
     address: 0x642bc
     class: helper
     evidence: "only 0x2e1d8 (main_task) calls 0x642bc; 16 bytes"
@@ -6161,7 +6157,7 @@ functions:
     class: logline
     evidence: "the only line 0x6b488 logs, wlog('[CUSTO_SCREEN] Image too big for type %d - Do not store (sx=%d/%d sy=%d/%d)') at 0x6b4a6"
     module: CUSTO_SCREEN
-  - name: main_task__9
+  - name: main_task__10
     address: 0x6b4bc
     class: helper
     evidence: "only 0x2e1d8 (main_task) calls 0x6b4bc; 24 bytes"
@@ -6758,10 +6754,10 @@ functions:
     class: helper
     evidence: "only 0x9eafc (ecg_nn_classify__1) calls 0x7410c; 68 bytes"
     module: ECG
-  - name: main_task__15__1
+  - name: algo_manager_init__1
     address: 0x74a54
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0x74a54; 96 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0x74a54; 96 bytes"
     module: INIT
   - name: ppg_apnea_algo_step__2
     address: 0x74cd8
@@ -6783,26 +6779,41 @@ functions:
     class: helper
     evidence: "only 0x74ab8 (ppg_apnea_algo_step) calls 0x752b0; 232 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager_init__1__1
+    address: 0x753a0
+    class: helper
+    evidence: "only 0x74a54 (algo_manager_init__1) calls 0x753a0; 86 bytes"
+    module: INIT
   - name: ppg_apnea_algo_step__6
     address: 0x75428
     class: helper
     evidence: "only 0x74ab8 (ppg_apnea_algo_step) calls 0x75428; 664 bytes"
     module: SENSORS_SYNC
-  - name: main_task__15__2
+  - name: algo_manager_init__2
     address: 0x756c8
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0x756c8; 52 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0x756c8; 52 bytes"
     module: INIT
   - name: ppg_br_algo_step__2__1
     address: 0x75704
     class: helper
     evidence: "only 0xa00b6 (ppg_br_algo_step__2) calls 0x75704; 234 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager_init__2__1
+    address: 0x75838
+    class: helper
+    evidence: "only 0x756c8 (algo_manager_init__2) calls 0x75838; 70 bytes"
+    module: INIT
   - name: ppg_br_algo_step__1__1
     address: 0x75890
     class: helper
     evidence: "only 0x75a38 (ppg_br_algo_step__1) calls 0x75890; 210 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager_init__2__2
+    address: 0x759c4
+    class: helper
+    evidence: "only 0x756c8 (algo_manager_init__2) calls 0x759c4; 92 bytes"
+    module: INIT
   - name: ppg_br_algo_step__1
     address: 0x75a38
     class: helper
@@ -6813,6 +6824,11 @@ functions:
     class: helper
     evidence: "only 0xa0154 (ppg_br_algo_step__3) calls 0x75b28; 204 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager_init__2__3
+    address: 0x75c34
+    class: helper
+    evidence: "only 0x756c8 (algo_manager_init__2) calls 0x75c34; 64 bytes"
+    module: INIT
   - name: WPP_CMD_STORED_MEASURE_SIGNAL_GET__3__1
     address: 0x765c4
     class: helper
@@ -6842,15 +6858,15 @@ functions:
     class: helper
     evidence: "only 0xa053e (ppg_heart_beats_algo_step) calls 0x76f7c; 372 bytes"
     module: SENSORS_SYNC
-  - name: hr_measure_on_algo_result__2__1
+  - name: rr_algo_object_update__1
     address: 0x7715c
     class: helper
-    evidence: "only 0xa0b18 (hr_measure_on_algo_result__2) calls 0x7715c; 34 bytes"
+    evidence: "only 0xa0b18 (rr_algo_object_update) calls 0x7715c; 34 bytes"
     module: HR_MEASURE
-  - name: hr_measure_on_algo_result__2__2
+  - name: rr_algo_object_update__2
     address: 0x77184
     class: helper
-    evidence: "only 0xa0b18 (hr_measure_on_algo_result__2) calls 0x77184; 44 bytes"
+    evidence: "only 0xa0b18 (rr_algo_object_update) calls 0x77184; 44 bytes"
     module: HR_MEASURE
   - name: ppg_rr_algo_step__1
     address: 0x771b4
@@ -6862,6 +6878,11 @@ functions:
     class: helper
     evidence: "only 0xa0cf4 (ppg_rr_algo_step__2) calls 0x77440; 132 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager_init__8__1
+    address: 0x774c8
+    class: helper
+    evidence: "only 0xa0afa (algo_manager_init__8) calls 0x774c8; 252 bytes"
+    module: INIT
   - name: ecg_bad_diag_algo_version__1
     address: 0x77af0
     class: helper
@@ -6872,11 +6893,36 @@ functions:
     class: helper
     evidence: "only 0x4bc40 (main_task__6) calls 0x78ec0; 82 bytes"
     module: INIT
+  - name: algo_manager_ctx_check__1__1
+    address: 0x79690
+    class: helper
+    evidence: "only 0x79764 (algo_manager_ctx_check__1) calls 0x79690; 146 bytes"
+  - name: algo_manager_ctx_check__1__2
+    address: 0x79728
+    class: helper
+    evidence: "only 0x79764 (algo_manager_ctx_check__1) calls 0x79728; 50 bytes"
+  - name: algo_manager_ctx_check__1
+    address: 0x79764
+    class: helper
+    evidence: "only 0xa44ae (algo_manager_ctx_check) calls 0x79764; 522 bytes"
+  - name: algo_manager_init__9__1
+    address: 0x79a68
+    class: helper
+    evidence: "only 0xa13ce (algo_manager_init__9) calls 0x79a68; 330 bytes"
+    module: INIT
   - name: sleep_wake_algo_step__1
     address: 0x79b1c
     class: helper
     evidence: "only 0x79560 (sleep_wake_algo_step) calls 0x79b1c; 290 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager_ctx_check__1__3
+    address: 0x79ca4
+    class: helper
+    evidence: "only 0x79764 (algo_manager_ctx_check__1) calls 0x79ca4; 374 bytes"
+  - name: algo_manager_ctx_check__1__4
+    address: 0x79e80
+    class: helper
+    evidence: "only 0x79764 (algo_manager_ctx_check__1) calls 0x79e80; 634 bytes"
   - name: hr_algo_process_sample__1
     address: 0x7b320
     class: helper
@@ -6926,6 +6972,11 @@ functions:
     class: helper
     evidence: "only 0xa350e (spo2_mono_algo_step__4) calls 0x7c0d0; 376 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager_init__11__1
+    address: 0x7c260
+    class: helper
+    evidence: "only 0xa33dc (algo_manager_init__11) calls 0x7c260; 102 bytes"
+    module: INIT
   - name: spo2_mono_algo_step__2
     address: 0x7c300
     class: helper
@@ -6935,6 +6986,11 @@ functions:
     address: 0x7c6dc
     class: helper
     evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x7c6dc; 56 bytes"
+  - name: algo_manager_init__12__1
+    address: 0x7c9e0
+    class: helper
+    evidence: "only 0xa3664 (algo_manager_init__12) calls 0x7c9e0; 138 bytes"
+    module: INIT
   - name: spo2_multi_algo_step__6__1
     address: 0x7cb04
     class: helper
@@ -8145,14 +8201,10 @@ functions:
     class: helper
     evidence: "only 0x948a6 (bt_e_bt_disconnect_evt_0x__2) calls 0x92170; 58 bytes"
     module: BT
-  - name: alti_struct_2001fcbc_check_2__5
+  - name: sensors_sync_push_accel__1__5
     address: 0x921da
     class: helper
-    evidence: "only 0x5f5c8 (alti_struct_2001fcbc_check_2) calls 0x921da; 4 bytes"
-  - name: feature_tags_struct_2001a26c_copy__1
-    address: 0x9225e
-    class: helper
-    evidence: "only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x9225e; 20 bytes"
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__1) calls 0x921da; 4 bytes"
   - name: dbg_mask_change_ie_debug_mask__1
     address: 0x92272
     class: helper
@@ -8288,14 +8340,6 @@ functions:
     address: 0x92bda
     class: helper
     evidence: "only 0x9c028 (adxl367_mutex_update_1__9) calls 0x92bda; 108 bytes"
-  - address: 0x92c4c
-    class: bymodule
-    evidence: "0x92c4c every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
-  - address: 0x92cd0
-    class: bymodule
-    evidence: "0x92cd0 every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
   - name: wpp_err_goal_unpack__1
     address: 0x92cd6
     class: helper
@@ -8305,14 +8349,6 @@ functions:
     address: 0x92cda
     class: helper
     evidence: "only 0x829bc (on_event_alarm_ringing) calls 0x92cda; 16 bytes"
-  - address: 0x92cea
-    class: bymodule
-    evidence: "0x92cea every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
-  - address: 0x92cf0
-    class: bymodule
-    evidence: "0x92cf0 every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
   - name: WPP_CMD_SWAP_VASISTAS_GET
     address: 0x92eb2
     class: wppcmd
@@ -8381,15 +8417,11 @@ functions:
     class: bymodule
     evidence: "0x9314e every caller is a body this rule placed in BLUETOOTH: 0x395dc"
     module: BLUETOOTH
-  - name: feature_tags_struct_2001a26c_copy__2
-    address: 0x931ca
-    class: helper
-    evidence: "only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x931ca; 126 bytes"
   - name: shell_cmd_probe__3
     address: 0x93248
     class: helper
     evidence: "only 0x5a3c4 (shell_cmd_probe) calls 0x93248; 4 bytes"
-  - name: main_task__10
+  - name: main_task__11
     address: 0x932a2
     class: helper
     evidence: "only 0x2e1d8 (main_task) calls 0x932a2; 48 bytes"
@@ -8881,11 +8913,7 @@ functions:
     class: helper
     evidence: "only 0x3b660 (shell_cmd_account_secret) calls 0x93d10; 58 bytes"
     module: M
-  - name: alti_struct_2001fcbc_check_2__2__1
-    address: 0x93da8
-    class: helper
-    evidence: "only 0x3ba0c (alti_struct_2001fcbc_check_2__2) calls 0x93da8; 114 bytes"
-  - name: main_task__11
+  - name: main_task__12
     address: 0x93e22
     class: helper
     evidence: "only 0x2e1d8 (main_task) calls 0x93e22; 10 bytes"
@@ -9128,10 +9156,6 @@ functions:
     class: shared
     evidence: "every caller of 0x94984 is in WUAPP: ble_wpp_c_wake_up_app_service_disc_cb, wuapp_struct_20024d72_update_2"
     module: WUAPP
-  - address: 0x949ba
-    class: bymodule
-    evidence: "0x949ba every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
   - name: bat_charging_decision__1
     address: 0x94a1a
     class: helper
@@ -9155,15 +9179,11 @@ functions:
     address: 0x952d4
     class: wrapper
     evidence: "0x952d4 is 9 instructions with one call, to memset, and returns"
-  - name: alti_struct_2001fcbc_check_2__6__1
-    address: 0x95328
-    class: helper
-    evidence: "only 0x9541c (alti_struct_2001fcbc_check_2__6) calls 0x95328; 244 bytes"
-  - name: alti_struct_2001fcbc_check_2__6
+  - name: sensors_sync_push_accel__1__6
     address: 0x9541c
     class: helper
-    evidence: "only 0x5f5c8 (alti_struct_2001fcbc_check_2) calls 0x9541c; 36 bytes"
-    proto: "uint32_t alti_struct_2001fcbc_check_2__6(void *);"
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__1) calls 0x9541c; 36 bytes"
+    proto: "uint32_t sensors_sync_push_accel__1__6(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: WPP_CMD_FRICTION_TEST__1
     address: 0x9544a
@@ -9332,6 +9352,10 @@ functions:
     module: DBT
     header: s140/headers/nrf_soc.h
     proto: "uint32_t sd_clock_hfclk_release(void);"
+  - address: 0x97b5a
+    class: bymodule
+    evidence: "0x97b5a every caller is a body this rule placed in DBT: 0x4b7d0"
+    module: DBT
   - name: factory_state_wrap
     address: 0x97b8a
     class: wrapper
@@ -9524,7 +9548,7 @@ functions:
     class: helper
     evidence: "only 0x51e0c (max86173_table_2001af9c_check_5) calls 0x9ab64; 38 bytes"
     module: MAX86173
-  - name: main_task__12
+  - name: main_task__13
     address: 0x9ab8a
     class: helper
     evidence: "only 0x2e1d8 (main_task) calls 0x9ab8a; 4 bytes"
@@ -9556,10 +9580,6 @@ functions:
     class: wppcmd
     command: 2347
     evidence: "wpp_cmd_table row 0x27790: key 2347, label 'WPP_CMD_MCU_TEMP_CAL_SET', CMD_MCU_TEMP_CAL_SET in wpp/src/commands.rs"
-  - address: 0x9ad18
-    class: bymodule
-    evidence: "0x9ad18 every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
   - name: button_task__1__1
     address: 0x9add6
     class: helper
@@ -9604,10 +9624,10 @@ functions:
     address: 0x9b3f0
     class: helper
     evidence: "only 0x5819c (error_no_oldest_rawdata_found) calls 0x9b3f0; 206 bytes"
-  - name: rambkp_block_check_2__2
+  - name: main_task__8__2
     address: 0x9b4d4
     class: helper
-    evidence: "only 0x57ba8 (rambkp_block_check_2) calls 0x9b4d4; 76 bytes"
+    evidence: "only 0x57ba8 (main_task__8) calls 0x9b4d4; 76 bytes"
     module: INIT
   - name: raw_data_flash_usage_get__1
     address: 0x9b5da
@@ -9636,12 +9656,12 @@ functions:
     address: 0x9b7ae
     class: helper
     evidence: "only 0x587ec (shell_cmd_raw_data) calls 0x9b7ae; 2 bytes"
-  - name: main_task__13
+  - name: main_task__14
     address: 0x9b82e
     class: helper
     evidence: "only 0x2e1d8 (main_task) calls 0x9b82e; 200 bytes"
     module: INIT
-  - name: sensors_sync_push_accel__1
+  - name: sensors_sync_push_accel__2
     address: 0x9b8fa
     class: helper
     evidence: "only 0x3bd10 (sensors_sync_push_accel) calls 0x9b8fa; 18 bytes"
@@ -9788,10 +9808,6 @@ functions:
     address: 0x9c0e6
     class: wrapper
     evidence: "0x9c0e6 is 10 instructions with one call, to dblib_get_first, and returns"
-  - address: 0x9c10c
-    class: bymodule
-    evidence: "0x9c10c every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
   - name: wui_vtable_elevation_slot_8__2
     address: 0x9c112
     class: helper
@@ -9831,12 +9847,12 @@ functions:
     class: helper
     evidence: "only 0x631c0 (algo_manager_publish_results__1) calls 0x9c1f4; 8 bytes"
     module: PPG_AFIB
-  - name: hr_measure__shared_1__1__1
+  - name: algo_manager_ctx_set_2
     address: 0x9c220
-    class: helper
-    evidence: "only 0x6208c (hr_measure__shared_1__1) calls 0x9c220; 4 bytes"
+    class: provenance
+    evidence: "every call into 0x9c220 passes &algo_manager_ctx in r0: 0x620c0 from 0x6208c, 0x62136 from 0x6208c, 0x6215e from 0x6208c; the body sets through it"
     module: HR_MEASURE
-    proto: "uint32_t hr_measure__shared_1__1__1(void *);"
+    proto: "uint32_t algo_manager_ctx_set_2(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: FW_AVAILABLE__1__3
     address: 0x9c324
@@ -10046,6 +10062,21 @@ functions:
     class: bymodule
     evidence: "0x9fe74 every caller is a body this rule placed in SPORT: 0x5c714"
     module: SPORT
+  - name: algo_manager_init__1__2
+    address: 0x9ff1e
+    class: helper
+    evidence: "only 0x74a54 (algo_manager_init__1) calls 0x9ff1e; 46 bytes"
+    module: INIT
+  - name: algo_manager_init__1__3
+    address: 0x9ff4c
+    class: helper
+    evidence: "only 0x74a54 (algo_manager_init__1) calls 0x9ff4c; 12 bytes"
+    module: INIT
+  - name: algo_manager_init__1__4
+    address: 0x9ff78
+    class: helper
+    evidence: "only 0x74a54 (algo_manager_init__1) calls 0x9ff78; 10 bytes"
+    module: INIT
   - name: memset_wrap_4
     address: 0x9ff82
     class: wrapper
@@ -10055,6 +10086,11 @@ functions:
     class: helper
     evidence: "only 0x752b0 (ppg_apnea_algo_step__5) calls 0x9ff92; 68 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager_init__1__5
+    address: 0x9ffd6
+    class: helper
+    evidence: "only 0x74a54 (algo_manager_init__1) calls 0x9ffd6; 10 bytes"
+    module: INIT
   - name: ppg_br_algo_step__2
     address: 0xa00b6
     class: helper
@@ -10069,15 +10105,15 @@ functions:
     class: bymodule
     evidence: "0xa020e calls only window_pair_push"
     module: SENSORS_SYNC
-  - name: main_task__15__3
+  - name: algo_manager_init__3
     address: 0xa0374
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0xa0374; 10 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0xa0374; 10 bytes"
     module: INIT
-  - name: main_task__15__4
+  - name: algo_manager_init__4
     address: 0xa03c0
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0xa03c0; 26 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0xa03c0; 26 bytes"
     module: INIT
   - name: algo_manager_publish_results__1__2
     address: 0xa03da
@@ -10104,84 +10140,175 @@ functions:
     class: helper
     evidence: "only 0x76a40 (ppg_arrhythmia_algo_step__2) calls 0xa0412; 34 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager_init__4__1
+    address: 0xa047c
+    class: helper
+    evidence: "only 0xa03c0 (algo_manager_init__4) calls 0xa047c; 10 bytes"
+    module: INIT
+  - name: algo_manager_init__4__2
+    address: 0xa0486
+    class: helper
+    evidence: "only 0xa03c0 (algo_manager_init__4) calls 0xa0486; 10 bytes"
+    module: INIT
   - name: ppg_arrhythmia_algo_step__3
     address: 0xa0490
     class: helper
     evidence: "only 0x76460 (ppg_arrhythmia_algo_step) calls 0xa0490; 50 bytes"
     module: SENSORS_SYNC
-  - name: main_task__15__5
+  - name: algo_manager_init__5
     address: 0xa051c
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0xa051c; 34 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0xa051c; 34 bytes"
     module: INIT
-  - name: main_task__15__6
+  - name: algo_manager_init__5__1
+    address: 0xa05a0
+    class: helper
+    evidence: "only 0xa051c (algo_manager_init__5) calls 0xa05a0; 10 bytes"
+    module: INIT
+  - name: algo_manager_init__5__2
+    address: 0xa06de
+    class: helper
+    evidence: "only 0xa051c (algo_manager_init__5) calls 0xa06de; 10 bytes"
+    module: INIT
+  - name: algo_manager_init__6
     address: 0xa07ce
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0xa07ce; 38 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0xa07ce; 38 bytes"
     module: INIT
+  - name: algo_manager_ctx_check__2
+    address: 0xa07f4
+    class: helper
+    evidence: "only 0xa44ae (algo_manager_ctx_check) calls 0xa07f4; 66 bytes"
+  - name: algo_manager_ctx_check__3
+    address: 0xa0836
+    class: helper
+    evidence: "only 0xa44ae (algo_manager_ctx_check) calls 0xa0836; 6 bytes"
   - name: memset_wrap_5
     address: 0xa0842
     class: wrapper
     evidence: "0xa0842 is 9 instructions with one call, to memset, and returns"
-  - name: main_task__14
+  - name: init__shared_1
+    address: 0xa08f0
+    class: shared
+    evidence: "every caller of 0xa08f0 is in INIT: algo_manager_init, main_task"
+    module: INIT
+    proto: "uint32_t init__shared_1(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: init__shared_2
+    address: 0xa0a1e
+    class: shared
+    evidence: "every caller of 0xa0a1e is in INIT: algo_manager_init, main_task"
+    module: INIT
+    proto: "uint32_t init__shared_2(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: algo_manager_ctx_check__4
+    address: 0xa0a22
+    class: helper
+    evidence: "only 0xa44ae (algo_manager_ctx_check) calls 0xa0a22; 4 bytes"
+  - name: main_task__15
     address: 0xa0a26
     class: helper
     evidence: "only 0x2e1d8 (main_task) calls 0xa0a26; 16 bytes"
     module: INIT
-  - address: 0xa0a36
-    class: bymodule
-    evidence: "0xa0a36 every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
-  - name: main_task__15__7
+  - name: algo_manager_init__7
     address: 0xa0ab6
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0xa0ab6; 20 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0xa0ab6; 20 bytes"
     module: INIT
   - name: algo_dispatch_sample__3
     address: 0xa0aca
     class: helper
     evidence: "only 0x7d4f0 (algo_dispatch_sample) calls 0xa0aca; 6 bytes"
     module: SENSORS_SYNC
-  - name: main_task__15__8
+  - name: algo_manager_init__8
     address: 0xa0afa
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0xa0afa; 68 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0xa0afa; 68 bytes"
     module: INIT
-  - name: hr_measure_on_algo_result__2
+  - name: rr_algo_object_update
     address: 0xa0b18
-    class: helper
-    evidence: "only 0x62604 (hr_measure_on_algo_result) calls 0xa0b18; 218 bytes"
+    class: provenance
+    evidence: "every call into 0xa0b18 passes &rr_algo_object in r0: 0x628ac from 0x62604, 0x62b4a from 0x62604; the body updates through it"
     module: HR_MEASURE
+  - name: algo_manager_init__8__2
+    address: 0xa0c2c
+    class: helper
+    evidence: "only 0xa0afa (algo_manager_init__8) calls 0xa0c2c; 20 bytes"
+    module: INIT
+  - name: algo_manager_init__8__3
+    address: 0xa0c86
+    class: helper
+    evidence: "only 0xa0afa (algo_manager_init__8) calls 0xa0c86; 110 bytes"
+    module: INIT
   - name: ppg_rr_algo_step__2
     address: 0xa0cf4
     class: helper
     evidence: "only 0x7710c (ppg_rr_algo_step) calls 0xa0cf4; 138 bytes"
     module: SENSORS_SYNC
-  - name: ecg_session_pad_259c_get
+  - name: ecg_filter_ctx_get
     address: 0xa0d92
     class: provenance
-    evidence: "every call into 0xa0d92 passes &ecg_session+0x259c in r0: 0x4a140 from 0x4a068; the body gets through it"
+    evidence: "every call into 0xa0d92 passes &ecg_filter_ctx in r0: 0x4a140 from 0x4a068; the body gets through it"
     module: ECG
-    proto: "uint32_t ecg_session_pad_259c_get(void *);"
+    proto: "uint32_t ecg_filter_ctx_get(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
-  - name: main_task__15__9
+  - name: algo_manager_init__9
     address: 0xa13ce
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0xa13ce; 70 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0xa13ce; 70 bytes"
     module: INIT
+  - name: algo_manager_ctx_check__1__5
+    address: 0xa1426
+    class: helper
+    evidence: "only 0x79764 (algo_manager_ctx_check__1) calls 0xa1426; 10 bytes"
   - name: memset_wrap_6
     address: 0xa144e
     class: wrapper
     evidence: "0xa144e is 9 instructions with one call, to memset, and returns"
     module: INIT
+  - name: algo_manager_init__9__2
+    address: 0xa1500
+    class: helper
+    evidence: "only 0xa13ce (algo_manager_init__9) calls 0xa1500; 106 bytes"
+    module: INIT
+  - name: algo_manager_ctx_check__1__6
+    address: 0xa15a4
+    class: helper
+    evidence: "only 0x79764 (algo_manager_ctx_check__1) calls 0xa15a4; 16 bytes"
+  - name: algo_manager_ctx_check__1__7
+    address: 0xa15b4
+    class: helper
+    evidence: "only 0x79764 (algo_manager_ctx_check__1) calls 0xa15b4; 122 bytes"
+  - name: algo_manager_ctx_check__1__8
+    address: 0xa162e
+    class: helper
+    evidence: "only 0x79764 (algo_manager_ctx_check__1) calls 0xa162e; 246 bytes"
   - name: memset_wrap_7
     address: 0xa1724
     class: wrapper
     evidence: "0xa1724 is 8 instructions with one call, to memset, and returns"
-  - name: main_task__15__10
+  - name: algo_manager_init__9__3
+    address: 0xa174a
+    class: helper
+    evidence: "only 0xa13ce (algo_manager_init__9) calls 0xa174a; 4 bytes"
+    module: INIT
+  - name: algo_manager_ctx_check__1__9
+    address: 0xa1798
+    class: helper
+    evidence: "only 0x79764 (algo_manager_ctx_check__1) calls 0xa1798; 6 bytes"
+  - name: algo_manager_init__9__4
+    address: 0xa179e
+    class: helper
+    evidence: "only 0xa13ce (algo_manager_init__9) calls 0xa179e; 8 bytes"
+    module: INIT
+  - name: algo_manager_ctx_check__1__10
+    address: 0xa17a6
+    class: helper
+    evidence: "only 0x79764 (algo_manager_ctx_check__1) calls 0xa17a6; 8 bytes"
+  - name: algo_manager_init__10
     address: 0xa2220
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0xa2220; 220 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0xa2220; 220 bytes"
     module: INIT
   - name: algo_manager_publish_results__4__1
     address: 0xa24c4
@@ -10191,24 +10318,51 @@ functions:
     address: 0xa24fa
     class: helper
     evidence: "only 0x63ddc (algo_manager_publish_results) calls 0xa24fa; 78 bytes"
-  - address: 0xa2d96
-    class: bymodule
-    evidence: "0xa2d96 calls only spectrotrack_init"
+  - name: algo_manager_init__10__1
+    address: 0xa25ea
+    class: helper
+    evidence: "only 0xa2220 (algo_manager_init__10) calls 0xa25ea; 114 bytes"
+    module: INIT
+  - name: algo_manager_init__10__2
+    address: 0xa27b8
+    class: helper
+    evidence: "only 0xa2220 (algo_manager_init__10) calls 0xa27b8; 144 bytes"
+    module: INIT
+  - name: algo_manager_init__10__3
+    address: 0xa2a82
+    class: helper
+    evidence: "only 0xa2220 (algo_manager_init__10) calls 0xa2a82; 102 bytes"
+    module: INIT
+  - name: algo_manager_init__10__4
+    address: 0xa2d96
+    class: helper
+    evidence: "only 0xa2220 (algo_manager_init__10) calls 0xa2d96; 70 bytes"
+    module: INIT
+  - name: algo_manager_init__10__5
+    address: 0xa2e24
+    class: helper
+    evidence: "only 0xa2220 (algo_manager_init__10) calls 0xa2e24; 16 bytes"
     module: INIT
   - name: hr_algo_process_sample__1__1
     address: 0xa2e38
     class: helper
     evidence: "only 0x7b320 (hr_algo_process_sample__1) calls 0xa2e38; 426 bytes"
     module: SENSORS_SYNC
-  - address: 0xa3004
-    class: bymodule
-    evidence: "0xa3004 calls only spectrotrack_init"
+  - name: algo_manager_init__10__6
+    address: 0xa3004
+    class: helper
+    evidence: "only 0xa2220 (algo_manager_init__10) calls 0xa3004; 74 bytes"
     module: INIT
   - name: hr_algo_process_sample__2
     address: 0xa304e
     class: helper
     evidence: "only 0xa22fc (hr_algo_process_sample) calls 0xa304e; 82 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager_init__10__7
+    address: 0xa30a0
+    class: helper
+    evidence: "only 0xa2220 (algo_manager_init__10) calls 0xa30a0; 10 bytes"
+    module: INIT
   - name: algo_dispatch_sample__4
     address: 0xa3252
     class: helper
@@ -10219,20 +10373,25 @@ functions:
     class: helper
     evidence: "only 0x2a038 (spo2_mono_algo_step) calls 0xa3398; 68 bytes"
     module: SENSORS_SYNC
-  - name: main_task__15__11
+  - name: algo_manager_init__11
     address: 0xa33dc
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0xa33dc; 120 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0xa33dc; 120 bytes"
+    module: INIT
+  - name: algo_manager_init__11__2
+    address: 0xa34aa
+    class: helper
+    evidence: "only 0xa33dc (algo_manager_init__11) calls 0xa34aa; 100 bytes"
     module: INIT
   - name: spo2_mono_algo_step__4
     address: 0xa350e
     class: helper
     evidence: "only 0x2a038 (spo2_mono_algo_step) calls 0xa350e; 284 bytes"
     module: SENSORS_SYNC
-  - name: main_task__15__12
+  - name: algo_manager_init__12
     address: 0xa3664
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0xa3664; 94 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0xa3664; 94 bytes"
     module: INIT
   - name: algo_manager_publish_results__5
     address: 0xa36c2
@@ -10262,30 +10421,45 @@ functions:
     class: helper
     evidence: "only 0xa3732 (spo2_multi_algo_step__6) calls 0xa39d4; 20 bytes"
     module: SENSORS_SYNC
-  - name: main_task__15
-    address: 0xa425e
+  - name: algo_manager_init__12__2
+    address: 0xa39e8
     class: helper
-    evidence: "only 0x2e1d8 (main_task) calls 0xa425e; 204 bytes"
+    evidence: "only 0xa3664 (algo_manager_init__12) calls 0xa39e8; 10 bytes"
     module: INIT
-  - name: alti_struct_2001fcbc_check_2__7
-    address: 0xa446c
+  - name: algo_manager_init__12__3
+    address: 0xa39f2
     class: helper
-    evidence: "only 0x5f5c8 (alti_struct_2001fcbc_check_2) calls 0xa446c; 40 bytes"
-  - address: 0xa44ae
-    class: bymodule
-    evidence: "0xa44ae every caller is a body this rule placed in BOOT: 0x3119c"
-    module: BOOT
-  - name: main_task__15__13
+    evidence: "only 0xa3664 (algo_manager_init__12) calls 0xa39f2; 72 bytes"
+    module: INIT
+  - name: algo_manager_init__12__4
+    address: 0xa3a6c
+    class: helper
+    evidence: "only 0xa3664 (algo_manager_init__12) calls 0xa3a6c; 52 bytes"
+    module: INIT
+  - name: algo_manager_init__12__5
+    address: 0xa3aba
+    class: helper
+    evidence: "only 0xa3664 (algo_manager_init__12) calls 0xa3aba; 10 bytes"
+    module: INIT
+  - name: algo_manager_ctx__on
+    address: 0xa446c
+    class: provenance
+    evidence: "every call into 0xa446c passes &algo_manager_ctx in r0: 0x5f646 from 0x5f5c8; the body does not dereference it, so the verb is not established"
+  - name: algo_manager_ctx_check
+    address: 0xa44ae
+    class: provenance
+    evidence: "every call into 0xa44ae passes &algo_manager_ctx in r0: 0x31220 from 0x3119c; the body checks through it"
+  - name: algo_manager_init__13
     address: 0xa4580
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0xa4580; 36 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0xa4580; 36 bytes"
     module: INIT
-  - name: hr_measure_on_algo_result__3
+  - name: hrv_algo_object_get
     address: 0xa4782
-    class: helper
-    evidence: "only 0x62604 (hr_measure_on_algo_result) calls 0xa4782; 112 bytes"
+    class: provenance
+    evidence: "every call into 0xa4782 passes &hrv_algo_object in r0: 0x628a4 from 0x62604, 0x62b3c from 0x62604; the body gets through it"
     module: HR_MEASURE
-    proto: "uint32_t hr_measure_on_algo_result__3(void *);"
+    proto: "uint32_t hrv_algo_object_get(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: algo_dispatch_sample__5
     address: 0xa47f2
@@ -10307,11 +10481,21 @@ functions:
     class: helper
     evidence: "only 0x7d4f0 (algo_dispatch_sample) calls 0xa480a; 4 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager_init__13__1
+    address: 0xa4840
+    class: helper
+    evidence: "only 0xa4580 (algo_manager_init__13) calls 0xa4840; 48 bytes"
+    module: INIT
   - name: ppg_hrv_algo_step__3
     address: 0xa4870
     class: helper
     evidence: "only 0xa45a4 (ppg_hrv_algo_step) calls 0xa4870; 6 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager_init__13__2
+    address: 0xa4888
+    class: helper
+    evidence: "only 0xa4580 (algo_manager_init__13) calls 0xa4888; 28 bytes"
+    module: INIT
   - name: ppg_hrv_algo_step__4__2
     address: 0xa48c6
     class: helper
@@ -10322,10 +10506,10 @@ functions:
     class: helper
     evidence: "only 0xa45a4 (ppg_hrv_algo_step) calls 0xa48e6; 146 bytes"
     module: SENSORS_SYNC
-  - name: main_task__15__14
+  - name: algo_manager_init__14
     address: 0xa49c2
     class: helper
-    evidence: "only 0xa425e (main_task__15) calls 0xa49c2; 22 bytes"
+    evidence: "only 0xa425e (algo_manager_init) calls 0xa49c2; 22 bytes"
     module: INIT
   - name: algo_dispatch_sample__9
     address: 0xa49d8
@@ -10358,21 +10542,58 @@ functions:
     class: helper
     evidence: "only 0x63a20 (ppg_dbt_failed_turn_off_ppg_sensor) calls 0xa4a0c; 6 bytes"
     module: PPG_DBT
-  - name: wui_flag_200271cd_set__1
+  - name: dbt_algo_ctx_update
+    address: 0xa4a54
+    class: provenance
+    evidence: "every call into 0xa4a54 passes &dbt_algo_ctx in r0: 0x4b978 from 0x4b7d0; the body updates through it"
+    module: DBT
+  - address: 0xa4a5c
+    class: bymodule
+    evidence: "0xa4a5c every caller is a body this rule placed in DBT: 0x4b48c"
+    module: DBT
+  - name: dbt_algo_ctx_get_1
+    address: 0xa4a8a
+    class: provenance
+    evidence: "every call into 0xa4a8a passes &dbt_algo_ctx in r0: 0x4b7b4 from 0x4b7ac, 0x4b998 from 0x4b7d0; the body gets through it"
+  - name: dbt_algo_ctx_get_2
+    address: 0xa4a90
+    class: provenance
+    evidence: "every call into 0xa4a90 passes &dbt_algo_ctx in r0: 0x4b7bc from 0x4b7ac, 0x4b9a2 from 0x4b7d0; the body gets through it"
+  - name: dbt_algo_ctx_get_3
+    address: 0xa4a96
+    class: provenance
+    evidence: "every call into 0xa4a96 passes &dbt_algo_ctx in r0: 0x4b9d0 from 0x4b7d0; the body gets through it"
+    module: DBT
+  - name: dbt_algo_ctx_get_4
     address: 0xa4a9c
-    class: helper
-    evidence: "only 0x4b7ac (wui_flag_200271cd_set) calls 0xa4a9c; 6 bytes"
-    proto: "uint32_t wui_flag_200271cd_set__1(void *);"
+    class: provenance
+    evidence: "every call into 0xa4a9c passes &dbt_algo_ctx in r0: 0x4b7c4 from 0x4b7ac; the body gets through it"
+    proto: "uint32_t dbt_algo_ctx_get_4(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: dbt_algo_ctx_get_5
+    address: 0xa4aa2
+    class: provenance
+    evidence: "every call into 0xa4aa2 passes &dbt_algo_ctx in r0: 0x4b9ac from 0x4b7d0; the body gets through it"
+    module: DBT
+  - name: dbt_algo_ctx_get_6
+    address: 0xa4aa8
+    class: provenance
+    evidence: "every call into 0xa4aa8 passes &dbt_algo_ctx in r0: 0x4b9b6 from 0x4b7d0; the body gets through it"
+    module: DBT
+  - name: dbt_algo_ctx_update__1
+    address: 0xa4b42
+    class: helper
+    evidence: "only 0xa4a54 (dbt_algo_ctx_update) calls 0xa4b42; 200 bytes"
+    module: DBT
   - name: acquistion_task__2
     address: 0xa4e8a
     class: helper
     evidence: "only 0x3b6f8 (acquistion_task) calls 0xa4e8a; 58 bytes"
     module: ACQ
-  - name: rambkp_block_check_1__4
+  - name: rambkp_block_check__4
     address: 0xa4efc
     class: helper
-    evidence: "only 0x2e982 (rambkp_block_check_1) calls 0xa4efc; 8 bytes"
+    evidence: "only 0x2e982 (rambkp_block_check) calls 0xa4efc; 8 bytes"
   - name: sd_rand_application_pool_capacity_get
     address: 0xa4f34
     class: svc
