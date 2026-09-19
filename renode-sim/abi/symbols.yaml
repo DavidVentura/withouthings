@@ -1096,11 +1096,11 @@ symbols:
   class: shell
   evidence: 'shell_cmd_table row 0x27454: command ''trig'', --help slot (+8)'
 - address: 0x31e50
-  name: max8617x_struct_200076e8_update_1
+  name: max86173_struct_200076e8_update_1
   kind: function
   class: provenance
   module: TRIG
-  evidence: 0x31e50 reaches max8617x_struct_200076e8 through its own literal pool
+  evidence: 0x31e50 reaches max86173_struct_200076e8 through its own literal pool
     and no other named global; the body updates through it
 - address: 0x31ea8
   name: sensors_sync_get_rate_hz
@@ -1112,36 +1112,36 @@ symbols:
     samples reach algo_dispatch_sample. 1279 calls in the trace, one per popped
     slot, immediately before each algo_dispatch_sample.
 - address: 0x31eb4
-  name: max8617x_struct_200076e8_update_2
+  name: max86173_struct_200076e8_update_2
   kind: function
   class: provenance
-  evidence: 0x31eb4 reaches max8617x_struct_200076e8 through its own literal pool
+  evidence: 0x31eb4 reaches max86173_struct_200076e8 through its own literal pool
     and no other named global; the body updates through it
 - address: 0x31ed0
-  name: max8617x_struct_200076e8_update_3
+  name: max86173_struct_200076e8_update_3
   kind: function
   class: provenance
-  evidence: 0x31ed0 reaches max8617x_struct_200076e8 through its own literal pool
+  evidence: 0x31ed0 reaches max86173_struct_200076e8 through its own literal pool
     and no other named global; the body updates through it
 - address: 0x31eec
-  name: max8617x_struct_200076e8_update_4
+  name: max86173_struct_200076e8_update_4
   kind: function
   class: provenance
   module: MAX86173
-  evidence: 0x31eec reaches max8617x_struct_200076e8 through its own literal pool
+  evidence: 0x31eec reaches max86173_struct_200076e8 through its own literal pool
     and no other named global; the body updates through it
 - address: 0x31f10
-  name: max8617x_struct_200076e8_update_5
+  name: max86173_struct_200076e8_update_5
   kind: function
   class: provenance
   module: MAX86173
-  evidence: 0x31f10 reaches max8617x_struct_200076e8 through its own literal pool
+  evidence: 0x31f10 reaches max86173_struct_200076e8 through its own literal pool
     and no other named global; the body updates through it
 - address: 0x31f34
-  name: max8617x_struct_200076e8_set
+  name: max86173_struct_200076e8_set
   kind: function
   class: provenance
-  evidence: 0x31f34 reaches max8617x_struct_200076e8 through its own literal pool
+  evidence: 0x31f34 reaches max86173_struct_200076e8 through its own literal pool
     and no other named global; the body sets through it
 - address: 0x31f44
   name: trig_start_clock_in_mode
@@ -1446,6 +1446,19 @@ symbols:
   kind: function
   class: logline
   evidence: the only line 0x33fe4 logs, wlog('chronometer_start') at 0x33fee
+- address: 0x3401c
+  name: wpp_ptr_20017c54_get
+  kind: function
+  class: provenance
+  module: WPP
+  evidence: 0x3401c reaches wpp_ptr_20017c54 through its own literal pool and no
+    other named global; the body gets through it
+- address: 0x34030
+  name: wpp_ptr_20017c54_check
+  kind: function
+  class: provenance
+  evidence: 0x34030 reaches wpp_ptr_20017c54 through its own literal pool and no
+    other named global; the body checks through it
 - address: 0x34068
   name: ble_task
   kind: function
@@ -1540,47 +1553,11 @@ symbols:
   kind: function
   class: vector
   evidence: word 2 of the vector table at 0x27000 holds 0x349d9
-- address: 0x349ec
-  name: rre_fonts_struct_20017c5c_check_1
-  kind: function
-  class: provenance
-  evidence: 0x349ec reaches rre_fonts_struct_20017c5c through its own literal pool
-    and no other named global; the body checks through it
 - address: 0x34a10
   name: rre_fonts_struct_200076f0_set
   kind: function
   class: provenance
   evidence: 0x34a10 reaches rre_fonts_struct_200076f0 through its own literal pool
-    and no other named global; the body sets through it
-- address: 0x34a24
-  name: rre_fonts_struct_20017c5c_set_1
-  kind: function
-  class: provenance
-  evidence: 0x34a24 reaches rre_fonts_struct_20017c5c through its own literal pool
-    and no other named global; the body sets through it
-- address: 0x34a50
-  name: rre_fonts_struct_20017c5c_set_2
-  kind: function
-  class: provenance
-  evidence: 0x34a50 reaches rre_fonts_struct_20017c5c through its own literal pool
-    and no other named global; the body sets through it
-- address: 0x34a5c
-  name: rre_fonts_struct_20017c5c_set_3
-  kind: function
-  class: provenance
-  evidence: 0x34a5c reaches rre_fonts_struct_20017c5c through its own literal pool
-    and no other named global; the body sets through it
-- address: 0x34a68
-  name: rre_fonts_struct_20017c5c_get
-  kind: function
-  class: provenance
-  evidence: 0x34a68 reaches rre_fonts_struct_20017c5c through its own literal pool
-    and no other named global; the body gets through it
-- address: 0x34a74
-  name: rre_fonts_struct_20017c5c_set_4
-  kind: function
-  class: provenance
-  evidence: 0x34a74 reaches rre_fonts_struct_20017c5c through its own literal pool
     and no other named global; the body sets through it
 - address: 0x34a80
   name: rre_font_glyph_width
@@ -1605,12 +1582,6 @@ symbols:
     the current window and handed to the blit callback as (x, y, w, h, colour).
     The switch on the font descriptor''s first byte has seven arms, which is what
     the "unsupported font type" line it took its derived name from guards.'
-- address: 0x367f4
-  name: rre_fonts_struct_20017c5c_check_2
-  kind: function
-  class: provenance
-  evidence: 0x367f4 reaches rre_fonts_struct_20017c5c through its own literal pool
-    and no other named global; the body checks through it
 - address: 0x36898
   name: rre_fonts_struct_200076f0_check
   kind: function
@@ -2525,11 +2496,11 @@ symbols:
   class: vector
   evidence: word 26 of the vector table at 0x27000 holds 0x3af81
 - address: 0x3b010
-  name: acquistion_task__1__1
+  name: acquistion_task__2__1
   kind: function
   class: helper
   module: ACQ
-  evidence: only 0xa4e8a (acquistion_task__1) calls 0x3b010; 38 bytes
+  evidence: only 0xa4e8a (acquistion_task__2) calls 0x3b010; 38 bytes
 - address: 0x3b3ec
   name: vector_18_handler
   kind: function
@@ -3132,24 +3103,24 @@ symbols:
     record to the context's +0x04 (control point), +0x0e (notification source) or
     +0x18 (data source), so the value handles land at +0x0c, +0x16 and +0x20.
 - address: 0x3e808
-  name: wpp_lite_struct_20025286_set
+  name: wpp_struct_20025286_set
   kind: function
   class: provenance
-  evidence: 0x3e808 reaches wpp_lite_struct_20025286 through its own literal pool
-    and no other named global; the body sets through it
+  evidence: 0x3e808 reaches wpp_struct_20025286 through its own literal pool and
+    no other named global; the body sets through it
 - address: 0x3e8c0
-  name: wpp_lite_struct_20025286_check_1
+  name: wpp_struct_20025286_check_1
   kind: function
   class: provenance
   module: WPP
-  evidence: 0x3e8c0 reaches wpp_lite_struct_20025286 through its own literal pool
-    and no other named global; the body checks through it
+  evidence: 0x3e8c0 reaches wpp_struct_20025286 through its own literal pool and
+    no other named global; the body checks through it
 - address: 0x3e924
-  name: wpp_lite_struct_20025286_check_2
+  name: wpp_struct_20025286_check_2
   kind: function
   class: provenance
-  evidence: 0x3e924 reaches wpp_lite_struct_20025286 through its own literal pool
-    and no other named global; the body checks through it
+  evidence: 0x3e924 reaches wpp_struct_20025286 through its own literal pool and
+    no other named global; the body checks through it
 - address: 0x3eb20
   name: ancs_app_bundle_id__1
   kind: function
@@ -3468,11 +3439,12 @@ symbols:
   class: helper
   evidence: only 0x34068 (ble_task) calls 0x40a14; 30 bytes
 - address: 0x40a40
-  name: ble__shared_1
+  name: wpp_struct_20006efc_update
   kind: function
-  class: shared
+  class: provenance
   module: BLE
-  evidence: 'every caller of 0x40a40 is in BLE: ble_release_adv_state, ble_request_adv_state_timeout'
+  evidence: 0x40a40 reaches wpp_struct_20006efc through its own literal pool and
+    no other named global; the body updates through it
 - address: 0x40a94
   name: ble_start_adv_mode_timeout
   kind: function
@@ -3480,6 +3452,12 @@ symbols:
   module: BLE
   evidence: the only line 0x40a94 logs, wlog('[BLE] Start ADV mode %s timeout %d')
     at 0x40b0c
+- address: 0x40b44
+  name: wpp_struct_20006efc_check
+  kind: function
+  class: provenance
+  evidence: 0x40b44 reaches wpp_struct_20006efc through its own literal pool and
+    no other named global; the body checks through it
 - address: 0x40b64
   name: ble_request_adv_state_timeout
   kind: function
@@ -3493,6 +3471,12 @@ symbols:
   class: logline
   module: BLE
   evidence: the only line 0x40ba0 logs, wlog('[BLE] RELEASE ADV state %s') at 0x40bb0
+- address: 0x40bd0
+  name: wpp_struct_20006efc_set
+  kind: function
+  class: provenance
+  evidence: 0x40bd0 reaches wpp_struct_20006efc through its own literal pool and
+    no other named global; the body sets through it
 - address: 0x40bec
   name: ble_current_adv_state
   kind: function
@@ -3602,17 +3586,18 @@ symbols:
   evidence: 0x41348 reaches pairing_struct_200076fa through its own literal pool
     and no other named global; the body checks through it
 - address: 0x4137c
-  name: ble_gap_evt_passkey_display_handler__1__1
+  name: pairing_struct_20007772_copy
   kind: function
-  class: helper
+  class: provenance
   module: BLE
-  evidence: only 0x94900 (ble_gap_evt_passkey_display_handler__1) calls 0x4137c;
-    22 bytes
+  evidence: 0x4137c reaches pairing_struct_20007772 through its own literal pool
+    and no other named global; the body copys through it
 - address: 0x41398
-  name: refresh_install_bt_key__1
+  name: pairing_struct_20007772_get
   kind: function
-  class: helper
-  evidence: only 0x89be0 (refresh_install_bt_key) calls 0x41398; 24 bytes
+  class: provenance
+  evidence: 0x41398 reaches pairing_struct_20007772 through its own literal pool
+    and no other named global; the body gets through it
 - address: 0x41684
   name: bluetooth_le_gattc_action_err
   kind: function
@@ -3698,12 +3683,12 @@ symbols:
   evidence: 0x419fc reaches service_changed_struct_20018e38 through its own literal
     pool and no other named global; the body updates through it
 - address: 0x41b8c
-  name: ble_wpp_c_struct_20018e54_check
+  name: wuapp_struct_20018e54_check
   kind: function
   class: provenance
   module: WUAPP
-  evidence: 0x41b8c reaches ble_wpp_c_struct_20018e54 through its own literal pool
-    and no other named global; the body checks through it
+  evidence: 0x41b8c reaches wuapp_struct_20018e54 through its own literal pool and
+    no other named global; the body checks through it
 - address: 0x41b9c
   name: wuapp_service_discover_attempts
   kind: function
@@ -3712,58 +3697,58 @@ symbols:
   evidence: the only line 0x41b9c logs, wlog('[BLE_WPP_C] Service Discover (attempts
     = %d)') at 0x41bbe
 - address: 0x41bdc
-  name: ble_wpp_c_struct_20018e54_set_1
+  name: wuapp_struct_20018e54_set_1
   kind: function
   class: provenance
-  evidence: 0x41bdc reaches ble_wpp_c_struct_20018e54 through its own literal pool
-    and no other named global; the body sets through it
+  evidence: 0x41bdc reaches wuapp_struct_20018e54 through its own literal pool and
+    no other named global; the body sets through it
 - address: 0x41c00
-  name: ble_wpp_c_struct_20018e54_update_1
+  name: wuapp_struct_20018e54_update_1
   kind: function
   class: provenance
-  evidence: 0x41c00 reaches ble_wpp_c_struct_20018e54 through its own literal pool
-    and no other named global; the body updates through it
+  evidence: 0x41c00 reaches wuapp_struct_20018e54 through its own literal pool and
+    no other named global; the body updates through it
 - address: 0x41c70
-  name: ble_wpp_c_struct_20018e54_get
+  name: wuapp_struct_20018e54_get
   kind: function
   class: provenance
   module: WUAPP
-  evidence: 0x41c70 reaches ble_wpp_c_struct_20018e54 through its own literal pool
-    and no other named global; the body gets through it
+  evidence: 0x41c70 reaches wuapp_struct_20018e54 through its own literal pool and
+    no other named global; the body gets through it
 - address: 0x41c80
-  name: ble_wpp_c_struct_20018e54_update_2
+  name: wuapp_struct_20018e54_update_2
   kind: function
   class: provenance
-  evidence: 0x41c80 reaches ble_wpp_c_struct_20018e54 through its own literal pool
-    and no other named global; the body updates through it
+  evidence: 0x41c80 reaches wuapp_struct_20018e54 through its own literal pool and
+    no other named global; the body updates through it
 - address: 0x41cb0
-  name: ble_wpp_c_struct_20018e54_update_3
+  name: wuapp_struct_20018e54_update_3
   kind: function
   class: provenance
   module: WUAPP
-  evidence: 0x41cb0 reaches ble_wpp_c_struct_20018e54 through its own literal pool
-    and no other named global; the body updates through it
+  evidence: 0x41cb0 reaches wuapp_struct_20018e54 through its own literal pool and
+    no other named global; the body updates through it
 - address: 0x41cd8
-  name: ble_wpp_c_struct_20018e54_set_2
+  name: wuapp_struct_20018e54_set_2
   kind: function
   class: provenance
   module: BT
-  evidence: 0x41cd8 reaches ble_wpp_c_struct_20018e54 through its own literal pool
-    and no other named global; the body sets through it
+  evidence: 0x41cd8 reaches wuapp_struct_20018e54 through its own literal pool and
+    no other named global; the body sets through it
 - address: 0x41ce8
-  name: ble_wpp_c_struct_20018e54_set_3
+  name: wuapp_struct_20018e54_set_3
   kind: function
   class: provenance
   module: BT
-  evidence: 0x41ce8 reaches ble_wpp_c_struct_20018e54 through its own literal pool
-    and no other named global; the body sets through it
+  evidence: 0x41ce8 reaches wuapp_struct_20018e54 through its own literal pool and
+    no other named global; the body sets through it
 - address: 0x41d00
-  name: ble_wpp_c_struct_20018e54_update_4
+  name: wuapp_struct_20018e54_update_4
   kind: function
   class: provenance
   module: WUAPP
-  evidence: 0x41d00 reaches ble_wpp_c_struct_20018e54 through its own literal pool
-    and no other named global; the body updates through it
+  evidence: 0x41d00 reaches wuapp_struct_20018e54 through its own literal pool and
+    no other named global; the body updates through it
 - address: 0x41d60
   name: ble_task__3
   kind: function
@@ -3869,20 +3854,20 @@ symbols:
   module: BODY_TEMP
   evidence: only 0x42b7c (body_temp_task) calls 0x42764; 46 bytes
 - address: 0x42798
-  name: body_temp_struct_20018e68_get_1
+  name: body_temp_struct_20018e68_unknown_76_get
   kind: function
   class: provenance
   evidence: 0x42798 reaches body_temp_struct_20018e68 through its own literal pool
     and no other named global; the body gets through it
 - address: 0x427bc
-  name: body_temp_struct_20018e68_get_2
+  name: body_temp_struct_20018e68_get_1
   kind: function
   class: provenance
   module: BODY_TEMP
   evidence: 0x427bc reaches body_temp_struct_20018e68 through its own literal pool
     and no other named global; the body gets through it
 - address: 0x42888
-  name: body_temp_struct_20018e68_check_1
+  name: body_temp_struct_20018e68_check
   kind: function
   class: provenance
   module: BODY_TEMP
@@ -3902,7 +3887,7 @@ symbols:
   module: BODY_TEMP
   evidence: the only line 0x42a0c logs, wlog('[BODY_TEMP][info] Stop') at 0x42a14
 - address: 0x42a64
-  name: body_temp_struct_20018e68_check_2
+  name: body_temp_struct_20018e68_unknown_39_check
   kind: function
   class: provenance
   module: BODY_TEMP
@@ -3941,13 +3926,13 @@ symbols:
   module: BODY_TEMP
   evidence: only 0x434dc (shell_cmd_body_temperature) calls 0x42d2c; 356 bytes
 - address: 0x42ed0
-  name: body_temp_struct_20018e68_get_3
+  name: body_temp_struct_20018e68_unknown_39_get
   kind: function
   class: provenance
   evidence: 0x42ed0 reaches body_temp_struct_20018e68 through its own literal pool
     and no other named global; the body gets through it
 - address: 0x42ee4
-  name: body_temp_struct_20018e68_get_4
+  name: body_temp_struct_20018e68_get_2
   kind: function
   class: provenance
   module: BODY_TEMP
@@ -3961,13 +3946,13 @@ symbols:
   evidence: 'every caller of 0x42f00 is in BODY_TEMP: body_temp_info_workout_activity_not_supported,
     body_temp_mutex_check'
 - address: 0x42f40
-  name: body_temp_struct_20018e68_set_4
+  name: body_temp_struct_20018e68_unknown_39_set_1
   kind: function
   class: provenance
   evidence: 0x42f40 reaches body_temp_struct_20018e68 through its own literal pool
     and no other named global; the body sets through it
 - address: 0x42f50
-  name: body_temp_struct_20018e68_set_5
+  name: body_temp_struct_20018e68_unknown_39_set_2
   kind: function
   class: provenance
   evidence: 0x42f50 reaches body_temp_struct_20018e68 through its own literal pool
@@ -4459,10 +4444,10 @@ symbols:
   evidence: 'the only line 0x473b8 logs, wlog(''[DBLIB] Element size mismatch id
     : %d'') at 0x473ee'
 - address: 0x47400
-  name: initdblib_half_20024d90_get__1
+  name: dblib_half_20024d90_get__1
   kind: function
   class: helper
-  evidence: only 0x47470 (initdblib_half_20024d90_get) calls 0x47400; 10 bytes
+  evidence: only 0x47470 (dblib_half_20024d90_get) calls 0x47400; 10 bytes
 - address: 0x47410
   name: debug_dump_struct_20020b78_update_2__1
   kind: function
@@ -4476,40 +4461,51 @@ symbols:
   module: DBLIB
   evidence: 0x47434 reaches only dblib_ptr_20019220, dblib_ptr_20019224
 - address: 0x4744c
-  name: initdblib_half_20024d90_update_1
+  name: dblib_half_20024d90_update_1
   kind: function
   class: provenance
-  evidence: 0x4744c reaches initdblib_half_20024d90 through its own literal pool
-    and no other named global; the body updates through it
+  evidence: 0x4744c reaches dblib_half_20024d90 through its own literal pool and
+    no other named global; the body updates through it
 - address: 0x47470
-  name: initdblib_half_20024d90_get
+  name: dblib_half_20024d90_get
   kind: function
   class: provenance
-  evidence: 0x47470 reaches initdblib_half_20024d90 through its own literal pool
-    and no other named global; the body gets through it
+  evidence: 0x47470 reaches dblib_half_20024d90 through its own literal pool and
+    no other named global; the body gets through it
 - address: 0x474b8
-  name: initdblib_half_20024d90_set_1
+  name: dblib_half_20024d90_set_1
   kind: function
   class: provenance
-  evidence: 0x474b8 reaches initdblib_half_20024d90 through its own literal pool
-    and no other named global; the body sets through it
+  evidence: 0x474b8 reaches dblib_half_20024d90 through its own literal pool and
+    no other named global; the body sets through it
 - address: 0x47668
-  name: initdblib_half_20024d90_set_2
+  name: dblib_half_20024d90_set_2
   kind: function
   class: provenance
-  evidence: 0x47668 reaches initdblib_half_20024d90 through its own literal pool
-    and no other named global; the body sets through it
+  evidence: 0x47668 reaches dblib_half_20024d90 through its own literal pool and
+    no other named global; the body sets through it
 - address: 0x47690
-  name: initdblib_half_20024d90_update_2
+  name: dblib_half_20024d90_update_2
   kind: function
   class: provenance
-  evidence: 0x47690 reaches initdblib_half_20024d90 through its own literal pool
-    and no other named global; the body updates through it
+  evidence: 0x47690 reaches dblib_half_20024d90 through its own literal pool and
+    no other named global; the body updates through it
+- address: 0x47790
+  kind: function
+  class: bymodule
+  module: DBLIB
+  evidence: '0x47790 every caller is a body this rule placed in DBLIB: 0x47894'
 - address: 0x4785c
   kind: function
   class: bymodule
   module: DBLIB
   evidence: 0x4785c reaches only dblib_ptr_20019220, dblib_ptr_20019224
+- address: 0x47894
+  kind: function
+  class: bymodule
+  module: DBLIB
+  evidence: 0x47894 reaches only dblib_half_20024d90, dblib_ptr_20019220, dblib_ptr_20019224,
+    dblib_struct_20007010
 - address: 0x47b00
   name: dblib_query_init
   kind: function
@@ -4641,8 +4637,8 @@ symbols:
 - address: 0x4838c
   kind: function
   class: bymodule
-  module: INITDBLIB
-  evidence: 0x4838c reaches only initdblib_struct_20007010
+  module: DBLIB
+  evidence: 0x4838c reaches only dblib_struct_20007010
 - address: 0x483d0
   name: shell_cmd_perso__1
   kind: function
@@ -4724,24 +4720,24 @@ symbols:
   evidence: 0x48a84 reaches rambkp_block through its own literal pool and no other
     named global; the body sets through it
 - address: 0x48aac
-  name: initdblib_ptr_20019228_update
+  name: dblib_ptr_20019228_update
   kind: function
   class: provenance
   module: DBLIB
-  evidence: 0x48aac reaches initdblib_ptr_20019228 through its own literal pool
-    and no other named global; the body updates through it
+  evidence: 0x48aac reaches dblib_ptr_20019228 through its own literal pool and
+    no other named global; the body updates through it
 - address: 0x48ac4
-  name: initdblib_ptr_20019228_get_1
+  name: dblib_ptr_20019228_get_1
   kind: function
   class: provenance
-  evidence: 0x48ac4 reaches initdblib_ptr_20019228 through its own literal pool
-    and no other named global; the body gets through it
+  evidence: 0x48ac4 reaches dblib_ptr_20019228 through its own literal pool and
+    no other named global; the body gets through it
 - address: 0x48ad4
-  name: initdblib_ptr_20019228_get_2
+  name: dblib_ptr_20019228_get_2
   kind: function
   class: provenance
-  evidence: 0x48ad4 reaches initdblib_ptr_20019228 through its own literal pool
-    and no other named global; the body gets through it
+  evidence: 0x48ad4 reaches dblib_ptr_20019228 through its own literal pool and
+    no other named global; the body gets through it
 - address: 0x48ae8
   name: dblib_flash_usage_rom_user
   kind: function
@@ -5276,23 +5272,24 @@ symbols:
   evidence: the only line 0x4b5f8 logs, wlog('[DBT] Unkown state for timer handler')
     at 0x4b640
 - address: 0x4b7ac
-  name: on_event_dbt_meas__1
+  name: wui_flag_200271cd_set
   kind: function
-  class: helper
-  evidence: only 0x87154 (on_event_dbt_meas) calls 0x4b7ac; 32 bytes
+  class: provenance
+  evidence: 'every call into 0x4b7ac passes &wui_flag_200271cd in r0: 0x87260 from
+    0x87154; the body sets through it'
 - address: 0x4b7d0
   kind: function
   class: bymodule
   module: ALGO_MANAGER
   evidence: '0x4b7d0 every caller is a body this rule placed in ALGO_MANAGER: 0x4ec0c'
 - address: 0x4bab8
-  name: on_event_dbt_meas__2__1
+  name: on_event_dbt_meas__1__1
   kind: function
   class: helper
   module: DBT
-  evidence: only 0x4bacc (on_event_dbt_meas__2) calls 0x4bab8; 14 bytes
+  evidence: only 0x4bacc (on_event_dbt_meas__1) calls 0x4bab8; 14 bytes
 - address: 0x4bacc
-  name: on_event_dbt_meas__2
+  name: on_event_dbt_meas__1
   kind: function
   class: helper
   module: DBT
@@ -5376,10 +5373,17 @@ symbols:
   evidence: the only line 0x4bef8 logs, wlog('[FEATURE_TAGS] Nothings stored') at
     0x4bf12
 - address: 0x4bf28
+  name: feature_tags_struct_2001a26c_check
   kind: function
-  class: bymodule
-  module: FEATURE_TAGS
-  evidence: 0x4bf28 calls only feature_tags_nothings_stored
+  class: provenance
+  evidence: 0x4bf28 reaches feature_tags_struct_2001a26c through its own literal
+    pool and no other named global; the body checks through it
+- address: 0x4bf68
+  name: feature_tags_struct_2001a26c_copy
+  kind: function
+  class: provenance
+  evidence: 0x4bf68 reaches feature_tags_struct_2001a26c through its own literal
+    pool and no other named global; the body copys through it
 - address: 0x4bfcc
   name: shell_cmd_feature_tags
   kind: function
@@ -7030,33 +7034,68 @@ symbols:
   evidence: the body is one ldr through debug_dump_ptr_2001ae08 (pool word 0x51b5c
     = 0x2001ae08) and a return
 - address: 0x51b60
-  name: max86173__shared_1__2__1
+  name: max86173_table_2001af9c_check_1
   kind: function
-  class: helper
+  class: provenance
   module: MAX86173
-  evidence: only 0x51e0c (max86173__shared_1__2) calls 0x51b60; 50 bytes
+  evidence: 0x51b60 reaches max86173_table_2001af9c through its own literal pool
+    and no other named global; the body checks through it
+- address: 0x51b98
+  name: max86173_table_2001af9c_check_2
+  kind: function
+  class: provenance
+  evidence: 0x51b98 reaches max86173_table_2001af9c through its own literal pool
+    and no other named global; the body checks through it
+- address: 0x51bcc
+  name: max86173_table_2001af9c_check_3
+  kind: function
+  class: provenance
+  evidence: 0x51bcc reaches max86173_table_2001af9c through its own literal pool
+    and no other named global; the body checks through it
 - address: 0x51bf4
-  name: sensors_sync_push_ppg__1
+  name: max86173_table_2001af9c_check_4
+  kind: function
+  class: provenance
+  evidence: 0x51bf4 reaches max86173_table_2001af9c through its own literal pool
+    and no other named global; the body checks through it
+- address: 0x51c1c
+  name: max86173_struct_20007418_update_4__1
   kind: function
   class: helper
-  evidence: only 0x523cc (sensors_sync_push_ppg) calls 0x51bf4; 36 bytes
+  module: MAX86173
+  evidence: only 0x8b4a8 (max86173_struct_20007418_update_4) calls 0x51c1c; 80 bytes
+- address: 0x51c74
+  name: max86173__shared_1
+  kind: function
+  class: shared
+  module: MAX86173
+  evidence: 'every caller of 0x51c74 is in MAX86173: max86173_struct_20007418_set,
+    max86173_struct_20007418_update_1, max86173_struct_20007418_update_2, max86173_struct_20007418_update_3,
+    max86173_struct_20007418_update_4'
 - address: 0x51d58
-  name: max86173__shared_1__1
+  name: max86173__shared_2__1
   kind: function
   class: helper
   module: MAX86173
-  evidence: only 0x524b0 (max86173__shared_1) calls 0x51d58; 150 bytes
+  evidence: only 0x524b0 (max86173__shared_2) calls 0x51d58; 150 bytes
 - address: 0x51e0c
-  name: max86173__shared_1__2
+  name: max86173_table_2001af9c_check_5
   kind: function
-  class: helper
+  class: provenance
   module: MAX86173
-  evidence: only 0x524b0 (max86173__shared_1) calls 0x51e0c; 682 bytes
+  evidence: 0x51e0c reaches max86173_table_2001af9c through its own literal pool
+    and no other named global; the body checks through it
 - address: 0x520c8
-  name: max8617x_ptr_2001be14_update_2__1
+  name: max86173_ptr_2001be14_update_2__1
   kind: function
   class: helper
-  evidence: only 0x53014 (max8617x_ptr_2001be14_update_2) calls 0x520c8; 34 bytes
+  evidence: only 0x53014 (max86173_ptr_2001be14_update_2) calls 0x520c8; 34 bytes
+- address: 0x520f0
+  kind: function
+  class: bymodule
+  module: MAX86173
+  evidence: 0x520f0 reaches only max86173_ptr_2001be10, max86173_table_20014828,
+    max_led_config_task_handle
 - address: 0x5216c
   name: max86173_table_20014828_update_1
   kind: function
@@ -7078,11 +7117,11 @@ symbols:
   evidence: the only line 0x52224 logs, wlog('[max8617x] (0x%06x) [0x%03x] 0x%05x')
     at 0x5228c
 - address: 0x522ac
-  name: max86173__shared_1__3
+  name: max86173__shared_2__2
   kind: function
   class: helper
   module: MAX86173
-  evidence: only 0x524b0 (max86173__shared_1) calls 0x522ac; 76 bytes
+  evidence: only 0x524b0 (max86173__shared_2) calls 0x522ac; 76 bytes
 - address: 0x523cc
   name: sensors_sync_push_ppg
   kind: function
@@ -7108,7 +7147,7 @@ symbols:
     the front end in each of its thirteen measurement modes, against 57806 of ppg_sample_channel_slot
     in the same run, and none in any of the other five'
 - address: 0x524b0
-  name: max86173__shared_1
+  name: max86173__shared_2
   kind: function
   class: shared
   module: MAX86173
@@ -7133,6 +7172,19 @@ symbols:
   class: prose
   evidence: optical front end on SPIM1; reads part id from reg 0xFF, expects 0x48;
     frame {reg, 0x80 read/0x00 write, data}
+- address: 0x526d8
+  kind: function
+  class: bymodule
+  module: MAX86173
+  evidence: 0x526d8 reaches only max86173_ptr_2001be10, max86173_queue, max86173_queue_static,
+    max86173_sem, max86173_sem_static, max86173_struct_20014818, max86173_table_20014828,
+    max_led_config_task_handle
+- address: 0x5284c
+  kind: function
+  class: bymodule
+  module: MAX86173
+  evidence: 0x5284c reaches only max86173_ptr_2001be10, max86173_queue, max86173_sem,
+    max86173_table_20014828, max_led_config_task_handle
 - address: 0x52914
   name: max86173_table_20014828_update_2
   kind: function
@@ -7147,7 +7199,7 @@ symbols:
   module: MAX86173
   evidence: only 0x5345c (shell_cmd_max8617x) calls 0x52958; 48 bytes
 - address: 0x529ec
-  name: max86173_table_20014828_check_1
+  name: max86173_table_20014828_check
   kind: function
   class: provenance
   module: MAX86173
@@ -7164,15 +7216,14 @@ symbols:
   name: max_led_config_task
   kind: function
   class: kernel
-  module: max8617x
+  module: max86173
   evidence: the name string 'max_LED_config' and the entry pointer 0x52b1d that
     xTaskCreate at 0x5275c was given
 - address: 0x52c3c
-  name: max86173_table_20014828_check_2
+  name: shell_cmd_max8617x__2
   kind: function
-  class: provenance
-  evidence: 0x52c3c reaches max86173_table_20014828 through its own literal pool
-    and no other named global; the body checks through it
+  class: helper
+  evidence: only 0x5345c (shell_cmd_max8617x) calls 0x52c3c; 208 bytes
 - address: 0x52e78
   name: max86173_factory_debug
   kind: function
@@ -7181,23 +7232,26 @@ symbols:
   evidence: the only line 0x52e78 logs, wlog('[max8617x][factory][debug] %s,%d,%ld,%d,%d,%d')
     at 0x52f4e
 - address: 0x52f68
-  name: max8617x_ptr_2001be14_update_1
+  name: max86173_ptr_2001be14_update_1
   kind: function
   class: provenance
   module: MAX86173
-  evidence: 0x52f68 reaches max8617x_ptr_2001be14 through its own literal pool and
+  evidence: 0x52f68 reaches max86173_ptr_2001be14 through its own literal pool and
     no other named global; the body updates through it
 - address: 0x53014
-  name: max8617x_ptr_2001be14_update_2
+  name: max86173_ptr_2001be14_update_2
   kind: function
   class: provenance
-  evidence: 0x53014 reaches max8617x_ptr_2001be14 through its own literal pool and
+  evidence: 0x53014 reaches max86173_ptr_2001be14 through its own literal pool and
     no other named global; the body updates through it
 - address: 0x531c8
+  name: max86173__shared_3
   kind: function
-  class: bymodule
+  class: shared
   module: MAX86173
-  evidence: 0x531c8 reaches only max86173_table_2001be18
+  evidence: 'every caller of 0x531c8 is in MAX86173: max86173_struct_20007418_set,
+    max86173_struct_20007418_update_1, max86173_struct_20007418_update_2, max86173_struct_20007418_update_3,
+    max86173_struct_20007418_update_4'
 - address: 0x531e4
   name: max86173_tag_0x_vs_expected_0x
   kind: function
@@ -7226,24 +7280,24 @@ symbols:
   module: MAX86173
   evidence: only 0x52b1c (max_led_config_task) calls 0x53300; 4 bytes
 - address: 0x53308
-  name: max8617x_byte_20026bcc_set_1
+  name: max86173_byte_20026bcc_set_1
   kind: function
   class: provenance
   module: MAX86173
-  evidence: 0x53308 reaches max8617x_byte_20026bcc through its own literal pool
+  evidence: 0x53308 reaches max86173_byte_20026bcc through its own literal pool
     and no other named global; the body sets through it
 - address: 0x53324
-  name: max8617x_byte_20026bcc_get
+  name: max86173_byte_20026bcc_get
   kind: function
   class: accessor
-  evidence: the body is one ldrb through max8617x_byte_20026bcc (pool word 0x5332c
+  evidence: the body is one ldrb through max86173_byte_20026bcc (pool word 0x5332c
     = 0x20026bcc) and a return
 - address: 0x53330
-  name: max8617x_byte_20026bcc_set_2
+  name: max86173_byte_20026bcc_set_2
   kind: function
   class: provenance
   module: MAX86173
-  evidence: 0x53330 reaches max8617x_byte_20026bcc through its own literal pool
+  evidence: 0x53330 reaches max86173_byte_20026bcc through its own literal pool
     and no other named global; the body sets through it
 - address: 0x53370
   name: max_led_config_task__2
@@ -7257,12 +7311,12 @@ symbols:
   class: shell
   evidence: 'shell_cmd_table row 0x272e0: command ''max8617x'', --help slot (+8)'
 - address: 0x533e8
-  name: shell_cmd_max8617x__2
+  name: shell_cmd_max8617x__3
   kind: function
   class: helper
   evidence: only 0x5345c (shell_cmd_max8617x) calls 0x533e8; 32 bytes
 - address: 0x5340c
-  name: shell_cmd_max8617x__3
+  name: shell_cmd_max8617x__4
   kind: function
   class: helper
   evidence: only 0x5345c (shell_cmd_max8617x) calls 0x5340c; 68 bytes
@@ -7500,18 +7554,18 @@ symbols:
   evidence: 0x556cc reaches ancs_ptr_2001bf90 through its own literal pool and no
     other named global; the body gets through it
 - address: 0x55704
-  name: wpp_lite_byte_20026bce_update
+  name: wpp_byte_20026bce_update
   kind: function
   class: provenance
-  evidence: 0x55704 reaches wpp_lite_byte_20026bce through its own literal pool
-    and no other named global; the body updates through it
+  evidence: 0x55704 reaches wpp_byte_20026bce through its own literal pool and no
+    other named global; the body updates through it
 - address: 0x55788
-  name: wpp_lite_byte_20026bce_set
+  name: wpp_byte_20026bce_set
   kind: function
   class: provenance
   module: WPP
-  evidence: 0x55788 reaches wpp_lite_byte_20026bce through its own literal pool
-    and no other named global; the body sets through it
+  evidence: 0x55788 reaches wpp_byte_20026bce through its own literal pool and no
+    other named global; the body sets through it
 - address: 0x55800
   name: notification_enabled_fetch
   kind: function
@@ -7877,11 +7931,11 @@ symbols:
   evidence: 0x57ba8 reaches rambkp_block through its own literal pool and no other
     named global; the body checks through it
 - address: 0x57f00
-  name: debug_dump_struct_20020b78_update_6__1
+  name: debug_dump_struct_20020b78_update_5__1
   kind: function
   class: helper
   module: DEBUG_DUMP
-  evidence: only 0x6dc08 (debug_dump_struct_20020b78_update_6) calls 0x57f00; 124
+  evidence: only 0x6dc08 (debug_dump_struct_20020b78_update_5) calls 0x57f00; 124
     bytes
 - address: 0x57f8c
   name: shell_cmd_raw_data__1
@@ -8141,13 +8195,6 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x273b8: command ''shell'', --help slot (+8)'
-- address: 0x59b40
-  name: crtvfy_ptr_2001f8e4_check_1
-  kind: function
-  class: provenance
-  module: M
-  evidence: 0x59b40 reaches crtvfy_ptr_2001f8e4 through its own literal pool and
-    no other named global; the body checks through it
 - address: 0x59be4
   name: shell_uart_rx_byte
   kind: function
@@ -8168,35 +8215,16 @@ symbols:
   class: shell
   evidence: 'shell_cmd_table row 0x273b8: command ''shell'', run slot (+4)'
 - address: 0x59c74
-  name: crtvfy_ptr_2001f8e4_get_1
+  name: xQueueGenericSend_wrap
   kind: function
-  class: provenance
-  evidence: 0x59c74 reaches crtvfy_ptr_2001f8e4 through its own literal pool and
-    no other named global; the body gets through it
+  class: wrapper
+  evidence: 0x59c74 is 12 instructions with one call, to xQueueGenericSend, and
+    returns
 - address: 0x59c9c
   name: shell_cmd_table_32_run__1
   kind: function
   class: helper
   evidence: only 0x9b9e6 (shell_cmd_table_32_run) calls 0x59c9c; 26 bytes
-- address: 0x59cd4
-  name: crtvfy_ptr_2001f8e4_get_2
-  kind: function
-  class: provenance
-  evidence: 0x59cd4 reaches crtvfy_ptr_2001f8e4 through its own literal pool and
-    no other named global; the body gets through it
-- address: 0x59f84
-  name: crtvfy_ptr_2001f8e4_check_2
-  kind: function
-  class: provenance
-  evidence: 0x59f84 reaches crtvfy_ptr_2001f8e4 through its own literal pool and
-    no other named global; the body checks through it
-- address: 0x59fb0
-  name: crtvfy_ptr_2001f8e4_check_3
-  kind: function
-  class: provenance
-  module: CRTVFY
-  evidence: 0x59fb0 reaches crtvfy_ptr_2001f8e4 through its own literal pool and
-    no other named global; the body checks through it
 - address: 0x5a27c
   name: shell_help_mem
   kind: function
@@ -8730,6 +8758,11 @@ symbols:
   class: provenance
   evidence: 0x5df44 reaches swdog_table_2001fbac through its own literal pool and
     no other named global; the body sets through it
+- address: 0x5df78
+  kind: function
+  class: bymodule
+  module: MAX86173
+  evidence: '0x5df78 every caller is a body this rule placed in MAX86173: 0x5284c'
 - address: 0x5df94
   name: swdog_feed
   kind: label
@@ -8997,11 +9030,11 @@ symbols:
   module: BOOT
   evidence: 0x5f05c reaches only rambkp_block
 - address: 0x5f398
-  name: tracker_struct_2001fce0_get_1
+  name: tracker_struct_2001fce0_unknown_4_get
   kind: function
-  class: provenance
-  evidence: 0x5f398 reaches tracker_struct_2001fce0 through its own literal pool
-    and no other named global; the body gets through it
+  class: accessor
+  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_4 (pool
+    word 0x5f3a0 = 0x2001fce0) and a return
 - address: 0x5f3a4
   name: tracker_struct_2001fce0_get
   kind: function
@@ -9015,12 +9048,12 @@ symbols:
   evidence: 0x5f3b0 reaches alti_struct_2001fcbc through its own literal pool and
     no other named global; the body gets through it
 - address: 0x5f3bc
-  name: tracker_struct_2001fce0_get_2
+  name: tracker_struct_2001fce0_unknown_24_get
   kind: function
-  class: provenance
+  class: accessor
   module: WPP
-  evidence: 0x5f3bc reaches tracker_struct_2001fce0 through its own literal pool
-    and no other named global; the body gets through it
+  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_24 (pool
+    word 0x5f3c4 = 0x2001fce0) and a return
 - address: 0x5f3c8
   name: tracker_live_steps_confirmed_unknown_min_delta
   kind: function
@@ -9029,11 +9062,11 @@ symbols:
   evidence: the only line 0x5f3c8 logs, wlog('[TRACKER_LIVE][STEPS] confirmed:%d,
     unknown:%d, min:%d, delta:%d, total:%d') at 0x5f3ea
 - address: 0x5f408
-  name: tracker_struct_2001fce0_get_3
+  name: tracker_struct_2001fce0_unknown_8_get
   kind: function
-  class: provenance
-  evidence: 0x5f408 reaches tracker_struct_2001fce0 through its own literal pool
-    and no other named global; the body gets through it
+  class: accessor
+  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_8 (pool
+    word 0x5f410 = 0x2001fce0) and a return
 - address: 0x5f414
   name: alti_struct_2001fcbc_set
   kind: function
@@ -9047,31 +9080,31 @@ symbols:
   evidence: 0x5f420 reaches alti_struct_2001fcbc through its own literal pool and
     no other named global; the body gets through it
 - address: 0x5f42c
-  name: tracker_struct_2001fce0_get_4
+  name: tracker_struct_2001fce0_get_1
   kind: function
   class: provenance
   evidence: 0x5f42c reaches tracker_struct_2001fce0 through its own literal pool
     and no other named global; the body gets through it
 - address: 0x5f44c
-  name: tracker_struct_2001fce0_get_5
+  name: tracker_struct_2001fce0_unknown_28_get
   kind: function
-  class: provenance
-  evidence: 0x5f44c reaches tracker_struct_2001fce0 through its own literal pool
-    and no other named global; the body gets through it
+  class: accessor
+  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_28 (pool
+    word 0x5f454 = 0x2001fce0) and a return
 - address: 0x5f458
-  name: tracker_struct_2001fce0_get_6
+  name: tracker_struct_2001fce0_get_2
   kind: function
   class: provenance
   module: WPP
   evidence: 0x5f458 reaches tracker_struct_2001fce0 through its own literal pool
     and no other named global; the body gets through it
 - address: 0x5f468
-  name: tracker_struct_2001fce0_get_7
+  name: tracker_struct_2001fce0_unknown_32_get
   kind: function
-  class: provenance
+  class: accessor
   module: WPP
-  evidence: 0x5f468 reaches tracker_struct_2001fce0 through its own literal pool
-    and no other named global; the body gets through it
+  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_32 (pool
+    word 0x5f470 = 0x2001fce0) and a return
 - address: 0x5f480
   name: tracker_live_ccalo_current_min_certain_unknown
   kind: function
@@ -9080,19 +9113,19 @@ symbols:
   evidence: the only line 0x5f480 logs, wlog('[TRACKER_LIVE][CCALO] current:%d,
     min:%d, certain:%d, unknown:%d, delta:%d, total:%d') at 0x5f4b0
 - address: 0x5f508
-  name: tracker_struct_2001fce0_get_8
+  name: tracker_struct_2001fce0_unknown_12_get
   kind: function
-  class: provenance
+  class: accessor
   module: WPP
-  evidence: 0x5f508 reaches tracker_struct_2001fce0 through its own literal pool
-    and no other named global; the body gets through it
+  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_12 (pool
+    word 0x5f510 = 0x2001fce0) and a return
 - address: 0x5f514
-  name: tracker_struct_2001fce0_get_9
+  name: tracker_struct_2001fce0_unknown_16_get
   kind: function
-  class: provenance
+  class: accessor
   module: WPP
-  evidence: 0x5f514 reaches tracker_struct_2001fce0 through its own literal pool
-    and no other named global; the body gets through it
+  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_16 (pool
+    word 0x5f51c = 0x2001fce0) and a return
 - address: 0x5f520
   kind: function
   class: bymodule
@@ -9122,18 +9155,18 @@ symbols:
   evidence: 0x5f5c8 reaches alti_struct_2001fcbc through its own literal pool and
     no other named global; the body checks through it
 - address: 0x5f6ec
-  name: tracker_struct_2001fce0_get_10
+  name: tracker_struct_2001fce0_unknown_48_get
   kind: function
-  class: provenance
-  evidence: 0x5f6ec reaches tracker_struct_2001fce0 through its own literal pool
-    and no other named global; the body gets through it
+  class: accessor
+  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_48 (pool
+    word 0x5f6f4 = 0x2001fce0) and a return
 - address: 0x5f6f8
-  name: tracker_struct_2001fce0_get_11
+  name: tracker_struct_2001fce0_unknown_44_get
   kind: function
-  class: provenance
+  class: accessor
   module: WPP
-  evidence: 0x5f6f8 reaches tracker_struct_2001fce0 through its own literal pool
-    and no other named global; the body gets through it
+  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_44 (pool
+    word 0x5f700 = 0x2001fce0) and a return
 - address: 0x5f704
   name: tracker_live_struct_2001fca8_get
   kind: function
@@ -9523,7 +9556,7 @@ symbols:
   module: SHELL
   evidence: 'shell_cmd_table row 0x2716c: command ''calib_test'', run slot (+4)'
 - address: 0x616f0
-  name: spo2_struct_2001ff30_get_1
+  name: spo2_struct_2001ff30_unknown_12_get_1
   kind: function
   class: provenance
   evidence: 0x616f0 reaches spo2_struct_2001ff30 through its own literal pool and
@@ -9542,7 +9575,7 @@ symbols:
   evidence: 0x6171c reaches spo2_mutex through its own literal pool and no other
     named global; the body gets through it
 - address: 0x61730
-  name: spo2_struct_2001ff30_get_2
+  name: spo2_struct_2001ff30_unknown_12_get_2
   kind: function
   class: provenance
   evidence: 0x61730 reaches spo2_struct_2001ff30 through its own literal pool and
@@ -9581,20 +9614,20 @@ symbols:
   evidence: 0x619b0 reaches spo2_struct_2001ff30 through its own literal pool and
     no other named global; the body updates through it
 - address: 0x61ac0
-  name: spo2_struct_2001ff30_update_3
+  name: spo2_struct_2001ff30_unknown_9_update
   kind: function
   class: provenance
   module: AUTO_BURST
   evidence: 0x61ac0 reaches spo2_struct_2001ff30 through its own literal pool and
     no other named global; the body updates through it
 - address: 0x61b68
-  name: spo2_struct_2001ff30_get_3
+  name: spo2_struct_2001ff30_get
   kind: function
   class: provenance
   evidence: 0x61b68 reaches spo2_struct_2001ff30 through its own literal pool and
     no other named global; the body gets through it
 - address: 0x61b98
-  name: spo2_struct_2001ff30_check_1
+  name: spo2_struct_2001ff30_check
   kind: function
   class: provenance
   module: SPO2
@@ -9608,7 +9641,7 @@ symbols:
   evidence: the only line 0x61be8 logs, wlog('[SPO2] Failed to update screen data')
     at 0x61c4e
 - address: 0x61c90
-  name: spo2_struct_2001ff30_check_2
+  name: spo2_struct_2001ff30_unknown_9_check
   kind: function
   class: provenance
   evidence: 0x61c90 reaches spo2_struct_2001ff30 through its own literal pool and
@@ -9845,7 +9878,7 @@ symbols:
   evidence: 0x638a4 reaches ppg_dbt_mutex through its own literal pool and no other
     named global; the body gets through it
 - address: 0x638c4
-  name: on_event_dbt_meas__3
+  name: on_event_dbt_meas__2
   kind: function
   class: helper
   evidence: only 0x87154 (on_event_dbt_meas) calls 0x638c4; 42 bytes
@@ -10412,10 +10445,11 @@ symbols:
   module: VAS
   evidence: only 0x65d28 (shell_cmd_vasistas) calls 0x667cc; 546 bytes
 - address: 0x66aa0
-  name: vasistas_bank_for_record__1
+  name: vasistas_word_200203a8_update
   kind: function
-  class: helper
-  evidence: only 0x66b98 (vasistas_bank_for_record) calls 0x66aa0; 242 bytes
+  class: provenance
+  evidence: 0x66aa0 reaches vasistas_word_200203a8 through its own literal pool
+    and no other named global; the body updates through it
 - address: 0x66b98
   name: vasistas_bank_for_record
   kind: function
@@ -10423,6 +10457,12 @@ symbols:
   module: VASISTAS
   evidence: the tbb at 0x66bae maps record types 9..0x14 to the WFTL type of the
     bank they belong in, and 0xff is the answer every caller checks before it stores
+- address: 0x66d40
+  name: vasistas_word_200203a8_set
+  kind: function
+  class: provenance
+  evidence: 0x66d40 reaches vasistas_word_200203a8 through its own literal pool
+    and no other named global; the body sets through it
 - address: 0x66d74
   name: vib_struct_20020400_get_1
   kind: function
@@ -10566,7 +10606,7 @@ symbols:
   kind: function
   class: bymodule
   module: RRE_FONTS
-  evidence: 0x6842c reaches only rre_fonts_struct_200076f0, rre_fonts_struct_20017c5c
+  evidence: 0x6842c reaches only rre_fonts_struct_200076f0
 - address: 0x684f8
   name: shell_help_oled
   kind: function
@@ -11137,17 +11177,43 @@ symbols:
   evidence: 0x6bbf8 is the fetch slot of debug_dump_ram_items row 5 (word 0x27d2c);
     nothing calls it
 - address: 0x6bc0c
-  name: WPP_CMD_PROBE__1
+  name: wpp_struct_20020920_set_1
   kind: function
-  class: helper
+  class: provenance
   module: WPP
-  evidence: only 0x6c84c (WPP_CMD_PROBE) calls 0x6bc0c; 14 bytes
+  evidence: 0x6bc0c reaches wpp_struct_20020920 through its own literal pool and
+    no other named global; the body sets through it
 - address: 0x6bc20
-  name: WPP_CMD_PROBE__2
+  name: wpp_struct_20020920_set_2
   kind: function
-  class: helper
+  class: provenance
   module: WPP
-  evidence: only 0x6c84c (WPP_CMD_PROBE) calls 0x6bc20; 6 bytes
+  evidence: 0x6bc20 reaches wpp_struct_20020920 through its own literal pool and
+    no other named global; the body sets through it
+- address: 0x6bc2c
+  name: wpp_struct_20020920_get_1
+  kind: function
+  class: provenance
+  evidence: 0x6bc2c reaches wpp_struct_20020920 through its own literal pool and
+    no other named global; the body gets through it
+- address: 0x6bc38
+  name: wpp_struct_20020920_get_2
+  kind: function
+  class: provenance
+  evidence: 0x6bc38 reaches wpp_struct_20020920 through its own literal pool and
+    no other named global; the body gets through it
+- address: 0x6bc44
+  name: wpp_struct_20020920_get_3
+  kind: function
+  class: provenance
+  evidence: 0x6bc44 reaches wpp_struct_20020920 through its own literal pool and
+    no other named global; the body gets through it
+- address: 0x6bc50
+  name: wpp_struct_20020920_get
+  kind: function
+  class: accessor
+  evidence: the body is one ldrb through wpp_struct_20020920 (pool word 0x6bc58
+    = 0x20020920) and a return
 - address: 0x6bc5c
   name: wpp_struct_20020944_set
   kind: function
@@ -11161,10 +11227,18 @@ symbols:
   class: helper
   evidence: only 0x3914c (wpp_service_ctx_set_2) calls 0x6bc6c; 30 bytes
 - address: 0x6bc8c
-  name: wpp_service_ctx_update_2__1
+  name: wpp_struct_20020920_set_3
   kind: function
-  class: helper
-  evidence: only 0x391b0 (wpp_service_ctx_update_2) calls 0x6bc8c; 78 bytes
+  class: provenance
+  evidence: 0x6bc8c reaches wpp_struct_20020920 through its own literal pool and
+    no other named global; the body sets through it
+- address: 0x6bcb4
+  name: wpp_struct_20020920_update
+  kind: function
+  class: provenance
+  module: WPP
+  evidence: 0x6bcb4 reaches wpp_struct_20020920 through its own literal pool and
+    no other named global; the body updates through it
 - address: 0x6bd0c
   name: wpp_state_disc_or_not_slave
   kind: function
@@ -11172,24 +11246,59 @@ symbols:
   module: WPP
   evidence: the only line 0x6bd0c logs, wlog('[WPP LITE] state DISC or not slave
     req') at 0x6bd2a
+- address: 0x6bd54
+  name: wpp_struct_20020920_check
+  kind: function
+  class: provenance
+  evidence: 0x6bd54 reaches wpp_struct_20020920 through its own literal pool and
+    no other named global; the body checks through it
+- address: 0x6bdfc
+  name: wpp_struct_20020920_set_4
+  kind: function
+  class: provenance
+  evidence: 0x6bdfc reaches wpp_struct_20020920 through its own literal pool and
+    no other named global; the body sets through it
+- address: 0x6be14
+  name: wpp_struct_20020920_set_5
+  kind: function
+  class: provenance
+  evidence: 0x6be14 reaches wpp_struct_20020920 through its own literal pool and
+    no other named global; the body sets through it
 - address: 0x6bf04
   name: ble_task__4
   kind: function
   class: helper
   module: WPP
   evidence: only 0x34068 (ble_task) calls 0x6bf04; 678 bytes
-- address: 0x6bf6c
-  name: wpp_lite_byte_20026c15_check__1
+- address: 0x6bf60
+  name: wpp_struct_20020920_set_6
   kind: function
-  class: helper
+  class: provenance
+  evidence: 0x6bf60 reaches wpp_struct_20020920 through its own literal pool and
+    no other named global; the body sets through it
+- address: 0x6bf6c
+  name: wpp_struct_20020920_get_4
+  kind: function
+  class: provenance
   module: WPP
-  evidence: only 0x6c300 (wpp_lite_byte_20026c15_check) calls 0x6bf6c; 6 bytes
+  evidence: 0x6bf6c reaches wpp_struct_20020920 through its own literal pool and
+    no other named global; the body gets through it
 - address: 0x6bf78
   name: wpp_cancel_func
   kind: function
   class: logline
   module: WPP
   evidence: the only line 0x6bf78 logs, wlog('[WPP] cancel func %p') at 0x6bf86
+- address: 0x6bfa8
+  kind: function
+  class: bymodule
+  module: WPP
+  evidence: 0x6bfa8 reaches only wpp_table_20020950, wpp_word_20020b68
+- address: 0x6c164
+  kind: function
+  class: bymodule
+  module: WPP
+  evidence: 0x6c164 reaches only wpp_table_20020950
 - address: 0x6c184
   name: wpp_tx_complete_process_continue_nb
   kind: function
@@ -11198,18 +11307,18 @@ symbols:
   evidence: the only line 0x6c184 logs, wlog('[WPP_LITE] tx complete (process_continue
     = %p | nb slots = %d)') at 0x6c196
 - address: 0x6c300
-  name: wpp_lite_byte_20026c15_check
+  name: wpp_byte_20026c15_check
   kind: function
   class: provenance
   module: WPP
-  evidence: 0x6c300 reaches wpp_lite_byte_20026c15 through its own literal pool
-    and no other named global; the body checks through it
+  evidence: 0x6c300 reaches wpp_byte_20026c15 through its own literal pool and no
+    other named global; the body checks through it
 - address: 0x6c37c
-  name: wpp_lite_byte_20026c15_update
+  name: wpp_byte_20026c15_update
   kind: function
   class: provenance
-  evidence: 0x6c37c reaches wpp_lite_byte_20026c15 through its own literal pool
-    and no other named global; the body updates through it
+  evidence: 0x6c37c reaches wpp_byte_20026c15 through its own literal pool and no
+    other named global; the body updates through it
 - address: 0x6c38c
   name: push_cannot_insert_item_limit
   kind: function
@@ -11217,23 +11326,33 @@ symbols:
   module: WPP
   evidence: the only line 0x6c38c logs, wlog('[Channel %d] Push - Cannot insert
     item, limit reached (nb = %d/%d | size = %d)') at 0x6c3f8
+- address: 0x6c460
+  kind: function
+  class: bymodule
+  module: WPP
+  evidence: 0x6c460 reaches only wpp_byte_20026c15, wpp_struct_200071a0, wpp_struct_200071ac
 - address: 0x6c4f4
   kind: function
   class: bymodule
-  module: WPP_LITE
-  evidence: 0x6c4f4 reaches only wpp_lite_struct_200071a0, wpp_lite_struct_200071ac
+  module: WPP
+  evidence: 0x6c4f4 reaches only wpp_struct_200071a0, wpp_struct_200071ac
 - address: 0x6c534
   kind: function
   class: bymodule
-  module: WPP_LITE
-  evidence: 0x6c534 reaches only wpp_lite_struct_200071ac
+  module: WPP
+  evidence: 0x6c534 reaches only wpp_struct_200071ac
+- address: 0x6c540
+  kind: function
+  class: bymodule
+  module: WPP
+  evidence: 0x6c540 reaches only wpp_struct_200071a0, wpp_struct_200071ac
 - address: 0x6c578
-  name: wpp_lite_struct_200071a0_get
+  name: wpp_struct_200071a0_get
   kind: function
   class: provenance
   module: WPP
-  evidence: 0x6c578 reaches wpp_lite_struct_200071a0 through its own literal pool
-    and no other named global; the body gets through it
+  evidence: 0x6c578 reaches wpp_struct_200071a0 through its own literal pool and
+    no other named global; the body gets through it
 - address: 0x6c60c
   name: wpp_state_auth_required
   kind: function
@@ -11242,7 +11361,7 @@ symbols:
   evidence: 'the only line 0x6c60c logs, wlog(''[WPP] state : AUTH_REQUIRED'') at
     0x6c632'
 - address: 0x6c654
-  name: WPP_CMD_PROBE__3
+  name: WPP_CMD_PROBE__1
   kind: function
   class: helper
   module: WPP
@@ -11413,6 +11532,11 @@ symbols:
   module: WPP
   evidence: 'wpp_cmd_table row 0x27a00: key 2476, label ''WPP_CMD_TRACKER_MOVE_HANDS_GET'',
     CMD_TRACKER_MOVE_HANDS_GET in wpp/src/commands.rs'
+- address: 0x6d250
+  kind: function
+  class: bymodule
+  module: WPP
+  evidence: '0x6d250 every caller is a body this rule placed in WPP: 0x6bfa8'
 - address: 0x6d2e0
   name: WPP_CMD_MTU_EXCH
   kind: function
@@ -11456,7 +11580,7 @@ symbols:
   evidence: 0x6d684 reaches debug_dump_struct_20020b78 through its own literal pool
     and no other named global; the body updates through it
 - address: 0x6d6a0
-  name: debug_dump_struct_20020b78_set
+  name: debug_dump_struct_20020b78_unknown_68_set
   kind: function
   class: provenance
   module: DEBUG_DUMP
@@ -11490,14 +11614,14 @@ symbols:
   evidence: 0x6db18 reaches debug_dump_struct_20020b78 through its own literal pool
     and no other named global; the body updates through it
 - address: 0x6dbf8
-  name: debug_dump_struct_20020b78_update_5
+  name: debug_dump_struct_20020b78_unknown_80_update
   kind: function
   class: provenance
   module: DEBUG_DUMP
   evidence: 0x6dbf8 reaches debug_dump_struct_20020b78 through its own literal pool
     and no other named global; the body updates through it
 - address: 0x6dc08
-  name: debug_dump_struct_20020b78_update_6
+  name: debug_dump_struct_20020b78_update_5
   kind: function
   class: provenance
   module: DEBUG_DUMP
@@ -11557,6 +11681,12 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x89e48 (ui_update_timeout) calls 0x6e4f8; 16 bytes
+- address: 0x6e50c
+  name: wpp_struct_20020920_update__1
+  kind: function
+  class: helper
+  module: WPP
+  evidence: only 0x6bcb4 (wpp_struct_20020920_update) calls 0x6e50c; 56 bytes
 - address: 0x6e598
   name: WPP_CMD_UP_FIRMWARE_START__1
   kind: function
@@ -11576,6 +11706,11 @@ symbols:
   class: logline
   module: UP
   evidence: the only line 0x6e6c4 logs, wlog('[UP] Updating end') at 0x6e6ce
+- address: 0x6e6f4
+  kind: function
+  class: bymodule
+  module: WPP
+  evidence: '0x6e6f4 every caller is a body this rule placed in WPP: 0x6bfa8'
 - address: 0x6e788
   name: wpp_cmd_dispatch_slave
   kind: function
@@ -13153,12 +13288,11 @@ symbols:
   module: ADC
   evidence: 0x7e2e4 reaches only adc_mutex_static
 - address: 0x7e3f0
-  name: acq_word_20021a80_update
+  name: acquistion_task__1
   kind: function
-  class: provenance
+  class: helper
   module: ACQ
-  evidence: 0x7e3f0 reaches acq_word_20021a80 through its own literal pool and no
-    other named global; the body updates through it
+  evidence: only 0x3b6f8 (acquistion_task) calls 0x7e3f0; 124 bytes
 - address: 0x7e478
   name: adc_not_using_internal_timer_setup
   kind: function
@@ -13524,6 +13658,11 @@ symbols:
   kind: function
   class: logline
   evidence: the only line 0x80c48 logs, wlog("Can't re-enter composer") at 0x80c54
+- address: 0x80dcc
+  kind: function
+  class: bymodule
+  module: WUI
+  evidence: '0x80dcc every caller is a body this rule placed in WUI: 0x81096'
 - address: 0x80e3c
   name: wui_view_table_check
   kind: function
@@ -13572,6 +13711,11 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x08 is wui_view_hidden_screens_2's
+- address: 0x81096
+  kind: function
+  class: bymodule
+  module: WUI
+  evidence: 0x81096 reaches only wui_struct_20024654
 - address: 0x810f4
   name: wui_vtable_demo_carousel_slot_7
   kind: function
@@ -13878,11 +14022,18 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x14 is wui_view_clock_menu's
-- address: 0x827f0
-  name: refresh_alarm_ringing__1
+- address: 0x827ac
+  name: wui_struct_200246bc_set
   kind: function
-  class: helper
-  evidence: only 0x82960 (refresh_alarm_ringing) calls 0x827f0; 266 bytes
+  class: provenance
+  evidence: 0x827ac reaches wui_struct_200246bc through its own literal pool and
+    no other named global; the body sets through it
+- address: 0x827f0
+  name: wui_struct_200246bc_check_1
+  kind: function
+  class: provenance
+  evidence: 0x827f0 reaches wui_struct_200246bc through its own literal pool and
+    no other named global; the body checks through it
 - address: 0x82920
   name: refresh_alarm_popup
   kind: function
@@ -13925,10 +14076,11 @@ symbols:
   module: wui
   evidence: the only view vtable holding this at +0x0c is wui_view_alarm_ringing's
 - address: 0x82bbc
-  name: refresh_alarm__2
+  name: wui_struct_200246bc_check_2
   kind: function
-  class: helper
-  evidence: only 0x82c4c (refresh_alarm) calls 0x82bbc; 62 bytes
+  class: provenance
+  evidence: 0x82bbc reaches wui_struct_200246bc through its own literal pool and
+    no other named global; the body checks through it
 - address: 0x82c10
   name: on_enter_alarm
   kind: function
@@ -13959,12 +14111,24 @@ symbols:
   class: slot
   evidence: 0x82d9c is the slot_10 slot of wui_vtable_cycletrackingmenu row 0 (word
     0xba5f8); nothing calls it
+- address: 0x82db0
+  name: wui_struct_200246d8_set
+  kind: function
+  class: provenance
+  evidence: 0x82db0 reaches wui_struct_200246d8 through its own literal pool and
+    no other named global; the body sets through it
 - address: 0x82dd8
   name: refresh_cycle
   kind: function
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x14 is wui_view_cycle's
+- address: 0x82f00
+  name: wui_struct_20024720_update
+  kind: function
+  class: provenance
+  evidence: 0x82f00 reaches wui_struct_20024720 through its own literal pool and
+    no other named global; the body updates through it
 - address: 0x82f9c
   name: wui_vtable_cycletrackingsymptomsmenu_slot_7
   kind: function
@@ -14174,10 +14338,11 @@ symbols:
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_lapping_test's
 - address: 0x840f0
-  name: on_event_factory_charging__1
+  name: wui_half_20024eae_set
   kind: function
-  class: helper
-  evidence: only 0x84110 (on_event_factory_charging) calls 0x840f0; 28 bytes
+  class: provenance
+  evidence: 0x840f0 reaches wui_half_20024eae through its own literal pool and no
+    other named global; the body sets through it
 - address: 0x84110
   name: on_event_factory_charging
   kind: function
@@ -14506,18 +14671,6 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_ecg_fake's
-- address: 0x85a64
-  name: ecg_struct_200247fc_update
-  kind: function
-  class: provenance
-  evidence: 0x85a64 reaches ecg_struct_200247fc through its own literal pool and
-    no other named global; the body updates through it
-- address: 0x85a84
-  name: ecg_struct_200247fc_check
-  kind: function
-  class: provenance
-  evidence: 0x85a84 reaches ecg_struct_200247fc through its own literal pool and
-    no other named global; the body checks through it
 - address: 0x85afc
   name: refresh_ecg_result
   kind: function
@@ -14542,6 +14695,11 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x14 is wui_view_ecg_live_app's
+- address: 0x85d80
+  kind: function
+  class: bymodule
+  module: WUI
+  evidence: 0x85d80 reaches only wui_view_ecg_result, wui_view_nok, wui_view_ok
 - address: 0x85e3c
   name: ecg_err_no_sample_queue__2
   kind: function
@@ -14975,18 +15133,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x14 is wui_view_hands_calibration_tuto's
-- address: 0x8951c
-  name: screen_calibration_byte_2002723b_update
-  kind: function
-  class: provenance
-  evidence: 0x8951c reaches screen_calibration_byte_2002723b through its own literal
-    pool and no other named global; the body updates through it
 - address: 0x895b4
-  name: screen_calibration_byte_2002723b_set_1
+  name: on_enter_hands_calibration_settings__1
   kind: function
-  class: provenance
-  evidence: 0x895b4 reaches screen_calibration_byte_2002723b through its own literal
-    pool and no other named global; the body sets through it
+  class: helper
+  evidence: only 0x89608 (on_enter_hands_calibration_settings) calls 0x895b4; 44
+    bytes
 - address: 0x895e4
   name: on_enter_hands_calibration_tuto
   kind: function
@@ -14999,12 +15151,6 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_hands_calibration_settings's
-- address: 0x89624
-  name: screen_calibration_byte_2002723b_set_2
-  kind: function
-  class: provenance
-  evidence: 0x89624 reaches screen_calibration_byte_2002723b through its own literal
-    pool and no other named global; the body sets through it
 - address: 0x89630
   name: screen_calibration_no_motor_id_availabe
   kind: function
@@ -15364,12 +15510,48 @@ symbols:
   module: WIDGET_SCROLLING_TEXT
   evidence: the only line 0x8ae3c logs, wlog('[WIDGET_SCROLLING_TEXT] E_INACTIVITY')
     at 0x8ae4e
-- address: 0x8b7a4
-  name: max86173__shared_2
+- address: 0x8af40
+  name: max86173_struct_20007418_update_1
   kind: function
-  class: shared
+  class: provenance
   module: MAX86173
-  evidence: 'every caller of 0x8b7a4 is in MAX86173: max86173_factory_debug, max86173_table_20014828_update_3'
+  evidence: 0x8af40 reaches max86173_struct_20007418 through its own literal pool
+    and no other named global; the body updates through it
+- address: 0x8b094
+  name: max86173_struct_20007418_update_2
+  kind: function
+  class: provenance
+  module: MAX86173
+  evidence: 0x8b094 reaches max86173_struct_20007418 through its own literal pool
+    and no other named global; the body updates through it
+- address: 0x8b208
+  name: max86173_struct_20007418_set
+  kind: function
+  class: provenance
+  module: MAX86173
+  evidence: 0x8b208 reaches max86173_struct_20007418 through its own literal pool
+    and no other named global; the body sets through it
+- address: 0x8b358
+  name: max86173_struct_20007418_update_3
+  kind: function
+  class: provenance
+  module: MAX86173
+  evidence: 0x8b358 reaches max86173_struct_20007418 through its own literal pool
+    and no other named global; the body updates through it
+- address: 0x8b4a8
+  name: max86173_struct_20007418_update_4
+  kind: function
+  class: provenance
+  module: MAX86173
+  evidence: 0x8b4a8 reaches max86173_struct_20007418 through its own literal pool
+    and no other named global; the body updates through it
+- address: 0x8b7a4
+  name: max86173_struct_20007418_get
+  kind: function
+  class: provenance
+  module: MAX86173
+  evidence: 0x8b7a4 reaches max86173_struct_20007418 through its own literal pool
+    and no other named global; the body gets through it
 - address: 0x8b7b0
   name: wui_ptr_2002499c_check_1
   kind: function
@@ -16220,6 +16402,11 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x5f5c8 (alti_struct_2001fcbc_check_2) calls 0x921da; 4 bytes
+- address: 0x9225e
+  name: feature_tags_struct_2001a26c_copy__1
+  kind: function
+  class: helper
+  evidence: only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x9225e; 20 bytes
 - address: 0x92272
   name: dbg_mask_change_ie_debug_mask__1
   kind: function
@@ -16314,10 +16501,10 @@ symbols:
   module: UP
   evidence: only 0x6e6c4 (up_updating_end) calls 0x92618; 6 bytes
 - address: 0x92624
-  name: wpp_service_ctx_update_2__1__1
+  name: wpp_struct_20020920_set_3__1
   kind: function
   class: helper
-  evidence: only 0x6bc8c (wpp_service_ctx_update_2__1) calls 0x92624; 6 bytes
+  evidence: only 0x6bc8c (wpp_struct_20020920_set_3) calls 0x92624; 6 bytes
 - address: 0x9262a
   name: wpp_state_auth_required__1
   kind: function
@@ -16490,6 +16677,12 @@ symbols:
   class: bymodule
   module: BLUETOOTH
   evidence: '0x9314e every caller is a body this rule placed in BLUETOOTH: 0x395dc'
+- address: 0x931ca
+  name: feature_tags_struct_2001a26c_copy__2
+  kind: function
+  class: helper
+  evidence: only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x931ca; 126
+    bytes
 - address: 0x93248
   name: shell_cmd_probe__3
   kind: function
@@ -16959,11 +17152,11 @@ symbols:
   evidence: only 0x7e478 (adc_not_using_internal_timer_setup) calls 0x937e2; 10
     bytes
 - address: 0x937f0
-  name: acquistion_task__1__2
+  name: acquistion_task__2__2
   kind: function
   class: helper
   module: ACQ
-  evidence: only 0xa4e8a (acquistion_task__1) calls 0x937f0; 10 bytes
+  evidence: only 0xa4e8a (acquistion_task__2) calls 0x937f0; 10 bytes
 - address: 0x938c4
   name: sd_rand_application_vector_get
   kind: function
@@ -16994,11 +17187,11 @@ symbols:
   evidence: 0x939f2 is 7 instructions with one call, to spim_failed_to_malloc_temporary_buffer,
     and returns
 - address: 0x93a4c
-  name: acquistion_task__1__3
+  name: acquistion_task__2__3
   kind: function
   class: helper
   module: ACQ
-  evidence: only 0xa4e8a (acquistion_task__1) calls 0x93a4c; 66 bytes
+  evidence: only 0xa4e8a (acquistion_task__2) calls 0x93a4c; 66 bytes
 - address: 0x93d10
   name: shell_cmd_account_secret__1
   kind: function
@@ -17567,6 +17760,11 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x392fc (wpp_bytes_received) calls 0x97520; 16 bytes
+- address: 0x97530
+  name: wui_struct_20024720_update__1
+  kind: function
+  class: helper
+  evidence: only 0x82f00 (wui_struct_20024720_update) calls 0x97530; 24 bytes
 - address: 0x975ca
   kind: function
   class: bymodule
@@ -18071,7 +18269,7 @@ symbols:
   kind: function
   class: shared
   module: DEBUG_DUMP
-  evidence: 'every caller of 0x98f02 is in DEBUG_DUMP: WPP_CMD_DEBUG_DUMP, debug_dump_struct_20020b78_set'
+  evidence: 'every caller of 0x98f02 is in DEBUG_DUMP: WPP_CMD_DEBUG_DUMP, debug_dump_struct_20020b78_unknown_68_set'
 - address: 0x98f06
   name: WPP_CMD_GET_PRESSURE_TEMPERATURE__1
   kind: function
@@ -20040,17 +20238,17 @@ symbols:
   evidence: 0x9a9d2 is the slot_1 slot of i2c_device_table row 3 (word 0xb2328);
     nothing calls it
 - address: 0x9aa30
-  name: max86173__shared_3
+  name: max86173__shared_4
   kind: function
   class: shared
   module: MAX86173
   evidence: 'every caller of 0x9aa30 is in MAX86173: max86173_kill_max86173_interrupt_task,
     max_led_config_task'
 - address: 0x9aa5e
-  name: max8617x_ptr_2001be14_update_2__2
+  name: max86173_ptr_2001be14_update_2__2
   kind: function
   class: helper
-  evidence: only 0x53014 (max8617x_ptr_2001be14_update_2) calls 0x9aa5e; 30 bytes
+  evidence: only 0x53014 (max86173_ptr_2001be14_update_2) calls 0x9aa5e; 30 bytes
 - address: 0x9ab06
   name: ppg_sample_channel_slot
   kind: function
@@ -20060,11 +20258,11 @@ symbols:
     returns the address of that channel's word in the caller's PPG sample; it is
     what fixes sensor_sample_ppg as sixteen words indexed by channel id.
 - address: 0x9ab64
-  name: max86173__shared_1__2__2
+  name: max86173_table_2001af9c_check_5__1
   kind: function
   class: helper
   module: MAX86173
-  evidence: only 0x51e0c (max86173__shared_1__2) calls 0x9ab64; 38 bytes
+  evidence: only 0x51e0c (max86173_table_2001af9c_check_5) calls 0x9ab64; 38 bytes
 - address: 0x9ab8a
   name: main_task__12
   kind: function
@@ -20184,11 +20382,11 @@ symbols:
   module: DEBUG_DUMP
   evidence: only 0x6dfa8 (WPP_CMD_DEBUG_DUMP) calls 0x9b5f4; 8 bytes
 - address: 0x9b5fc
-  name: debug_dump_struct_20020b78_update_6__2
+  name: debug_dump_struct_20020b78_update_5__2
   kind: function
   class: helper
   module: DEBUG_DUMP
-  evidence: only 0x6dc08 (debug_dump_struct_20020b78_update_6) calls 0x9b5fc; 8
+  evidence: only 0x6dc08 (debug_dump_struct_20020b78_update_5) calls 0x9b5fc; 8
     bytes
 - address: 0x9b604
   name: raw_unknown_wpp_cmd__3
@@ -20877,10 +21075,16 @@ symbols:
   class: helper
   evidence: only 0x6bc6c (wpp_service_ctx_set_2__1) calls 0x9d440; 4 bytes
 - address: 0x9d444
-  name: wpp_service_ctx_update_2__1__2
+  name: wpp_struct_20020920_set_3__2
   kind: function
   class: helper
-  evidence: only 0x6bc8c (wpp_service_ctx_update_2__1) calls 0x9d444; 160 bytes
+  evidence: only 0x6bc8c (wpp_struct_20020920_set_3) calls 0x9d444; 160 bytes
+- address: 0x9d452
+  name: wpp_struct_20020920_update__2
+  kind: function
+  class: helper
+  module: WPP
+  evidence: only 0x6bcb4 (wpp_struct_20020920_update) calls 0x9d452; 4 bytes
 - address: 0x9d456
   name: wpp_opcode_is_master_request
   kind: function
@@ -20903,8 +21107,14 @@ symbols:
 - address: 0x9d48e
   kind: function
   class: bymodule
-  module: WPP_LITE
-  evidence: '0x9d48e every caller is a body this rule placed in WPP_LITE: 0x6c4f4'
+  module: WPP
+  evidence: '0x9d48e every caller is a body this rule placed in WPP: 0x6c4f4'
+- address: 0x9d5ba
+  name: wpp_struct_20020920_get_wrap
+  kind: function
+  class: wrapper
+  evidence: 0x9d5ba is 6 instructions with one call, to wpp_struct_20020920_get,
+    and returns
 - address: 0x9d5c8
   name: sd_ble_version_get_copy_0x9d5c8
   kind: function
@@ -21419,10 +21629,10 @@ symbols:
   evidence: out[i] = powf(x[i], e) over n words, the exponent held in s16 across
     the loop, refused on the first NaN the `vcmp` of the result with itself finds.
 - address: 0x9f97a
-  name: max8617x_ptr_2001be14_update_2__3__1
+  name: max86173_ptr_2001be14_update_2__3__1
   kind: function
   class: helper
-  evidence: only 0x9fe20 (max8617x_ptr_2001be14_update_2__3) calls 0x9f97a; 110
+  evidence: only 0x9fe20 (max86173_ptr_2001be14_update_2__3) calls 0x9f97a; 110
     bytes
 - address: 0x9fdc6
   name: shell_cmd_adxl__6
@@ -21431,10 +21641,10 @@ symbols:
   module: ADXL367
   evidence: only 0x3c6b8 (shell_cmd_adxl) calls 0x9fdc6; 90 bytes
 - address: 0x9fe20
-  name: max8617x_ptr_2001be14_update_2__3
+  name: max86173_ptr_2001be14_update_2__3
   kind: function
   class: helper
-  evidence: only 0x53014 (max8617x_ptr_2001be14_update_2) calls 0x9fe20; 84 bytes
+  evidence: only 0x53014 (max86173_ptr_2001be14_update_2) calls 0x9fe20; 84 bytes
 - address: 0x9fe74
   kind: function
   class: bymodule
@@ -22350,10 +22560,10 @@ symbols:
   module: PPG_DBT
   evidence: only 0x63a20 (ppg_dbt_failed_turn_off_ppg_sensor) calls 0xa49fa; 6 bytes
 - address: 0xa4a00
-  name: on_event_dbt_meas__3__1
+  name: on_event_dbt_meas__2__1
   kind: function
   class: helper
-  evidence: only 0x638c4 (on_event_dbt_meas__3) calls 0xa4a00; 6 bytes
+  evidence: only 0x638c4 (on_event_dbt_meas__2) calls 0xa4a00; 6 bytes
 - address: 0xa4a06
   name: ppg_dbt_failed_turn_off_ppg_sensor__3
   kind: function
@@ -22367,10 +22577,10 @@ symbols:
   module: PPG_DBT
   evidence: only 0x63a20 (ppg_dbt_failed_turn_off_ppg_sensor) calls 0xa4a0c; 6 bytes
 - address: 0xa4a9c
-  name: on_event_dbt_meas__1__1
+  name: wui_flag_200271cd_set__1
   kind: function
   class: helper
-  evidence: only 0x4b7ac (on_event_dbt_meas__1) calls 0xa4a9c; 6 bytes
+  evidence: only 0x4b7ac (wui_flag_200271cd_set) calls 0xa4a9c; 6 bytes
 - address: 0xa4e3a
   name: nrf_saadc_event_clear.constprop.0
   kind: function
@@ -22382,7 +22592,7 @@ symbols:
   class: prose
   evidence: channel init + 1-sample convert; keeps sample if >= 0
 - address: 0xa4e8a
-  name: acquistion_task__1
+  name: acquistion_task__2
   kind: function
   class: helper
   module: ACQ
@@ -22811,13 +23021,6 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_cycletrackingmenu's
-- address: 0xa5d90
-  name: light_sensor_flag_20027194_check
-  kind: function
-  class: provenance
-  evidence: 'every call into 0xa5d90 passes &light_sensor_flag_20027194 in r0: 0x836a8
-    from 0x83688, 0x837c4 from 0x8370c, 0x837fa from 0x8370c; the body checks through
-    it'
 - address: 0xa5da0
   name: on_exit_factory_test
   kind: function
@@ -23513,6 +23716,42 @@ symbols:
   kind: function
   class: helper
   evidence: only 0xa5a98 (refresh_carousel_clocks_2) calls 0xa7160; 6 bytes
+- address: 0xa7178
+  name: max86173__shared_7__1
+  kind: function
+  class: helper
+  module: MAX86173
+  evidence: only 0xa71f8 (max86173__shared_7) calls 0xa7178; 94 bytes
+- address: 0xa71e0
+  name: max86173__shared_5
+  kind: function
+  class: shared
+  module: MAX86173
+  evidence: 'every caller of 0xa71e0 is in MAX86173: max86173_struct_20007418_set,
+    max86173_struct_20007418_update_1, max86173_struct_20007418_update_2, max86173_struct_20007418_update_3,
+    max86173_struct_20007418_update_4'
+- address: 0xa71f0
+  name: max86173__shared_6
+  kind: function
+  class: shared
+  module: MAX86173
+  evidence: 'every caller of 0xa71f0 is in MAX86173: max86173_struct_20007418_set,
+    max86173_struct_20007418_update_1, max86173_struct_20007418_update_2, max86173_struct_20007418_update_3,
+    max86173_struct_20007418_update_4'
+- address: 0xa71f8
+  name: max86173__shared_7
+  kind: function
+  class: shared
+  module: MAX86173
+  evidence: 'every caller of 0xa71f8 is in MAX86173: max86173_struct_20007418_set,
+    max86173_struct_20007418_update_1, max86173_struct_20007418_update_2, max86173_struct_20007418_update_3,
+    max86173_struct_20007418_update_4'
+- address: 0xa744e
+  kind: function
+  class: bymodule
+  module: MAX86173
+  evidence: '0xa744e every caller is a body this rule placed in MAX86173: 0x526d8,
+    0x5284c'
 - address: 0xa7480
   name: max86173_table_20014828_update_3__1
   kind: function
@@ -23627,6 +23866,11 @@ symbols:
     else. 1057 calls in the body-temperature run against 151 of nn_gru_cell and
     151 of nn_dense_layer, which is seven per network run -- six inside the cell
     and one in the output layer -- and none in any of the other five
+- address: 0xa7646
+  name: nn_gru_cell__1
+  kind: function
+  class: helper
+  evidence: only 0xa76ea (nn_gru_cell) calls 0xa7646; 100 bytes
 - address: 0xa76aa
   name: nn_dense_layer
   kind: function
@@ -26572,6 +26816,14 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [WPP] (1 read it,
     0 write it)
+- address: 0x2000644d
+  name: vasistas_byte_2000644d
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (2 read
+    it, 0 write it)
 - address: 0x20006454
   name: screen_list_set_struct_20006454
   kind: global
@@ -26580,6 +26832,30 @@ symbols:
   size: 12
   evidence: every function that loads or stores it logs under [SCREEN_LIST_SET]
     (3 read it, 5 write it)
+- address: 0x20006455
+  name: screen_list_set_byte_20006455
+  kind: global
+  class: global
+  module: SCREEN_LIST_SET
+  size: 1
+  evidence: it is +0x1 of the struct at 0x20006454, which only [SCREEN_LIST_SET]
+    writes the base word of and no function reaching it is in a module
+- address: 0x20006458
+  name: screen_list_set_struct_20006458
+  kind: global
+  class: global
+  module: SCREEN_LIST_SET
+  size: 6
+  evidence: it is +0x4 of the struct at 0x20006454, which only [SCREEN_LIST_SET]
+    writes the base word of and no function reaching it is in a module
+- address: 0x2000645c
+  name: vasistas_struct_2000645c
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 28
+  evidence: every function that loads or stores it logs under [VASISTAS] (3 read
+    it, 2 write it)
 - address: 0x20006470
   name: workout_cache_wpp_byte_20006470
   kind: global
@@ -26756,6 +27032,14 @@ symbols:
   size: 2
   evidence: every function that loads or stores it logs under [WORKOUT_CACHE_WPP]
     (1 read it, 2 write it)
+- address: 0x20006526
+  name: workout_cache_wpp_byte_20006526
+  kind: global
+  class: global
+  module: WORKOUT_CACHE_WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WORKOUT_CACHE_WPP]
+    (0 read it, 1 write it)
 - address: 0x20006588
   name: feature_tags_byte_20006588
   kind: global
@@ -26867,6 +27151,14 @@ symbols:
   size: 4
   evidence: 'the cache word of wup_device: dblib id 0x133, persisted by 0x37028
     with dblib_set(0x133, &0x20006ef8, 4)'
+- address: 0x20006efc
+  name: wpp_struct_20006efc
+  kind: global
+  class: global
+  module: WPP
+  size: 18
+  evidence: it is +0x4 of the struct at 0x20006ef8, which only [WPP] writes the
+    base word of and no function reaching it is in a module
 - address: 0x20006f00
   name: ble_ptr_20006f00
   kind: global
@@ -26971,6 +27263,14 @@ symbols:
   size: 18
   evidence: every function that loads or stores it logs under [ADXL367] (1 read
     it, 2 write it)
+- address: 0x20006faa
+  name: adxl367_half_20006faa
+  kind: global
+  class: global
+  module: ADXL367
+  size: 2
+  evidence: it is +0xa of the struct at 0x20006fa0, which only [ADXL367] writes
+    the base word of and no function reaching it is in a module
 - address: 0x20006fac
   name: adxl367_ptr_20006fac
   kind: global
@@ -26987,6 +27287,14 @@ symbols:
   size: 10
   evidence: every function that loads or stores it logs under [ADXL367] (1 read
     it, 2 write it)
+- address: 0x20006fb0
+  name: adxl367_ptr_20006fb0
+  kind: global
+  class: global
+  module: ADXL367
+  size: 4
+  evidence: it is +0x10 of the struct at 0x20006fa0, which only [ADXL367] writes
+    the base word of and no function reaching it is in a module
 - address: 0x20006fb2
   name: adxl367_half_20006fb2
   kind: global
@@ -27003,6 +27311,22 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [ADXL367] (1 read
     it, 2 write it)
+- address: 0x20006fb6
+  name: adxl367_byte_20006fb6
+  kind: global
+  class: global
+  module: ADXL367
+  size: 1
+  evidence: it is +0x16 of the struct at 0x20006fa0, which only [ADXL367] writes
+    the base word of and no function reaching it is in a module
+- address: 0x20006fb7
+  name: adxl367_byte_20006fb7
+  kind: global
+  class: global
+  module: ADXL367
+  size: 1
+  evidence: it is +0x17 of the struct at 0x20006fa0, which only [ADXL367] writes
+    the base word of and no function reaching it is in a module
 - address: 0x20006fb8
   name: adxl367_ptr_20006fb8
   kind: global
@@ -27011,6 +27335,14 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [ADXL367] (2 read
     it, 1 write it)
+- address: 0x20006fb9
+  name: adxl367_byte_20006fb9
+  kind: global
+  class: global
+  module: ADXL367
+  size: 1
+  evidence: it is +0x19 of the struct at 0x20006fa0, which only [ADXL367] writes
+    the base word of and no function reaching it is in a module
 - address: 0x2000700d
   name: dblib_byte_2000700d
   kind: global
@@ -27020,13 +27352,13 @@ symbols:
   evidence: every function that loads or stores it logs under [DBLIB] (1 read it,
     1 write it)
 - address: 0x20007010
-  name: initdblib_struct_20007010
+  name: dblib_struct_20007010
   kind: global
   class: global
-  module: INITDBLIB
+  module: DBLIB
   size: 22
-  evidence: every function that loads or stores it logs under [INITDBLIB] (0 read
-    it, 1 write it)
+  evidence: every function that loads or stores it logs under [DBLIB] (0 read it,
+    1 write it)
 - address: 0x20007040
   name: ecg_struct_20007040
   kind: global
@@ -27235,6 +27567,14 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [RESPIRATORY_SCAN]
     (3 read it, 3 write it)
+- address: 0x20007110
+  name: respiratory_scan_word_20007110
+  kind: global
+  class: global
+  module: RESPIRATORY_SCAN
+  size: 4
+  evidence: it is +0x10 of the struct at 0x20007100, which only [RESPIRATORY_SCAN]
+    writes the base word of and no function reaching it is in a module
 - address: 0x20007114
   name: respiratory_scan_byte_20007114
   kind: global
@@ -27366,37 +27706,37 @@ symbols:
   evidence: every function that loads or stores it logs under [TSM] (2 read it,
     1 write it)
 - address: 0x200071a0
-  name: wpp_lite_struct_200071a0
+  name: wpp_struct_200071a0
   kind: global
   class: global
-  module: WPP_LITE
+  module: WPP
   size: 9
-  evidence: every function that loads or stores it logs under [WPP_LITE] (1 read
-    it, 0 write it)
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    0 write it)
 - address: 0x200071a8
-  name: wpp_lite_byte_200071a8
+  name: wpp_byte_200071a8
   kind: global
   class: global
-  module: WPP_LITE
+  module: WPP
   size: 1
-  evidence: every function that loads or stores it logs under [WPP_LITE] (2 read
-    it, 0 write it)
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    0 write it)
 - address: 0x200071ac
-  name: wpp_lite_struct_200071ac
+  name: wpp_struct_200071ac
   kind: global
   class: global
-  module: WPP_LITE
+  module: WPP
   size: 9
-  evidence: every function that loads or stores it logs under [WPP_LITE] (1 read
-    it, 0 write it)
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    0 write it)
 - address: 0x200071b4
-  name: wpp_lite_byte_200071b4
+  name: wpp_byte_200071b4
   kind: global
   class: global
-  module: WPP_LITE
+  module: WPP
   size: 1
-  evidence: every function that loads or stores it logs under [WPP_LITE] (1 read
-    it, 0 write it)
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    0 write it)
 - address: 0x200071b8
   name: wui_struct_200071b8
   kind: global
@@ -27413,6 +27753,14 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WUI] (2 read it,
     1 write it)
+- address: 0x200071c0
+  name: wui_word_200071c0
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: it is +0x8 of the struct at 0x200071b8, which only [WUI] writes the
+    base word of and no function reaching it is in a module
 - address: 0x200071c4
   name: wui_word_200071c4
   kind: global
@@ -27501,6 +27849,14 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WUI] (2 read it,
     3 write it)
+- address: 0x200071f0
+  name: wui_ptr_200071f0
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: it is +0x38 of the struct at 0x200071b8, which only [WUI] writes the
+    base word of; BAT/WUI also reach it
 - address: 0x200071f4
   name: wui_word_200071f4
   kind: global
@@ -27533,6 +27889,22 @@ symbols:
   size: 12
   evidence: every function that loads or stores it logs under [TEMPERATURE] (2 read
     it, 1 write it)
+- address: 0x20007229
+  name: temperature_byte_20007229
+  kind: global
+  class: global
+  module: TEMPERATURE
+  size: 1
+  evidence: it is +0x1 of the struct at 0x20007228, which only [TEMPERATURE] writes
+    the base word of and no function reaching it is in a module
+- address: 0x2000722a
+  name: temperature_half_2000722a
+  kind: global
+  class: global
+  module: TEMPERATURE
+  size: 2
+  evidence: it is +0x2 of the struct at 0x20007228, which only [TEMPERATURE] writes
+    the base word of and no function reaching it is in a module
 - address: 0x2000722c
   name: temperature_byte_2000722c
   kind: global
@@ -27565,14 +27937,174 @@ symbols:
   size: 1
   evidence: 'the cache word of move_hands: dblib id 0x156, persisted by 0x6d038,
     0x7fcac with dblib_set(0x156, &0x20007243, 1)'
-- address: 0x2000741c
-  name: max8617x_flag_2000741c
+- address: 0x200073e4
+  name: wui_struct_200073e4
   kind: global
   class: global
-  module: MAX8617X
+  module: WUI
+  size: 9
+  evidence: every function that loads or stores it logs under [WUI] (3 read it,
+    6 write it)
+- address: 0x200073ec
+  name: wui_byte_200073ec
+  kind: global
+  class: global
+  module: WUI
   size: 1
-  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    4 write it)
+- address: 0x200073f0
+  name: wui_word_200073f0
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (0 read it,
+    3 write it)
+- address: 0x200073f4
+  name: wui_word_200073f4
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x200073f8
+  name: wui_struct_200073f8
+  kind: global
+  class: global
+  module: WUI
+  size: 16
+  evidence: every function that loads or stores it logs under [WUI] (0 read it,
+    1 write it)
+- address: 0x20007418
+  name: max86173_struct_20007418
+  kind: global
+  class: global
+  module: MAX86173
+  size: 196
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 5 write it)
+- address: 0x2000741c
+  name: max86173_flag_2000741c
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
     it, 1 write it)
+- address: 0x2000741e
+  name: max86173_half_2000741e
+  kind: global
+  class: global
+  module: MAX86173
+  size: 2
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x20007420
+  name: max86173_half_20007420
+  kind: global
+  class: global
+  module: MAX86173
+  size: 2
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x20007422
+  name: max86173_byte_20007422
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x20007424
+  name: max86173_byte_20007424
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x20007425
+  name: max86173_byte_20007425
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x20007426
+  name: max86173_byte_20007426
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x20007427
+  name: max86173_byte_20007427
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x20007428
+  name: max86173_byte_20007428
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x20007429
+  name: max86173_byte_20007429
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x2000742a
+  name: max86173_byte_2000742a
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x2000742b
+  name: max86173_byte_2000742b
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x2000742c
+  name: max86173_byte_2000742c
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x2000742d
+  name: max86173_byte_2000742d
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x200074d8
+  name: max86173_word_200074d8
+  kind: global
+  class: global
+  module: MAX86173
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 4 write it)
 - address: 0x200074e8
   name: greenteg_cbta_nn_tensors
   kind: table
@@ -27587,13 +28119,21 @@ symbols:
     as the output width and rows from +8 as the summed width, and 0xa76ea divides
     its own +8 by three to find the three gate blocks.'
 - address: 0x200076e8
-  name: max8617x_struct_200076e8
+  name: max86173_struct_200076e8
   kind: global
   class: global
-  module: MAX8617X
+  module: MAX86173
   size: 7
-  evidence: every function that loads or stores it logs under [MAX8617X] (2 read
+  evidence: every function that loads or stores it logs under [MAX86173] (2 read
     it, 2 write it)
+- address: 0x200076e9
+  name: max86173_byte_200076e9
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: it is +0x1 of the struct at 0x200076e8, which only [MAX86173] writes
+    the base word of and no function reaching it is in a module
 - address: 0x200076ea
   name: trig_byte_200076ea
   kind: global
@@ -27610,6 +28150,14 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [TRIG] (0 read it,
     2 write it)
+- address: 0x200076ec
+  name: max86173_half_200076ec
+  kind: global
+  class: global
+  module: MAX86173
+  size: 2
+  evidence: it is +0x4 of the struct at 0x200076e8, which only [MAX86173] writes
+    the base word of; SENSORS_SYNC/TRIG also reach it
 - address: 0x200076ee
   name: trig_byte_200076ee
   kind: global
@@ -27689,6 +28237,22 @@ symbols:
   module: PAIRING
   size: 1
   evidence: stored in the same straight line as wlog('[PAIRING] new peer') at 0x4130a
+- address: 0x20007704
+  name: pairing_word_20007704
+  kind: global
+  class: global
+  module: PAIRING
+  size: 4
+  evidence: it is +0xa of the struct at 0x200076fa, which only [PAIRING] writes
+    the base word of and no function reaching it is in a module
+- address: 0x20007708
+  name: pairing_half_20007708
+  kind: global
+  class: global
+  module: PAIRING
+  size: 2
+  evidence: it is +0xe of the struct at 0x200076fa, which only [PAIRING] writes
+    the base word of and no function reaching it is in a module
 - address: 0x2000770b
   name: rre_fonts_flag_2000770b
   kind: global
@@ -27697,6 +28261,22 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [RRE_FONTS] (0 read
     it, 1 write it)
+- address: 0x2000772e
+  name: pairing_byte_2000772e
+  kind: global
+  class: global
+  module: PAIRING
+  size: 1
+  evidence: it is +0x34 of the struct at 0x200076fa, which only [PAIRING] writes
+    the base word of and no function reaching it is in a module
+- address: 0x2000772f
+  name: pairing_byte_2000772f
+  kind: global
+  class: global
+  module: PAIRING
+  size: 1
+  evidence: it is +0x35 of the struct at 0x200076fa, which only [PAIRING] writes
+    the base word of and no function reaching it is in a module
 - address: 0x2000775c
   name: rre_fonts_word_2000775c
   kind: global
@@ -27705,6 +28285,46 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [RRE_FONTS] (1 read
     it, 0 write it)
+- address: 0x2000776e
+  name: pairing_byte_2000776e
+  kind: global
+  class: global
+  module: PAIRING
+  size: 1
+  evidence: it is +0x74 of the struct at 0x200076fa, which only [PAIRING] writes
+    the base word of and no function reaching it is in a module
+- address: 0x20007772
+  name: pairing_struct_20007772
+  kind: global
+  class: global
+  module: PAIRING
+  size: 7
+  evidence: it is +0x78 of the struct at 0x200076fa, which only [PAIRING] writes
+    the base word of and no function reaching it is in a module
+- address: 0x20007774
+  name: pairing_byte_20007774
+  kind: global
+  class: global
+  module: PAIRING
+  size: 1
+  evidence: it is +0x7a of the struct at 0x200076fa, which only [PAIRING] writes
+    the base word of and no function reaching it is in a module
+- address: 0x20007775
+  name: pairing_word_20007775
+  kind: global
+  class: global
+  module: PAIRING
+  size: 4
+  evidence: it is +0x7b of the struct at 0x200076fa, which only [PAIRING] writes
+    the base word of and no function reaching it is in a module
+- address: 0x20007779
+  name: pairing_flag_20007779
+  kind: global
+  class: global
+  module: PAIRING
+  size: 1
+  evidence: it is +0x7f of the struct at 0x200076fa, which only [PAIRING] writes
+    the base word of; GAP/PAIRING also reach it
 - address: 0x2000777a
   name: wftl_table_2000777a
   kind: global
@@ -27765,9 +28385,18 @@ symbols:
   name: wlog_display_level
   kind: global
   class: global
+  module: WLOG
   size: 2
   evidence: 'the cache word of wlog_display_level: dblib id 0xeb, persisted by 0x50abc
     with dblib_set(0xeb, &0x20007954, 2)'
+- address: 0x20007955
+  name: wlog_byte_20007955
+  kind: global
+  class: global
+  module: WLOG
+  size: 1
+  evidence: every function that loads or stores it logs under [WLOG] (2 read it,
+    1 write it)
 - address: 0x20007967
   name: sensors_sync_byte_20007967
   kind: global
@@ -27784,6 +28413,30 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (1
     read it, 1 write it)
+- address: 0x2000796e
+  name: wui_byte_2000796e
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    2 write it)
+- address: 0x2000796f
+  name: wui_byte_2000796f
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (3 read it,
+    3 write it)
+- address: 0x20007970
+  name: wui_byte_20007970
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    1 write it)
 - address: 0x20007972
   name: tracker_inactivity_byte_20007972
   kind: global
@@ -27792,6 +28445,14 @@ symbols:
   size: 1
   evidence: stored in the same straight line as wlog('[TRACKER INACTIVITY] Current
     time %d:%d => Notify %s message (index %d)\n') at 0x88c68
+- address: 0x20007973
+  name: wui_byte_20007973
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
 - address: 0x2000f480
   name: hr_algo_result_block
   kind: global
@@ -28053,12 +28714,12 @@ symbols:
   evidence: every function that loads or stores it logs under [ECG] (2 read it,
     0 write it)
 - address: 0x20014818
-  name: max8617x_struct_20014818
+  name: max86173_struct_20014818
   kind: global
   class: global
-  module: MAX8617X
+  module: MAX86173
   size: 8
-  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
     it, 0 write it)
 - address: 0x20014828
   name: max86173_table_20014828
@@ -28069,36 +28730,36 @@ symbols:
   evidence: stored in the same straight line as wlog('[max8617x][state] released')
     at 0x5293e
 - address: 0x20014829
-  name: max8617x_byte_20014829
+  name: max86173_byte_20014829
   kind: global
   class: global
-  module: MAX8617X
+  module: MAX86173
   size: 1
-  evidence: every function that loads or stores it logs under [MAX8617X] (2 read
+  evidence: every function that loads or stores it logs under [MAX86173] (2 read
     it, 2 write it)
 - address: 0x2001487c
-  name: max8617x_flag_2001487c
+  name: max86173_flag_2001487c
   kind: global
   class: global
-  module: MAX8617X
+  module: MAX86173
   size: 4
-  evidence: every function that loads or stores it logs under [MAX8617X] (0 read
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
     it, 1 write it)
 - address: 0x20014888
-  name: max8617x_word_20014888
+  name: max86173_word_20014888
   kind: global
   class: global
-  module: MAX8617X
+  module: MAX86173
   size: 4
-  evidence: every function that loads or stores it logs under [MAX8617X] (0 read
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
     it, 1 write it)
 - address: 0x2001488c
-  name: max8617x_word_2001488c
+  name: max86173_word_2001488c
   kind: global
   class: global
-  module: MAX8617X
+  module: MAX86173
   size: 4
-  evidence: every function that loads or stores it logs under [MAX8617X] (0 read
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
     it, 1 write it)
 - address: 0x20014890
   name: max86173_byte_20014890
@@ -28108,37 +28769,37 @@ symbols:
   size: 1
   evidence: stored in the same straight line as wlog('[max8617x][error] invalid
     tags per period\n') at 0x52ac2
-- address: 0x20014894
-  name: max8617x_word_20014894
+- address: 0x20014898
+  name: max86173_byte_20014898
   kind: global
   class: global
-  module: MAX8617X
-  size: 4
-  evidence: every function that loads or stores it logs under [MAX8617X] (2 read
-    it, 1 write it)
-- address: 0x20014899
-  name: max8617x_byte_20014899
-  kind: global
-  class: global
-  module: MAX8617X
+  module: MAX86173
   size: 1
-  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+  evidence: every function that loads or stores it logs under [MAX86173] (4 read
+    it, 4 write it)
+- address: 0x20014899
+  name: max86173_byte_20014899
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
     it, 1 write it)
 - address: 0x200148a0
-  name: max8617x_word_200148a0
+  name: max86173_word_200148a0
   kind: global
   class: global
-  module: MAX8617X
+  module: MAX86173
   size: 4
-  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
     it, 1 write it)
 - address: 0x200148a8
-  name: max8617x_word_200148a8
+  name: max86173_word_200148a8
   kind: global
   class: global
-  module: MAX8617X
+  module: MAX86173
   size: 4
-  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
     it, 0 write it)
 - address: 0x20014b44
   name: tracker_inactivity_word_20014b44
@@ -28451,6 +29112,30 @@ symbols:
   module: null
   evidence: the stack buffer the call was handed; the name string 'BUTTON' and the
     entry pointer 0x3320d that xTaskCreateStatic at 0x33348 was given
+- address: 0x20017c4c
+  name: vasistas_word_20017c4c
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (1 read
+    it, 2 write it)
+- address: 0x20017c50
+  name: vasistas_word_20017c50
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (1 read
+    it, 2 write it)
+- address: 0x20017c54
+  name: wpp_ptr_20017c54
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    1 write it)
 - address: 0x20017c58
   name: rre_fonts_ptr_20017c58
   kind: global
@@ -28459,22 +29144,6 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [RRE_FONTS] (1 read
     it, 0 write it)
-- address: 0x20017c5c
-  name: rre_fonts_struct_20017c5c
-  kind: global
-  class: global
-  module: RRE_FONTS
-  size: 28
-  evidence: every function that loads or stores it logs under [RRE_FONTS] (5 read
-    it, 1 write it)
-- address: 0x20017c60
-  name: rre_fonts_ptr_20017c60
-  kind: global
-  class: global
-  module: RRE_FONTS
-  size: 4
-  evidence: every function that loads or stores it logs under [RRE_FONTS] (5 read
-    it, 1 write it)
 - address: 0x20017c64
   name: rre_fonts_word_20017c64
   kind: global
@@ -28499,6 +29168,14 @@ symbols:
   size: 2
   evidence: every function that loads or stores it logs under [RRE_FONTS] (1 read
     it, 1 write it)
+- address: 0x20017c70
+  name: wui_word_20017c70
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
 - address: 0x20017c74
   name: rre_fonts_word_20017c74
   kind: global
@@ -28853,13 +29530,21 @@ symbols:
   evidence: every function that loads or stores it logs under [BLE_WPP] (1 read
     it, 0 write it)
 - address: 0x20017f75
-  name: wpp_lite_byte_20017f75
+  name: wpp_byte_20017f75
   kind: global
   class: global
-  module: WPP_LITE
+  module: WPP
   size: 1
-  evidence: every function that loads or stores it logs under [WPP_LITE] (4 read
-    it, 0 write it)
+  evidence: every function that loads or stores it logs under [WPP] (4 read it,
+    0 write it)
+- address: 0x20018040
+  name: wpp_half_20018040
+  kind: global
+  class: global
+  module: WPP
+  size: 2
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    2 write it)
 - address: 0x20018048
   name: wpps_word_20018048
   kind: global
@@ -28907,6 +29592,30 @@ symbols:
   module: WPPS
   size: 1
   evidence: every function that loads or stores it logs under [WPPS] (1 read it,
+    1 write it)
+- address: 0x200180a4
+  name: wpp_word_200180a4
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    0 write it)
+- address: 0x200180a8
+  name: wpp_word_200180a8
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    1 write it)
+- address: 0x200180ac
+  name: wpp_word_200180ac
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
     1 write it)
 - address: 0x200180c0
   name: ble_wpps_word_200180c0
@@ -29024,14 +29733,46 @@ symbols:
   module: adxl367
   evidence: 'the handle word: xQueueCreateMutexStatic at 0x3bdda with queue type
     1; the name''s module is the module of the functions that read the handle word'
-- address: 0x20018394
-  name: adxl367_byte_20018394
+- address: 0x200183a1
+  name: sensors_sync_byte_200183a1
   kind: global
   class: global
-  module: ADXL367
+  module: SENSORS_SYNC
   size: 1
-  evidence: every function that loads or stores it logs under [ADXL367] (6 read
-    it, 2 write it)
+  evidence: every function that loads or stores it logs under [SENSORS_SYNC] (1
+    read it, 0 write it)
+- address: 0x200183ac
+  name: sensors_sync_word_200183ac
+  kind: global
+  class: global
+  module: SENSORS_SYNC
+  size: 4
+  evidence: every function that loads or stores it logs under [SENSORS_SYNC] (2
+    read it, 1 write it)
+- address: 0x200183b0
+  name: sensors_sync_word_200183b0
+  kind: global
+  class: global
+  module: SENSORS_SYNC
+  size: 4
+  evidence: every function that loads or stores it logs under [SENSORS_SYNC] (1
+    read it, 0 write it)
+- address: 0x200183b4
+  name: sensors_sync_half_200183b4
+  kind: global
+  class: global
+  module: SENSORS_SYNC
+  size: 2
+  evidence: every function that loads or stores it logs under [SENSORS_SYNC] (1
+    read it, 0 write it)
+- address: 0x20018470
+  name: sensors_sync_word_20018470
+  kind: global
+  class: global
+  module: SENSORS_SYNC
+  size: 4
+  evidence: every function that loads or stores it logs under [SENSORS_SYNC] (0
+    read it, 2 write it)
 - address: 0x2001848c
   name: alarmclock
   kind: global
@@ -29071,38 +29812,6 @@ symbols:
   size: 2
   evidence: every function that loads or stores it logs under [ANCS] (1 read it,
     0 write it)
-- address: 0x20018630
-  name: alti_word_20018630
-  kind: global
-  class: global
-  module: ALTI
-  size: 4
-  evidence: every function that loads or stores it logs under [ALTI] (0 read it,
-    2 write it)
-- address: 0x20018634
-  name: alti_half_20018634
-  kind: global
-  class: global
-  module: ALTI
-  size: 2
-  evidence: every function that loads or stores it logs under [ALTI] (0 read it,
-    2 write it)
-- address: 0x20018640
-  name: alti_struct_20018640
-  kind: global
-  class: global
-  module: ALTI
-  size: 10
-  evidence: every function that loads or stores it logs under [ALTI] (0 read it,
-    2 write it)
-- address: 0x20018644
-  name: alti_word_20018644
-  kind: global
-  class: global
-  module: ALTI
-  size: 4
-  evidence: every function that loads or stores it logs under [ALTI] (0 read it,
-    2 write it)
 - address: 0x20018658
   name: alti_half_20018658
   kind: global
@@ -29296,6 +30005,14 @@ symbols:
   size: 2
   evidence: every function that loads or stores it logs under [BAT] (1 read it,
     0 write it)
+- address: 0x20018b64
+  name: bat_ptr_20018b64
+  kind: global
+  class: global
+  module: BAT
+  size: 4
+  evidence: it is +0xc of the struct at 0x20018b58, which only [BAT] writes the
+    base word of and no function reaching it is in a module
 - address: 0x20018b68
   name: battery_table_20018b68
   kind: global
@@ -29408,6 +30125,14 @@ symbols:
   size: 2
   evidence: every function that loads or stores it logs under [SERVICE_CHANGED]
     (1 read it, 2 write it)
+- address: 0x20018e44
+  name: service_changed_half_20018e44
+  kind: global
+  class: global
+  module: SERVICE_CHANGED
+  size: 2
+  evidence: it is +0x8 of the struct at 0x20018e3c, which only [SERVICE_CHANGED]
+    writes the base word of; BT/SERVICE_CHANGED also reach it
 - address: 0x20018e46
   name: service_changed_half_20018e46
   kind: global
@@ -29416,6 +30141,22 @@ symbols:
   size: 2
   evidence: every function that loads or stores it logs under [SERVICE_CHANGED]
     (1 read it, 3 write it)
+- address: 0x20018e48
+  name: service_changed_byte_20018e48
+  kind: global
+  class: global
+  module: SERVICE_CHANGED
+  size: 1
+  evidence: it is +0x10 of the struct at 0x20018e38, which only [SERVICE_CHANGED]
+    writes the base word of; GAP/SERVICE_CHANGED also reach it
+- address: 0x20018e4c
+  name: service_changed_word_20018e4c
+  kind: global
+  class: global
+  module: SERVICE_CHANGED
+  size: 4
+  evidence: it is +0x14 of the struct at 0x20018e38, which only [SERVICE_CHANGED]
+    writes the base word of and no function reaching it is in a module
 - address: 0x20018e50
   name: service_changed_byte_20018e50
   kind: global
@@ -29424,21 +30165,21 @@ symbols:
   size: 1
   evidence: stored in the same straight line as wlog('[SERVICE_CHANGED] ') at 0x41a8e
 - address: 0x20018e54
-  name: ble_wpp_c_struct_20018e54
+  name: wuapp_struct_20018e54
   kind: global
   class: global
-  module: BLE_WPP_C
+  module: WUAPP
   size: 17
-  evidence: every function that loads or stores it logs under [BLE_WPP_C] (2 read
-    it, 0 write it)
+  evidence: every function that loads or stores it logs under [WUAPP] (2 read it,
+    0 write it)
 - address: 0x20018e56
-  name: ble_wpp_c_half_20018e56
+  name: wuapp_half_20018e56
   kind: global
   class: global
-  module: BLE_WPP_C
+  module: WUAPP
   size: 2
-  evidence: every function that loads or stores it logs under [BLE_WPP_C] (1 read
-    it, 0 write it)
+  evidence: every function that loads or stores it logs under [WUAPP] (1 read it,
+    0 write it)
 - address: 0x20018e58
   name: wuapp_byte_20018e58
   kind: global
@@ -29456,13 +30197,13 @@ symbols:
   evidence: every function that loads or stores it logs under [WUAPP] (1 read it,
     1 write it)
 - address: 0x20018e60
-  name: ble_wpp_c_word_20018e60
+  name: wuapp_word_20018e60
   kind: global
   class: global
-  module: BLE_WPP_C
+  module: WUAPP
   size: 4
-  evidence: every function that loads or stores it logs under [BLE_WPP_C] (1 read
-    it, 1 write it)
+  evidence: every function that loads or stores it logs under [WUAPP] (1 read it,
+    1 write it)
 - address: 0x20018e64
   name: wuapp_byte_20018e64
   kind: global
@@ -29767,13 +30508,13 @@ symbols:
   evidence: 'stored in the same straight line as wlog(''[INITDBLIB] Bank courante:
     %d, address: 0x%x, size 0x%x\n'') at 0x47a2c'
 - address: 0x20019228
-  name: initdblib_ptr_20019228
+  name: dblib_ptr_20019228
   kind: global
   class: global
-  module: INITDBLIB
+  module: DBLIB
   size: 4
-  evidence: every function that loads or stores it logs under [INITDBLIB] (3 read
-    it, 1 write it)
+  evidence: every function that loads or stores it logs under [DBLIB] (3 read it,
+    1 write it)
 - address: 0x2001922c
   name: debug_dump_struct_2001922c
   kind: global
@@ -29846,6 +30587,22 @@ symbols:
   size: 2
   evidence: every function that loads or stores it logs under [DIGITAL_CROWN] (1
     read it, 1 write it)
+- address: 0x20019248
+  name: digital_crown_ptr_20019248
+  kind: global
+  class: global
+  module: DIGITAL_CROWN
+  size: 4
+  evidence: it is +0xc of the struct at 0x2001923c, which only [DIGITAL_CROWN] writes
+    the base word of and no function reaching it is in a module
+- address: 0x20019249
+  name: digital_crown_byte_20019249
+  kind: global
+  class: global
+  module: DIGITAL_CROWN
+  size: 1
+  evidence: it is +0xd of the struct at 0x2001923c, which only [DIGITAL_CROWN] writes
+    the base word of and no function reaching it is in a module
 - address: 0x2001924c
   name: ecg_mutex_static
   kind: global
@@ -30021,6 +30778,22 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WPP] (1 read it,
     2 write it)
+- address: 0x2001a26c
+  name: feature_tags_struct_2001a26c
+  kind: global
+  class: global
+  module: FEATURE_TAGS
+  size: 6
+  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (2
+    read it, 0 write it)
+- address: 0x2001a30c
+  name: feature_tags_word_2001a30c
+  kind: global
+  class: global
+  module: FEATURE_TAGS
+  size: 4
+  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (1
+    read it, 0 write it)
 - address: 0x2001a3ac
   name: flash_cache
   kind: global
@@ -30201,6 +30974,14 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WLOG] (2 read it,
     1 write it)
+- address: 0x2001ada0
+  name: wlog_word_2001ada0
+  kind: global
+  class: global
+  module: WLOG
+  size: 4
+  evidence: every function that loads or stores it logs under [WLOG] (1 read it,
+    2 write it)
 - address: 0x2001ada4
   name: locale
   kind: global
@@ -30248,35 +31029,131 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [DEBUG_DUMP] (3 read
     it, 2 write it)
-- address: 0x2001afa0
-  name: max8617x_word_2001afa0
+- address: 0x2001ae1c
+  name: max86173_table_2001ae1c
   kind: global
   class: global
-  module: MAX8617X
+  module: MAX86173
+  size: 403
+  evidence: every function that loads or stores it logs under [MAX86173] (0 read
+    it, 1 write it)
+- address: 0x2001ae20
+  name: max86173_byte_2001ae20
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
+    it, 1 write it)
+- address: 0x2001ae24
+  name: max86173_word_2001ae24
+  kind: global
+  class: global
+  module: MAX86173
   size: 4
-  evidence: every function that loads or stores it logs under [MAX8617X] (5 read
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
+    it, 1 write it)
+- address: 0x2001ae28
+  name: max86173_word_2001ae28
+  kind: global
+  class: global
+  module: MAX86173
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
+    it, 1 write it)
+- address: 0x2001ae2c
+  name: max86173_word_2001ae2c
+  kind: global
+  class: global
+  module: MAX86173
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
+    it, 1 write it)
+- address: 0x2001ae30
+  name: max86173_word_2001ae30
+  kind: global
+  class: global
+  module: MAX86173
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
+    it, 1 write it)
+- address: 0x2001af9c
+  name: max86173_table_2001af9c
+  kind: global
+  class: global
+  module: MAX86173
+  size: 403
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
+    it, 0 write it)
+- address: 0x2001afa0
+  name: max86173_word_2001afa0
+  kind: global
+  class: global
+  module: MAX86173
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX86173] (5 read
+    it, 0 write it)
+- address: 0x2001afb4
+  name: max86173_byte_2001afb4
+  kind: global
+  class: global
+  module: MAX86173
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
+    it, 0 write it)
+- address: 0x2001afb8
+  name: max86173_word_2001afb8
+  kind: global
+  class: global
+  module: MAX86173
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
+    it, 0 write it)
+- address: 0x2001afbc
+  name: max86173_word_2001afbc
+  kind: global
+  class: global
+  module: MAX86173
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
+    it, 0 write it)
+- address: 0x2001afc0
+  name: max86173_word_2001afc0
+  kind: global
+  class: global
+  module: MAX86173
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
+    it, 0 write it)
+- address: 0x2001afc8
+  name: max86173_word_2001afc8
+  kind: global
+  class: global
+  module: MAX86173
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
     it, 0 write it)
 - address: 0x2001b55c
-  name: max8617x_struct_2001b55c
+  name: max86173_struct_2001b55c
   kind: global
   class: global
-  module: MAX8617X
+  module: MAX86173
   size: 20
-  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
     it, 0 write it)
 - address: 0x2001bd5c
-  name: max8617x_queue_static
+  name: max86173_queue_static
   kind: global
   class: kernel
-  module: max8617x
+  module: max86173
   evidence: the static object handed to xQueueGenericCreateStatic at 0x52742 with
     queue type the block does not establish; the name's module is the module of
     the functions that read the handle word
 - address: 0x2001bdb0
-  name: max8617x_queue
+  name: max86173_queue
   kind: global
   class: kernel
-  module: max8617x
+  module: max86173
   evidence: 'the handle word: xQueueGenericCreateStatic at 0x52742 with queue type
     the block does not establish; the name''s module is the module of the functions
     that read the handle word'
@@ -30284,31 +31161,39 @@ symbols:
   name: max_led_config_task_handle
   kind: global
   class: kernel
-  module: max8617x
+  module: max86173
   evidence: the word the created task's handle is stored in; the name string 'max_LED_config'
     and the entry pointer 0x52b1d that xTaskCreate at 0x5275c was given
 - address: 0x2001bdb8
-  name: max8617x_sem_static
+  name: max86173_sem_static
   kind: global
   class: kernel
-  module: max8617x
+  module: max86173
   evidence: the static object handed to xQueueGenericCreateStatic at 0x52716 with
     queue type 3; the name's module is the module of the functions that read the
     handle word
 - address: 0x2001be0c
-  name: max8617x_sem
+  name: max86173_sem
   kind: global
   class: kernel
-  module: max8617x
+  module: max86173
   evidence: 'the handle word: xQueueGenericCreateStatic at 0x52716 with queue type
     3; the name''s module is the module of the functions that read the handle word'
-- address: 0x2001be14
-  name: max8617x_ptr_2001be14
+- address: 0x2001be10
+  name: max86173_ptr_2001be10
   kind: global
   class: global
-  module: MAX8617X
+  module: MAX86173
   size: 4
-  evidence: every function that loads or stores it logs under [MAX8617X] (3 read
+  evidence: every function that loads or stores it logs under [MAX86173] (3 read
+    it, 2 write it)
+- address: 0x2001be14
+  name: max86173_ptr_2001be14
+  kind: global
+  class: global
+  module: MAX86173
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX86173] (3 read
     it, 2 write it)
 - address: 0x2001be18
   name: max86173_table_2001be18
@@ -30318,45 +31203,77 @@ symbols:
   size: 8
   evidence: every function that loads or stores it logs under [MAX86173] (2 read
     it, 2 write it)
-- address: 0x2001bf74
-  name: ms5849_word_2001bf74
+- address: 0x2001be1c
+  name: max86173_word_2001be1c
   kind: global
   class: global
-  module: MS5849
+  module: MAX86173
   size: 4
-  evidence: every function that loads or stores it logs under [MS5849] (1 read it,
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
+    it, 1 write it)
+- address: 0x2001bf74
+  name: ms5837_word_2001bf74
+  kind: global
+  class: global
+  module: MS5837
+  size: 4
+  evidence: every function that loads or stores it logs under [MS5837] (1 read it,
     1 write it)
 - address: 0x2001bf78
-  name: ms5849_word_2001bf78
+  name: ms5837_word_2001bf78
   kind: global
   class: global
-  module: MS5849
+  module: MS5837
   size: 4
-  evidence: every function that loads or stores it logs under [MS5849] (1 read it,
+  evidence: every function that loads or stores it logs under [MS5837] (1 read it,
     1 write it)
 - address: 0x2001bf7c
-  name: ms5849_word_2001bf7c
+  name: ms5837_word_2001bf7c
   kind: global
   class: global
-  module: MS5849
+  module: MS5837
   size: 4
-  evidence: every function that loads or stores it logs under [MS5849] (1 read it,
+  evidence: every function that loads or stores it logs under [MS5837] (1 read it,
     1 write it)
 - address: 0x2001bf84
-  name: ms5849_word_2001bf84
+  name: ms5837_word_2001bf84
   kind: global
   class: global
-  module: MS5849
+  module: MS5837
   size: 4
-  evidence: every function that loads or stores it logs under [MS5849] (1 read it,
+  evidence: every function that loads or stores it logs under [MS5837] (1 read it,
     1 write it)
 - address: 0x2001bf88
-  name: ms5849_flag_2001bf88
+  name: ms5837_flag_2001bf88
   kind: global
   class: global
-  module: MS5849
+  module: MS5837
   size: 4
-  evidence: every function that loads or stores it logs under [MS5849] (1 read it,
+  evidence: every function that loads or stores it logs under [MS5837] (1 read it,
+    1 write it)
+- address: 0x2001bf8c
+  name: ms5837_byte_2001bf8c
+  kind: global
+  class: global
+  module: MS5837
+  size: 1
+  evidence: every function that loads or stores it logs under [MS5837] (0 read it,
+    1 write it)
+- address: 0x2001bf8d
+  name: ms5837_byte_2001bf8d
+  kind: global
+  class: global
+  module: MS5837
+  size: 1
+  evidence: every function that loads or stores it logs under [MS5837] (0 read it,
+    1 write it)
+- address: 0x2001bf8e
+  name: ms5837_byte_2001bf8e
+  kind: global
+  class: global
+  module: MS5837
+  size: 1
+  evidence: every function that loads or stores it logs under [MS5837] (0 read it,
     1 write it)
 - address: 0x2001bf90
   name: ancs_ptr_2001bf90
@@ -30593,14 +31510,6 @@ symbols:
     (0x598ba) and bit 1 by the push''s overrun path (0x59776). The consumer hands
     a non-zero value to 0x31410 and zeroes it (0x59646..0x59650), which is the "[TRACKER_ALGO]
     Exception detected (0x2)" line.'
-- address: 0x2001f8e4
-  name: crtvfy_ptr_2001f8e4
-  kind: global
-  class: global
-  module: CRTVFY
-  size: 4
-  evidence: every function that loads or stores it logs under [CRTVFY] (7 read it,
-    1 write it)
 - address: 0x2001fad4
   name: lapping_word_2001fad4
   kind: global
@@ -31089,6 +31998,22 @@ symbols:
   size: 4
   evidence: stored in the same straight line as wlog('[TRACKER_LIVE][STEPS] confirmed:%d,
     unknown:%d, min:%d, delta:%d, total:%d\n') at 0x5f3ea
+- address: 0x2001fcec
+  name: tracker_word_2001fcec
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: it is +0xc of the struct at 0x2001fce0, which only [TRACKER] writes
+    the base word of; TRACKER/TRACKER_LIVE/WPP also reach it
+- address: 0x2001fcf0
+  name: tracker_word_2001fcf0
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: it is +0x10 of the struct at 0x2001fce0, which only [TRACKER] writes
+    the base word of; TRACKER/TRACKER_LIVE/WPP also reach it
 - address: 0x2001fcf4
   name: tracker_live_word_2001fcf4
   kind: global
@@ -31097,6 +32022,30 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [TRACKER_LIVE] (2
     read it, 1 write it)
+- address: 0x2001fcf8
+  name: tracker_word_2001fcf8
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: it is +0x18 of the struct at 0x2001fce0, which only [TRACKER] writes
+    the base word of; TRACKER/WPP also reach it
+- address: 0x2001fcfc
+  name: tracker_word_2001fcfc
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: it is +0x1c of the struct at 0x2001fce0, which only [TRACKER] writes
+    the base word of; TRACKER/WPP also reach it
+- address: 0x2001fd00
+  name: tracker_word_2001fd00
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: it is +0x20 of the struct at 0x2001fce0, which only [TRACKER] writes
+    the base word of; TRACKER/WPP also reach it
 - address: 0x2001fd04
   name: tracker_live_word_2001fd04
   kind: global
@@ -31105,6 +32054,22 @@ symbols:
   size: 4
   evidence: stored in the same straight line as wlog('[TRACKER_LIVE][CCALO] current:%d,
     min:%d, certain:%d, unknown:%d, delta:%d, total:%d\n') at 0x5f4b0
+- address: 0x2001fd08
+  name: tracker_word_2001fd08
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: it is +0x28 of the struct at 0x2001fce0, which only [TRACKER] writes
+    the base word of; TRACKER/TRACKER_LIVE/WPP also reach it
+- address: 0x2001fd0c
+  name: tracker_word_2001fd0c
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: it is +0x2c of the struct at 0x2001fce0, which only [TRACKER] writes
+    the base word of; TRACKER/TRACKER_LIVE/WPP also reach it
 - address: 0x2001fd10
   name: tracker_word_2001fd10
   kind: global
@@ -31707,6 +32672,14 @@ symbols:
   size: 8
   evidence: 'stored in the same straight line as wlog(''[ALGO_MANAGER] %s request
     ( pause count: %d -> %d )\n'') at 0x63c28'
+- address: 0x200201d8
+  name: algo_manager_word_200201d8
+  kind: global
+  class: global
+  module: ALGO_MANAGER
+  size: 4
+  evidence: it is +0x4 of the struct at 0x200201d4, which only [ALGO_MANAGER] writes
+    the base word of and no function reaching it is in a module
 - address: 0x20020234
   name: wpp_struct_20020234
   kind: global
@@ -31745,8 +32718,224 @@ symbols:
   class: global
   module: VAS
   size: 1
-  evidence: every function that loads or stores it logs under [VAS] (5 read it,
-    1 write it)
+  evidence: it is +0x8 of the struct at 0x20020248, which only [VAS] writes the
+    base word of; VAS/VASISTAS also reach it
+- address: 0x20020264
+  name: vasistas_word_20020264
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (1 read
+    it, 1 write it)
+- address: 0x20020268
+  name: vasistas_flag_20020268
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x2002027c
+  name: vasistas_word_2002027c
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x20020280
+  name: vasistas_byte_20020280
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x20020294
+  name: vasistas_word_20020294
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x20020298
+  name: vasistas_byte_20020298
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x200202ac
+  name: vasistas_word_200202ac
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x200202b0
+  name: vasistas_byte_200202b0
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x200202c4
+  name: vasistas_word_200202c4
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x200202c8
+  name: vasistas_byte_200202c8
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x200202dc
+  name: vasistas_word_200202dc
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x200202e0
+  name: vasistas_byte_200202e0
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x200202f4
+  name: vasistas_word_200202f4
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x200202f8
+  name: vasistas_byte_200202f8
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x2002030c
+  name: vasistas_word_2002030c
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x20020310
+  name: vasistas_byte_20020310
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x20020324
+  name: vasistas_word_20020324
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x20020328
+  name: vasistas_byte_20020328
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x2002033c
+  name: vasistas_word_2002033c
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x20020340
+  name: vasistas_byte_20020340
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x20020354
+  name: vasistas_word_20020354
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x20020358
+  name: vasistas_byte_20020358
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x2002036c
+  name: vasistas_word_2002036c
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x20020370
+  name: vasistas_byte_20020370
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x20020384
+  name: vasistas_word_20020384
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x20020388
+  name: vasistas_byte_20020388
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
+- address: 0x2002039c
+  name: vasistas_word_2002039c
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (0 read
+    it, 1 write it)
 - address: 0x200203a0
   name: vas_cache
   kind: global
@@ -31755,6 +32944,22 @@ symbols:
   size: 4
   evidence: 'the cache word of vas_cache: dblib id 0x103, persisted by 0x658bc,
     0x6593c with dblib_set(0x103, &0x200203a0, 4)'
+- address: 0x200203a1
+  name: vasistas_flag_200203a1
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VASISTAS] (3 read
+    it, 1 write it)
+- address: 0x200203a8
+  name: vasistas_word_200203a8
+  kind: global
+  class: global
+  module: VASISTAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VASISTAS] (2 read
+    it, 3 write it)
 - address: 0x20020400
   name: vib_struct_20020400
   kind: global
@@ -31794,6 +32999,14 @@ symbols:
   module: ppg_afib_store
   evidence: the handle 0x20020838 that xQueueCreateMutexStatic at 0x67aec produced
     is taken and given only in ppg_afib_store
+- address: 0x20020894
+  name: wftl_flag_20020894
+  kind: global
+  class: global
+  module: WFTL
+  size: 4
+  evidence: every function that loads or stores it logs under [WFTL] (1 read it,
+    1 write it)
 - address: 0x20020898
   name: wftl_ptr_20020898
   kind: global
@@ -31818,14 +33031,22 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WPP] (0 read it,
     4 write it)
-- address: 0x20020921
-  name: wpp_lite_byte_20020921
+- address: 0x20020920
+  name: wpp_struct_20020920
   kind: global
   class: global
-  module: WPP_LITE
+  module: WPP
+  size: 48
+  evidence: every function that loads or stores it logs under [WPP] (3 read it,
+    3 write it)
+- address: 0x20020921
+  name: wpp_byte_20020921
+  kind: global
+  class: global
+  module: WPP
   size: 1
-  evidence: every function that loads or stores it logs under [WPP_LITE] (2 read
-    it, 2 write it)
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    2 write it)
 - address: 0x20020924
   name: wpp_word_20020924
   kind: global
@@ -31874,14 +33095,38 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [WPP] (1 read it,
     1 write it)
-- address: 0x20020958
-  name: wpp_lite_word_20020958
+- address: 0x20020950
+  name: wpp_table_20020950
   kind: global
   class: global
-  module: WPP_LITE
+  module: WPP
+  size: 403
+  evidence: every function that loads or stores it logs under [WPP] (4 read it,
+    0 write it)
+- address: 0x20020954
+  name: wpp_word_20020954
+  kind: global
+  class: global
+  module: WPP
   size: 4
-  evidence: every function that loads or stores it logs under [WPP_LITE] (1 read
-    it, 0 write it)
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    0 write it)
+- address: 0x20020958
+  name: wpp_word_20020958
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    0 write it)
+- address: 0x2002095c
+  name: wpp_byte_2002095c
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (3 read it,
+    0 write it)
 - address: 0x20020aa0
   name: wpp_rx_frame_buffer
   kind: global
@@ -31890,6 +33135,14 @@ symbols:
   evidence: the 200-byte reassembly buffer installed at 0x6c16c together with the
     capacity 200 at ctx+64; FIRMWARE.md's frame-length section is the evidence,
     including that the next global begins exactly 200 bytes later
+- address: 0x20020b68
+  name: wpp_word_20020b68
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    2 write it)
 - address: 0x20020b70
   name: debug_dump_word_20020b70
   kind: global
@@ -32211,22 +33464,6 @@ symbols:
   module: adc
   evidence: the static object handed to xQueueCreateMutexStatic at 0x7e30c with
     queue type 1; the name's module is the module the creating function logs under
-- address: 0x20021a80
-  name: acq_word_20021a80
-  kind: global
-  class: global
-  module: ACQ
-  size: 4
-  evidence: every function that loads or stores it logs under [ACQ] (2 read it,
-    2 write it)
-- address: 0x20021b50
-  name: adc_word_20021b50
-  kind: global
-  class: global
-  module: ADC
-  size: 4
-  evidence: every function that loads or stores it logs under [ADC] (1 read it,
-    2 write it)
 - address: 0x20021b54
   name: adc_ptr_20021b54
   kind: global
@@ -32283,6 +33520,214 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [SCREEN_TIMER] (3
     read it, 1 write it)
+- address: 0x20024654
+  name: wui_struct_20024654
+  kind: global
+  class: global
+  module: WUI
+  size: 8
+  evidence: every function that loads or stores it logs under [WUI] (4 read it,
+    3 write it)
+- address: 0x20024658
+  name: wui_word_20024658
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: it is +0x4 of the struct at 0x20024654, which only [WUI] writes the
+    base word of and no function reaching it is in a module
+- address: 0x20024675
+  name: wui_byte_20024675
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    0 write it)
+- address: 0x200246a4
+  name: wui_word_200246a4
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    2 write it)
+- address: 0x200246a8
+  name: wui_ptr_200246a8
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    2 write it)
+- address: 0x200246b8
+  name: wui_word_200246b8
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    2 write it)
+- address: 0x200246bc
+  name: wui_struct_200246bc
+  kind: global
+  class: global
+  module: WUI
+  size: 16
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    4 write it)
+- address: 0x200246bd
+  name: wui_byte_200246bd
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (4 read it,
+    3 write it)
+- address: 0x200246be
+  name: wui_byte_200246be
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    1 write it)
+- address: 0x200246bf
+  name: wui_byte_200246bf
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    1 write it)
+- address: 0x200246c0
+  name: wui_byte_200246c0
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x200246c1
+  name: wui_byte_200246c1
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x200246c2
+  name: wui_byte_200246c2
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (4 read it,
+    3 write it)
+- address: 0x200246c3
+  name: wui_byte_200246c3
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    4 write it)
+- address: 0x200246c4
+  name: wui_half_200246c4
+  kind: global
+  class: global
+  module: WUI
+  size: 2
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    3 write it)
+- address: 0x200246c5
+  name: wui_flag_200246c5
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x200246c6
+  name: wui_byte_200246c6
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: it is +0xa of the struct at 0x200246bc, which only [WUI] writes the
+    base word of and no function reaching it is in a module
+- address: 0x200246c8
+  name: wui_word_200246c8
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: it is +0xc of the struct at 0x200246bc, which only [WUI] writes the
+    base word of and no function reaching it is in a module
+- address: 0x200246d8
+  name: wui_struct_200246d8
+  kind: global
+  class: global
+  module: WUI
+  size: 61
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x200246d9
+  name: wui_byte_200246d9
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x200246e0
+  name: wui_word_200246e0
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x20024714
+  name: wui_byte_20024714
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    1 write it)
+- address: 0x20024718
+  name: wui_word_20024718
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    1 write it)
+- address: 0x2002471c
+  name: wui_struct_2002471c
+  kind: global
+  class: global
+  module: WUI
+  size: 24
+  evidence: every function that loads or stores it logs under [WUI] (6 read it,
+    1 write it)
+- address: 0x20024720
+  name: wui_struct_20024720
+  kind: global
+  class: global
+  module: WUI
+  size: 20
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x20024730
+  name: wui_word_20024730
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
 - address: 0x20024734
   name: factory_word_20024734
   kind: global
@@ -32323,14 +33768,6 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [FACTORY] (1 read
     it, 0 write it)
-- address: 0x20024744
-  name: factory_struct_20024744
-  kind: global
-  class: global
-  module: FACTORY
-  size: 24
-  evidence: every function that loads or stores it logs under [FACTORY] (0 read
-    it, 2 write it)
 - address: 0x2002474c
   name: factory_word_2002474c
   kind: global
@@ -32339,22 +33776,6 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [FACTORY] (1 read
     it, 0 write it)
-- address: 0x20024750
-  name: factory_word_20024750
-  kind: global
-  class: global
-  module: FACTORY
-  size: 4
-  evidence: every function that loads or stores it logs under [FACTORY] (2 read
-    it, 1 write it)
-- address: 0x20024754
-  name: factory_byte_20024754
-  kind: global
-  class: global
-  module: FACTORY
-  size: 1
-  evidence: every function that loads or stores it logs under [FACTORY] (2 read
-    it, 3 write it)
 - address: 0x20024758
   name: factory_word_20024758
   kind: global
@@ -32371,46 +33792,94 @@ symbols:
   size: 4
   evidence: stored in the same straight line as wlog('[FACTORY] Factory_test type
     %d, status %d\n') at 0x83a1e
+- address: 0x20024760
+  name: wui_struct_20024760
+  kind: global
+  class: global
+  module: WUI
+  size: 12
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    2 write it)
 - address: 0x20024761
-  name: lapping_byte_20024761
+  name: wui_byte_20024761
   kind: global
   class: global
-  module: LAPPING
+  module: WUI
   size: 1
-  evidence: every function that loads or stores it logs under [LAPPING] (2 read
-    it, 0 write it)
+  evidence: it is +0x1 of the struct at 0x20024760, which only [WUI] writes the
+    base word of; LAPPING/WUI also reach it
 - address: 0x20024762
-  name: lapping_half_20024762
+  name: wui_half_20024762
   kind: global
   class: global
-  module: LAPPING
+  module: WUI
   size: 2
-  evidence: every function that loads or stores it logs under [LAPPING] (2 read
-    it, 0 write it)
+  evidence: it is +0x2 of the struct at 0x20024760, which only [WUI] writes the
+    base word of; LAPPING/WUI also reach it
 - address: 0x20024763
-  name: lapping_byte_20024763
+  name: wui_byte_20024763
   kind: global
   class: global
-  module: LAPPING
+  module: WUI
   size: 1
-  evidence: every function that loads or stores it logs under [LAPPING] (2 read
-    it, 0 write it)
+  evidence: it is +0x3 of the struct at 0x20024760, which only [WUI] writes the
+    base word of; LAPPING/WUI also reach it
+- address: 0x20024764
+  name: wui_half_20024764
+  kind: global
+  class: global
+  module: WUI
+  size: 2
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    1 write it)
 - address: 0x20024765
-  name: lapping_byte_20024765
+  name: wui_byte_20024765
   kind: global
   class: global
-  module: LAPPING
+  module: WUI
   size: 1
-  evidence: every function that loads or stores it logs under [LAPPING] (2 read
-    it, 0 write it)
+  evidence: it is +0x5 of the struct at 0x20024760, which only [WUI] writes the
+    base word of; LAPPING/WUI also reach it
 - address: 0x20024766
-  name: lapping_byte_20024766
+  name: wui_byte_20024766
   kind: global
   class: global
-  module: LAPPING
+  module: WUI
   size: 1
-  evidence: every function that loads or stores it logs under [LAPPING] (3 read
-    it, 2 write it)
+  evidence: it is +0x6 of the struct at 0x20024760, which only [WUI] writes the
+    base word of; LAPPING/WUI also reach it
+- address: 0x20024767
+  name: wui_byte_20024767
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: it is +0x7 of the struct at 0x20024760, which only [WUI] writes the
+    base word of and no function reaching it is in a module
+- address: 0x20024768
+  name: wui_ptr_20024768
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: it is +0x8 of the struct at 0x20024760, which only [WUI] writes the
+    base word of and no function reaching it is in a module
+- address: 0x20024778
+  name: wui_word_20024778
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x2002477c
+  name: wui_word_2002477c
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
 - address: 0x2002478c
   name: wui_word_2002478c
   kind: global
@@ -32419,6 +33888,30 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WUI] (1 read it,
     2 write it)
+- address: 0x200247a1
+  name: wui_byte_200247a1
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    1 write it)
+- address: 0x200247a6
+  name: wui_half_200247a6
+  kind: global
+  class: global
+  module: WUI
+  size: 2
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    1 write it)
+- address: 0x200247a8
+  name: wui_byte_200247a8
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
 - address: 0x200247ac
   name: wui_word_200247ac
   kind: global
@@ -32427,6 +33920,14 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WUI] (1 read it,
     2 write it)
+- address: 0x200247d4
+  name: wui_ptr_200247d4
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
 - address: 0x200247d8
   name: wui_ptr_200247d8
   kind: global
@@ -32435,46 +33936,46 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WUI] (1 read it,
     1 write it)
-- address: 0x200247e8
-  name: ecg_struct_200247e8
-  kind: global
-  class: global
-  module: ECG
-  size: 5
-  evidence: every function that loads or stores it logs under [ECG] (1 read it,
-    1 write it)
 - address: 0x200247ec
   name: ecg_byte_200247ec
   kind: global
   class: global
   module: ECG
   size: 1
-  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+  evidence: it is +0x4 of the struct at 0x200247e8, which only [ECG] writes the
+    base word of; ECG/WUI also reach it
+- address: 0x200247fd
+  name: wui_byte_200247fd
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (0 read it,
     1 write it)
-- address: 0x200247fc
-  name: ecg_struct_200247fc
+- address: 0x200247fe
+  name: wui_struct_200247fe
   kind: global
   class: global
-  module: ECG
-  size: 172
-  evidence: every function that loads or stores it logs under [ECG] (1 read it,
-    2 write it)
+  module: WUI
+  size: 6
+  evidence: every function that loads or stores it logs under [WUI] (0 read it,
+    1 write it)
 - address: 0x20024800
-  name: ecg_word_20024800
+  name: wui_word_20024800
   kind: global
   class: global
-  module: ECG
+  module: WUI
   size: 4
-  evidence: every function that loads or stores it logs under [ECG] (3 read it,
-    2 write it)
+  evidence: it is +0x2 of the struct at 0x200247fe, which only [WUI] writes the
+    base word of; ECG/WUI also reach it
 - address: 0x20024804
-  name: ecg_word_20024804
+  name: wui_word_20024804
   kind: global
   class: global
-  module: ECG
+  module: WUI
   size: 4
-  evidence: every function that loads or stores it logs under [ECG] (1 read it,
-    2 write it)
+  evidence: it is +0x8 of the struct at 0x200247fc, which only [WUI] writes the
+    base word of; ECG/WUI also reach it
 - address: 0x20024808
   name: ecg_half_20024808
   kind: global
@@ -32491,6 +33992,14 @@ symbols:
   size: 2
   evidence: every function that loads or stores it logs under [ECG] (1 read it,
     1 write it)
+- address: 0x20024810
+  name: wui_word_20024810
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: it is +0x14 of the struct at 0x200247fc, which only [WUI] writes the
+    base word of and no function reaching it is in a module
 - address: 0x20024812
   name: ecg_half_20024812
   kind: global
@@ -32523,14 +34032,22 @@ symbols:
   size: 12
   evidence: every function that loads or stores it logs under [ECG] (1 read it,
     1 write it)
-- address: 0x20024829
-  name: ecg_flag_20024829
+- address: 0x20024828
+  name: wui_flag_20024828
   kind: global
   class: global
-  module: ECG
-  size: 1
-  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
     1 write it)
+- address: 0x20024829
+  name: wui_flag_20024829
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: it is +0x2d of the struct at 0x200247fc, which only [WUI] writes the
+    base word of; ECG/WUI also reach it
 - address: 0x200248a8
   name: ecg_word_200248a8
   kind: global
@@ -32547,6 +34064,46 @@ symbols:
   size: 4
   evidence: stored in the same straight line as wlog('[ECG] %d/%d measures | nb_days_since_last_meas=%lu/%d
     -> Display tuto\n') at 0x8639a
+- address: 0x200248bc
+  name: wui_word_200248bc
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (3 read it,
+    1 write it)
+- address: 0x200248c0
+  name: wui_word_200248c0
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (3 read it,
+    1 write it)
+- address: 0x200248c4
+  name: wui_struct_200248c4
+  kind: global
+  class: global
+  module: WUI
+  size: 9
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x200248c8
+  name: wui_ptr_200248c8
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x200248cc
+  name: wui_byte_200248cc
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
 - address: 0x200248dc
   name: spo2_word_200248dc
   kind: global
@@ -32563,6 +34120,30 @@ symbols:
   size: 4
   evidence: stored in the same straight line as wlog('[SPO2] %d/%d measures | nb_days_since_last_meas=%lu/%d
     -> Display tuto\n') at 0x86b72
+- address: 0x200248f0
+  name: wui_word_200248f0
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    2 write it)
+- address: 0x200248f4
+  name: wui_word_200248f4
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    2 write it)
+- address: 0x20024908
+  name: wui_word_20024908
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
 - address: 0x20024928
   name: tracker_inactivity_ptr_20024928
   kind: global
@@ -32595,6 +34176,78 @@ symbols:
   size: 4
   evidence: stored in the same straight line as wlog('[TRACKER INACTIVITY] Current
     time %d:%d => Notify %s message (index %d)\n') at 0x88c68
+- address: 0x20024949
+  name: wui_byte_20024949
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (0 read it,
+    1 write it)
+- address: 0x2002494c
+  name: wui_word_2002494c
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (0 read it,
+    1 write it)
+- address: 0x20024950
+  name: wui_byte_20024950
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (0 read it,
+    1 write it)
+- address: 0x20024960
+  name: wui_word_20024960
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x20024988
+  name: wui_word_20024988
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x2002498c
+  name: wui_word_2002498c
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x20024990
+  name: wui_word_20024990
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x20024994
+  name: wui_word_20024994
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x20024998
+  name: wui_word_20024998
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
 - address: 0x2002499c
   name: wui_ptr_2002499c
   kind: global
@@ -32764,6 +34417,14 @@ symbols:
   evidence: stored in the same straight line as wlog('[WUAPP] Unsubscribe - Writing
     to handle %04x (attempt = %d)\n') at 0x41e16, wlog('[BLE_WPP_C] WAKE UP APP
     Characteristics Disc (attempt = %d)\n') at 0x41e76
+- address: 0x20024d85
+  name: wuapp_byte_20024d85
+  kind: global
+  class: global
+  module: WUAPP
+  size: 1
+  evidence: it is +0x13 of the struct at 0x20024d72, which only [WUAPP] writes the
+    base word of; WPP/WUAPP also reach it
 - address: 0x20024d86
   name: dblib_ram_item_0x13a_half_20024d86
   kind: global
@@ -32805,13 +34466,13 @@ symbols:
   evidence: every function that loads or stores it logs under [DBLIB] (1 read it,
     1 write it)
 - address: 0x20024d90
-  name: initdblib_half_20024d90
+  name: dblib_half_20024d90
   kind: global
   class: global
-  module: INITDBLIB
+  module: DBLIB
   size: 2
-  evidence: every function that loads or stores it logs under [INITDBLIB] (4 read
-    it, 5 write it)
+  evidence: every function that loads or stores it logs under [DBLIB] (4 read it,
+    5 write it)
 - address: 0x20024dac
   name: sn19020x6_half_20024dac
   kind: global
@@ -32908,6 +34569,14 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [WFTL] (0 read it,
     1 write it)
+- address: 0x20024dda
+  name: wpp_half_20024dda
+  kind: global
+  class: global
+  module: WPP
+  size: 2
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    1 write it)
 - address: 0x20024eaa
   name: light_sensor_half_20024eaa
   kind: global
@@ -32924,6 +34593,70 @@ symbols:
   size: 2
   evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (1
     read it, 0 write it)
+- address: 0x20024eae
+  name: wui_half_20024eae
+  kind: global
+  class: global
+  module: WUI
+  size: 2
+  evidence: every function that loads or stores it logs under [WUI] (3 read it,
+    2 write it)
+- address: 0x20024eaf
+  name: wui_flag_20024eaf
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x20024eb0
+  name: wui_half_20024eb0
+  kind: global
+  class: global
+  module: WUI
+  size: 2
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    1 write it)
+- address: 0x20024eb2
+  name: wui_half_20024eb2
+  kind: global
+  class: global
+  module: WUI
+  size: 2
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x20024eb4
+  name: wui_half_20024eb4
+  kind: global
+  class: global
+  module: WUI
+  size: 2
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x20024ebc
+  name: wui_half_20024ebc
+  kind: global
+  class: global
+  module: WUI
+  size: 2
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    2 write it)
+- address: 0x20024ec0
+  name: wui_half_20024ec0
+  kind: global
+  class: global
+  module: WUI
+  size: 2
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x20024ec2
+  name: wui_half_20024ec2
+  kind: global
+  class: global
+  module: WUI
+  size: 2
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
 - address: 0x20024f3d
   name: auto_burst_flag_20024f3d
   kind: global
@@ -33058,13 +34791,13 @@ symbols:
   evidence: every function that loads or stores it logs under [MS5837] (1 read it,
     1 write it)
 - address: 0x20025286
-  name: wpp_lite_struct_20025286
+  name: wpp_struct_20025286
   kind: global
   class: global
-  module: WPP_LITE
+  module: WPP
   size: 7
-  evidence: every function that loads or stores it logs under [WPP_LITE] (2 read
-    it, 1 write it)
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    1 write it)
 - address: 0x2002528d
   name: bat_flag_2002528d
   kind: global
@@ -33160,21 +34893,21 @@ symbols:
     queue type the block does not establish; the name's module is the name of the
     creating function, wlog_init
 - address: 0x20026bcc
-  name: max8617x_byte_20026bcc
+  name: max86173_byte_20026bcc
   kind: global
   class: global
-  module: MAX8617X
+  module: MAX86173
   size: 1
-  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+  evidence: every function that loads or stores it logs under [MAX86173] (1 read
     it, 2 write it)
 - address: 0x20026bce
-  name: wpp_lite_byte_20026bce
+  name: wpp_byte_20026bce
   kind: global
   class: global
-  module: WPP_LITE
+  module: WPP
   size: 1
-  evidence: every function that loads or stores it logs under [WPP_LITE] (1 read
-    it, 2 write it)
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    2 write it)
 - address: 0x20026bcf
   name: dblib_ram_item_0x13c_byte_20026bcf
   kind: global
@@ -33367,13 +35100,13 @@ symbols:
   evidence: 'the cache word of workout_screen_always_on: dblib id 0x148, persisted
     by 0x6ae38 with dblib_set(0x148, &0x20026c13, 1)'
 - address: 0x20026c15
-  name: wpp_lite_byte_20026c15
+  name: wpp_byte_20026c15
   kind: global
   class: global
-  module: WPP_LITE
+  module: WPP
   size: 1
-  evidence: every function that loads or stores it logs under [WPP_LITE] (3 read
-    it, 2 write it)
+  evidence: every function that loads or stores it logs under [WPP] (3 read it,
+    2 write it)
 - address: 0x200270bc
   name: wui_queue_storage
   kind: global
@@ -33382,44 +35115,84 @@ symbols:
   evidence: the static object handed to xQueueGenericCreateStatic at 0x6f0d2 with
     queue type the block does not establish; the name's module is the only task
     the creating function creates is wui_task
-- address: 0x20027192
-  name: light_sensor_byte_20027192
+- address: 0x20027186
+  name: wui_byte_20027186
   kind: global
   class: global
-  module: LIGHT_SENSOR
+  module: WUI
   size: 1
-  evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (2
-    read it, 1 write it)
-- address: 0x20027193
-  name: light_sensor_byte_20027193
+  evidence: every function that loads or stores it logs under [WUI] (0 read it,
+    4 write it)
+- address: 0x20027187
+  name: wui_flag_20027187
   kind: global
   class: global
-  module: LIGHT_SENSOR
+  module: WUI
   size: 1
-  evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (2
-    read it, 3 write it)
-- address: 0x20027194
-  name: light_sensor_flag_20027194
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    3 write it)
+- address: 0x20027190
+  name: wui_byte_20027190
   kind: global
   class: global
-  module: LIGHT_SENSOR
+  module: WUI
   size: 1
-  evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (3
-    read it, 1 write it)
-- address: 0x20027195
-  name: factory_byte_20027195
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x20027196
+  name: wui_byte_20027196
   kind: global
   class: global
-  module: FACTORY
+  module: WUI
   size: 1
-  evidence: every function that loads or stores it logs under [FACTORY] (2 read
-    it, 2 write it)
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x20027197
+  name: wui_byte_20027197
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (3 read it,
+    2 write it)
 - address: 0x20027198
   name: wui_struct_20027198
   kind: global
   class: global
   module: WUI
   size: 6
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x200271cc
+  name: wui_byte_200271cc
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    1 write it)
+- address: 0x200271cd
+  name: wui_flag_200271cd
+  kind: global
+  class: global
+  module: WUI
+  size: 2
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x200271ce
+  name: wui_byte_200271ce
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x200271cf
+  name: wui_byte_200271cf
+  kind: global
+  class: global
+  module: WUI
+  size: 1
   evidence: every function that loads or stores it logs under [WUI] (1 read it,
     1 write it)
 - address: 0x200271d6
@@ -33430,14 +35203,6 @@ symbols:
   size: 1
   evidence: stored in the same straight line as wlog('[TRACKER INACTIVITY] Current
     time %d:%d => Notify %s message (index %d)\n') at 0x88c68
-- address: 0x2002723b
-  name: screen_calibration_byte_2002723b
-  kind: global
-  class: global
-  module: SCREEN_CALIBRATION
-  size: 1
-  evidence: every function that loads or stores it logs under [SCREEN_CALIBRATION]
-    (3 read it, 4 write it)
 - address: 0x20027241
   name: wui_byte_20027241
   kind: global

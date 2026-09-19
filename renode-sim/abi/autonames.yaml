@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {accessor: 31, bleevt: 28, bymodule: 158, bymodule_contested: 17, extlib: 0, helper: 647, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1821, modules: 179, prototypes_derived: 34, provenance: 478, provenance_body_call_sites_disagree_or_say_nothing: 643, provenance_body_field: 10, provenance_body_global: 25, provenance_body_literal: 103, provenance_body_more_than_one_named_global_in_its_own_pool: 115, provenance_body_no_named_global_in_its_own_pool: 1349, provenance_body_param: 107, provenance_body_reaches_one_global_and_dereferences_none_of_it: 39, provenance_body_the_displacement_names_no_declared_field: 9, provenance_body_the_offset_it_accesses_names_no_declared_field: 9, provenance_body_unknown: 932, provenance_leaf_call_sites_disagree_or_say_nothing: 404, provenance_leaf_field: 5, provenance_leaf_global: 17, provenance_leaf_literal: 58, provenance_leaf_more_than_one_named_global_in_its_own_pool: 21, provenance_leaf_no_named_global_in_its_own_pool: 877, provenance_leaf_param: 40, provenance_leaf_reaches_one_global_and_dereferences_none_of_it: 16, provenance_leaf_the_displacement_names_no_declared_field: 4, provenance_leaf_the_offset_it_accesses_names_no_declared_field: 9, provenance_leaf_unknown: 571, provenance_named_check: 112, provenance_named_copy: 2, provenance_named_get: 107, provenance_named_on_no_verb_: 15, provenance_named_set: 117, provenance_named_update: 127, role: 4, shared: 20, shell: 156, shell_table_rows: 79, slot: 134, string: 20, svc: 79, syscall: 9, vector: 54, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114, wrapper: 37}
+  counts: {accessor: 31, bleevt: 28, bymodule: 157, bymodule_contested: 17, extlib: 0, helper: 647, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1821, modules: 179, prototypes_derived: 34, provenance: 480, provenance_body_call_sites_disagree_or_say_nothing: 643, provenance_body_field: 10, provenance_body_global: 25, provenance_body_literal: 103, provenance_body_more_than_one_named_global_in_its_own_pool: 115, provenance_body_no_named_global_in_its_own_pool: 1342, provenance_body_param: 107, provenance_body_reaches_one_global_and_dereferences_none_of_it: 39, provenance_body_the_displacement_names_no_declared_field: 9, provenance_body_the_offset_it_accesses_names_no_declared_field: 9, provenance_body_unknown: 927, provenance_leaf_call_sites_disagree_or_say_nothing: 404, provenance_leaf_field: 5, provenance_leaf_global: 17, provenance_leaf_literal: 58, provenance_leaf_more_than_one_named_global_in_its_own_pool: 21, provenance_leaf_no_named_global_in_its_own_pool: 877, provenance_leaf_param: 40, provenance_leaf_reaches_one_global_and_dereferences_none_of_it: 16, provenance_leaf_the_displacement_names_no_declared_field: 4, provenance_leaf_the_offset_it_accesses_names_no_declared_field: 9, provenance_leaf_unknown: 571, provenance_named_check: 113, provenance_named_copy: 3, provenance_named_get: 107, provenance_named_on_no_verb_: 15, provenance_named_set: 117, provenance_named_update: 127, role: 4, shared: 20, shell: 156, shell_table_rows: 79, slot: 134, string: 20, svc: 79, syscall: 9, vector: 54, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114, wrapper: 37}
   known_addresses: {agree: 194, disagree: 0}
 
 functions:
@@ -3159,10 +3159,14 @@ functions:
     class: logline
     evidence: "the only line 0x4bef8 logs, wlog('[FEATURE_TAGS] Nothings stored') at 0x4bf12"
     module: FEATURE_TAGS
-  - address: 0x4bf28
-    class: bymodule
-    evidence: "0x4bf28 calls only feature_tags_nothings_stored"
-    module: FEATURE_TAGS
+  - name: feature_tags_struct_2001a26c_check
+    address: 0x4bf28
+    class: provenance
+    evidence: "0x4bf28 reaches feature_tags_struct_2001a26c through its own literal pool and no other named global; the body checks through it"
+  - name: feature_tags_struct_2001a26c_copy
+    address: 0x4bf68
+    class: provenance
+    evidence: "0x4bf68 reaches feature_tags_struct_2001a26c through its own literal pool and no other named global; the body copys through it"
   - name: shell_cmd_feature_tags
     address: 0x4bfcc
     class: shell
@@ -7717,10 +7721,6 @@ functions:
     class: logline
     evidence: "the only line 0x8b924 logs, wlog('[WARNING] unknown type 0x%.4x !!') at 0x8bab0"
     module: WARNING
-  - name: greenteg_cbta__8c0cc__1
-    address: 0x8c000
-    class: helper
-    evidence: "only 0x8c0cc (greenteg_cbta__8c0cc) calls 0x8c000; 166 bytes"
   - name: pow
     address: 0x8c8fc
     class: libm
@@ -8149,6 +8149,10 @@ functions:
     address: 0x921da
     class: helper
     evidence: "only 0x5f5c8 (alti_struct_2001fcbc_check_2) calls 0x921da; 4 bytes"
+  - name: feature_tags_struct_2001a26c_copy__1
+    address: 0x9225e
+    class: helper
+    evidence: "only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x9225e; 20 bytes"
   - name: dbg_mask_change_ie_debug_mask__1
     address: 0x92272
     class: helper
@@ -8377,6 +8381,10 @@ functions:
     class: bymodule
     evidence: "0x9314e every caller is a body this rule placed in BLUETOOTH: 0x395dc"
     module: BLUETOOTH
+  - name: feature_tags_struct_2001a26c_copy__2
+    address: 0x931ca
+    class: helper
+    evidence: "only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x931ca; 126 bytes"
   - name: shell_cmd_probe__3
     address: 0x93248
     class: helper
@@ -10755,14 +10763,10 @@ functions:
     class: helper
     evidence: "only 0x7fc2c (screen_timer_ptr_20021b84_update) calls 0xa74ac; 4 bytes"
     module: M
-  - name: greenteg_cbta__8c0cc__1__1
-    address: 0xa76aa
+  - name: nn_gru_cell__1
+    address: 0xa7646
     class: helper
-    evidence: "only 0x8c000 (greenteg_cbta__8c0cc__1) calls 0xa76aa; 64 bytes"
-  - name: greenteg_cbta__8c0cc__1__2
-    address: 0xa78ce
-    class: helper
-    evidence: "only 0x8c000 (greenteg_cbta__8c0cc__1) calls 0xa78ce; 258 bytes"
+    evidence: "only 0xa76ea (nn_gru_cell) calls 0xa7646; 100 bytes"
   - name: sqrt
     address: 0xa7c6e
     class: libm
