@@ -883,7 +883,8 @@ def ram_relayout(runs, sections, mode, free_end, established):
 
     `shift` slides every run up by one page of the free RAM above the app's
     `.bss`, so every RAM address changes and nothing else does. `reverse` also
-    turns the zeroed runs' order round -- but by unit, not by item.
+    lays the runs out back to front and turns each zeroed run's unit order
+    round -- by unit, not by item.
 
     A unit is a maximal run of items with no established boundary inside it.
     This is where RAM is weaker evidence than flash: the partition knows where
@@ -914,7 +915,14 @@ def ram_relayout(runs, sections, mode, free_end, established):
     # the one run a reverse layout leaves exactly where it was.
     at = runs[0].start + RAM_SHIFT
     moves = {}
-    for run in runs:
+    # The runs are the one permutation the image argues for on its own: each is
+    # copied or zeroed by a statement that reads both of its ends, so a run is
+    # whole wherever it is put and no reference inside it crosses to another.
+    # It is also the only one left where nothing but the startup's own
+    # statements bounds an item, which is what `reverse` has to be to be a
+    # different layout from `shift` at all.
+    order = list(reversed(runs)) if mode == "reverse" else list(runs)
+    for run in order:
         units, held = [], sorted(by_run[run.start], key=lambda s: s.vma)
         for s in held:
             if not units or s.vma in established:
@@ -938,6 +946,10 @@ def ram_relayout(runs, sections, mode, free_end, established):
     if at > free_end:
         raise SystemExit("the RAM layout runs to 0x%x, past the 0x%x the app's"
                          " static RAM may reach" % (at, free_end))
+    # Everything downstream reads the runs in address order -- the region's
+    # bounds, the report, the placement fragment -- so the list goes back into
+    # it once the new addresses are in.
+    runs.sort(key=lambda r: r.start)
     for s in sections:
         s.vma = moves[s.vma]
     return moves

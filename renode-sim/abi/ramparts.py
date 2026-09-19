@@ -214,7 +214,7 @@ def name_for(addr, names, kind):
     return names.get(addr) or ("%s_%08x" % (kind, addr))
 
 
-def partition(runs, points, sizes, declared, names, established):
+def partition(runs, points, sizes, declared, addressed, names, established):
     """Cut every run at its points; an item runs to the next one.
 
     `sizes` is the only source of an end that is not the next start: a declared
@@ -249,7 +249,16 @@ def partition(runs, points, sizes, declared, names, established):
                 # an item at but not enough to let a layout put something else
                 # directly above it: the watch reads its personalisation and
                 # its size back wrong when that width is trusted as an end.
-                if start in declared:
+                # A declaration says where the object it declares stops, which
+                # is a boundary in the run only where the object is reached by
+                # its own address. hr_algo_result_block is declared, and the
+                # map's evidence for it is that it is reached as the HR
+                # algorithm object's +0x2c84 and never by a literal of its own:
+                # its end is a field boundary inside that object, and a layout
+                # that separates it from what follows leaves the algorithm
+                # reading 98 KB away for its beat intervals, which is what the
+                # HRV and RR results came out as zero from.
+                if start in declared and start in addressed:
                     established.add(end)
                 items.append(Item(end, nxt, run.kind,
                                   None if run.load is None
@@ -338,9 +347,14 @@ def load(export=None, image=None, symbols_map=None, types=None):
                 sizes[table.address] = table.end - table.address
                 declared.add(table.address)
 
-    points = set()
+    points, addressed = set(), set()
     for word in words:
         if lo <= word["value"] < hi:
+            # The addresses the image itself takes, which is the difference
+            # between an object and a field of one: a name the map derived from
+            # the accesses says what the bytes are used for and nothing about
+            # what owns them.
+            addressed.add(word["value"])
             # Rounded down to the word, because a `.data` item's initialiser
             # carries relocations and a cut inside one of their four bytes
             # would split a slot. An address the map names is taken exactly:
@@ -357,7 +371,7 @@ def load(export=None, image=None, symbols_map=None, types=None):
         established.add(fill.start)
         established.add(fill.end)
 
-    items = partition(runs, points, sizes, declared, names, established)
+    items = partition(runs, points, sizes, declared, addressed, names, established)
     return Ram(runs, items, established)
 
 
