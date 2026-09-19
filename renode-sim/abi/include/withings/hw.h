@@ -30,11 +30,15 @@ struct i2c_device {
     void *release;
 };
 
+/* state points at the device's own byte: the two rows hold 0x2002507d and
+   0x2002507e, consecutive bytes of one .bss item, which is what the relink's
+   RAM relocation at +0xc needs a pointer field for.
+   */
 struct spi_device {
     void *bus;
     unsigned int cs_pin;
     unsigned int mode;
-    unsigned int state;
+    unsigned char *state;
     const char *name;
 };
 
