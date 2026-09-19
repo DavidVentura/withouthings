@@ -214,16 +214,25 @@ def name_for(addr, names, kind):
     return names.get(addr) or ("%s_%08x" % (kind, addr))
 
 
-def partition(runs, points, sizes, names):
+def partition(runs, points, sizes, names, established):
     """Cut every run at its points; an item runs to the next one.
 
     `sizes` is the only source of an end that is not the next start: a declared
     object's own length. Where it stops short of the next point the bytes
     between the two are their own item, because nothing says they belong to
     either -- the same maximal-run rule the flash side's untyped gaps follow.
+
+    The distinction the layout then rests on: a cut at the next named address
+    says where a reference lands, not where the object above it stops. Two such
+    items may be one array the code walks from its head, so they may be moved
+    but not separated. A cut at a declared size, at a zero fill's own bounds or
+    at a run's edge is a statement about the end, and `established` collects
+    exactly those.
     """
     items = []
     for run in runs:
+        established.add(run.start)
+        established.add(run.end)
         cuts = sorted(set([run.start, run.end])
                       | set(p for p in points if run.start < p < run.end))
         for start, nxt in zip(cuts, cuts[1:]):
@@ -234,6 +243,7 @@ def partition(runs, points, sizes, names):
             items.append(Item(start, end, run.kind, load,
                               name_for(start, names, run.kind), bounded))
             if end < nxt:
+                established.add(end)
                 items.append(Item(end, nxt, run.kind,
                                   None if run.load is None
                                   else run.load + (end - run.start),
@@ -245,8 +255,11 @@ def partition(runs, points, sizes, names):
 class Ram(object):
     """The app's static RAM, cut into items, with the lookup a relocation needs."""
 
-    def __init__(self, runs, items):
+    def __init__(self, runs, items, established):
         self.runs, self.items = runs, items
+        # The item starts something in the image says are also the end of what
+        # is below them. Only there may a layout put a different item.
+        self.established = established
         self.starts = [i.start for i in items]
         self.by_start = dict((i.start, i) for i in items)
         # The word the startup reads a bound out of -> the linker's name for
@@ -316,11 +329,17 @@ def load(export=None, image=None, symbols_map=None, types=None):
     # A fill inside the region names both ends of one object: the only evidence
     # in the image that a zeroed item stops before the next address something
     # takes.
+    # An inner fill zeroes one object, so both its ends are established: the
+    # length is in the instruction stream, not inferred from what comes next.
+    established = set()
     for fill in inner_fills(runs, fills):
         points.add(fill.start)
         points.add(fill.end)
+        established.add(fill.start)
+        established.add(fill.end)
 
-    return Ram(runs, partition(runs, points, sizes, names))
+    items = partition(runs, points, sizes, names, established)
+    return Ram(runs, items, established)
 
 
 def main():

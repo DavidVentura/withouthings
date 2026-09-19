@@ -1545,7 +1545,7 @@ def main():
         free_end = next(r["start"] for r in facts["regions"]
                         if r["name"] == "LIBRARY_RAM")
         objectify.ram_relayout(ram.runs, ramlayout.sections, args.ram_layout,
-                               free_end)
+                               free_end, ram.established)
         print("  ram layout %s: %d items moved, 0x%08x..0x%08x"
               % (args.ram_layout,
                  sum(1 for s, was in zip(ramlayout.sections, ram_was)

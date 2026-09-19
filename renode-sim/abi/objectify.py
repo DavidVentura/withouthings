@@ -870,7 +870,7 @@ def relayout(sections, mode, pinned, anchors, cuts=(), dead=(), data=False):
     return moves, spare, held, dead
 
 
-def ram_relayout(runs, sections, mode, free_end):
+def ram_relayout(runs, sections, mode, free_end, established):
     """Give every RAM item a new address, keeping what the image depends on.
 
     Two constraints, the same two the flash side has and for the same reasons.
@@ -881,14 +881,22 @@ def ram_relayout(runs, sections, mode, free_end):
     wrong statement.
 
     `shift` slides every run up by one page of the free RAM above the app's
-    `.bss`, so every RAM address changes and nothing else does; `reverse` also
-    turns the zeroed runs' item order round, so an item's neighbours change too
-    and a reference that only worked because the run moved rigidly stops
-    working. The runs are laid out end to end from the first one's base,
-    because both ends of every run are linker-defined now and the padding the
-    alignment costs has to go somewhere.
+    `.bss`, so every RAM address changes and nothing else does. `reverse` also
+    turns the zeroed runs' order round -- but by unit, not by item.
 
-    The `.data` run keeps its item order under both. Its items are laid out
+    A unit is a maximal run of items with no established boundary inside it.
+    This is where RAM is weaker evidence than flash: the partition knows where
+    a flash object ends, while a RAM item's end is usually only the next
+    address something took, so two items may be two fields of one array the
+    code walks from its head. Separating them is what a per-item permutation
+    would do, and the image says so: reversing every item wedges the external
+    flash driver, whose device rows are exactly that shape, while the same
+    image with the region slid rigidly boots with a zero-line log diff. So an
+    item may be moved with its neighbours and may only be moved away from them
+    where a declared size, a zero fill's own bounds or a run's edge says the
+    object stops there.
+
+    The `.data` run keeps its unit order under both. Its items are laid out
     twice -- once in RAM and once as the load image in flash -- and the flash
     half has to stay the length the image gave it, since the version trailer
     starts where it stops; reordering it would cost alignment padding it has
@@ -901,21 +909,30 @@ def ram_relayout(runs, sections, mode, free_end):
         run = next(r for r in runs if r.start <= s.vma < r.end)
         by_run[run.start].append(s)
     # Both modes slide as well as reorder, so that under `reverse` the `.data`
-    # run moves too: its item order is fixed, and without the slide it would be
+    # run moves too: its unit order is fixed, and without the slide it would be
     # the one run a reverse layout leaves exactly where it was.
     at = runs[0].start + RAM_SHIFT
     moves = {}
     for run in runs:
-        held = sorted(by_run[run.start], key=lambda s: s.vma)
+        units, held = [], sorted(by_run[run.start], key=lambda s: s.vma)
+        for s in held:
+            if not units or s.vma in established:
+                units.append([])
+            units[-1].append(s)
         if mode == "reverse" and run.kind == "bss":
-            held.reverse()
+            units.reverse()
         at = (at + 3) & ~3
         run.start = at
-        for s in held:
-            while at % 4 != s.vma % 4:
+        for unit in units:
+            while at % 4 != unit[0].vma % 4:
                 at += 1
-            moves[s.vma] = at
-            at += s.end - s.start
+            base = at
+            for s in unit:
+                # Inside a unit the items keep their distances: nothing in the
+                # image says where one stops, so the only safe statement is
+                # that they are where they were relative to each other.
+                moves[s.vma] = base + (s.vma - unit[0].vma)
+                at = moves[s.vma] + (s.end - s.start)
         run.end = at
     if at > free_end:
         raise SystemExit("the RAM layout runs to 0x%x, past the 0x%x the app's"
