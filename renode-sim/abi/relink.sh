@@ -182,6 +182,10 @@ done < ../out/replace-sources.txt
 # the image exports.
 ALSO_ARGS=""
 for o in $objs $LIBS; do ALSO_ARGS="$ALSO_ARGS --also-linked $o"; done
+# RAM=shift|reverse re-cuts it with every RAM item moved, which is the same
+# proof for the app's statics that LAYOUT is for its code: the startup's copy
+# and zero fills read their bounds from the linker, so the runs go where the
+# placement puts them.
 # LAYOUT=shift|reverse re-cuts the same object with every text section moved;
 # the identity link above still ran first, so the cutting is proven either way.
 # GC=1 re-cuts it with a placement that KEEPs only what the linker cannot see,
@@ -191,9 +195,9 @@ for o in $objs $LIBS; do ALSO_ARGS="$ALSO_ARGS --also-linked $o"; done
 # means anything together with GC=1: the edits make the feature unreachable and
 # --gc-sections is what removes it.
 if [ -n "${GC:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" --gc $ALSO_ARGS $RESERVE_ARGS ${LAYOUT:+--layout "$LAYOUT"} $SPILL_ARGS ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
-elif [ -n "${LAYOUT:-}" ] || [ -n "$REPLACE_ARGS" ] || [ -n "${PRUNE:-}" ] || [ -n "${DATA:-}" ]; then
-    python3 blobify.py -o "$OUT/appl-blob.o" ${LAYOUT:+--layout "$LAYOUT"} $SPILL_ARGS ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $RESERVE_ARGS $DATA_ARGS
+    python3 blobify.py -o "$OUT/appl-blob.o" --gc $ALSO_ARGS $RESERVE_ARGS ${LAYOUT:+--layout "$LAYOUT"} ${RAM:+--ram-layout "$RAM"} $SPILL_ARGS ${KEEP_ALSO:+--keep-also "$KEEP_ALSO"} ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $DATA_ARGS
+elif [ -n "${LAYOUT:-}" ] || [ -n "${RAM:-}" ] || [ -n "$REPLACE_ARGS" ] || [ -n "${PRUNE:-}" ] || [ -n "${DATA:-}" ]; then
+    python3 blobify.py -o "$OUT/appl-blob.o" ${LAYOUT:+--layout "$LAYOUT"} ${RAM:+--ram-layout "$RAM"} $SPILL_ARGS ${PRUNE:+--prune "$PRUNE"} $REPLACE_ARGS $RESERVE_ARGS $DATA_ARGS
 fi
 if [ -n "${DATA:-}" ]; then ./datagen.sh; fi
 

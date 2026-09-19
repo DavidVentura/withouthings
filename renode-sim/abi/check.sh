@@ -11,6 +11,11 @@
 # stayed behind when a section moved or was dropped; and 60 s of the display run
 # with a zero-line log diff.
 #
+# `ram-moved` is the same four proofs over a link in which no static keeps its
+# address: the startup reads both ends of every run and the load address of the
+# initialiser image out of words the linker now writes, so the copy and the two
+# zero fills follow the placement.
+#
 # The baseline for that diff is the plain relink and not stock, so that a
 # configuration is measured against the relink it is a variation of. The two are
 # now the same run: once the reference config reached the image's own heap size,
@@ -25,7 +30,7 @@
 set -uf
 cd "$(dirname "$0")"
 SIM=$(cd ..; pwd)
-RIGS=${RIGS:-/tmp/claude-1000/fixlink}
+RIGS=${RIGS:-$SIM/out/rigs}
 RENODE=${RENODE:-$(command -v renode || echo "$HOME/renode-portable/renode")}
 
 # name:environment. The plain relink is first because every other diff is
@@ -36,6 +41,7 @@ CONFIGS=(
     "newlib-data:REPLACE=newlib DATA=1"
     "pack:GC=1 REPLACE=newlib,libm LAYOUT=pack DATA=1 SPILL=*libm.a:"
     "prune-tunnel:GC=1 PRUNE=wpps_tls_tunnel DATA=1"
+    "ram-moved:RAM=reverse DATA=1"
     "get-fw-version:REPLACE=get_fw_version"
 )
 
