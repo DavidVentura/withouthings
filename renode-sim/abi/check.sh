@@ -25,6 +25,11 @@
 #
 # The update test and the ECG run are not here: they need fixed ports and
 # minutes of virtual time, so they stay separate runs.
+# The `sleep` feeding Renode's stdin is the run's wall-clock budget, not its
+# virtual-time budget: 60 s of simulation takes about 90 s on an idle host and
+# several times that when another agent is running its own traces, and Renode
+# aborts on the console reader rather than stopping cleanly when the pipe ends.
+#
 # No globbing: one configuration's SPILL is a linker input pattern and the
 # shell must not try to match it against this directory.
 set -uf
@@ -83,7 +88,7 @@ display_run() {
     local dir=$1
     (cd "$dir" && "$RENODE" --disable-xwt --console \
         -e '$image=@out/flash-relinked.bin' -e "include @scripts/display-run.resc" \
-        > out/renode.log 2>&1 < <(sleep 600))
+        > out/renode.log 2>&1 < <(sleep 1800))
     grep -q "=== display-run done ===" "$dir/out/renode.log"
 }
 
