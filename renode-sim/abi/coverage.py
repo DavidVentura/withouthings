@@ -43,6 +43,11 @@ def main():
     smap = symmap.load()
     # A label is a name for an address, not a claim that a function starts
     # there, so it explains nothing about a function and is left out.
+    # An attribution places an address without naming it, so it explains
+    # nothing: the body is unnamed here and stays on the worklist. It is
+    # counted separately because knowing which module an unnamed body is in is
+    # still a step, and the number says how much of the residue has taken it.
+    attributed = {s.address for s in smap.attributions()}
     named = {}
     for s in smap.of_kind("function"):
         if s.klass == "vendor":
@@ -60,12 +65,18 @@ def main():
             k = "unnamed" if UNNAMED.match(f["name"]) else "other name"
         n, b = kinds.get(k, (0, 0))
         kinds[k] = (n + 1, b + size)
+    unnamed_attributed = sum(
+        1 for f in items["functions"]
+        if is_unnamed(f, named) and f["start"] in attributed)
     total_n = sum(n for n, _ in kinds.values())
     total_b = sum(b for _, b in kinds.values())
     print("functions: %d, %d bytes" % (total_n, total_b))
     for k, (n, b) in sorted(kinds.items(), key=lambda kv: -kv[1][1]):
         print("  %-26s %5d fns %4.1f%%  %7d B %4.1f%%"
               % (k, n, 100.0 * n / total_n, b, 100.0 * b / total_b))
+
+    print("  of the unnamed, %d carry an attribution: a module and what put"
+          " them in it, and no name" % unnamed_attributed)
 
     data = items["data"]
     typed = [d for d in data if d.get("class") not in (None, "untyped", "padding")]

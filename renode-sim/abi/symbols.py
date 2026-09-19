@@ -71,7 +71,7 @@ def dump(rows, path=None):
     """abi/symbols.yaml, in address order."""
     path = path or os.path.join(HERE, "symbols.yaml")
     ordered = []
-    for row in sorted(rows, key=lambda r: (r["address"], r["name"])):
+    for row in sorted(rows, key=lambda r: (r["address"], r.get("name") or "")):
         out = collections.OrderedDict()
         for key in ORDER:
             if key in row:
@@ -109,11 +109,19 @@ HAND = "hand"
 # it, which is the partition rather than an argument.
 # `runtime` is a line a run printed, which is weaker than every static reading
 # of the same address but stronger than a nickname off the call graph.
+# `provenance` is a name off the object a body is about -- the global every
+# caller points it at, or the one its own literal pool reaches -- plus the verb
+# its loads and stores spell. It sits above the nicknames because it says what
+# the body operates on, where `shared` and `helper` say only who calls it; a
+# body named from a declared struct field plus a verb read off its own uses is
+# the same reading `accessor` makes of a three-instruction body.
+# `bymodule` is last because it is not a name at all: it attributes an address
+# to a module and says nothing that could displace something called something.
 RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "vendor", "string",
         "wppcmd", "codec", "wppobj", "wuiview", "vasistas", "store", "sensor",
         "kernel", "global", "trace", "runtime", "shell", "logtag", "logcb",
-        "bleevt", "logline", "slot", "accessor", "shared", "helper",
-        "role", "wrapper", "bymodule", "prose"]
+        "bleevt", "logline", "slot", "accessor", "provenance", "shared",
+        "helper", "role", "wrapper", "prose", "bymodule"]
 
 
 # The derivations that settle an address rather than read it: a byte verdict
@@ -150,7 +158,11 @@ def outranks(klass, other):
 class Symbol(object):
     def __init__(self, row):
         self.address = row["address"]
-        self.name = row["name"]
+        # Absent where the entry attributes the address without naming it: a
+        # rule may establish which module a body belongs to and what it calls
+        # without establishing anything a linker could bind. Such an entry is
+        # not a name, so nothing that asks the map what is named sees it.
+        self.name = row.get("name")
         # Another name for the same address: the prose map named a table and
         # the hand map named it something else, and both are that table.
         self.aliases = row.get("aliases", [])
@@ -185,16 +197,25 @@ class Map(object):
             if s.address in self.by_address:
                 sys.exit("abi/symbols.yaml: 0x%x is both %s and %s"
                          % (s.address, self.by_address[s.address].name, s.name))
+            self.by_address[s.address] = s
+            if s.name is None:
+                continue
             if s.name in self.by_name:
                 sys.exit("abi/symbols.yaml: %s is at both 0x%x and 0x%x"
                          % (s.name, self.by_name[s.name].address, s.address))
-            self.by_address[s.address] = s
             self.by_name[s.name] = s
             for alias in s.aliases:
                 self.by_name[alias] = s
 
     def of_kind(self, *kinds):
-        return [s for s in self.symbols if s.kind in kinds]
+        """Every named entry of those kinds. An attribution has no name, so it
+        is not one of them: a caller asking for the functions the map knows is
+        asking what they are called."""
+        return [s for s in self.symbols if s.kind in kinds and s.name]
+
+    def attributions(self):
+        """The entries that place an address without naming it."""
+        return [s for s in self.symbols if s.name is None]
 
     def of_class(self, *classes):
         return [s for s in self.symbols if s.klass in classes]
@@ -231,14 +252,14 @@ class Map(object):
         kept = [s for s in self.symbols if s.klass not in owns]
         by_name = {}
         for s in kept:
-            for name in [s.name] + s.aliases:
+            for name in ([s.name] if s.name else []) + s.aliases:
                 by_name[name] = s
         by_address = dict((s.address, s) for s in kept)
         # A correction and a supersession are claims about an address, not
         # about the class of the row that carries them, so a row this run is
         # about to rewrite still makes them.
         corrects = dict((s.name, s.corrects) for s in self.symbols
-                        if s.corrects is not None)
+                        if s.corrects is not None and s.name)
         supersedes = dict((s.supersedes, s.address) for s in self.symbols
                           if s.supersedes is not None)
 
@@ -261,12 +282,20 @@ class Map(object):
         displaced = set()
         taken, named = {}, {}
         for record in records:
-            address, name = entry_address(record), record["name"]
+            address, name = entry_address(record), record.get("name")
             if record["class"] not in owns:
                 raise Refusal("%s at 0x%x is class %s, which this run does not"
                               " own (%s)"
                               % (name, address, record["class"],
                                  ", ".join(sorted(owns))))
+            if name is None:
+                # An attribution claims no name, so it collides with nothing by
+                # name and yields the address to anything that has one.
+                if address in by_address or address in taken:
+                    continue
+                taken[address] = None
+                rows.append(dict(record, address=address))
+                continue
             if name in by_name:
                 if corrects.get(name) == address:
                     continue
@@ -350,6 +379,8 @@ def measurements():
         with open(path) as fh:
             doc = yaml.safe_load(fh)
         for row in doc.get("functions") or []:
+            if not row.get("name"):
+                continue           # an attribution proposes no name to check
             settled = (row.get("verdict") in ("exact", "masked")
                        or row.get("class") in SETTLED)
             proposed.append((row["name"], int(row["address"]) & ~1, settled))

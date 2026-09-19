@@ -58,8 +58,16 @@ def main():
     functions, labels, data, tables = {}, {}, [], []
     corrected = smap.corrected()
 
+    attributions = []
     for sym in smap.symbols:
         if not in_app(sym.address) or sym.address in corrected:
+            continue
+        if sym.name is None:
+            # An entry that places an address without naming it. The module and
+            # the evidence travel; the partition's own placeholder name stays,
+            # which is what keeps the body on the naming worklist it belongs on.
+            attributions.append({"address": sym.address, "module": sym.module,
+                                 "source": sym.klass, "evidence": sym.evidence})
             continue
         if sym.kind == "function":
             functions[sym.address] = {"name": sym.name, "source": sym.klass}
@@ -87,6 +95,7 @@ def main():
             labels.setdefault(sym.address, {"name": name, "source": sym.klass})
 
     out = {"app_base": APP_BASE, "app_end": APP_END,
+           "attributions": sorted(attributions, key=lambda a: a["address"]),
            "functions": [dict(address=a, **v) for a, v in sorted(functions.items())],
            "labels": [dict(address=a, **v) for a, v in sorted(labels.items())],
            "data": sorted(data, key=lambda d: d["address"]),
@@ -94,9 +103,11 @@ def main():
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w") as fh:
         json.dump(out, fh, indent=1)
-    print("seed: %d functions, %d labels, %d globals, %d tables -> %s"
+    print("seed: %d functions, %d labels, %d globals, %d tables,"
+          " %d attributions -> %s"
           % (len(out["functions"]), len(out["labels"]), len(out["data"]),
-             len(out["tables"]), args.out), file=sys.stderr)
+             len(out["tables"]), len(out["attributions"]), args.out),
+          file=sys.stderr)
 
 
 if __name__ == "__main__":

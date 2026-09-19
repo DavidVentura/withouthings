@@ -180,6 +180,20 @@ counts = {"functions": 0, "labels": 0, "globals": 0, "tables": 0}
 for fn in seed["functions"]:
     if force_function(fn["address"], fn["name"]):
         counts["functions"] += 1
+# An attribution says which module a body belongs to and what established it,
+# and says no name. It goes on as a comment: renaming the body would take it
+# off the list of bodies still to read, which is the whole reason the rule that
+# made it stopped producing a name.
+for att in seed.get("attributions", ()):
+    at = addr(att["address"])
+    note = "module: %s\n%s" % (att.get("module") or "unknown",
+                               att.get("evidence") or "")
+    fn = getFunctionAt(at)
+    if fn is not None:
+        fn.setComment(note)
+    else:
+        setPlateComment(at, note)
+    counts["attributions"] = counts.get("attributions", 0) + 1
 for lab in seed["labels"]:
     createLabel(addr(lab["address"]), lab["name"], True, SourceType.USER_DEFINED)
     counts["labels"] += 1
