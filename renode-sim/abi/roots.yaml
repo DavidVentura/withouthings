@@ -24,7 +24,7 @@ groups:
       Every xTaskCreateStatic (0x9e3dc) and xTaskCreate (0x9e410) call site in
       the export, with the entry taken from the literal-pool word the call site
       loads into r0 and the task name from r1. symbols.txt confirms two of them
-      independently (0x303a0 the battery/contrast task, 0x6ed34 ui_event_task).
+      independently (0x303a0 contrast_task, 0x6ed34 wui_task).
 
   - group: wpp_cmd_table
     derive: wpp_cmd_table

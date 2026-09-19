@@ -14,7 +14,7 @@
    (0x73070) holds 0x27da1 and whose r1 names "IDLE".
    */
 extern void prvIdleTask(void *pvParameters);
-/* called with a NULL handle by battery_sem_give before battery_task exists;
+/* called with a NULL handle by battery_sem_give before contrast_task exists;
    machine.resc patches the sim around it
    */
 extern int xQueueGenericSend(void *xQueue, const void *pvItemToQueue, unsigned int xTicksToWait, int xCopyPosition);

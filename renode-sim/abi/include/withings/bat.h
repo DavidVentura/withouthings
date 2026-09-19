@@ -55,8 +55,9 @@ extern int bat_charging_decision(void);
 extern void battery_status_fill_state(struct wpp_BatteryStatus *out);
 
 /* globals */
-/* NULL until battery_task's first run */
-extern void *battery_sem_handle;
+/* NULL until contrast_task's first run; the task the firmware creates as
+   "CONTRAST" is the one that owns the battery loop */
+extern void *contrast_sem;
 /* in flash, read-only; the two int16 bounds battery_pct_rescale interpolates */
 extern struct battery_curve_bounds battery_curve_bounds;
 /* the block battery_measure_get (0x40274) works out of; its only pool word
