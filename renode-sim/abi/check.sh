@@ -48,6 +48,8 @@ CONFIGS=(
     "prune-tunnel:GC=1 PRUNE=wpps_tls_tunnel DATA=1"
     "ram-moved:RAM=reverse DATA=1"
     "get-fw-version:REPLACE=get_fw_version"
+    "plain-ff:RAMFILL=ff"
+    "ram-moved-ff:RAM=reverse DATA=1 RAMFILL=ff"
 )
 
 # The plain relink runs whatever the arguments say, because it is the log every
@@ -84,9 +86,21 @@ rig_dir() {
     echo "$dir"
 }
 
+ramfill_of() {
+    case "$1" in
+        *RAMFILL=*) local rest=${1##*RAMFILL=}; echo "${rest%% *}" ;;
+        *) echo "" ;;
+    esac
+}
+
+# A configuration's RAMFILL is the byte the machine brings RAM up holding, which
+# is the only part of a configuration that belongs to the run rather than to the
+# link: the relink is handed it too and ignores it.
 display_run() {
-    local dir=$1
-    (cd "$dir" && "$RENODE" --disable-xwt --console \
+    local dir=$1 fill=$2
+    local prefill=()
+    [ -n "$fill" ] && prefill=(-e "\$ramfill=\"$fill\"")
+    (cd "$dir" && "$RENODE" --disable-xwt --console "${prefill[@]}" \
         -e '$image=@out/flash-relinked.bin' -e "include @scripts/display-run.resc" \
         > out/renode.log 2>&1 < <(sleep 1800))
     grep -q "=== display-run done ===" "$dir/out/renode.log"
@@ -126,7 +140,7 @@ for entry in "${CONFIGS[@]}"; do
                       "$SIM/out/relink/relinked.elf")
         if [ -z "$dir" ]; then
             verdict="rig refused the image"
-        elif ! display_run "$dir"; then
+        elif ! display_run "$dir" "$(ramfill_of "$env_line")"; then
             verdict="display run did not finish"
         elif [ -z "$BASELINE" ]; then
             BASELINE=$dir/out/uart0.log

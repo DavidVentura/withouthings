@@ -58,6 +58,15 @@ Batch run (headless, 60 s of virtual time in ~15 s, output in `out/`):
 renode --disable-xwt --console -e "include @scripts/display-run.resc" < <(sleep 1000)
 ```
 
+Renode's RAM reads as zero at reset and real SRAM does not, so `$ramfill` brings
+the app RAM up holding one byte instead, which is what a cold power-on gives the
+watch; `abi/check.sh` runs two of its configurations that way as `RAMFILL=ff`:
+
+```bash
+renode --disable-xwt --console -e '$ramfill="ff"' \
+    -e "include @scripts/display-run.resc" < <(sleep 1000)
+```
+
 Interactive run:
 
 ```bash
