@@ -8,9 +8,12 @@ constant) gets a "Review" bookmark with its signal and, where the value lands
 on something the partition names, the target, plus an end-of-line comment;
 every classified pointer gets a plain "Pointer" bookmark; and every function
 the map has no meaningful name for (a FUN_/block_/caseD_ name) gets an
-"Unnamed" bookmark whose category is its module from modules.json and whose
-comment carries its size and its named callers, so Window > Bookmarks
-filtered on Unnamed and sorted by category is the naming worklist. Run it after classify_words.py
+"Unnamed" bookmark whose category is Unnamed1..Unnamed5 by its distance up
+the call graph to the nearest named function (UnnamedDeep beyond that) and
+whose comment carries its size, module and named callers, so Window >
+Bookmarks filtered on Unnamed and sorted by category is the naming worklist,
+shallow end first. Names given in the GUI come back with
+abi/ghidra/import_names.py. Run it after classify_words.py
 against the project analyze.sh leaves behind, and re-run it after analyze.sh,
 which rebuilds the project from scratch.
 """
@@ -28,6 +31,7 @@ ROOT = os.environ.get("ROOT", os.path.expanduser("~/ref-build"))
 
 
 UNNAMED = re.compile(r"^(FUN|LAB|block|caseD|thunk|sliver)_")
+MAX_DEPTH = 5
 
 
 def unnamed_functions(items_path, modules_path, references_path):
@@ -54,16 +58,40 @@ def unnamed_functions(items_path, modules_path, references_path):
         if c.get("kind") not in ("call", "jump"):
             continue
         src = owner(c["from"])
-        if src is not None and not UNNAMED.match(src["name"]):
-            callers.setdefault(c["to"], set()).add(src["name"])
+        if src is not None and c["to"] in by_start:
+            callers.setdefault(c["to"], set()).add(src["start"])
+    # Distance up the call graph to the nearest function with a real name:
+    # 1 means a named function calls it directly. Breadth-first from the
+    # named callers so the worklist can start at the shallow end; past
+    # MAX_DEPTH the number stops meaning much and the bookmark says so.
+    named = {a for a, f in by_start.items() if not UNNAMED.match(f["name"])}
+    depth = {}
+    frontier = set()
+    for callee, srcs in callers.items():
+        if callee not in named and srcs & named:
+            depth[callee] = 1
+            frontier.add(callee)
+    level = 1
+    while frontier and level < MAX_DEPTH:
+        level += 1
+        nxt = set()
+        for callee, srcs in callers.items():
+            if callee in named or callee in depth:
+                continue
+            if srcs & frontier:
+                depth[callee] = level
+                nxt.add(callee)
+        frontier = nxt
     out = []
     for f in items["functions"]:
         if not UNNAMED.match(f["name"]):
             continue
         size = f["bytes"] if "bytes" in f else f["end"] - f["start"]
+        named_callers = sorted(by_start[a]["name"] for a in callers.get(f["start"], ()) if a in named)[:6]
         out.append({"start": f["start"], "bytes": size,
                     "module": module_of.get(f["start"], "(none)"),
-                    "callers": sorted(callers.get(f["start"], ()))[:6]})
+                    "depth": depth.get(f["start"]),
+                    "callers": named_callers})
     return out
 
 
@@ -134,9 +162,10 @@ def main():
                 counts[r["class"]] += 1
             for f in unnamed:
                 addr = space.getAddress(f["start"])
-                text = "%d B, module %s, callers: %s" % (f["bytes"], f["module"],
-                                                       ", ".join(f["callers"]) or "none named")
-                bookmarks.setBookmark(addr, "Unnamed", f["module"], text)
+                category = ("Unnamed%d" % f["depth"]) if f["depth"] else "UnnamedDeep"
+                text = "%d B, module %s, named callers: %s" % (
+                    f["bytes"], f["module"], ", ".join(f["callers"]) or "none")
+                bookmarks.setBookmark(addr, "Unnamed", category, text)
                 counts["unnamed"] += 1
         finally:
             program.endTransaction(tx, True)
