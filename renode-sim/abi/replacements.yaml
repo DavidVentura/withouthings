@@ -350,3 +350,66 @@ groups:
         abi/autonames.yaml classes `libm`. `local` is the verdict that keeps
         with_errnof and xflow in the blob: newlib's math wrappers are static to
         their own object, so nothing can link against the names.
+
+  - group: greenteg_cbta_network
+    why: >
+      The one piece of a vendor drop that is a computation and not a driver: a
+      one-step GRU over three normalised minute-means and an 8-to-1 output
+      layer, which FIRMWARE.md reads off the image and abi/greenteg.py
+      reproduces bit for bit. The replacement is the same arithmetic in C
+      against the same declared tensors, so what it proves is that the ABI
+      manifest is complete enough to re-implement a drop's interior rather than
+      only to call it: greenteg_cbta_nn_tensors says where the weights are and
+      what shape they have, and nothing else about the library is needed.
+
+      One section is named here and six more go with it. The runner is the only
+      caller of nn_gru_run, which is the only caller of nn_gru_cell, which with
+      nn_dense_layer is the only caller of nn_dense_accumulate and of the
+      alternative bias-free kernel at 0xa7646 -- which the model never reaches
+      anyway, since the cell takes its reset-after arm. The three activations
+      are read only through the three pointer words at 0x200074dc and the GOT
+      slots that name them, and the rest of the drop still reaches its statics
+      through that same GOT, so those words stay and gc keeps the three bodies
+      with them; nothing executes them once the runner is C.
+
+      What a GC=1 link drops today is the runner (204 bytes) and nn_dense_layer
+      (64), against 604 bytes of C. The other five are still reached: the
+      placement KEEPs nn_gru_cell and nn_gru_run because the unclassified words
+      0xd2b08 and 0xd01d8 may name them, and from those two the accumulate and
+      the bias-free kernel are ordinary call edges. That is a classification
+      gap and not a property of the replacement -- the 1372 bytes the seven
+      bodies weigh is what settling those three words would free.
+
+      The group needs DATA=1. The weights are reached through
+      greenteg_cbta_nn_tensors, a `.data` object, and an export can only name a
+      flash section -- the RAM partition is a separate structure and
+      abi/blobify.py's `exports:` does not reach into it. Under DATA=1 the
+      definition is abi/datagen.py's typed C, which publishes the name the
+      declaration in abi/include/withings/vendor.h gives it; without DATA=1 the
+      link fails on an undefined symbol, which is the right answer rather than a
+      second way to find the table.
+    sources: [replace/greenteg_cbta_network.c]
+    exports:
+      - at: 0x8c9dc
+        as: expf
+        why: >
+          nn_activation_logistic calls 0x8c9dc for its exponential (0xa7564), so
+          the replacement's logistic has to reach the same body or the gates
+          round differently. The partition matched it against the toolchain's
+          expf at score 1.00.
+      - at: 0x8cacc
+        as: expm1f
+        why: >
+          nn_activation_elu calls 0x8cacc for every element at or below zero
+          (0xa7592), which is the candidate's non-linearity. Matched against the
+          toolchain's expm1f at score 0.99.
+    replacements:
+      - at: 0x8c000
+        symbol: greenteg_cbta_network_run
+        proto: "float greenteg_cbta_network_run(float *hidden, const float *inputs);"
+        why: >
+          r0 is the eight-float hidden state at instance+0x48 and r1 the three
+          normalised inputs on the caller's stack (0x8c190, 0x8c18a), and the
+          body answers the one float the output layer wrote (`vldr s0, [r6]` at
+          0x8c09e). One `bl` caller, 0x8c1c0 inside greenteg_cbta_free_living_step;
+          its literal pool is read by nothing else and nothing falls into it.

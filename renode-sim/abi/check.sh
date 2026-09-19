@@ -55,6 +55,7 @@ CONFIGS=(
     "prune-tunnel:GC=1 PRUNE=wpps_tls_tunnel DATA=1"
     "ram-moved:RAM=reverse DATA=1"
     "get-fw-version:REPLACE=get_fw_version"
+    "greenteg-c:REPLACE=greenteg_cbta_network DATA=1"
     "plain-ff:RAMFILL=ff"
     "ram-moved-ff:RAM=reverse DATA=1 RAMFILL=ff"
 )
