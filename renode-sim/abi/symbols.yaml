@@ -7098,7 +7098,7 @@ symbols:
   name: max8617x_swdog_feed
   kind: function
   class: trace
-  module: MAX8617X
+  module: MAX86173
   evidence: 'eighteen bytes that log the format at 0xd9b4d, ''[max8617x] [%d] %d'',
     through wlog_fmt_r0d and then tail call swdog_feed (0x5df94) with the constant
     6. Six is the software watchdog the front end takes out for itself: the console
@@ -23534,11 +23534,11 @@ symbols:
   evidence: 'two bytes, `bx lr`. On its own that names nothing; what names it is
     where the two bytes sit: the word at 0xf0c90 holds 0xa7541 between the words
     holding nn_activation_elu and nn_activation_logistic, and what follows them
-    at 0xf0c98 is a chain of {weights, in, out} triples -- 0xbcab8 with 1 and 1,
-    0xbcabc with 8 and 2, then 1 and 8. A row of an activation table that does nothing
-    to its vector is the linear activation, and a layer declared with one is a layer
-    with no non-linearity. 188 calls in the body-temperature run, one for each of
-    nn_activation_elu, and none in any of the other five'
+    at 0xf0c98 is greenteg_cbta_nn_tensors, the five weight tensors of the core-body-temperature
+    model. A row of an activation table that does nothing to its vector is the linear
+    activation, and a layer declared with one is a layer with no non-linearity.
+    188 calls in the body-temperature run, one for each of nn_activation_elu, and
+    none in any of the other five'
 - address: 0xa7542
   name: nn_activation_logistic
   kind: function
@@ -23564,16 +23564,60 @@ symbols:
     - 1 otherwise is the exponential linear unit at alpha one. It is the first of
     the three words at 0xf0c8c. 188 calls in the body-temperature run and none in
     any of the other five'
+- address: 0xa759e
+  name: nn_dense_accumulate
+  kind: function
+  class: trace
+  module: body_temp
+  evidence: out[m][n] = bias[n] + sum over k of in[m][k] * w[k * n_out + n], in
+    float32 and with `vfma.f32` so the product is never rounded before it is added.
+    It memsets the output first (0xa75c0), walks the weight pointer in strides of
+    n_out floats over the summed dimension (0xa7610..0xa7618) and only then adds
+    the bias vector element for the output it just finished (0xa762a). A row-major
+    matrix multiply with a per-output bias is a dense layer's accumulation and nothing
+    else. 1057 calls in the body-temperature run against 151 of nn_gru_cell and
+    151 of nn_dense_layer, which is seven per network run -- six inside the cell
+    and one in the output layer -- and none in any of the other five
 - address: 0xa76aa
-  name: greenteg_cbta__8c0cc__1__1
+  name: nn_dense_layer
   kind: function
-  class: helper
-  evidence: only 0x8c000 (greenteg_cbta__8c0cc__1) calls 0xa76aa; 64 bytes
+  class: trace
+  module: body_temp
+  evidence: 'the dense layer around that kernel: it takes an output, an input, a
+    weight and a bias descriptor of the shape greenteg_cbta_nn_tensors declares,
+    reads the batch from the input''s rank and rows, the output width from the weight''s
+    cols at +0xa and the summed width from its rows at +8, calls nn_dense_accumulate
+    and tail-calls the activation its fifth argument names over batch * cols floats
+    (0xa76e8). 151 calls in the body-temperature run, one for each entry of greenteg_cbta_network_run
+    and one for each of nn_activation_identity, and none in any of the other five'
+- address: 0xa76ea
+  name: nn_gru_cell
+  kind: function
+  class: trace
+  module: body_temp
+  evidence: one timestep of a gated recurrent unit. It divides its input weight's
+    row count by three (0xa7702) and runs nn_dense_accumulate six times, three blocks
+    against the input and three against the hidden state, each with its own bias
+    vector out of the six the bias tensor holds; it sums the first two pairs and
+    puts the logistic over them (0xa77c4), multiplies the second gate into the third
+    recurrent projection and the ELU over that sum (0xa7876, 0xa7858), and closes
+    with h = fma(z, h, (1 - z) * n) at 0xa78c4. Update gate, reset gate and candidate,
+    in that order, with the candidate's non-linearity an ELU where a stock GRU has
+    tanh. 151 calls in the body-temperature run, one for each of nn_activation_elu
+    and half of nn_activation_logistic's 302, and none in any of the other five
 - address: 0xa78ce
-  name: greenteg_cbta__8c0cc__1__2
+  name: nn_gru_run
   kind: function
-  class: helper
-  evidence: only 0x8c000 (greenteg_cbta__8c0cc__1) calls 0xa78ce; 258 bytes
+  class: trace
+  module: body_temp
+  evidence: 'the sequence loop over that cell: it takes the hidden width from its
+    recurrent weight''s cols, the input width and the timestep count from the input
+    tensor''s cols and rows, and steps the cell once per timestep forwards or backwards
+    depending on its fifth stack argument (0xa78f2), copying the hidden state into
+    the output tensor after each step when the sixth says to. The CBTA model passes
+    one timestep, forwards, with the states returned. 151 calls in the body-temperature
+    run, one for each of nn_gru_cell, and none in any of the other five: the model
+    is run one timestep at a time'
 - address: 0xa7a1c
   name: greenteg_cbta__a7a1c
   kind: function

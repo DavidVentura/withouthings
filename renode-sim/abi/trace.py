@@ -277,8 +277,8 @@ ROWS = [
                   " names it is where the two bytes sit: the word at 0xf0c90"
                   " holds 0xa7541 between the words holding nn_activation_elu"
                   " and nn_activation_logistic, and what follows them at"
-                  " 0xf0c98 is a chain of {weights, in, out} triples --"
-                  " 0xbcab8 with 1 and 1, 0xbcabc with 8 and 2, then 1 and 8."
+                  " 0xf0c98 is greenteg_cbta_nn_tensors, the five weight"
+                  " tensors of the core-body-temperature model."
                   " A row of an activation table that does nothing to its"
                   " vector is the linear activation, and a layer declared with"
                   " one is a layer with no non-linearity"),
@@ -291,7 +291,10 @@ ROWS = [
     # object of their own, and only the body-temperature run enters them.
     dict(address=0xA759E, name="nn_dense_accumulate", kind="function",
          module="body_temp", calls=[0xA86C2],
-         rate="RATE_DENSE",
+         rate="1057 calls in the body-temperature run against 151 of"
+              " nn_gru_cell and 151 of nn_dense_layer, which is seven"
+              " per network run -- six inside the cell and one in the"
+              " output layer -- and none in any of the other five",
          evidence="out[m][n] = bias[n] + sum over k of in[m][k] *"
                   " w[k * n_out + n], in float32 and with `vfma.f32` so the"
                   " product is never rounded before it is added. It memsets"
@@ -304,7 +307,10 @@ ROWS = [
          settled=True),
     dict(address=0xA76AA, name="nn_dense_layer", kind="function",
          module="body_temp", calls=[0xA759E],
-         rate="RATE_LAYER",
+         rate="151 calls in the body-temperature run, one for each entry"
+              " of greenteg_cbta_network_run and one for each of"
+              " nn_activation_identity, and none in any of the other"
+              " five",
          evidence="the dense layer around that kernel: it takes an output, an"
                   " input, a weight and a bias descriptor of the shape"
                   " greenteg_cbta_nn_tensors declares, reads the batch from"
@@ -316,7 +322,9 @@ ROWS = [
          settled=True),
     dict(address=0xA76EA, name="nn_gru_cell", kind="function",
          module="body_temp", calls=[0xA759E],
-         rate="RATE_CELL",
+         rate="151 calls in the body-temperature run, one for each of"
+              " nn_activation_elu and half of nn_activation_logistic's"
+              " 302, and none in any of the other five",
          evidence="one timestep of a gated recurrent unit. It divides its"
                   " input weight's row count by three (0xa7702) and runs"
                   " nn_dense_accumulate six times, three blocks against the"
@@ -332,7 +340,9 @@ ROWS = [
          settled=True),
     dict(address=0xA78CE, name="nn_gru_run", kind="function",
          module="body_temp", calls=[0xA76EA],
-         rate="RATE_RUN",
+         rate="151 calls in the body-temperature run, one for each of"
+              " nn_gru_cell, and none in any of the other five: the"
+              " model is run one timestep at a time",
          evidence="the sequence loop over that cell: it takes the hidden"
                   " width from its recurrent weight's cols, the input width"
                   " and the timestep count from the input tensor's cols and"
