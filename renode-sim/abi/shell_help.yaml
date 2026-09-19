@@ -1,0 +1,305 @@
+# What the firmware's own debug console says about itself.
+#
+# The 79 rows of shell_cmd_table 0x27100 each carry a run entry and a help
+# entry, and the help entry is the firmware documenting a command in its own
+# words. Nothing in the sim drove the console until abi/algos.py, so none of
+# this was readable before; every `help` below is what the running watch
+# printed for `<name> --help`, verbatim, and `run` is what a scenario's
+# invocation of it did.
+#
+# The console itself, because a transcript is only evidence if the way it was
+# taken is known:
+console:
+  uart: uart0
+  evidence: >
+    The instance descriptor at 0xb2588 holds the UART0 base 0x40002000, 1 Mbaud
+    and P0.07/P0.08 for TXD/RXD; 0x40028000 (UARTE1) appears nowhere in the
+    image. uart_configure_and_enable 0x93c3c writes ENABLE=4, which is the
+    legacy UART and not the EasyDMA one, and 0x3b424 starts RX.
+  gate:
+    address: 0x2e5e8
+    evidence: >
+      The main task only enters shell_init 0x59f54 when 0x93ca4 answers: that
+      body frees the pins, configures P0.08 as an input, reads its level and
+      restarts the UART, so the console exists only while a debug cable holds
+      the RX line high. In the sim the pin reads low and the shell never
+      starts, which is why out/uart0.log carried no prompt before; `sysbus.gpio0
+      OnGPIO 8 true` is what satisfies it.
+  reader:
+    queue_bytes: 8
+    evidence: >
+      shell_init's xQueueCreate at 0x59f66 takes length 8 and item size 1, and
+      the UART0 ISR at 0x3b3ec pushes one byte per RXDRDY through
+      xQueueGenericSendFromISR. A line written to the UART in one burst is
+      therefore truncated at eight characters, which is what the first driven
+      run measured; abi/algos.py types a character at a time and waits for the
+      editor's echo at 0x59e12 before the next one.
+  terminator: "\r"
+  evidence_terminator: >
+    The line editor's jump table at 0x59dcc dispatches 0x0d into the finaliser
+    at 0x59e28 and sends 0x0a to the ignore arm at 0x59cfa, so LF alone never
+    dispatches a line.
+  prompt: "\nshell>"
+  line_max: 78
+
+commands:
+  - name: max8617x
+    what: the optical front end, by hand
+    help: |
+      Usage:
+      	max8617x <command> [<option>..]
+
+      Commands:
+      	request
+      	start [<mode>]
+      	registers
+      	test <seconds> [<mode>]
+      	read <reg_decimal>
+      	write <reg_decimal> <value_decimal>
+      	stop
+      	release
+      	list_modes : List all supported modes
+      	mode_info <mode> : Display information about a mode
+      	factory_stats <seconds> <mode (string)> (debug=0/1)
+      	              modes: MULTIPPG
+      	                     MULTIPPG_LONG_MEASURE
+      	                     GREYCARD
+      	                     DARK
+      	                     GREEN_PPG
+      	                     GREEN_PPG_LONG_MEASURE
+      	                     CROSSTALK
+    modes: |
+       - 0 : MULTIPPG
+       - 1 : MULTIPPG_LONG_MEASURE
+       - 2 : MULTIPPG_MONO
+       - 3 : MULTIPPG_MONO_LONG_MEASURE
+       - 4 : MULTIPPG_GREEN
+       - 5 : MULTIPPG_GREEN_LONG_MEASURE
+       - 6 : SINGLEPPG_GREEN
+       - 7 : SINGLEPPG_GREEN_ECG_MEASURE
+       - 8 : IR
+       - 9 : IR940_NORTH
+       - 10 : GREYCARD
+       - 11 : DARK
+       - 12 : CROSSTALK
+    note: >
+      `list_modes` prints thirteen modes while the `factory_stats` help lists
+      seven under other names, and algo_table's per-row mode byte indexes the
+      thirteen: HR_LONG_MEASURE 3, HR_SPECTROTRACK and the other PPG
+      algorithms 1, SPO2_MULTI 8, SPO2_MONO 6, WORN 5, PPG_APNEA 7,
+      RAW_DATA_MODE_ACC_PPG 6, LIBDBT 2.
+
+  - name: tracker_algo
+    what: one accelerometer algorithm, run N times, timed
+    help: |
+      This command helps running an algorithmin oneshot and count processing duration
+      tracker_algo <algorithm_name> <arg1> <arg2>...<argN>
+      Algorithms Accelero based:	 tracker_activity
+      	 sleep_wake
+      	 acti_worn
+      Algorithms time based:	 tracker_activity
+      	 sleep_wake
+      	 acti_worn
+    note: >
+      The help advertises three algorithms and the body at 0x64158 compares
+      argv[0] against one string, "sleep_wake" at 0xe136e, so the other two
+      names are timed over an empty loop. argv[1] is the iteration count,
+      strtol base ten at 0xa7f18, and argc must exceed one or the command
+      prints "Not enough args !" and answers -1 (0x64164).
+
+  - name: body_temperature
+    what: the core-body-temperature task and its baselines
+    help: |
+      body_temperature
+      	init      : init local context and create task
+      	start     : run task
+      	stop      : stop task
+      	recover   : recover baseline from vasistas
+      	dump      : dump recent baselines
+      	kickstart : kickstart scenario
+    note: >
+      `start` answers -1 and prints nothing about why: the gate at 0x42888
+      reads the charger through 0x922a2 and forces its go byte to zero while
+      the watch is on one, so the sim has to say the charger is away
+      (`twi0.bq25180 VinPresent false`) before the task will run.
+
+  - name: greenteg
+    what: the heat-flux sensor's calibration, and a dry run of the algorithms
+    help: |
+      GreenTEG (Core Body Temperature Algo) commands:
+        greenteg test                          : Dummy test to run algorithms
+        greenteg bin get                       : Get current sensitivity bin
+        greenteg bin set <sensitivity_bin>     : Set current sensitivity bin
+        greenteg bin del                       : Delete current sensitivity bin
+        greenteg config get                    : Show current GreenTEG algos configuration
+        greenteg config set <int_factor_x10000> <dblib_rom> : Set current GreenTEG algos configuration (1 in dblib rom, 0 in dblib flash)
+        greenteg config del                    : Delete current GreenTEG algos configuration
+
+  - name: raw_data
+    what: the raw accelerometer and PPG capture kept in the external flash
+    help: |
+      raw_data <cmds>
+      	disable
+      	enable
+      	flush
+      	dump (all raw data in hexa)
+      	size_get <nonsent=0> (nonsent = 1 to see only size of raw_data not sent yet)
+      	print [read_mode] [type] [timestamp] (type=0: get all type) (get raw_data > timestamp)
+      	print == print 0 0 0
+      	reset_all
+      	reset
+      	set <type> <timestamp> <nbsample> <delay>
+      	du (flash disk usage)
+    note: >
+      `set` needs exactly four arguments (the argc==5 gate at 0x58850 counts
+      the subcommand) and the type is checked against the 18-entry branch
+      table at 0x588b0, which leaves 1, 2, 3, 6, 17, 18 and the special 99 as
+      the ids that reach a writer.
+
+  - name: ecg
+    what: the ECG module, from the watch's own side
+    help: |
+      	Test ECG module
+      	Module is already initialized
+      	command:
+      	: start [<duration_ms>] (defaults 5000 ms)
+      	:     Launches ECG acquisition for <duration_ms> ms and display values
+      	: dump <signal_uid>
+      	:     <signal_uid> can be found using "sfs ls" cmd
+      	:     Dumps ECG stored at index <signal_index>
+      	: algo_run <signal_size>
+      	:     Run algorithm on signal received from the UART (use wut script)
+      	: set_wrist <id> [id_type]
+      	:     - id: wrist wear position constant
+      	:     - id_type: 0=local constant (default) | 1=WS constant
+
+  - name: tracker_live
+    what: the activity tracker's live totals
+    help: |
+      tracker_live command
+      init [timestamp_day_start] [steps] [ccalo] [total_ccalo] [distance]
+      update
+      data
+      sleep set [duration] [lastupdate] [sync]
+      daily_reset
+
+  - name: vasistas
+    what: the measurement records the watch keeps and syncs
+    help: |
+      erase_all: erase all vasistas
+      erase <bank>: erase bank
+      init: init vasistas
+      dump [block] [ts] [max]: dumps <max> vasistas of <block> from timestamp <ts>
+      fake [n] [type] [value]: generate vasistas
+      fake2 [start_time] [vasistas_type] [args...]: generate vasistas
+      steps: print daily steps
+      last <option>: print last vasistas of <option=bkp>
+      num <type>: number of vasistas of <type>
+      get_conf <type>: get configuration for <type>
+      sync <type> [end_ts]: Synchronize until [end_ts(all]
+
+  - name: background_sync
+    what: the sync the watch asks the phone for by itself
+    help: |
+      background_sync
+      	sync_request
+      	debug_dump_request
+
+  - name: gss
+    what: the stored-signal store the ECG and the raw captures write to
+    help: |
+      init :
+      	initialize the gss module
+      map <bank> [n] :
+      	see the current mapping of signals in <bank> (with [n] sid by line)
+      erase <type> [sid] :
+      	Erase [sid] of <type>, or the oldest if [sid] not provided.
+      erase_all [type] :
+      	Erase all gss banks, or the entire bank of [type].
+      fake <bank> [keep] [size] [reserved]:
+      	create a fake signal of <size> bytes (with [reserved] bytes) in <bank> and [keep] it or not
+      	if no size specified, will auto create a signal fitting exactly in 1 block
+      open <bank> [sid] :
+      	open signal [sid] from <bank>, open oldest or next signal from previous open if no [sid]
+      read <bank> [reserved(default 0)]:
+      	read up to 20 bytes from opened signal in <bank>
+
+  - name: lp
+    what: the low-power modes
+    help: |
+      	lp go [second]: turn uc in deep sleep mode during time passed in parameters
+      	lp dcdc : start dcdc
+      	lp ldo : start ldo
+      	lp off : start mode OFF
+      	lp off no_reboot: start mode OFF and does not reboot on power interrupt
+      	lp coma_timeout [second]: set coma_timeout in ram to reduce time for real costumer test
+      	lp fake_install: set user to fake install for real costumer test
+
+  - name: dblib
+    what: the key-value store the settings live in
+    help: |
+      dblib commands
+      	[subs]add		[rom] <id> <size> <datahex>
+      	del[all]		[rom] <id>
+      	dump			[<bank> [<id>]]
+      	smart
+
+      	<id>		: IE id, decimal
+      	<size>	: data size, bytes, decimal
+      	<datahex>	: data, hexadecimal
+      	<bank>	: curbank=-1, rom=0, bank1=1, bank2=2
+      	ex: add 32 4 01000000
+
+  - name: wlog
+    what: the log ring the console shares with the trace
+    help: |
+      wlog <cmds>
+      	 test
+      	 set <display/storage> <level>
+      	 get
+      	 dump
+      levels:
+      	DEBUG: 2
+      	INFO: 3
+      	WARNING: 4
+      	ERROR: 5
+      	FATAL: 6
+
+  - name: trace
+    what: the debug traces
+    help: |
+      Enable/disable debug traces
+      	trace : on/off
+
+  - name: calib_test
+    what: the accelerometer calibration matrix, and a simulated run of it
+    help: |
+      ctx - operations on algorithm context
+          [get] - dump context of algos
+              [alc] or [cal] or [all]
+          [init] - initializes the context of algorithms
+
+      calib - operations on calibration matrix
+          [get] - find a calib matrix in dblib
+          [save] - save the local calib matrix in dblib
+              <timestamp> - timestamp saved in dblib
+          [reset] - reset the dblib matrix to the identity matrix and the timestamp to 0
+
+      set_local - set the local calib matrix
+          <coefs> - there need to be 12 coefs
+
+      test_params - operations on the calibration test parameters
+          [get] - print the params
+          [set] - write the params, order is <small_noise_std> <large_noise_std> <theta_max> <phi_max>
+              <param> <param> <param> <param>
+
+      test - attempt to calibrate using pseudo random data and the local calib matrix
+          <seed> - random seed
+          <time> - number of minutes of data to simulate
+
+      calibrate - take a set accelero sample and pass it through the calibration matrix
+
+  - name: shell
+    what: the console itself
+    help: |
+      shell echo <on|off>

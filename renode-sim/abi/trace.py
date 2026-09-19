@@ -34,6 +34,23 @@ over 10.8 s of watch time, because a contended host is what sets the pace. A
 window an algorithm needs minutes to close will not close by running the
 client longer; it needs the algorithm started.
 
+abi/algos.py adds the scenarios those five leave out, over the same hook set,
+because the ten algorithms the registry at 0xb48dc lists are started by nothing
+the phone's ordinary traffic asks for:
+
+    ppgmodes    the debug console driven for the first time -- the shell only
+                exists when P0.08 idles high (the cable check at 0x2e5e8) --
+                with `max8617x start` in each of the thirteen measurement modes
+                the registry's rows index, and then `max8617x test`
+    bodytemp    `greenteg test` and `body_temperature kickstart`, which is the
+                core-body-temperature algorithm run over a simulated week
+    spo2        MEASURE_START with category 3, which the handler's switch at
+                0x54028 admits and which does start the sample pipeline
+    ppgmeasure  MEASURE_START with category 2, which the same switch refuses
+    bodytempwpp the skin-temperature, heat-flux and greenTEG commands
+    rawdatawpp  RAW_DATA with the mark-synced command
+    schedule    twenty minutes of watch time with nobody talking to it
+
 A count is evidence about rate and never about role, so a `rate` line says the
 ratio and the scenario and stops; the role comes from the body, by the same
 shape rules abi/sensors.py reads. Where the two do not agree the address is
@@ -166,6 +183,78 @@ ROWS = [
                   " compares them and returns 0, -1 or 1 (0xa0dbe..0xa0de4)."
                   " That is a C comparator, and a comparator is passed as a"
                   " pointer, which is the whole reason nothing calls it"),
+
+    # --- the debug console's own input path ----------------------------------
+    dict(address=0x59BE4, name="shell_uart_rx_byte", kind="function",
+         module="shell", calls=[0x9E7AC], reads=[0x2001F8E4], settled=True,
+         rate="655 calls in the run that typed 655 characters at the console"
+              " and 107 in the one that typed 107 before a command took the"
+              " console back, and none in the four that leave P0.08 low. One"
+              " call per character received is the whole rate",
+         evidence="the byte the UART0 interrupt handler at 0x3b3ec read out of"
+                  " RXD, pushed into the console's character queue: it loads"
+                  " the shell context from 0x2001f8e4, takes the queue handle"
+                  " at +0xb8 and calls xQueueGenericSendFromISR (0x9e7ac) with"
+                  " a pointer to the byte and a woken flag, then sets PENDSVSET"
+                  " in SCB->ICSR when the send woke the reader. Its address is"
+                  " written into the driver's callback slot 0x2001828c by"
+                  " 0x59cc4, which is why no static caller reaches it"),
+
+    # --- the optical front end's watchdog ------------------------------------
+    dict(address=0x52498, name="max8617x_swdog_feed", kind="function",
+         module="max8617x", calls=[0x5E7A8, 0x5DF94], reads=[0xD9B4D],
+         settled=True,
+         rate="7384 calls in the run that started the front end in each of its"
+              " thirteen measurement modes, against 57806 of"
+              " ppg_sample_channel_slot in the same run, and none in any of"
+              " the other five",
+         evidence="eighteen bytes that log the format at 0xd9b4d,"
+                  " '[max8617x] [%d] %d', through wlog_fmt_r0d and then tail"
+                  " call swdog_feed (0x5df94) with the constant 6. Six is the"
+                  " software watchdog the front end takes out for itself: the"
+                  " console prints '[SWDOG] enable swdog #6, timeo=10000ms' on"
+                  " every `max8617x start` and '[SWDOG] disable swdog #6' on"
+                  " every stop, so the body is the sample path saying the"
+                  " front end is still delivering"),
+
+    # --- the activation functions of a small network -------------------------
+    dict(address=0xA7542, name="nn_activation_logistic", kind="function",
+         module="body_temp", calls=[0x8C9DC], settled=True,
+         rate="376 calls in the body-temperature run, two for each of the 188"
+              " of the two bodies beside it, and none in any of the other five",
+         evidence="for each of the n floats its pointer argument walks it"
+                  " writes 1 / (expf(-x) + 1): vldr the element, vneg, expf"
+                  " (0x8c9dc), add the 1.0 held in s16 since the prologue and"
+                  " vdiv that 1.0 by the sum (0xa755c..0xa7570). That is the"
+                  " logistic function over a vector and nothing else is. Its"
+                  " address is the third of three consecutive words at"
+                  " 0xf0c8c, beside 0xa7577 and 0xa7541, and nothing in the"
+                  " image references that trio: an activation table a model"
+                  " descriptor indexes, which is why no static caller reaches"
+                  " any of the three"),
+    dict(address=0xA7576, name="nn_activation_elu", kind="function",
+         module="body_temp", calls=[0x8CACC], settled=True,
+         rate="188 calls in the body-temperature run and none in any of the"
+              " other five",
+         evidence="the same vector walk with a different rule: an element"
+                  " already above zero is left alone and every other one is"
+                  " replaced by expm1f of itself (the vcmpe against zero at"
+                  " 0xa7588 and the call to 0x8cacc). x for x > 0 and"
+                  " exp(x) - 1 otherwise is the exponential linear unit at"
+                  " alpha one. It is the first of the three words at 0xf0c8c"),
+    dict(address=0xA7540, name="nn_activation_identity", kind="function",
+         module="body_temp",
+         rate="188 calls in the body-temperature run, one for each of"
+              " nn_activation_elu, and none in any of the other five",
+         evidence="two bytes, `bx lr`. On its own that names nothing; what"
+                  " names it is where the two bytes sit: the word at 0xf0c90"
+                  " holds 0xa7541 between the words holding nn_activation_elu"
+                  " and nn_activation_logistic, and what follows them at"
+                  " 0xf0c98 is a chain of {weights, in, out} triples --"
+                  " 0xbcab8 with 1 and 1, 0xbcabc with 8 and 2, then 1 and 8."
+                  " A row of an activation table that does nothing to its"
+                  " vector is the linear activation, and a layer declared with"
+                  " one is a layer with no non-linearity"),
 ]
 
 # What ran and is still not named. Each carries the rate, because the rate is
@@ -204,6 +293,20 @@ REFUSED = [
               " hook fired on is not the body the entry would name"),
     (0x91F4C, "one call in the sleep run and nowhere else, which is one"
               " sample of one scenario"),
+    (0x9443C, "a strict-less predicate over the word at +8 of the two records"
+              " its pointer arguments name, which is a comparator and has no"
+              " caller for the usual reason. 29 calls in every one of the four"
+              " scenarios that open the pipe and none in the two console ones,"
+              " so the rate is the connection and says nothing about which"
+              " feature sorts with it"),
+    (0x807A4, "281, 166, 60 and 47 calls across the SpO2, PPG, temperature and"
+              " raw-data runs and none in the two console ones: a state"
+              " machine that calls two members of its object's own vtable at"
+              " +0x34 and +0x38 and retries. Four scenarios and a vtable do"
+              " not agree on a feature"),
+    (0x9B2A4, "2195 calls in the body-temperature run and none in any other,"
+              " over two instructions that store a halfword at +6 of their"
+              " first argument. A setter whose owner the trace does not name"),
 ]
 
 

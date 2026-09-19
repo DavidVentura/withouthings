@@ -15,7 +15,7 @@ use wpp::frame::{Channel, Frame};
 use wpp::objects::{
     ActivitySubcategory, Alarm, AncsStatus, Distance, InfoType, LocalNotification, MeasureCategory,
     MeasureLiveAppStatus, Pace, PauseState, ProbeChallenge, ProbeChallengeResponse, ProbeReply,
-    SleepActivityGet, Speed, StartTime, TimeSet, Uint32, VasistasType, Version, WamAutoSleep,
+    RawDataCmd, SleepActivityGet, Speed, StartTime, TimeSet, Uint32, VasistasType, Version, WamAutoSleep,
     WamVasistasGet, WorkoutGpsStatus,
 };
 use wpp::WppObject;
@@ -338,6 +338,105 @@ fn ecg(link: &mut Link, seconds: u64) -> std::io::Result<()> {
             answers: Answers::One,
         },
     )
+}
+
+/// One live measurement of a category other than ECG, driven exactly the way
+/// the ECG one is: the two objects the handler at 0x54238 parses, a read loop,
+/// and the stop.
+///
+/// The category is what the measurement is, and the switch that reads it is
+/// `measure_live_config_get` at 0x54028: it answers for 1 (ECG) and for 3
+/// (SpO2) and logs `[MEASURE_LIVE] Unknown measure subcat %d` for everything
+/// else, so a run of this flag with a category the firmware does not admit is
+/// the measurement of that refusal and not a mistake.
+fn measure(link: &mut Link, category: i16, seconds: u64) -> std::io::Result<()> {
+    let object = WppObject::MeasureCategory(MeasureCategory { value: category });
+    let name = MeasureCategory::value_name(category).unwrap_or("unknown");
+    run(
+        link,
+        &Step {
+            label: "measure start",
+            frame: Frame::new(
+                Command::CMD_MEASURE_START,
+                vec![
+                    object.clone(),
+                    WppObject::MeasureLiveAppStatus(MeasureLiveAppStatus {
+                        app_live_screen_displayed: 1,
+                    }),
+                ],
+            ),
+            answers: Answers::One,
+        },
+    )?;
+    let until = Instant::now() + Duration::from_secs(seconds);
+    watch(link, &format!("{name} live"), until, |_, _| Ok(()))?;
+    run(
+        link,
+        &Step {
+            label: "measure stop",
+            frame: Frame::new(Command::CMD_MEASURE_STOP, vec![object]),
+            answers: Answers::One,
+        },
+    )
+}
+
+/// The temperature the phone can ask for: the skin sensor, the heat-flux
+/// sensor the core-body-temperature algorithm integrates, the barometer's own
+/// temperature, and the greenTEG calibration the algorithm reads.
+fn body_temperature(link: &mut Link) -> std::io::Result<()> {
+    for (label, command) in [
+        ("skin temperature", Command::CMD_SKIN_TEMPERATURE_MEASURE),
+        ("heat flux", Command::CMD_FLUX_SENSOR_MEASURE),
+        (
+            "pressure and temperature",
+            Command::CMD_GET_PRESSURE_TEMPERATURE,
+        ),
+        (
+            "greenteg sensitivity bin",
+            Command::CMD_GREENTEG_SENSITIVITY_BIN_GET,
+        ),
+        (
+            "greenteg integration factor",
+            Command::CMD_GREENTEG_INTEGRATION_FACTOR_GET,
+        ),
+        ("mcu temperature calibration", Command::CMD_MCU_TEMP_CAL_GET),
+    ] {
+        run(
+            link,
+            &Step {
+                label,
+                frame: Frame::new(command, Vec::new()),
+                answers: Answers::One,
+            },
+        )?;
+    }
+    Ok(())
+}
+
+/// The raw-data capture the watch keeps in its external flash.
+///
+/// The handler at 0x58b34 reads one `RawDataCmd` and accepts 1 (erase), 2
+/// (erase all) and 3 (mark synced); the two erases are what the phone sends
+/// once it has the bytes, so only the marking is driven here and the capture
+/// itself is started from the debug shell.
+fn raw_data(link: &mut Link) -> std::io::Result<()> {
+    for (label, cmd) in [
+        ("raw data, mark synced", RawDataCmd::CMD_SET_SYNCED),
+        ("raw data, no command", RawDataCmd::CMD_NONE),
+    ] {
+        run(
+            link,
+            &Step {
+                label,
+                frame: Frame::new(
+                    Command::CMD_RAW_DATA,
+                    vec![WppObject::RawDataCmd(RawDataCmd { cmd })],
+                ),
+                answers: Answers::One,
+            },
+        )?;
+    }
+    Ok(())
 }
 
 /// How long a live scenario watches the link before it sends its closing
@@ -727,6 +826,12 @@ fn main() -> ExitCode {
     let mut workout_subcategory: i16 = ACTIVITY_SUBCATEGORY_RUNNING;
     let mut hr_seconds: Option<u64> = None;
     let mut sleep_seconds: Option<u64> = None;
+    // The measurement categories the ECG flag's sibling drives, each the
+    // seconds it watches the link for between the start and the stop.
+    let mut spo2_seconds: Option<u64> = None;
+    let mut ppg_seconds: Option<u64> = None;
+    let mut body_temp_scenario = false;
+    let mut raw_data_scenario = false;
     let mut alarm_scenario = false;
     let mut notify_scenario = false;
     // The notifications to announce over ANCS, each a title and a message, and
@@ -785,6 +890,10 @@ fn main() -> ExitCode {
             }
             "--hr-measure" => hr_seconds = Some(seconds(&mut arguments, "--hr-measure")),
             "--sleep" => sleep_seconds = Some(seconds(&mut arguments, "--sleep")),
+            "--spo2" => spo2_seconds = Some(seconds(&mut arguments, "--spo2")),
+            "--ppg" => ppg_seconds = Some(seconds(&mut arguments, "--ppg")),
+            "--body-temp" => body_temp_scenario = true,
+            "--raw-data" => raw_data_scenario = true,
             "--alarm" => alarm_scenario = true,
             "--notification" => {
                 let text = arguments.next().expect("--notification takes \"<title>|<message>\"");
@@ -819,7 +928,7 @@ fn main() -> ExitCode {
                     .expect("--send takes a command number"),
             ),
             other => {
-                eprintln!("usage: wpp-sim-client [--endpoint host:port | --port n] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--workout <seconds> [--activity <n>]] [--hr-measure <seconds>] [--sleep <seconds>] [--alarm] [--notify] [--notification \"<title>|<message>\" [--app <bundle id>]] [--dismiss <id>] [--send <command>] [--update <package> [--version-address <hex>]]");
+                eprintln!("usage: wpp-sim-client [--endpoint host:port | --port n] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--workout <seconds> [--activity <n>]] [--hr-measure <seconds>] [--sleep <seconds>] [--spo2 <seconds>] [--ppg <seconds>] [--body-temp] [--raw-data] [--alarm] [--notify] [--notification \"<title>|<message>\" [--app <bundle id>]] [--dismiss <id>] [--send <command>] [--update <package> [--version-address <hex>]]");
                 eprintln!("unknown argument {other}");
                 return ExitCode::FAILURE;
             }
@@ -866,6 +975,22 @@ fn main() -> ExitCode {
     }
     if let Some(seconds) = ecg_seconds {
         ecg(&mut link, seconds).expect("the link stays up");
+        return ExitCode::SUCCESS;
+    }
+    if let Some(seconds) = spo2_seconds {
+        measure(&mut link, MeasureCategory::VALUE_SPO2, seconds).expect("the link stays up");
+        return ExitCode::SUCCESS;
+    }
+    if let Some(seconds) = ppg_seconds {
+        measure(&mut link, MeasureCategory::VALUE_PPG, seconds).expect("the link stays up");
+        return ExitCode::SUCCESS;
+    }
+    if body_temp_scenario {
+        body_temperature(&mut link).expect("the link stays up");
+        return ExitCode::SUCCESS;
+    }
+    if raw_data_scenario {
+        raw_data(&mut link).expect("the link stays up");
         return ExitCode::SUCCESS;
     }
     // A scenario needs the watch's own clock to be a plausible wall time, since
