@@ -36,8 +36,13 @@ yaml.add_representer(
     collections.OrderedDict,
     lambda d, v: d.represent_mapping("tag:yaml.org,2002:map", v.items()))
 
+# `size` is how far into the object the image itself reaches, in bytes, where a
+# measurement establishes it: a record length an accessor was handed, or the
+# furthest field offset the code dereferences the address at. It says where the
+# object ends and nothing about what is inside it, which is C and lives in
+# abi/include/withings/*.h.
 ORDER = ["address", "name", "aliases", "kind", "class", "module", "component",
-         "corrects", "supersedes", "note", "evidence"]
+         "size", "corrects", "supersedes", "note", "evidence"]
 
 HEADER = """\
 # HWA10 (ScanWatch 2) application firmware v3411 -- the address map.
@@ -99,12 +104,15 @@ HAND = "hand"
 # recovered, so where both reach an address the measured one keeps it.
 # `kernel` sits with the other readings a table or a call carries: a FreeRTOS
 # create is handed the name and the object, so the argument is the evidence.
+# `global` is the same kind of reading one step weaker: a dblib persist carries
+# the setting id, but the module and the shape of a word come from who touches
+# it, which is the partition rather than an argument.
 # `runtime` is a line a run printed, which is weaker than every static reading
 # of the same address but stronger than a nickname off the call graph.
 RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "vendor", "string",
         "wppcmd", "codec", "wppobj", "wuiview", "vasistas", "store", "sensor",
-        "kernel", "trace", "runtime", "shell", "logtag", "logcb", "bleevt",
-        "logline", "helper", "prose"]
+        "kernel", "global", "trace", "runtime", "shell", "logtag", "logcb",
+        "bleevt", "logline", "helper", "prose"]
 
 
 # The derivations that settle an address rather than read it: a byte verdict
@@ -117,6 +125,18 @@ RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "vendor", "string",
 SETTLED = ("libc", "libm", "extlib", "svc", "syscall", "string",
            "wppcmd", "shell", "bleevt", "codec", "wuiview", "store",
            "vasistas", "sensor", "trace", "kernel")
+
+
+# The kinds that name code. A pointer to Thumb code carries the low bit set, so
+# an address a table or a call handed a measurement is one past where the thing
+# starts; a byte of RAM is at the address it is at, and clearing that bit there
+# would move every odd global onto its neighbour.
+CODE_KINDS = ("function", "label")
+
+
+def entry_address(record):
+    return (record["address"] & ~1 if record["kind"] in CODE_KINDS
+            else record["address"])
 
 
 def outranks(klass, other):
@@ -139,6 +159,9 @@ class Symbol(object):
         # Which vendor component owns the address, for the entries a
         # declaration names and for the interiors it only encloses.
         self.component = row.get("component")
+        # How many bytes of the object the measurement reached; None where it
+        # established no extent.
+        self.size = row.get("size")
         self.evidence = row.get("evidence")
         self.corrects = row.get("corrects")
         self.supersedes = row.get("supersedes")
@@ -237,7 +260,7 @@ class Map(object):
         displaced = set()
         taken, named = {}, {}
         for record in records:
-            address, name = record["address"] & ~1, record["name"]
+            address, name = entry_address(record), record["name"]
             if record["class"] not in owns:
                 raise Refusal("%s at 0x%x is class %s, which this run does not"
                               " own (%s)"
