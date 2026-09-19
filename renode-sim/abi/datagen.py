@@ -182,7 +182,7 @@ def write(directory, emitted, sources):
         os.remove(os.path.join(directory, name))
     return files
 
-def render_table(section, body, table, declared, words, names):
+def render_table(section, body, table, declared, words, names, address=None):
     """One declared table as a C initialiser, or (None, why) if it cannot be.
 
     The pointer fields name the symbols rather than holding addresses, so the
@@ -200,9 +200,15 @@ def render_table(section, body, table, declared, words, names):
     start, stride, count, name, entry = (table.address, table.stride,
                                          table.count, table.name, table.entry)
     fields = table.row.fields
-    if section.start != start or section.end != table.end:
+    # A table in `.data` has two addresses -- the RAM one the map, the header
+    # and the C symbol all name it by, and the flash one its initialiser sits
+    # at -- so the caller says which of the section's two the declaration is
+    # about. A flash table has only the one and passes nothing.
+    address = section.start if address is None else address
+    end = address + (section.end - section.start)
+    if address != start or end != table.end:
         return None, ("the section is 0x%x..0x%x, the declaration 0x%x..0x%x"
-                      % (section.start, section.end, start, table.end))
+                      % (address, end, start, table.end))
     pointer_at = dict((f.offset, f) for f in fields if f.kind == "pointer")
     for row in range(count):
         for off in words:

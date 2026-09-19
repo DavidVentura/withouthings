@@ -249,13 +249,17 @@ def emit_data(directory, sources, delegated, blob, section_names, forced,
             names.append((off, name, True, is_func))
         body = bytes(blob[s.start - APP_BASE:s.end - APP_BASE])
         words = dict((off, sym) for off, sym, t in s.relocs if t == R_ARM_ABS32)
-        if s.start in tables:
-            text, why = datagen.render_table(s, body, tables[s.start], declared, words,
-                                             names)
+        # A `.data` section's own address is its RAM one: that is what the map
+        # gives the object, what the header declares and what the C symbol is.
+        # The flash `start` is only where the copy loop reads its bytes from.
+        at = s.start if s.vma is None else s.vma
+        if at in tables:
+            text, why = datagen.render_table(s, body, tables[at], declared, words,
+                                             names, address=at)
             if text is not None:
                 emitted.append((s, text, "typed"))
                 continue
-            untyped.append((tables[s.start].name, why))
+            untyped.append((tables[at].name, why))
         # The partition calls a component data when no function entry point
         # opens it, and a few such components still hold instructions the
         # boundary scan found a call in. Those relocations sit on the

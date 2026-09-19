@@ -88,6 +88,45 @@ void vendor_greenteg_cbta_sport_get(struct greenteg_cbta_result *out);
 unsigned char vendor_greenteg_cbta_get_flag_a(void);
 unsigned char vendor_greenteg_cbta_get_flag_b(void);
 
+/* The free-living instance's model, as the library serialised it. The sport
+   instance has no network: 0x8c500 runs windowed statistics over the same
+   three readings instead, which is why only one set of weights is here.
+
+   The two tables below are the only thing in the image that names the model.
+   Nothing takes their address: the library is compiled -fPIC and reaches its
+   own data through a GOT at 0x20007974, so the network runner 0x8c000 loads
+   GOT slots 0, 4 and 8 for the activations and pc-relative displacements for
+   the tensors. Both tables are in the `.data` initialiser image at 0xefe58
+   that the startup copies to 0x200066a8, so their run-time addresses are
+   0x200074dc and 0x200074e8. */
+
+/* The three activation slots at 0x200074dc, 0x200074e0 and 0x200074e4 hold
+   nn_activation_elu, nn_activation_identity and nn_activation_logistic. They
+   are three objects and not an array: the GOT takes the address of each one
+   separately, which is also why they stay three RAM items. Each kernel walks
+   n floats in place. The network runner hands the GRU cell the logistic for
+   its gates and the ELU for its candidate, and the output layer the
+   identity. */
+/* One tensor of the model. `rank` is 1 for a bias vector and 2 for a weight
+   matrix; `count` is the number of floats, which is `rows * cols`; and a
+   matrix is row-major with `rows` inputs and `cols` outputs, because the
+   dense kernel 0xa759e walks the weight pointer in strides of `cols` floats
+   over `rows` terms and indexes the bias by the output. The data stays in
+   flash: the initialiser image holds the pointer, not the floats. */
+struct greenteg_nn_tensor {
+    const float *data;
+    unsigned short rank;
+    unsigned short count;
+    unsigned short rows;
+    unsigned short cols;
+};
+
+/* The five tensors at 0xf0c98, in the order the runner uses them:
+   the output layer's bias (1), its weights (8 -> 1), the GRU's bias
+   (48 = six eight-float vectors), its input weights (3 stacked 3 x 8 blocks)
+   and its recurrent weights (3 stacked 8 x 8 blocks). */
+extern struct greenteg_nn_tensor greenteg_cbta_nn_tensors[5];
+
 /* --------------------------------------------------------- ECGSW2 (ecgsw2)
 
    The ECG library, named by the firmware's own "[ECG DIAGNOSIS] ECGSW2"
