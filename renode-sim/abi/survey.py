@@ -73,9 +73,15 @@ VFP = re.compile(r"\b(v(add|sub|mul|div|sqrt|ldr|str|mov|cvt|cmp|neg|abs|"
 class Fn(object):
     """One function of the partition, with what the map calls it."""
 
-    def __init__(self, start, end, size, label, symbol):
+    def __init__(self, start, end, size, label, symbol, seeded=False):
         self.start, self.end, self.size = start, end, size
         self.label = label
+        # The export says where each of its names came from, and a name it
+        # took from abi/symbols.yaml is the map's name echoed back rather than
+        # a second reading of the image. Only the map is asked about those, so
+        # a class this run rewrites cannot survive in the export and keep the
+        # closure it was cut from from being cut again.
+        self.seeded = seeded
         self.symbol = symbol
         self.name = symbol.name if symbol else label
         self.klass = symbol.klass if symbol else None
@@ -83,7 +89,9 @@ class Fn(object):
 
     @property
     def named(self):
-        return self.symbol is not None or not PLACEHOLDER.match(self.label)
+        if self.symbol is not None:
+            return True
+        return not self.seeded and not PLACEHOLDER.match(self.label)
 
     def __repr__(self):
         return "<%s @0x%x %dB>" % (self.name, self.start, self.size)
@@ -127,7 +135,8 @@ def load_partition(items_path, smap, ignore=()):
         size = (f["bytes"] if "bytes" in f else
                 sum(b - a for a, b in f.get("ranges", [(f["start"], f["end"])])))
         fns[f["start"]] = Fn(f["start"], f["end"], size, f.get("name") or "",
-                             named.get(f["start"]))
+                             named.get(f["start"]),
+                             seeded=f.get("named") == "seed")
     return fns
 
 

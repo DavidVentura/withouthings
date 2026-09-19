@@ -116,7 +116,7 @@ EXT_VARIANTS = []
 # Which class names an address when two reach it; earlier wins. See main().
 CLASS_RANK = ["svc", "syscall", "libc", "libm", "extlib", "wppcmd", "shell", "wppobj", "string",
               "logtag", "logcb", "bleevt", "logline", "slot", "accessor",
-              "shared", "helper"]
+              "vector", "shared", "helper"]
 
 INSN = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2,4} )+)\s*\t(\S+)\s*(.*)$")
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -1412,6 +1412,42 @@ def slot_names(ex, smap, types, blocked=()):
     return out
 
 
+# ------------------------------------------------------------- class: vector
+
+# The Cortex-M vector table at the app's base: word 0 is the initial stack
+# pointer and the 63 words after it are handler entries. The count is the
+# nRF52840's, 16 system exceptions plus 48 IRQs, and it is the number
+# abi/ghidra/seed_symbols.py lays the same table out with.
+VECTOR_WORDS = 64
+
+
+def vector_names(img, blocked=()):
+    """The exception handlers nothing else names, named by their vector number.
+
+    A handler is entered by the core and by nothing else, so no call site and
+    no table row will ever name one; the word that holds it is the whole of the
+    evidence and the number of that word is the whole of what it says. The
+    spelling is the one abi/ghidra/seed_symbols.py already gives them, so the
+    export and the map agree on these addresses instead of the analysis
+    carrying a name the map never heard of.
+    """
+    out = []
+    for i in range(1, VECTOR_WORDS):
+        word = img.word(APP_BASE + 4 * i)
+        if not word or not word & 1 or img.word(word & ~1) is None:
+            continue
+        addr = word & ~1
+        if addr in blocked:
+            continue
+        out.append({"address": addr,
+                    "name": "Reset_Handler" if i == 1
+                            else "vector_%d_handler" % i,
+                    "class": "vector",
+                    "evidence": "word %d of the vector table at 0x%x holds"
+                                " 0x%x" % (i, APP_BASE, word)})
+    return out
+
+
 # ----------------------------------------------------------- class: accessor
 
 # `ldr r3,[pc,#N]; ldr r0,[r3{,#K}]; bx lr` and its store twin: the whole body
@@ -1852,7 +1888,8 @@ def yaml_str(s):
 
 # Every rule this script runs, as the class each writes into abi/symbols.yaml.
 DEFAULT_CLASSES = ("svc,syscall,libc,libm,extlib,string,logtag,logcb,wppcmd,"
-                   "shell,bleevt,wppobj,logline,slot,accessor,shared,helper")
+                   "shell,bleevt,wppobj,logline,slot,accessor,vector,shared,"
+                   "helper")
 
 
 # The map classes a derivation owns. A function the seed carries under one of
@@ -2066,6 +2103,18 @@ def main():
         found = [e for e in slot_names(ex, smap, types, blocked=taken)
                  if e["name"] not in reserved]
         stats["slot"] = len(found)
+        entries += found
+        taken |= {e["address"] for e in found}
+
+    if "vector" in want:
+        # Every address the map holds, whatever kind it holds it as: five of
+        # the handlers are `prose` labels rather than functions, and a vector
+        # number is not a better name than the one a hand wrote against the
+        # line the handler logs.
+        found = [e for e in vector_names(
+            img, blocked=taken | {s.address for s in smap.symbols})
+                 if e["name"] not in reserved]
+        stats["vector"] = len(found)
         entries += found
         taken |= {e["address"] for e in found}
 

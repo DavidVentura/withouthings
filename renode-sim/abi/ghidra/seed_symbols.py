@@ -111,7 +111,7 @@ def apply_table(entry, category):
     createLabel(at, entry["name"], True, SourceType.USER_DEFINED)
 
 
-def seed_vector_table():
+def seed_vector_table(known_names):
     """Word 0 is the initial SP; every odd word after it is a handler entry."""
     start = addr(APP_BASE)
     createLabel(start, "app_vector_table", True, SourceType.USER_DEFINED)
@@ -126,28 +126,39 @@ def seed_vector_table():
         target = word & ~1
         if not app_start <= target <= app_last.getOffset():
             continue
-        name = "Reset_Handler" if i == 1 else "vector_%d_handler" % i
-        known = getFunctionAt(addr(target))
-        if known is not None and known.getSymbol().getSource() != SourceType.DEFAULT:
-            name = known.getName()      # a seeded name beats the vector number
+        # The map's name beats the vector number wherever the map has one,
+        # whatever kind it holds the address as: five of these handlers are
+        # `prose` labels rather than functions, and asking Ghidra whether a
+        # function is there missed all five and let the number win.
+        name = known_names.get(target)
+        if name is None:
+            name = "Reset_Handler" if i == 1 else "vector_%d_handler" % i
         if force_function(target, name):
             currentProgram.getSymbolTable().addExternalEntryPoint(addr(target))
             handlers += 1
     return handlers
 
 
-def seed_svc_wrappers(start, end):
+def seed_svc_wrappers(start, end, known_names):
     """`svc #N; bx lr` SoftDevice wrappers: functions, and they do return.
 
     Ghidra sees the SVC as a black box and would otherwise leave the two
     halfwords as an unreachable island in the middle of the wrapper table.
+
+    The number is only the name where the map has none. abi/symbols.yaml names
+    every one of these from the SoftDevice's own call number (`sd_ble_gap_*`,
+    `sd_flash_write`), and this used to rename them after the seed had been
+    applied, so the export carried 60 `svc_N_wrapper` names for addresses the
+    map spells properly.
     """
     size = int(end.subtract(start)) + 1
     data = [b & 0xFF for b in getBytes(start, size)]
     found = 0
     for off in range(0, size - 3, 2):
         if data[off + 1] == 0xDF and data[off + 2] == 0x70 and data[off + 3] == 0x47:
-            if force_function(start.getOffset() + off, "svc_%d_wrapper" % data[off]):
+            at = start.getOffset() + off
+            if force_function(at, known_names.get(
+                    at, "svc_%d_wrapper" % data[off])):
                 found += 1
     return found
 
@@ -193,8 +204,16 @@ for t in seed["tables"]:
     apply_table(t, hwa10_category)
     counts["tables"] += 1
 
-vectors = seed_vector_table()
-svc = seed_svc_wrappers(app_first, app_last)
+# What the map calls each address, whatever kind it calls it: the two passes
+# below run after the seed is applied, so without this they would rename what
+# the seed had just named.
+known_names = {}
+for group in ("functions", "labels", "data", "tables"):
+    for entry in seed[group]:
+        known_names.setdefault(entry["address"], entry["name"])
+
+vectors = seed_vector_table(known_names)
+svc = seed_svc_wrappers(app_first, app_last, known_names)
 
 # The decompiler's parameter ID pass costs more than the partition gains from it.
 for option, value in [("Decompiler Parameter ID", "false"),
