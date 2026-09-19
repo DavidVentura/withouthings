@@ -217,6 +217,28 @@ ROWS = [
                   " every stop, so the body is the sample path saying the"
                   " front end is still delivering"),
 
+    # --- the ten-minute sweep that starts the passive measurements ----------
+    dict(address=0x3FC14, name="periodic_task_sweep", kind="function",
+         module="misc", calls=[0x3A85C, 0x946B2], reads=[0x27D64, 0x27D94],
+         settled=True,
+         rate="9 calls in the twenty-minute schedule run and none in any of"
+              " the other eight, against 9 of the third row's handler"
+              " 0x62410 in the same run: every sweep that found that row due"
+              " ran it, which is what a sweep over a due list does",
+         evidence="the walk over periodic_task_table: it takes the uptime"
+                  " through uptime_seconds (0x3a85c) and steps the twelve-byte"
+                  " rows from the pool word 0x27d64 to the pool word 0x27d94"
+                  " (the `adds r4, #0xc` at 0x3fc58), and for each row whose"
+                  " state block holds a non-zero deadline the uptime has"
+                  " passed and whose enable byte at +4 is set, clears the"
+                  " deadline and calls the row's handler through `blx r3`"
+                  " (0x3fc30..0x3fc4a). A handler that answers -1 is re-armed"
+                  " through 0x946b2 with the deadline it wrote back"
+                  " (0x3fc4c..0x3fc54). This is the body the passive"
+                  " measurements hang off, and nothing reaches it statically"
+                  " because the rows it calls are words of a table no"
+                  " relocation names"),
+
     # --- the activation functions of a small network -------------------------
     dict(address=0xA7542, name="nn_activation_logistic", kind="function",
          module="body_temp", calls=[0x8C9DC], settled=True,

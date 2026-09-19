@@ -180,7 +180,22 @@ symbols:
     reader 0x4bdd0 holds in its pool and walks with `ldr r3, [r5], #4`, calling
     each non-null one with no argument. cfs_factory_reset, glyph_cache_factory_reset
     and workout_cache_factory_reset are three of them, and the array stops where
-    the four sixteen-byte rows at 0x27d64 begin.'
+    the four rows at 0x27d64 begin.'
+- address: 0x27d64
+  name: periodic_task_table
+  kind: table
+  class: hand
+  module: misc
+  evidence: 'four twelve-byte rows of {u32 period, void (*run)(void), state *},
+    walked by periodic_task_sweep 0x3fc14 between the pool words 0x27d64 and 0x27d94
+    at its own stride of 12, which is what fixes the row size against the twelve
+    bytes factory_reset_hooks'' entry used to call sixteen. Every row''s period is
+    600, which is where the ten-minute cadence of the watch''s passive measurements
+    is written down; the handlers are 0x56bd4, 0x61ac0, 0x62410 and 0x63128 and the
+    state blocks 0x2001c0b8, 0x2001fe88, 0x2001ffe8 and 0x200200b4, each holding
+    the next deadline in its first word and an enable byte at +4. abi/algos.py''s
+    twenty-minute schedule run entered 0x62410 nine times and no other scenario
+    entered it at all.'
 - address: 0x27da0
   name: prvIdleTask
   kind: function
@@ -2316,6 +2331,23 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x27130: command ''ancs'', --help slot (+8)'
+- address: 0x3fc14
+  name: periodic_task_sweep
+  kind: function
+  class: trace
+  module: misc
+  evidence: 'the walk over periodic_task_table: it takes the uptime through uptime_seconds
+    (0x3a85c) and steps the twelve-byte rows from the pool word 0x27d64 to the pool
+    word 0x27d94 (the `adds r4, #0xc` at 0x3fc58), and for each row whose state
+    block holds a non-zero deadline the uptime has passed and whose enable byte
+    at +4 is set, clears the deadline and calls the row''s handler through `blx
+    r3` (0x3fc30..0x3fc4a). A handler that answers -1 is re-armed through 0x946b2
+    with the deadline it wrote back (0x3fc4c..0x3fc54). This is the body the passive
+    measurements hang off, and nothing reaches it statically because the rows it
+    calls are words of a table no relocation names. 9 calls in the twenty-minute
+    schedule run and none in any of the other eight, against 9 of the third row''s
+    handler 0x62410 in the same run: every sweep that found that row due ran it,
+    which is what a sweep over a due list does'
 - address: 0x3fe10
   name: sync_bg_request_type_time
   kind: function
