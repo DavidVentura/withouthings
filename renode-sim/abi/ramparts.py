@@ -214,7 +214,7 @@ def name_for(addr, names, kind):
     return names.get(addr) or ("%s_%08x" % (kind, addr))
 
 
-def partition(runs, points, sizes, names, established):
+def partition(runs, points, sizes, declared, names, established):
     """Cut every run at its points; an item runs to the next one.
 
     `sizes` is the only source of an end that is not the next start: a declared
@@ -243,7 +243,14 @@ def partition(runs, points, sizes, names, established):
             items.append(Item(start, end, run.kind, load,
                               name_for(start, names, run.kind), bounded))
             if end < nxt:
-                established.add(end)
+                # Only a declaration says where an object stops. A width
+                # measured off the accesses -- abi/globals.py's `size` -- says
+                # that at least this much is one object, which is enough to cut
+                # an item at but not enough to let a layout put something else
+                # directly above it: the watch reads its personalisation and
+                # its size back wrong when that width is trusted as an end.
+                if start in declared:
+                    established.add(end)
                 items.append(Item(end, nxt, run.kind,
                                   None if run.load is None
                                   else run.load + (end - run.start),
@@ -324,10 +331,12 @@ def load(export=None, image=None, symbols_map=None, types=None):
             # the same sense a declared table's is.
             if sym.row.get("size"):
                 sizes.setdefault(addr, sym.row["size"])
+    declared = set()
     if types is not None and symbols_map is not None:
         for table in types.typed_regions(symbols_map):
             if lo <= table.address < hi and table.end > table.address:
                 sizes[table.address] = table.end - table.address
+                declared.add(table.address)
 
     points = set()
     for word in words:
@@ -348,7 +357,7 @@ def load(export=None, image=None, symbols_map=None, types=None):
         established.add(fill.start)
         established.add(fill.end)
 
-    items = partition(runs, points, sizes, names, established)
+    items = partition(runs, points, sizes, declared, names, established)
     return Ram(runs, items, established)
 
 
