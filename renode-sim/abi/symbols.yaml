@@ -1662,6 +1662,12 @@ symbols:
   class: wppcmd
   evidence: 'wpp_cmd_table row 0x27598: key 297, label ''WPP_CMD_UPDATE_ALARM'',
     CMD_UPDATE_ALARM in wpp/src/commands.rs'
+- address: 0x3d408
+  name: alarmclock_core_dump
+  kind: function
+  class: runtime
+  evidence: 'observed at runtime (crown,display,ecg,hr,misc,sleepmode,workout):
+    wlog(alarmclock_core_dump:) from 0x3d414'
 - address: 0x3d450
   name: shell_cmd_alarmclock__1
   kind: function
@@ -17939,6 +17945,13 @@ symbols:
   module: ppg_dbt
   evidence: 'the handle word: xQueueCreateMutexStatic at 0x638fa with queue type
     1; the name''s module is the module of the functions that read the handle word'
+- address: 0x20020838
+  name: ppg_afib_store_mutex_static
+  kind: global
+  class: runtime
+  module: ppg_afib_store
+  evidence: the handle 0x20020838 that xQueueCreateMutexStatic at 0x67aec produced
+    is taken and given only in ppg_afib_store
 - address: 0x20020aa0
   name: wpp_rx_frame_buffer
   kind: global
