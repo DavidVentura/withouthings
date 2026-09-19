@@ -144,6 +144,10 @@ SCENARIOS = collections.OrderedDict(
                  " front end both feeding it",
                  setup=WORN, motion=True,
                  shell=[("raw_data enable", 5),
+                        # The front end refuses to configure before it is
+                        # claimed: "[max8617x][error] must be requested before
+                        # configure", rc=-3.
+                        ("max8617x request", 5),
                         ("max8617x start MULTIPPG", 60),
                         ("raw_data size_get 0", 5),
                         ("max8617x stop", 5),
