@@ -335,17 +335,13 @@ def renode_binary():
 
 def monitor_lines(lines, port=MONITOR_PORT):
     """Send monitor commands to a running Renode, one line each."""
-    try:
-        link = socket.create_connection(("127.0.0.1", port), timeout=5)
-    except OSError:
-        return False
+    link = socket.create_connection(("127.0.0.1", port), timeout=5)
     try:
         for line in lines:
             link.sendall((line + "\n").encode())
             time.sleep(0.2)
     finally:
         link.close()
-    return True
 
 
 def scenario_port(scenario):
@@ -360,7 +356,13 @@ def shake_the_wrist(stop, port):
     the script: the script has already handed the run to the client.
     """
     while not stop.is_set():
-        monitor_lines(["spi2.adxl367 Motion 800 75"], port)
+        try:
+            monitor_lines(["spi2.adxl367 Motion 800 75"], port)
+        except OSError:
+            # The port goes away when the run ends, which is the one refusal
+            # that is not a fault; every other one has to be loud, because a
+            # workout with no wrist is a scenario that measured nothing.
+            return
         stop.wait(2.0)
 
 
@@ -407,7 +409,11 @@ def run_scenario(scenario, runtime):
     script = os.path.abspath(os.path.join(runtime,
                                           "observe-%s.resc" % scenario.name))
     log = open(os.path.join(runtime, "out", "observe", "%s.log" % scenario.name), "w")
-    command = [renode_binary(), "--console", "--disable-xwt",
+    # Headless, not `--console`: Renode binds the monitor port only when it is
+    # not also serving a console, and the port is how the workout's wrist is
+    # shaken and how a scenario is steered while it runs. The run's own output
+    # goes to the log file either way.
+    command = [renode_binary(), "--disable-xwt",
                "--port", str(scenario_port(scenario)),
                "-e", "include @%s" % script]
     # Renode reads stdin even headless and spins on a closed one, so it is
