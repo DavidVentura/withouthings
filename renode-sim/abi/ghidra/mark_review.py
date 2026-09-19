@@ -6,14 +6,19 @@
 Every review word (a word the classifier could not call a pointer or a
 constant) gets a "Review" bookmark with its signal and, where the value lands
 on something the partition names, the target, plus an end-of-line comment;
-every classified pointer gets a plain "Pointer" bookmark so the two are
-filterable side by side in Window > Bookmarks. Run it after classify_words.py
+every classified pointer gets a plain "Pointer" bookmark; and every function
+the map has no meaningful name for (a FUN_/block_/caseD_ name) gets an
+"Unnamed" bookmark whose category is its module from modules.json and whose
+comment carries its size and its named callers, so Window > Bookmarks
+filtered on Unnamed and sorted by category is the naming worklist. Run it after classify_words.py
 against the project analyze.sh leaves behind, and re-run it after analyze.sh,
 which rebuilds the project from scratch.
 """
 import argparse
+import bisect
 import json
 import os
+import re
 
 import pyghidra
 
@@ -22,10 +27,53 @@ ABI = os.path.dirname(HERE)
 ROOT = os.environ.get("ROOT", os.path.expanduser("~/ref-build"))
 
 
+UNNAMED = re.compile(r"^(FUN|LAB|block|caseD|thunk|sliver)_")
+
+
+def unnamed_functions(items_path, modules_path, references_path):
+    """Functions the map gives no meaningful name, with module and named callers."""
+    items = json.load(open(items_path))
+    modules = json.load(open(modules_path))
+    refs = json.load(open(references_path))
+    by_start = {f["start"]: f for f in items["functions"]}
+    module_of = {}
+    m = modules.get("functions") or modules.get("modules") or modules
+    if isinstance(m, dict):
+        for k, v in m.items():
+            if isinstance(v, dict) and "module" in v:
+                module_of[int(k, 0)] = v["module"]
+            elif isinstance(v, list):
+                for a in v:
+                    module_of[int(a, 0) if isinstance(a, str) else a] = k
+    starts = sorted(by_start)
+    def owner(a):
+        i = bisect.bisect_right(starts, a) - 1
+        return by_start[starts[i]] if i >= 0 else None
+    callers = {}
+    for c in refs.get("calls", []):
+        if c.get("kind") not in ("call", "jump"):
+            continue
+        src = owner(c["from"])
+        if src is not None and not UNNAMED.match(src["name"]):
+            callers.setdefault(c["to"], set()).add(src["name"])
+    out = []
+    for f in items["functions"]:
+        if not UNNAMED.match(f["name"]):
+            continue
+        size = f["bytes"] if "bytes" in f else f["end"] - f["start"]
+        out.append({"start": f["start"], "bytes": size,
+                    "module": module_of.get(f["start"], "(none)"),
+                    "callers": sorted(callers.get(f["start"], ()))[:6]})
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", default=os.path.join(ROOT, "ghidra-project"))
     ap.add_argument("--words", default=os.path.join(ABI, "out", "ghidra", "words.json"))
+    ap.add_argument("--items", default=os.path.join(ABI, "out", "ghidra", "items.json"))
+    ap.add_argument("--modules", default=os.path.join(ABI, "out", "ghidra", "modules.json"))
+    ap.add_argument("--references", default=os.path.join(ABI, "out", "ghidra", "references.json"))
     ap.add_argument("--install", default=None,
                     help="Ghidra install dir; defaults to the release fetch.sh put under ROOT")
     args = ap.parse_args()
@@ -43,7 +91,8 @@ def main():
     from ghidra.program.model.listing import CodeUnit
     from java.awt import Color
     from resources import ResourceManager
-    counts = {"review": 0, "pointer": 0}
+    counts = {"review": 0, "pointer": 0, "unnamed": 0}
+    unnamed = unnamed_functions(args.items, args.modules, args.references)
     project = pyghidra.open_project(args.project, "hwa10", create=False)
     try:
         # pyghidra hands back the framework project, whose files are domain
@@ -83,13 +132,19 @@ def main():
                     bookmarks.setBookmark(addr, "Pointer", r["kind"],
                                           "%s -> 0x%x" % (r["signal"], r["value"]))
                 counts[r["class"]] += 1
+            for f in unnamed:
+                addr = space.getAddress(f["start"])
+                text = "%d B, module %s, callers: %s" % (f["bytes"], f["module"],
+                                                       ", ".join(f["callers"]) or "none named")
+                bookmarks.setBookmark(addr, "Unnamed", f["module"], text)
+                counts["unnamed"] += 1
         finally:
             program.endTransaction(tx, True)
         program.save("word classification", TaskMonitor.DUMMY)
         program.release(consumer)
     finally:
         project.close()
-        print("bookmarked %(review)d review words and %(pointer)d pointers" % counts)
+        print("bookmarked %(review)d review words, %(pointer)d pointers and %(unnamed)d unnamed functions" % counts)
 
 
 if __name__ == "__main__":
