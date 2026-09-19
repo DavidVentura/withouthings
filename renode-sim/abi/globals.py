@@ -25,14 +25,22 @@ What the image does establish about a word, strongest reading first:
                         call is that line's own state, so the line's module tag
                         owns the word and its words name the role when the line
                         says what the role is.
-  the accessor set      a word every function that loads or stores it logs
-                        under one module belongs to that module, and what the
-                        code does with the value is its shape.
+  the accessor set      a word every function that reaches it belongs to one
+                        module belongs to that module, and what the code does
+                        with the value is its shape. Which module a function
+                        belongs to is the log-tag partition plus what the map's
+                        own derivations established, under the one spelling
+                        abi/module_aliases.py settles.
+  the struct's owner    a word inside the extent a base word's field accesses
+                        establish is a field of that struct, and the struct
+                        belongs to whoever initialises it, not to everyone who
+                        reads it.
 
-A word several modules touch stays unnamed: which of them owns it is not this
-code's to decide, and the module set is reported instead. Nothing here guesses
-a struct layout either -- where the uses show field offsets from a word the
-extent goes in `size` and the fields stay in the headers, where C lives.
+A word several modules touch and no struct places stays unnamed: which of them
+owns it is not this code's to decide, and the module set is reported instead.
+Nothing here guesses a struct layout either -- where the uses show field
+offsets from a word the extent goes in `size` and the fields stay in the
+headers, where C lives.
 """
 
 import argparse
@@ -47,6 +55,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import autonames  # noqa: E402  (the image, the disassembly and the partition)
 import callargs  # noqa: E402
+import module_aliases  # noqa: E402  (the tags that are one module, from facts.yaml)
 import symbols as symmap  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -246,12 +255,55 @@ class Extents(object):
 
 
 class Modules(object):
-    """Which module a function logs under, from the partition the export holds."""
+    """Which module a function belongs to, from the partition and the map.
 
-    def __init__(self, export):
+    The partition abi/out/ghidra/modules.json places the 1821 functions a log
+    tag reaches, directly or over the call graph. The map places more: a
+    `wuiview`, `store`, `sensor`, `vasistas` or hand entry carries the module
+    its own derivation established, and a `bymodule` attribution carries one
+    with no name at all. Reading only the partition left a third of the words
+    touched by nothing the partition places, which is not the same as touched
+    by nothing.
+
+    Two things bound what the map may add. A module label the partition does
+    not use is a name the repo chose for a group of functions rather than a
+    log tag -- `WPP_OBJECTS` beside the partition's `WPP`, `FLASH` beside
+    `MCUFLASH` -- and admitting it would split one module in two and refuse
+    every word on the seam, so only labels the partition itself uses are read.
+    And a `bymodule` attribution read off the globals this file named is this
+    file's own last output coming back as evidence, so only the attributions
+    read off the call graph count.
+    """
+
+    # Classes whose module is derived from what this file wrote: a
+    # provenance/role/wrapper name is `<global>_<verb>` off a global named
+    # here, and a `bymodule` attribution may be `reaches only <those
+    # globals>`. Taking any of them as evidence of a word's module would make
+    # each run derive one more name from the last instead of settling.
+    DERIVED_FROM_GLOBALS = frozenset(("role", "wrapper", "provenance",
+                                      "helper", "shared", "bymodule"))
+
+    def __init__(self, export, smap):
         with open(os.path.join(export, "modules.json")) as fh:
-            self.of_function = {int(a, 16): v["module"]
-                                for a, v in json.load(fh)["functions"].items()}
+            doc = json.load(fh)
+        self.of_function = {int(a, 16): v["module"]
+                            for a, v in doc["functions"].items()}
+        labels = set(doc["modules"])
+        aliases = module_aliases.load()
+        for s in smap.symbols:
+            if s.kind not in symmap.CODE_KINDS or not s.module:
+                continue
+            at = s.address & ~1
+            if at in self.of_function:
+                continue
+            if s.klass in self.DERIVED_FROM_GLOBALS and not (
+                    s.klass == "bymodule"
+                    and autonames.BYMODULE_BY_CALLEES in (s.evidence or "")):
+                continue
+            tag = s.module.upper()
+            tag = aliases.get(tag, tag)
+            if tag in labels:
+                self.of_function[at] = tag
 
     def named(self, fn):
         tag = self.of_function.get(fn)
@@ -524,19 +576,65 @@ def logline_rows(img, ex, ram, extents, sites, taken):
 
 # ------------------------------------------------ the accessor-set rule
 
+def struct_fields(ram, extents, modules):
+    """For each word inside a struct extent, the module of the base's writer.
+
+    A word several modules touch is usually not several modules' word: it is
+    one field of one context struct that a producer fills and a consumer
+    reads, and the reader's module says nothing about whose struct it is. The
+    base's writer does. Where a word sits inside the extent some pool word's
+    field accesses establish and the functions that store the base word all
+    belong to one module, the struct is that module's and so is the field,
+    whoever else reads it.
+
+    Bases whose writers span two modules answer nothing and are left out, and
+    so is a word covered by two structs whose writers disagree: then which
+    struct the word is a field of is exactly what is not established.
+    """
+    owner = {}
+    for base, extent in extents.extent.items():
+        if extent <= 4 or extents.stride.get(base):
+            continue
+        tags = set()
+        for fn in ram.storers.get(base, ()):
+            tag = modules.named(fn)
+            if tag:
+                tags.add(tag)
+        if len(tags) != 1:
+            continue
+        tag = tags.pop()
+        for at in range(base + 1, base + extent):
+            if at in owner and owner[at][0] != tag:
+                owner[at] = (None, None)
+                continue
+            owner[at] = (tag, base)
+    return dict((at, v) for at, v in owner.items() if v[0])
+
+
 def module_rows(ram, modules, extents):
-    """Words every function that touches them logs under one and the same module."""
+    """Words one module owns: every function that touches them is in it, or
+    they are a field of a struct one module's code initialises."""
+    fields = struct_fields(ram, extents, modules)
     rows, refused = [], []
     for at in sorted(ram.touched()):
         tags = modules.of_word(ram, at)
-        if len(tags) != 1:
+        if len(tags) == 1:
+            tag, why = tags.pop(), None
+        elif at in fields:
+            tag, base = fields[at]
+            why = ("it is +0x%x of the struct at 0x%x, which only [%s] writes"
+                   " the base word of%s"
+                   % (at - base, base, tag,
+                      "; %s also reach it" % "/".join(sorted(tags)) if tags
+                      else " and no function reaching it is in a module"))
+        else:
             refused.append((at, sorted(tags)))
             continue
-        tag = tags.pop()
         shape, size = shape_of(ram, extents, at)
         rows.append(dict(address=at, name="%s_%s_%x" % (tag.lower(), shape, at),
                          kind="global", module=tag, shape=shape, size=size,
-                         evidence="every function that loads or stores it logs"
+                         evidence=why or
+                                  "every function that loads or stores it logs"
                                   " under [%s] (%d read it, %d write it)"
                                   % (tag, len(ram.loaders.get(at, ())),
                                      len(ram.storers.get(at, ())))))
@@ -577,11 +675,11 @@ def main():
         sys.exit("abi/globals.py: no export under %s" % args.export)
     ram = Ram(img, ex)
     extents = Extents(args.export, img)
-    modules = Modules(args.export)
+    prior = symmap.load()
+    modules = Modules(args.export, prior)
     ids = dblib_ids()
 
     found, no_cache = settings(img, ex, ram, ids)
-    prior = symmap.load()
     # Not this run's own last output: a name keyed on what the map holds after
     # the previous run would see itself as the image's naming and back away
     # from it, and the second run would differ from the first.
@@ -635,9 +733,12 @@ def main():
         for row, at in held:
             print("  0x%x is %s (%s) in the map and %s here"
                   % (row["address"], at.name, at.klass, row["name"]))
-        print("  %d words several modules touch: %s"
-              % (len(shared), ", ".join("0x%x %s" % (a, "/".join(t))
-                                        for a, t in shared[:20] if t)))
+        several = [(a, t) for a, t in shared if t]
+        print("  %d words several modules touch, %d words only functions in no"
+              " module touch: %s"
+              % (len(several), len(shared) - len(several),
+                 ", ".join("0x%x %s" % (a, "/".join(t))
+                           for a, t in several[:20])))
         return 0
 
     try:

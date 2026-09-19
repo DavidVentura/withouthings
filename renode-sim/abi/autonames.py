@@ -1623,6 +1623,12 @@ LIBRARY_CLASSES = ("libc", "libm", "extlib", "svc", "syscall", "match",
 # written after the map is loaded and before these rules run, so reading it
 # back would make the second run wrap ten names the first run did not.
 CALLEE_SIDE_CLASSES = ("role", "wrapper", "bymodule", "provenance")
+# How a `bymodule` attribution says it was read off the call graph rather than
+# off the globals abi/globals.py named. The two readings are not
+# interchangeable downstream: globals.py may take the first as evidence of a
+# module for a word, and taking the second would be reading its own last
+# output back as the image's testimony.
+BYMODULE_BY_CALLEES = "calls only"
 # A wrapper is a call and the instructions that set it up; past this many the
 # body is doing something of its own that the callee's name would not say.
 WRAPPER_MAX = 12
@@ -1807,7 +1813,8 @@ def _module_of_callees(ex, modules, fn, named):
     where = {modules.get(s.address) for s in own}
     if len(where) != 1 or None in where:
         return None, None
-    return where.pop(), "calls only %s" % ", ".join(sorted(s.name for s in own))
+    return where.pop(), "%s %s" % (BYMODULE_BY_CALLEES,
+                                   ", ".join(sorted(s.name for s in own)))
 
 
 def _module_of_globals(img, ex, smap, fn):
