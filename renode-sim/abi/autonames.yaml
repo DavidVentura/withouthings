@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 0, helper: 389, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1788, modules: 184, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {accessor: 1, bleevt: 28, extlib: 0, helper: 706, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1788, modules: 184, prototypes_derived: 22, shared: 12, shell: 156, shell_table_rows: 79, slot: 28, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 194, disagree: 0}
 
 functions:
@@ -27,6 +27,45 @@ functions:
     class: logline
     evidence: "the only line 0x27f60 logs, wlog('[UI][GAUGE] Error, angle %f is not valid as to is lower than %f') at 0x27f9a"
     module: UI
+  - name: hr_measure_on_algo_result__2__1
+    address: 0x299c0
+    class: helper
+    evidence: "only 0x62d64 (hr_measure_on_algo_result__2) calls 0x299c0; 52 bytes"
+    module: HR_EVENT
+  - name: ppg_apnea_algo_step__1
+    address: 0x29e80
+    class: helper
+    evidence: "only 0x74ab8 (ppg_apnea_algo_step) calls 0x29e80; 180 bytes"
+    module: SENSORS_SYNC
+  - name: worn_algo_step__1
+    address: 0x29f50
+    class: helper
+    evidence: "only 0x75d6c (worn_algo_step) calls 0x29f50; 100 bytes"
+    module: SENSORS_SYNC
+  - name: sensors_sync_push_accel__3__1
+    address: 0x29fc8
+    class: helper
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__3) calls 0x29fc8; 24 bytes"
+  - name: spo2_mono_algo_step__4__1
+    address: 0x2a480
+    class: helper
+    evidence: "only 0xa350e (spo2_mono_algo_step__4) calls 0x2a480; 90 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_mono_algo_step__4__2
+    address: 0x2a4e8
+    class: helper
+    evidence: "only 0xa350e (spo2_mono_algo_step__4) calls 0x2a4e8; 108 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_multi_algo_step__1
+    address: 0x2a568
+    class: helper
+    evidence: "only 0x7c71c (spo2_multi_algo_step) calls 0x2a568; 164 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_multi_algo_step__2
+    address: 0x2a620
+    class: helper
+    evidence: "only 0x7c71c (spo2_multi_algo_step) calls 0x2a620; 158 bytes"
+    module: SENSORS_SYNC
   - name: exp
     address: 0x2a7e0
     class: libm
@@ -116,10 +155,15 @@ functions:
     evidence: "newlib-nano-ll libc.a, 2884 bytes of the built body reproduced at 0x2d668 with the 440 bytes a relocation owns masked"
     header: arm-none-eabi/include/stdlib.h
     proto: "char * _dtoa_r (struct _reent *, double, int, int, int *, int*, char**);"
-  - name: light_sensor_light_value__1
-    address: 0x2f040
+  - name: vTaskStartScheduler__1
+    address: 0x2eca8
     class: helper
-    evidence: "only 0x833b4 (light_sensor_light_value) calls 0x2f040; 6 bytes"
+    evidence: "only 0x7300c (vTaskStartScheduler) calls 0x2eca8; 14 bytes"
+    module: M
+  - name: crown_ctx_get
+    address: 0x2f040
+    class: accessor
+    evidence: "the body is one ldr through crown_ctx (pool word 0x2f048 = 0x20006000) and a return"
     module: LIGHT_SENSOR
   - name: shell_help_hwa10
     address: 0x2f04c
@@ -140,11 +184,20 @@ functions:
     class: helper
     evidence: "only 0x85e68 (ecg_err_no_sample_queue) calls 0x2f408; 12 bytes"
     module: ECG
+  - name: button_task__1
+    address: 0x2f49c
+    class: helper
+    evidence: "only 0x3320c (button_task) calls 0x2f49c; 76 bytes"
   - name: GREENTEG_INTEGRATION_FACTOR_SET__1__1
     address: 0x2f4f0
     class: helper
     evidence: "only 0x4d8a8 (GREENTEG_INTEGRATION_FACTOR_SET__1) calls 0x2f4f0; 138 bytes"
     module: BODY_TEMP
+  - name: main_task__1
+    address: 0x2f510
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x2f510; 210 bytes"
+    module: Z
   - name: alarm_changed
     address: 0x2f794
     class: logline
@@ -181,6 +234,11 @@ functions:
     evidence: "wlog('[BAT] charger_debounce_timer_irq_handler') at 0x2fbac, leading identifier is a callback name"
     module: BAT
     also_named: [bat_charger_debounce_timer_irq_handler (logline)]
+  - name: main_task__2
+    address: 0x2fbdc
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x2fbdc; 66 bytes"
+    module: INIT
   - name: bat_battery_management_start
     address: 0x2fc28
     class: logline
@@ -201,6 +259,11 @@ functions:
     class: helper
     evidence: "only 0x2fc28 (bat_battery_management_start) calls 0x2febc; 10 bytes"
     module: BAT
+  - name: main_task__2__1
+    address: 0x2fed0
+    class: helper
+    evidence: "only 0x2fbdc (main_task__2) calls 0x2fed0; 10 bytes"
+    module: INIT
   - name: shell_cmd_hwa10__1
     address: 0x30248
     class: helper
@@ -219,16 +282,21 @@ functions:
     command: 2483
     evidence: "wpp_cmd_table row 0x274c0: key 2483, label 'FACTORY_TEST', CMD_FACTORY_TEST in wpp/src/commands.rs"
     module: WPP
-  - name: light_sensor_light_value__2
+  - name: light_sensor_light_value__1
     address: 0x30620
     class: helper
     evidence: "only 0x833b4 (light_sensor_light_value) calls 0x30620; 6 bytes"
     module: LIGHT_SENSOR
-  - name: light_sensor_light_value__3
+  - name: light_sensor_light_value__2
     address: 0x3062c
     class: helper
     evidence: "only 0x833b4 (light_sensor_light_value) calls 0x3062c; 6 bytes"
     module: LIGHT_SENSOR
+  - name: ancs_data_source_complete__1__1
+    address: 0x30648
+    class: helper
+    evidence: "only 0x3f7a0 (ancs_data_source_complete__1) calls 0x30648; 298 bytes"
+    module: ANCS
   - name: go_to_system_off
     address: 0x307b8
     class: logline
@@ -273,6 +341,35 @@ functions:
     class: helper
     evidence: "only 0x31884 (stopwatch_helper_reset) calls 0x3177c; 24 bytes"
     module: STOPWATCH
+  - name: on_enter_stopwatch__1
+    address: 0x317bc
+    class: helper
+    evidence: "only 0x8233c (on_enter_stopwatch) calls 0x317bc; 6 bytes"
+    module: SCREEN_STOPWATCH
+  - name: on_enter_stopwatch__2
+    address: 0x317d4
+    class: helper
+    evidence: "only 0x8233c (on_enter_stopwatch) calls 0x317d4; 24 bytes"
+    module: SCREEN_STOPWATCH
+  - name: on_enter_stopwatch__3
+    address: 0x3180c
+    class: helper
+    evidence: "only 0x8233c (on_enter_stopwatch) calls 0x3180c; 8 bytes"
+    module: SCREEN_STOPWATCH
+  - name: screen_stopwatch__shared_1
+    address: 0x31818
+    class: shared
+    evidence: "every caller of 0x31818 is in SCREEN_STOPWATCH: on_enter_stopwatch, refresh_stopwatch"
+    module: SCREEN_STOPWATCH
+  - name: on_enter_stopwatch__4
+    address: 0x31854
+    class: helper
+    evidence: "only 0x8233c (on_enter_stopwatch) calls 0x31854; 8 bytes"
+    module: SCREEN_STOPWATCH
+  - name: on_exit_stopwatch__1
+    address: 0x3186c
+    class: helper
+    evidence: "only 0x822cc (on_exit_stopwatch) calls 0x3186c; 42 bytes"
   - name: stopwatch_helper_reset
     address: 0x31884
     class: string
@@ -298,6 +395,21 @@ functions:
     class: logline
     evidence: "the only line 0x31a88 logs, wlog('[TIMER] Update new timer last duration value: %ds') at 0x31aa2"
     module: TIMER
+  - name: refresh_timer__1
+    address: 0x31b04
+    class: helper
+    evidence: "only 0x81c54 (refresh_timer) calls 0x31b04; 6 bytes"
+    module: TIMER
+  - name: on_event_timer__1
+    address: 0x31b38
+    class: helper
+    evidence: "only 0x8216c (on_event_timer) calls 0x31b38; 98 bytes"
+    module: SCREEN_TIMER
+  - name: on_event_timer__3__1
+    address: 0x31b7c
+    class: helper
+    evidence: "only 0xa5c14 (on_event_timer__3) calls 0x31b7c; 22 bytes"
+    module: SCREEN_TIMER
   - name: trig_stop_clock
     address: 0x31c78
     class: logline
@@ -316,16 +428,48 @@ functions:
     address: 0x31f54
     class: shell
     evidence: "shell_cmd_table row 0x27454: command 'trig', run slot (+4)"
+  - name: on_enter_demo_carousel__1
+    address: 0x32054
+    class: helper
+    evidence: "only 0x81140 (on_enter_demo_carousel) calls 0x32054; 24 bytes"
+    proto: "uint32_t on_enter_demo_carousel__1(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: on_enter_sport__1
+    address: 0x320bc
+    class: helper
+    evidence: "only 0x818e8 (on_enter_sport) calls 0x320bc; 28 bytes"
+  - name: on_event_sport_summary__1
+    address: 0x320f0
+    class: helper
+    evidence: "only 0x81bf0 (on_event_sport_summary) calls 0x320f0; 40 bytes"
+  - name: on_enter_workout_2__1
+    address: 0x3211c
+    class: helper
+    evidence: "only 0xa6cfe (on_enter_workout_2) calls 0x3211c; 82 bytes"
   - name: time_new_timezone_rebuild_aggregates
     address: 0x32218
     class: logline
     evidence: "the only line 0x32218 logs, wlog('[TIME] New timezone, rebuild aggregates') at 0x32230"
     module: TIME
+  - name: refresh_stopwatch__1
+    address: 0x3232c
+    class: helper
+    evidence: "only 0x82464 (refresh_stopwatch) calls 0x3232c; 140 bytes"
+    module: SCREEN_STOPWATCH
+  - name: refresh_alarm__1
+    address: 0x3256c
+    class: helper
+    evidence: "only 0x82c4c (refresh_alarm) calls 0x3256c; 92 bytes"
   - name: shell_cmd_hwa10__2
     address: 0x32960
     class: helper
     evidence: "only 0x2f05c (shell_cmd_hwa10) calls 0x32960; 176 bytes"
     module: PPG_AFIB_STORE
+  - name: wftl_post_update_cleanup__1
+    address: 0x32d38
+    class: helper
+    evidence: "only 0x6a28c (wftl_post_update_cleanup) calls 0x32d38; 82 bytes"
+    module: WFTL_UP
   - name: WPP_CMD_WAM_VASISTAS_GET__2__1
     address: 0x334bc
     class: helper
@@ -462,6 +606,10 @@ functions:
     address: 0x36e7c
     class: helper
     evidence: "only 0x5a3c4 (shell_cmd_probe) calls 0x36e7c; 4 bytes"
+  - name: xTaskIncrementTick__1
+    address: 0x36e84
+    class: helper
+    evidence: "only 0x730bc (xTaskIncrementTick) calls 0x36e84; 42 bytes"
   - name: invalid_mfgid
     address: 0x36ed8
     class: logline
@@ -480,6 +628,23 @@ functions:
     class: helper
     evidence: "only 0x6d38c (wpp_wup_device) calls 0x37028; 34 bytes"
     module: WPP
+  - name: on_enter_alarm_ringing__1
+    address: 0x370f8
+    class: helper
+    evidence: "only 0x82b3c (on_enter_alarm_ringing) calls 0x370f8; 4 bytes"
+  - name: on_event_factory_check__2__1
+    address: 0x37138
+    class: helper
+    evidence: "only 0x83688 (on_event_factory_check__2) calls 0x37138; 4 bytes"
+  - name: on_event_hands_calibration_settings__1
+    address: 0x37140
+    class: helper
+    evidence: "only 0x89724 (on_event_hands_calibration_settings) calls 0x37140; 4 bytes"
+  - name: main_task__3
+    address: 0x37248
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x37248; 8 bytes"
+    module: INIT
   - name: err_ble_sd_disable_error
     address: 0x37254
     class: logline
@@ -493,11 +658,24 @@ functions:
     class: helper
     evidence: "only 0x40a94 (ble_start_adv_mode_timeout) calls 0x372e8; 12 bytes"
     module: BLE
+  - name: on_enter_info__1
+    address: 0x37334
+    class: helper
+    evidence: "only 0xa5ee6 (on_enter_info) calls 0x37334; 6 bytes"
   - name: ble_start_adv_mode_timeout__3__1
     address: 0x3734c
     class: helper
     evidence: "only 0x94770 (ble_start_adv_mode_timeout__3) calls 0x3734c; 6 bytes"
     module: BLE
+  - name: ble_task__1
+    address: 0x37388
+    class: helper
+    evidence: "only 0x34068 (ble_task) calls 0x37388; 52 bytes"
+  - name: main_task__4
+    address: 0x373c4
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x373c4; 292 bytes"
+    module: INIT
   - name: ble_gatts_evt_exchange_mtu_request_handler
     address: 0x374f0
     class: bleevt
@@ -563,6 +741,11 @@ functions:
     address: 0x37d48
     class: helper
     evidence: "only 0x3864c (bluetooth_le_gattc_action_err__5) calls 0x37d48; 18 bytes"
+  - name: ble_task__5__1
+    address: 0x37d78
+    class: helper
+    evidence: "only 0x6bf04 (ble_task__5) calls 0x37d78; 6 bytes"
+    module: WPP_LITE
   - name: ble_start_adv_mode_timeout__3__2
     address: 0x37dc0
     class: helper
@@ -685,6 +868,11 @@ functions:
     class: logline
     evidence: "the only line 0x38870 logs, wlog('[SOFTDEVICE][GATTS] Service changed err %04x') at 0x3888c"
     module: SOFTDEVICE
+  - name: ble_task__5__2
+    address: 0x3892c
+    class: helper
+    evidence: "only 0x6bf04 (ble_task__5) calls 0x3892c; 186 bytes"
+    module: BLE_WPPS
   - name: WPP_CMD_BOOTSTRAP_REDIRECT__1
     address: 0x39138
     class: helper
@@ -739,6 +927,14 @@ functions:
     class: logline
     evidence: "the only line 0x39c60 logs, wlog('Add WPPS chars.') at 0x39c6e"
     module: BLE_WPP
+  - name: step_motor_step_toward__1
+    address: 0x3a664
+    class: helper
+    evidence: "only 0x7e820 (step_motor_step_toward) calls 0x3a664; 154 bytes"
+  - name: button_task__2
+    address: 0x3a8f0
+    class: helper
+    evidence: "only 0x3320c (button_task) calls 0x3a8f0; 32 bytes"
   - name: shell_cmd_rtc
     address: 0x3a9a0
     class: shell
@@ -752,6 +948,11 @@ functions:
     class: logline
     evidence: "the only line 0x3ac5c logs, wlog('[SPIM] Failed to malloc temporary buffer(s)') at 0x3ad9a"
     module: SPIM
+  - name: acquistion_task__2__1
+    address: 0x3b010
+    class: helper
+    evidence: "only 0xa4e8a (acquistion_task__2) calls 0x3b010; 38 bytes"
+    module: ACQ
   - name: shell_cmd_ecg__1
     address: 0x3b484
     class: helper
@@ -787,6 +988,10 @@ functions:
     class: logline
     evidence: "the only line 0x3b930 logs, wlog('[ACQ][  INFO] Stop acquisition task') at 0x3b936"
     module: ACQ
+  - name: sensors_sync_push_accel__3__2
+    address: 0x3ba0c
+    class: helper
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__3) calls 0x3ba0c; 218 bytes"
   - name: adxl367_power_check
     address: 0x3baf0
     class: string
@@ -796,6 +1001,11 @@ functions:
     address: 0x3bb3c
     class: helper
     evidence: "only 0x3c6b8 (shell_cmd_adxl) calls 0x3bb3c; 120 bytes"
+    module: ADXL367
+  - name: adxl367__shared_1
+    address: 0x3bbe4
+    class: shared
+    evidence: "every caller of 0x3bbe4 is in ADXL367: adxl367_power_check, shell_cmd_adxl"
     module: ADXL367
   - name: adxl367_set_mode__1
     address: 0x3bc9c
@@ -835,6 +1045,18 @@ functions:
     address: 0x3c39c
     class: logline
     evidence: "the only line 0x3c39c logs, wlog('hdl_adxl367_get_delay_last_fifo=%lu > 3 status=0x%x, adxl367_state=%d') at 0x3c3e0"
+  - name: sensors_sync_push_accel__1__1
+    address: 0x3c47c
+    class: helper
+    evidence: "only 0x3c4a8 (sensors_sync_push_accel__1) calls 0x3c47c; 18 bytes"
+  - name: sensors_sync_push_accel__1__2
+    address: 0x3c494
+    class: helper
+    evidence: "only 0x3c4a8 (sensors_sync_push_accel__1) calls 0x3c494; 16 bytes"
+  - name: sensors_sync_push_accel__1
+    address: 0x3c4a8
+    class: helper
+    evidence: "only 0x3bd10 (sensors_sync_push_accel) calls 0x3c4a8; 452 bytes"
   - name: adxl367_continuous_measure_mode__1__2
     address: 0x3c67c
     class: helper
@@ -909,11 +1131,26 @@ functions:
     address: 0x3d808
     class: shell
     evidence: "shell_cmd_table row 0x27118: command 'alarmclock', run slot (+4)"
+  - name: alti__shared_1
+    address: 0x3dd58
+    class: shared
+    evidence: "every caller of 0x3dd58 is in ALTI: WPP_CMD_GET_PRESSURE_TEMPERATURE, alti_failed_to_take_pressure_measure, shell_cmd_altimeter"
+    module: MS5837
+  - name: alti__shared_2
+    address: 0x3dd88
+    class: shared
+    evidence: "every caller of 0x3dd88 is in ALTI: WPP_CMD_GET_PRESSURE_TEMPERATURE, alti_failed_to_take_pressure_measure, shell_cmd_altimeter"
+    module: ALTI
   - name: ms5849_failed_to_get_adc
     address: 0x3dd9c
     class: logline
     evidence: "the only line 0x3dd9c logs, wlog('[MS5849] Failed to get ADC') at 0x55094"
     module: MS5849
+  - name: alti__shared_3
+    address: 0x3ddb0
+    class: shared
+    evidence: "every caller of 0x3ddb0 is in ALTI: WPP_CMD_GET_PRESSURE_TEMPERATURE, alti_failed_to_take_pressure_measure, shell_cmd_altimeter"
+    module: ALTI
   - name: shell_cmd_altimeter__1
     address: 0x3ddcc
     class: helper
@@ -950,6 +1187,15 @@ functions:
     class: helper
     evidence: "only 0x3f060 (WPP_CMD_REMOTE_NOTIFICATIONS_CONFIG_SET) calls 0x3e8c0; 92 bytes"
     module: WPP_LITE
+  - name: on_enter_info__2
+    address: 0x3e924
+    class: helper
+    evidence: "only 0xa5ee6 (on_enter_info) calls 0x3e924; 22 bytes"
+  - name: ancs_app_bundle_id__1
+    address: 0x3eb20
+    class: helper
+    evidence: "only 0x3f328 (ancs_app_bundle_id) calls 0x3eb20; 124 bytes"
+    module: ANCS
   - name: WPP_CMD_REMOTE_NOTIFICATIONS_CONFIG_SET
     address: 0x3f060
     class: wppcmd
@@ -961,6 +1207,21 @@ functions:
     class: wppcmd
     command: 2353
     evidence: "wpp_cmd_table row 0x275c8: key 2353, label 'WPP_CMD_REMOTE_NOTIFICATIONS_CONFIG_GET', CMD_REMOTE_NOTIFICATIONS_CONFIG_GET in wpp/src/commands.rs"
+  - name: ancs_app_bundle_id__2
+    address: 0x3f284
+    class: helper
+    evidence: "only 0x3f328 (ancs_app_bundle_id) calls 0x3f284; 138 bytes"
+    module: ANCS
+  - name: ancs_data_source_complete__1__2
+    address: 0x3f75c
+    class: helper
+    evidence: "only 0x3f7a0 (ancs_data_source_complete__1) calls 0x3f75c; 62 bytes"
+    module: ANCS
+  - name: ancs_data_source_complete__1
+    address: 0x3f7a0
+    class: helper
+    evidence: "only 0x3e2dc (ancs_data_source_complete) calls 0x3f7a0; 462 bytes"
+    module: ANCS
   - name: ancs_request_display_info_to_app
     address: 0x3f9b0
     class: logline
@@ -1000,6 +1261,11 @@ functions:
     address: 0x3ffb4
     class: shell
     evidence: "shell_cmd_table row 0x2713c: command 'background_sync', run slot (+4)"
+  - name: main_task__2__2
+    address: 0x40060
+    class: helper
+    evidence: "only 0x2fbdc (main_task__2) calls 0x40060; 22 bytes"
+    module: INIT
   - name: battery_adc_value_gain_adaptation
     address: 0x400b4
     class: string
@@ -1054,6 +1320,15 @@ functions:
     class: logline
     evidence: "the only line 0x409f8 logs, wlog('bluetooth_le: reset link (cnt=%d)') at 0x40a04"
     module: BT
+  - name: ble_task__2
+    address: 0x40a14
+    class: helper
+    evidence: "only 0x34068 (ble_task) calls 0x40a14; 30 bytes"
+  - name: ble__shared_1
+    address: 0x40a40
+    class: shared
+    evidence: "every caller of 0x40a40 is in BLE: ble_release_adv_state, ble_request_adv_state_timeout"
+    module: BLE
   - name: ble_start_adv_mode_timeout
     address: 0x40a94
     class: logline
@@ -1109,15 +1384,37 @@ functions:
     class: helper
     evidence: "only 0x94900 (ble_gap_evt_passkey_display_handler__1) calls 0x4137c; 22 bytes"
     module: BLE
+  - name: refresh_install_bt_key__1
+    address: 0x41398
+    class: helper
+    evidence: "only 0x89be0 (refresh_install_bt_key) calls 0x41398; 24 bytes"
   - name: bluetooth_le_gattc_action_err
     address: 0x41684
     class: logline
     evidence: "the only line 0x41684 logs, wlog('bluetooth_le_gattc_action err_code=%d') at 0x414ea"
+  - name: ble_task__3
+    address: 0x419fc
+    class: helper
+    evidence: "only 0x34068 (ble_task) calls 0x419fc; 296 bytes"
+    module: SERVICE_CHANGED
   - name: ble_wpp_c_service_discover_attempts
     address: 0x41b9c
     class: logline
     evidence: "the only line 0x41b9c logs, wlog('[BLE_WPP_C] Service Discover (attempts = %d)') at 0x41bbe"
     module: BLE_WPP_C
+  - name: ble_task__4__1
+    address: 0x41c70
+    class: helper
+    evidence: "only 0x41d60 (ble_task__4) calls 0x41c70; 10 bytes"
+  - name: ble_task__4
+    address: 0x41d60
+    class: helper
+    evidence: "only 0x34068 (ble_task) calls 0x41d60; 328 bytes"
+  - name: ble_task__5__3
+    address: 0x422e0
+    class: helper
+    evidence: "only 0x6bf04 (ble_task__5) calls 0x422e0; 156 bytes"
+    module: WUAPP
   - name: ble_wpp_c_wake_up_app_service_disc_cb
     address: 0x423d4
     class: logcb
@@ -1131,6 +1428,11 @@ functions:
     address: 0x424f4
     class: shell
     evidence: "shell_cmd_table row 0x27148: command 'ble', run slot (+4)"
+  - name: body_temp_task__1
+    address: 0x42764
+    class: helper
+    evidence: "only 0x42b7c (body_temp_task) calls 0x42764; 46 bytes"
+    module: BODY_TEMP
   - name: shell_cmd_body_temperature__1__1
     address: 0x427bc
     class: helper
@@ -1141,11 +1443,23 @@ functions:
     class: logline
     evidence: "the only line 0x42a0c logs, wlog('[BODY_TEMP][info] Stop') at 0x42a14"
     module: BODY_TEMP
+  - name: sensors_sync_push_accel__2
+    address: 0x42ab0
+    class: helper
+    evidence: "only 0x3bd10 (sensors_sync_push_accel) calls 0x42ab0; 10 bytes"
   - name: shell_cmd_body_temperature__1
     address: 0x42d2c
     class: helper
     evidence: "only 0x434dc (shell_cmd_body_temperature) calls 0x42d2c; 356 bytes"
     module: BODY_TEMP
+  - name: refresh_body_temperature__1
+    address: 0x42ed0
+    class: helper
+    evidence: "only 0x86930 (refresh_body_temperature) calls 0x42ed0; 14 bytes"
+  - name: algo_manager_publish_results__1
+    address: 0x42f60
+    class: helper
+    evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x42f60; 72 bytes"
   - name: body_temp_info_baseline_store_new_baseline
     address: 0x43094
     class: logline
@@ -1206,6 +1520,18 @@ functions:
     address: 0x44650
     class: helper
     evidence: "only 0x449b8 (friction_long_test_continue) calls 0x44650; 10 bytes"
+  - name: factory_reset_perform__1__1
+    address: 0x446a0
+    class: helper
+    evidence: "only 0x446e8 (factory_reset_perform__1) calls 0x446a0; 26 bytes"
+  - name: factory_reset_perform__1__2
+    address: 0x446c4
+    class: helper
+    evidence: "only 0x446e8 (factory_reset_perform__1) calls 0x446c4; 26 bytes"
+  - name: factory_reset_perform__1
+    address: 0x446e8
+    class: helper
+    evidence: "only 0x4bdd0 (factory_reset_perform) calls 0x446e8; 38 bytes"
   - name: screen_calibration_no_motor_id_availabe__1
     address: 0x44784
     class: helper
@@ -1255,6 +1581,19 @@ functions:
     address: 0x44a14
     class: shell
     evidence: "shell_cmd_table row 0x2719c: command 'conso_log', run slot (+4)"
+  - name: debug_dump_ram_items_2_count
+    address: 0x44b48
+    class: slot
+    evidence: "0x44b48 is the count slot of debug_dump_ram_items row 2 (word 0x27d0c); nothing calls it"
+  - name: main_task__5
+    address: 0x44b94
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x44b94; 32 bytes"
+    module: INIT
+  - name: debug_dump_ram_items_2_fetch
+    address: 0x44eb0
+    class: slot
+    evidence: "0x44eb0 is the fetch slot of debug_dump_ram_items row 2 (word 0x27d08); nothing calls it"
   - name: cons_log_occurence_count_for_type_overflowed
     address: 0x45010
     class: logline
@@ -1379,6 +1718,11 @@ functions:
     address: 0x48e84
     class: shell
     evidence: "shell_cmd_table row 0x271c0: command 'dblib', --help slot (+8)"
+  - name: main_task__6
+    address: 0x48f30
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x48f30; 24 bytes"
+    module: INIT
   - name: dbg_mask_change_ie_debug_mask
     address: 0x48f68
     class: logline
@@ -1444,6 +1788,14 @@ functions:
     class: logline
     evidence: "the only line 0x49bcc logs, wlog('[ECG] Unkown state for timer handler') at 0x49c1c"
     module: ECG
+  - name: on_enter_ecg_fake__1
+    address: 0x4a6e8
+    class: helper
+    evidence: "only 0x86280 (on_enter_ecg_fake) calls 0x4a6e8; 12 bytes"
+  - name: on_enter_ecg_meas__1
+    address: 0x4a7a4
+    class: helper
+    evidence: "only 0x861d4 (on_enter_ecg_meas) calls 0x4a7a4; 38 bytes"
   - name: shell_cmd_ecg__2
     address: 0x4a7d4
     class: helper
@@ -1464,6 +1816,21 @@ functions:
     class: logline
     evidence: "the only line 0x4a87c logs, wlog('[ECG] Post Update') at 0x4a882"
     module: ECG
+  - name: ecg_module_init__1
+    address: 0x4a8e0
+    class: helper
+    evidence: "only 0x4a6f8 (ecg_module_init) calls 0x4a8e0; 14 bytes"
+    module: INIT
+  - name: ecg_task_state_machine__1__1
+    address: 0x4a8f4
+    class: helper
+    evidence: "only 0x4aa1c (ecg_task_state_machine__1) calls 0x4a8f4; 260 bytes"
+    module: ECG
+  - name: ecg_task_state_machine__1
+    address: 0x4aa1c
+    class: helper
+    evidence: "only 0x4a068 (ecg_task_state_machine) calls 0x4aa1c; 56 bytes"
+    module: ECG
   - name: ecg_could_not_store_signal_header
     address: 0x4aa58
     class: logline
@@ -1483,6 +1850,21 @@ functions:
     address: 0x4ade8
     class: logline
     evidence: "the only line 0x4ade8 logs, wlog('error header') at 0x4adfa"
+  - name: ecg_task_state_machine__2
+    address: 0x4ae18
+    class: helper
+    evidence: "only 0x4a068 (ecg_task_state_machine) calls 0x4ae18; 8 bytes"
+    module: ECG
+  - name: ecg_adc_block_handler__1
+    address: 0x4ae24
+    class: helper
+    evidence: "only 0x49d78 (ecg_adc_block_handler) calls 0x4ae24; 22 bytes"
+    module: ECG
+  - name: ecg_task_state_machine__3
+    address: 0x4b020
+    class: helper
+    evidence: "only 0x4a068 (ecg_task_state_machine) calls 0x4b020; 14 bytes"
+    module: ECG
   - name: ecg_err_no_sample_queue__2
     address: 0x4b034
     class: helper
@@ -1521,6 +1903,36 @@ functions:
     class: logline
     evidence: "the only line 0x4b5f8 logs, wlog('[DBT] Unkown state for timer handler') at 0x4b640"
     module: DBT
+  - name: on_event_dbt_meas__1
+    address: 0x4b7ac
+    class: helper
+    evidence: "only 0x87154 (on_event_dbt_meas) calls 0x4b7ac; 32 bytes"
+    proto: "uint32_t on_event_dbt_meas__1(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: on_event_dbt_meas__2__1
+    address: 0x4bab8
+    class: helper
+    evidence: "only 0x4bacc (on_event_dbt_meas__2) calls 0x4bab8; 14 bytes"
+    module: DBT
+  - name: on_event_dbt_meas__2
+    address: 0x4bacc
+    class: helper
+    evidence: "only 0x87154 (on_event_dbt_meas) calls 0x4bacc; 154 bytes"
+    module: DBT
+  - name: on_enter_dbt_meas__1__1
+    address: 0x4bb8c
+    class: helper
+    evidence: "only 0x4bc84 (on_enter_dbt_meas__1) calls 0x4bb8c; 148 bytes"
+    module: DBT
+  - name: main_task__7
+    address: 0x4bc40
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x4bc40; 102 bytes"
+    module: INIT
+  - name: on_enter_dbt_meas__1
+    address: 0x4bc84
+    class: helper
+    evidence: "only 0x876b4 (on_enter_dbt_meas) calls 0x4bc84; 40 bytes"
   - name: factory_state
     address: 0x4bcb0
     class: logtag
@@ -1625,6 +2037,10 @@ functions:
     class: logline
     evidence: "the only line 0x4ca64 logs, wlog('[FWBLK] unsupported ext. table ver=%d') at 0x4ca6e"
     module: FWBLK
+  - name: sensors_sync_push_accel__3__3
+    address: 0x4d214
+    class: helper
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__3) calls 0x4d214; 160 bytes"
   - name: GLANCE_SET
     address: 0x4d2b8
     class: wppcmd
@@ -1698,6 +2114,16 @@ functions:
     address: 0x4dc8c
     class: shell
     evidence: "shell_cmd_table row 0x2725c: command 'greenteg', run slot (+4)"
+  - name: post_update_hooks_3_check
+    address: 0x4ddec
+    class: slot
+    evidence: "0x4ddec is the check slot of post_update_hooks row 3 (word 0x27cac); nothing calls it"
+    module: GSS
+  - name: post_update_hooks_3_mark
+    address: 0x4de24
+    class: slot
+    evidence: "0x4de24 is the mark slot of post_update_hooks row 3 (word 0x27cb0); nothing calls it"
+    module: GSS
   - name: gss_cant_get_context_for_bank
     address: 0x4de5c
     class: logline
@@ -1731,6 +2157,11 @@ functions:
     class: logline
     evidence: "the only line 0x4e948 logs, wlog('[HR_COMPRESSION] Flush %lu, %ubpm, %us') at 0x4e982"
     module: HR_COMPRESSION
+  - name: main_task__8
+    address: 0x4e998
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x4e998; 14 bytes"
+    module: INIT
   - name: hr_compression_store_bpm
     address: 0x4e9d4
     class: logline
@@ -1967,6 +2398,14 @@ functions:
     class: logline
     evidence: "the only line 0x50a38 logs, wlog('[APDS] No data available') at 0x50a7c"
     module: APDS
+  - name: i2c_device_table_3_fn0
+    address: 0x50a8c
+    class: slot
+    evidence: "0x50a8c is the fn0 slot of i2c_device_table row 3 (word 0xb2324); nothing calls it"
+  - name: i2c_device_table_3_fn3
+    address: 0x50a9c
+    class: slot
+    evidence: "0x50a9c is the fn3 slot of i2c_device_table row 3 (word 0xb2330); nothing calls it"
   - name: shell_help_wlog
     address: 0x50aac
     class: shell
@@ -2002,6 +2441,10 @@ functions:
     class: logline
     evidence: "the only line 0x51170 logs, wlog('[LOC] Stored locale: %s') at 0x51194"
     module: LOC
+  - name: refresh_install_go__1
+    address: 0x511d4
+    class: helper
+    evidence: "only 0x899bc (refresh_install_go) calls 0x511d4; 22 bytes"
   - name: en
     address: 0x5120c
     class: logline
@@ -2056,6 +2499,14 @@ functions:
     address: 0x517a8
     class: shell
     evidence: "shell_cmd_table row 0x272a4: command 'local_notif', run slot (+4)"
+  - name: xTaskIncrementTick__1__1
+    address: 0x51994
+    class: helper
+    evidence: "only 0x36e84 (xTaskIncrementTick__1) calls 0x51994; 30 bytes"
+  - name: sensors_sync_push_ppg__1
+    address: 0x51bf4
+    class: helper
+    evidence: "only 0x523cc (sensors_sync_push_ppg) calls 0x51bf4; 36 bytes"
   - name: max8617x_0x_0x_0x
     address: 0x52224
     class: logline
@@ -2090,6 +2541,14 @@ functions:
     class: logline
     evidence: "the only line 0x53284 logs, wlog('[max86173][spi] Could not allocate buf') at 0x532f0"
     module: MAX86173
+  - name: max_led_config_task__1
+    address: 0x53300
+    class: helper
+    evidence: "only 0x52b1c (max_led_config_task) calls 0x53300; 4 bytes"
+  - name: max_led_config_task__2
+    address: 0x53370
+    class: helper
+    evidence: "only 0x52b1c (max_led_config_task) calls 0x53370; 34 bytes"
   - name: shell_help_max8617x
     address: 0x533d8
     class: shell
@@ -2159,6 +2618,11 @@ functions:
     class: logline
     evidence: "the only line 0x54028 logs, wlog('[MEASURE_LIVE] Unknown measure subcat %d') at 0x5403a"
     module: MEASURE_LIVE
+  - name: measure_live__shared_1
+    address: 0x54188
+    class: shared
+    evidence: "every caller of 0x54188 is in MEASURE_LIVE: WPP_CMD_MEASURE_START_0x54238, WPP_CMD_MEASURE_START_0x54418"
+    module: MEASURE_LIVE
   - name: WPP_CMD_MEASURE_START_0x54238
     address: 0x54238
     class: wppcmd
@@ -2192,10 +2656,35 @@ functions:
     class: logline
     evidence: "the only line 0x5480c logs, wlog('[MS5837] ADC write command failed') at 0x54832"
     module: MS5837
+  - name: alti__shared_1__1
+    address: 0x549fc
+    class: helper
+    evidence: "only 0x3dd58 (alti__shared_1) calls 0x549fc; 74 bytes"
+    module: MS5837
   - name: ms5849_write_conf_failed
     address: 0x54d90
     class: logline
     evidence: "the only line 0x54d90 logs, wlog('[MS5849] Write conf failed') at 0x54dbc"
+    module: MS5849
+  - name: alti__shared_1__3__1
+    address: 0x54e40
+    class: helper
+    evidence: "only 0x54ed4 (alti__shared_1__3) calls 0x54e40; 6 bytes"
+    module: MS5849
+  - name: alti__shared_1__2
+    address: 0x54e58
+    class: helper
+    evidence: "only 0x3dd58 (alti__shared_1) calls 0x54e58; 22 bytes"
+    module: MS5837
+  - name: alti__shared_1__3__2
+    address: 0x54e74
+    class: helper
+    evidence: "only 0x54ed4 (alti__shared_1__3) calls 0x54e74; 80 bytes"
+    module: MS5849
+  - name: alti__shared_1__3
+    address: 0x54ed4
+    class: helper
+    evidence: "only 0x3dd58 (alti__shared_1) calls 0x54ed4; 318 bytes"
     module: MS5849
   - name: ms5849_start_conversion_failed
     address: 0x55030
@@ -2249,6 +2738,16 @@ functions:
     address: 0x55a00
     class: helper
     evidence: "only 0x55ae4 (NOTIFICATION_APP_ENABLED_GET) calls 0x55a00; 22 bytes"
+  - name: wpp__shared_1
+    address: 0x55a20
+    class: shared
+    evidence: "every caller of 0x55a20 is in WPP: NOTIFICATION_APP_ENABLED_SET, WPP_CMD_NOTIFICATION_GET"
+    module: WPP
+  - name: wpp__shared_2
+    address: 0x55acc
+    class: shared
+    evidence: "every caller of 0x55acc is in WPP: WPP_CMD_GLYPH_GET, WPP_CMD_NOTIFICATION_GET"
+    module: WPP
   - name: NOTIFICATION_APP_ENABLED_GET
     address: 0x55ae4
     class: wppcmd
@@ -2283,6 +2782,11 @@ functions:
     command: 2403
     evidence: "wpp_cmd_table row 0x27be0: key 2403, label 'WPP_CMD_GLYPH_GET', CMD_GLYPH_GET in wpp/src/commands.rs"
     module: WPP
+  - name: ancs__shared_1
+    address: 0x56388
+    class: shared
+    evidence: "every caller of 0x56388 is in ANCS: ancs_app_bundle_id, ancs_request_display_info_to_app"
+    module: ANCS
   - name: wam_gui_resource_data_size_mismatch
     address: 0x56558
     class: logline
@@ -2387,6 +2891,21 @@ functions:
     address: 0x575fc
     class: shell
     evidence: "shell_cmd_table row 0x27364: command 'rand', run slot (+4)"
+  - name: post_update_hooks_4_mark
+    address: 0x576d4
+    class: slot
+    evidence: "0x576d4 is the mark slot of post_update_hooks row 4 (word 0x27cb8); nothing calls it"
+    module: RAW
+  - name: main_task__9__1
+    address: 0x5771c
+    class: helper
+    evidence: "only 0x57ba8 (main_task__9) calls 0x5771c; 62 bytes"
+    module: INIT
+  - name: post_update_hooks_4_check
+    address: 0x57800
+    class: slot
+    evidence: "0x57800 is the check slot of post_update_hooks row 4 (word 0x27cb4); nothing calls it"
+    module: RAW
   - name: error_no_oldest_rawdata_found__1
     address: 0x578d8
     class: helper
@@ -2399,6 +2918,11 @@ functions:
     address: 0x57b4c
     class: helper
     evidence: "only 0x5819c (error_no_oldest_rawdata_found) calls 0x57b4c; 38 bytes"
+  - name: main_task__9
+    address: 0x57ba8
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x57ba8; 636 bytes"
+    module: INIT
   - name: shell_cmd_raw_data__1
     address: 0x57f8c
     class: helper
@@ -2456,6 +2980,11 @@ functions:
     class: logline
     evidence: "the only line 0x58fd4 logs, wlog('[RESPIRATORY_SCAN] Stop reason: Manual cancellation') at 0x58fe6"
     module: RESPIRATORY_SCAN
+  - name: algo_manager_publish_results__2
+    address: 0x59008
+    class: helper
+    evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x59008; 72 bytes"
+    module: RESPIRATORY_SCAN
   - name: shell_help_reset_ctx
     address: 0x590b4
     class: shell
@@ -2495,6 +3024,10 @@ functions:
     address: 0x59c24
     class: shell
     evidence: "shell_cmd_table row 0x273b8: command 'shell', run slot (+4)"
+  - name: shell_cmd_table_32_run__1
+    address: 0x59c9c
+    class: helper
+    evidence: "only 0x9b9e6 (shell_cmd_table_32_run) calls 0x59c9c; 26 bytes"
   - name: shell_help_mem
     address: 0x5a27c
     class: shell
@@ -2578,6 +3111,18 @@ functions:
     class: logline
     evidence: "the only line 0x5b2d0 logs, wlog('[SN19020X6] Set sampling frequency: %dsps (0x%0x)') at 0x5b302"
     module: SN19020X6
+  - name: i2c_device_table_1_fn0
+    address: 0x5b400
+    class: slot
+    evidence: "0x5b400 is the fn0 slot of i2c_device_table row 1 (word 0xb22ec); nothing calls it"
+  - name: i2c_device_table_1_fn1
+    address: 0x5b41c
+    class: slot
+    evidence: "0x5b41c is the fn1 slot of i2c_device_table row 1 (word 0xb22f0); nothing calls it"
+  - name: i2c_device_table_1_fn3
+    address: 0x5b428
+    class: slot
+    evidence: "0x5b428 is the fn3 slot of i2c_device_table row 1 (word 0xb22f8); nothing calls it"
   - name: shell_help_sn19020x6
     address: 0x5b438
     class: shell
@@ -2619,6 +3164,11 @@ functions:
     class: logline
     evidence: "the only line 0x5c5cc logs, wlog('[SPI] device < %s > not requested') at 0x5c5ec"
     module: SPI
+  - name: main_task__10
+    address: 0x5c978
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x5c978; 218 bytes"
+    module: STACKDUMP
   - name: step_motor_save_cal_ph
     address: 0x5cd10
     class: logline
@@ -2632,6 +3182,10 @@ functions:
     address: 0x5ce14
     class: logline
     evidence: "the only line 0x5ce14 logs, wlog('lap=%d/%d, hand_id=%d') at 0x5ce48"
+  - name: refresh_lapping_test__1
+    address: 0x5ce58
+    class: helper
+    evidence: "only 0x83ee0 (refresh_lapping_test) calls 0x5ce58; 6 bytes"
   - name: friction_long_test_all_with_params
     address: 0x5d030
     class: string
@@ -2733,6 +3287,22 @@ functions:
     class: helper
     evidence: "only 0x5e664 (shell_cmd_tmp117) calls 0x5e58c; 128 bytes"
     module: TMP117
+  - name: i2c_device_table_2_fn0
+    address: 0x5e614
+    class: slot
+    evidence: "0x5e614 is the fn0 slot of i2c_device_table row 2 (word 0xb2308); nothing calls it"
+  - name: i2c_device_table_2_fn1
+    address: 0x5e624
+    class: slot
+    evidence: "0x5e624 is the fn1 slot of i2c_device_table row 2 (word 0xb230c); nothing calls it"
+  - name: i2c_device_table_2_fn2
+    address: 0x5e634
+    class: slot
+    evidence: "0x5e634 is the fn2 slot of i2c_device_table row 2 (word 0xb2310); nothing calls it"
+  - name: i2c_device_table_2_fn3
+    address: 0x5e644
+    class: slot
+    evidence: "0x5e644 is the fn3 slot of i2c_device_table row 2 (word 0xb2314); nothing calls it"
   - name: shell_help_tmp117
     address: 0x5e654
     class: shell
@@ -2763,6 +3333,11 @@ functions:
     address: 0x5e8dc
     class: helper
     evidence: "only 0x5eaac (WPP_CMD_THRESHOLDS_SET) calls 0x5e8dc; 82 bytes"
+  - name: hr_measure_on_algo_result__2__2
+    address: 0x5e938
+    class: helper
+    evidence: "only 0x62d64 (hr_measure_on_algo_result__2) calls 0x5e938; 98 bytes"
+    module: HR_EVENT
   - name: WPP_CMD_THRESHOLDS_SET__3
     address: 0x5e9a4
     class: helper
@@ -2829,6 +3404,10 @@ functions:
     class: logline
     evidence: "the only line 0x5f3c8 logs, wlog('[TRACKER_LIVE][STEPS] confirmed:%d, unknown:%d, min:%d, delta:%d, total:%d') at 0x5f3ea"
     module: TRACKER_LIVE
+  - name: on_enter_goal__1
+    address: 0x5f408
+    class: helper
+    evidence: "only 0x843dc (on_enter_goal) calls 0x5f408; 6 bytes"
   - name: WPP_CMD_DISPLAYED_INFO_GET__2
     address: 0x5f458
     class: helper
@@ -2859,6 +3438,14 @@ functions:
     class: logline
     evidence: "the only line 0x5f52c logs, wlog('[TRACKER_LIVE][DIST] current:%d, min:%d, unknown:%d, delta:%d, total:%d') at 0x5f568"
     module: TRACKER_LIVE
+  - name: sensors_sync_push_accel__3__4
+    address: 0x5f590
+    class: helper
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__3) calls 0x5f590; 52 bytes"
+  - name: sensors_sync_push_accel__3
+    address: 0x5f5c8
+    class: helper
+    evidence: "only 0x3bd10 (sensors_sync_push_accel) calls 0x5f5c8; 240 bytes"
   - name: WPP_CMD_DISPLAYED_INFO_GET__6
     address: 0x5f6f8
     class: helper
@@ -2874,6 +3461,14 @@ functions:
     class: helper
     evidence: "only 0x2f7b0 (alti_failed_to_take_pressure_measure) calls 0x5f748; 26 bytes"
     module: ALTI
+  - name: on_enter_goal__2
+    address: 0x5fb00
+    class: helper
+    evidence: "only 0x843dc (on_enter_goal) calls 0x5fb00; 8 bytes"
+  - name: refresh_sleep_duration__1
+    address: 0x5fe70
+    class: helper
+    evidence: "only 0x85850 (refresh_sleep_duration) calls 0x5fe70; 32 bytes"
   - name: shell_cmd_tracker_live__1
     address: 0x5fec4
     class: helper
@@ -2902,6 +3497,14 @@ functions:
     address: 0x60238
     class: shell
     evidence: "shell_cmd_table row 0x2743c: command 'tracker_live', --help slot (+8)"
+  - name: refresh_sport_heart_rate__1
+    address: 0x60324
+    class: helper
+    evidence: "only 0x8aa78 (refresh_sport_heart_rate) calls 0x60324; 6 bytes"
+  - name: refresh_sport_heart_rate__2
+    address: 0x60330
+    class: helper
+    evidence: "only 0x8aa78 (refresh_sport_heart_rate) calls 0x60330; 8 bytes"
   - name: WPP_CMD_TRACKER_USER_SET
     address: 0x60528
     class: wppcmd
@@ -2956,6 +3559,10 @@ functions:
     class: logline
     evidence: "the only line 0x60a88 logs, wlog('[UNIT] Get units from dblib') at 0x60a90"
     module: UNIT
+  - name: on_event_demo_menu__1
+    address: 0x60ad8
+    class: helper
+    evidence: "only 0x84b98 (on_event_demo_menu) calls 0x60ad8; 24 bytes"
   - name: WPP_CMD_USER_UNIT__2
     address: 0x60b10
     class: helper
@@ -3022,6 +3629,10 @@ functions:
     class: logline
     evidence: "the only line 0x61be8 logs, wlog('[SPO2] Failed to update screen data') at 0x61c4e"
     module: SPO2
+  - name: algo_manager_publish_results__3
+    address: 0x61c90
+    class: helper
+    evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x61c90; 24 bytes"
   - name: spo2_post_update
     address: 0x61cc0
     class: logline
@@ -3037,6 +3648,11 @@ functions:
     class: helper
     evidence: "only 0x623c0 (hr_measure_cannot_call_hr_measure_release) calls 0x6202c; 14 bytes"
     module: HR_MEASURE
+  - name: hr_measure_on_algo_result__1
+    address: 0x62354
+    class: helper
+    evidence: "only 0x62604 (hr_measure_on_algo_result) calls 0x62354; 42 bytes"
+    module: HR_MEASURE
   - name: hr_measure_cannot_call_hr_measure_release
     address: 0x623c0
     class: logline
@@ -3048,11 +3664,34 @@ functions:
     command: 2434
     evidence: "wpp_cmd_table row 0x27904: key 2434, label 'WPP_CMD_HR_MEASURE', CMD_HR_MEASURE in wpp/src/commands.rs"
     module: HR_MEASURE
+  - name: algo_manager_publish_results__4
+    address: 0x62c30
+    class: helper
+    evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x62c30; 24 bytes"
+  - name: hr_measure_on_algo_result__2__3
+    address: 0x62c54
+    class: helper
+    evidence: "only 0x62d64 (hr_measure_on_algo_result__2) calls 0x62c54; 236 bytes"
+    module: HR_EVENT
+  - name: hr_measure_on_algo_result__2
+    address: 0x62d64
+    class: helper
+    evidence: "only 0x62604 (hr_measure_on_algo_result) calls 0x62d64; 264 bytes"
+    module: HR_EVENT
   - name: hr_event_notification_triggered_user_has_been
     address: 0x62ea8
     class: logline
     evidence: "the only line 0x62ea8 logs, wlog('[HR_EVENT] notification triggered, user has been notified of event type %s') at 0x62eea"
     module: HR_EVENT
+  - name: algo_manager_publish_results__5
+    address: 0x631c0
+    class: helper
+    evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x631c0; 384 bytes"
+    module: PPG_AFIB
+  - name: algo_manager_publish_results__6
+    address: 0x63370
+    class: helper
+    evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x63370; 24 bytes"
   - name: WPP_CMD_STORED_MEASURE_SIGNAL_GET__2
     address: 0x63614
     class: helper
@@ -3066,6 +3705,17 @@ functions:
     address: 0x6370c
     class: helper
     evidence: "only 0x6e21c (WPP_CMD_STORED_MEASURE_SIGNAL_GET) calls 0x6370c; 224 bytes"
+  - name: on_event_dbt_meas__3
+    address: 0x638c4
+    class: helper
+    evidence: "only 0x87154 (on_event_dbt_meas) calls 0x638c4; 42 bytes"
+    proto: "uint32_t on_event_dbt_meas__3(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: on_event_dbt_meas__4
+    address: 0x6390c
+    class: helper
+    evidence: "only 0x87154 (on_event_dbt_meas) calls 0x6390c; 140 bytes"
+    module: PPG_DBT
   - name: dbt_start_session_mode_rc
     address: 0x639bc
     class: logline
@@ -3081,6 +3731,20 @@ functions:
     class: logline
     evidence: "the only line 0x63a20 logs, wlog('[PPG-DBT] Failed turn OFF ppg sensor (rc = %d)') at 0x63a3a"
     module: PPG_DBT
+  - name: on_event_dbt_meas__5
+    address: 0x63ae8
+    class: helper
+    evidence: "only 0x87154 (on_event_dbt_meas) calls 0x63ae8; 62 bytes"
+    module: PPG_DBT
+  - name: algo_manager_publish_results__7
+    address: 0x63b3c
+    class: helper
+    evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x63b3c; 42 bytes"
+  - name: main_task__11
+    address: 0x63bf0
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x63bf0; 16 bytes"
+    module: INIT
   - name: algo_manager_request_pause_count
     address: 0x63c08
     class: logline
@@ -3114,6 +3778,11 @@ functions:
     class: helper
     evidence: "only 0x642d4 (tsm_tried_to_release_mode_while) calls 0x64290; 16 bytes"
     module: TSM
+  - name: main_task__12
+    address: 0x642bc
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x642bc; 16 bytes"
+    module: INIT
   - name: tsm_tried_to_release_mode_while
     address: 0x642d4
     class: logline
@@ -3234,6 +3903,20 @@ functions:
     address: 0x656d0
     class: logline
     evidence: "the only line 0x656d0 logs, wlog('invalid utf8 sequence') at 0x65704"
+  - name: post_update_hooks_5_check
+    address: 0x658e8
+    class: slot
+    evidence: "0x658e8 is the check slot of post_update_hooks row 5 (word 0x27cbc); nothing calls it"
+    module: VAS
+  - name: vasistas_init__1
+    address: 0x6591c
+    class: helper
+    evidence: "only 0x659e4 (vasistas_init) calls 0x6591c; 28 bytes"
+  - name: post_update_hooks_5_mark
+    address: 0x6593c
+    class: slot
+    evidence: "0x6593c is the mark slot of post_update_hooks row 5 (word 0x27cc0); nothing calls it"
+    module: VAS
   - name: shell_cmd_vasistas__1
     address: 0x65b84
     class: helper
@@ -3256,6 +3939,10 @@ functions:
     class: helper
     evidence: "only 0x65d28 (shell_cmd_vasistas) calls 0x667cc; 546 bytes"
     module: VAS
+  - name: vasistas_bank_for_record__1
+    address: 0x66aa0
+    class: helper
+    evidence: "only 0x66b98 (vasistas_bank_for_record) calls 0x66aa0; 242 bytes"
   - name: vib_ignore_vib_request_current_vib__1
     address: 0x66d84
     class: helper
@@ -3266,6 +3953,14 @@ functions:
     class: logline
     evidence: "the only line 0x66e04 logs, wlog('[VIB] Ignore vib request - current vib has higher prio (%d / %d)') at 0x66e26"
     module: VIB
+  - name: on_event_factory_check__1
+    address: 0x66ebc
+    class: helper
+    evidence: "only 0x8370c (on_event_factory_check) calls 0x66ebc; 20 bytes"
+  - name: on_event_factory_check__2__2
+    address: 0x66ed4
+    class: helper
+    evidence: "only 0x83688 (on_event_factory_check__2) calls 0x66ed4; 20 bytes"
   - name: shell_cmd_vibrator
     address: 0x66eec
     class: shell
@@ -3404,6 +4099,14 @@ functions:
     address: 0x6a4b8
     class: helper
     evidence: "only 0x6a7a8 (WPP_CMD_WORKOUT_LIVE_DATA) calls 0x6a4b8; 6 bytes"
+  - name: refresh_sport_gps_pace__1
+    address: 0x6a538
+    class: helper
+    evidence: "only 0x8a790 (refresh_sport_gps_pace) calls 0x6a538; 6 bytes"
+  - name: refresh_sport_gps_speed__1
+    address: 0x6a55c
+    class: helper
+    evidence: "only 0x8a80c (refresh_sport_gps_speed) calls 0x6a55c; 6 bytes"
   - name: activity_subcat__1
     address: 0x6a62c
     class: helper
@@ -3504,6 +4207,11 @@ functions:
     class: logline
     evidence: "the only line 0x6b488 logs, wlog('[CUSTO_SCREEN] Image too big for type %d - Do not store (sx=%d/%d sy=%d/%d)') at 0x6b4a6"
     module: CUSTO_SCREEN
+  - name: main_task__13
+    address: 0x6b4bc
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x6b4bc; 24 bytes"
+    module: INIT
   - name: WPP_CMD_CUSTO_SCREEN_SET__3
     address: 0x6b4d8
     class: helper
@@ -3559,6 +4267,10 @@ functions:
     class: logline
     evidence: "the only line 0x6bb98 logs, wlog('[WPP] replybuf_append_arg: arg too big (%dB) !') at 0x6bbc2"
     module: WPP
+  - name: debug_dump_ram_items_5_fetch
+    address: 0x6bbf8
+    class: slot
+    evidence: "0x6bbf8 is the fetch slot of debug_dump_ram_items row 5 (word 0x27d2c); nothing calls it"
   - name: WPP_CMD_PROBE__2
     address: 0x6bc0c
     class: helper
@@ -3574,6 +4286,11 @@ functions:
     class: logline
     evidence: "the only line 0x6bd0c logs, wlog('[WPP LITE] state DISC or not slave req') at 0x6bd2a"
     module: WPP_LITE
+  - name: ble_task__5
+    address: 0x6bf04
+    class: helper
+    evidence: "only 0x34068 (ble_task) calls 0x6bf04; 678 bytes"
+    module: WPP_LITE
   - name: wpp_cancel_func
     address: 0x6bf78
     class: logline
@@ -3588,6 +4305,11 @@ functions:
     address: 0x6c38c
     class: logline
     evidence: "the only line 0x6c38c logs, wlog('[Channel %d] Push - Cannot insert item, limit reached (nb = %d/%d | size = %d)') at 0x6c3f8"
+    module: WPP_LITE
+  - name: ble_task__5__4
+    address: 0x6c578
+    class: helper
+    evidence: "only 0x6bf04 (ble_task__5) calls 0x6c578; 32 bytes"
     module: WPP_LITE
   - name: wpp_state_auth_required
     address: 0x6c60c
@@ -3821,6 +4543,11 @@ functions:
     class: logline
     evidence: "the only line 0x6e83c logs, wlog('[WPP LITE CLIENT] Cmd 0x%04x timed out') at 0x6e844"
     module: WPP_LITE_CLIENT
+  - name: wpp__shared_3
+    address: 0x6e97c
+    class: shared
+    evidence: "every caller of 0x6e97c is in WPP: WPP_CMD_GLYPH_GET, WPP_CMD_NOTIFICATION_GET"
+    module: WPP
   - name: wpp_lite_client_close_evt_while_cmd_0x
     address: 0x6e9a8
     class: logline
@@ -3852,19 +4579,246 @@ functions:
     class: logline
     evidence: "the only line 0x6eed8 logs, wlog('[WUI] Failed to push event 0x%08x') at 0x6eefe"
     module: WUI
+  - name: refresh_install_go__2
+    address: 0x6efe0
+    class: helper
+    evidence: "only 0x899bc (refresh_install_go) calls 0x6efe0; 40 bytes"
+  - name: ecg_nn_classify__1__1
+    address: 0x7410c
+    class: helper
+    evidence: "only 0x9eafc (ecg_nn_classify__1) calls 0x7410c; 68 bytes"
+    module: ECG
+  - name: main_task__19__1
+    address: 0x74a54
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0x74a54; 96 bytes"
+    module: INIT
+  - name: ppg_apnea_algo_step__2
+    address: 0x74cd8
+    class: helper
+    evidence: "only 0x74ab8 (ppg_apnea_algo_step) calls 0x74cd8; 488 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_apnea_algo_step__3
+    address: 0x74ee8
+    class: helper
+    evidence: "only 0x74ab8 (ppg_apnea_algo_step) calls 0x74ee8; 108 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_apnea_algo_step__4
+    address: 0x74f68
+    class: helper
+    evidence: "only 0x74ab8 (ppg_apnea_algo_step) calls 0x74f68; 716 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_apnea_algo_step__5
+    address: 0x752b0
+    class: helper
+    evidence: "only 0x74ab8 (ppg_apnea_algo_step) calls 0x752b0; 232 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_apnea_algo_step__6
+    address: 0x75428
+    class: helper
+    evidence: "only 0x74ab8 (ppg_apnea_algo_step) calls 0x75428; 664 bytes"
+    module: SENSORS_SYNC
+  - name: main_task__19__2
+    address: 0x756c8
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0x756c8; 52 bytes"
+    module: INIT
+  - name: ppg_br_algo_step__2__1
+    address: 0x75704
+    class: helper
+    evidence: "only 0xa00b6 (ppg_br_algo_step__2) calls 0x75704; 234 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_br_algo_step__1__1
+    address: 0x75890
+    class: helper
+    evidence: "only 0x75a38 (ppg_br_algo_step__1) calls 0x75890; 210 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_br_algo_step__1
+    address: 0x75a38
+    class: helper
+    evidence: "only 0xa0012 (ppg_br_algo_step) calls 0x75a38; 234 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_br_algo_step__3__1
+    address: 0x75b28
+    class: helper
+    evidence: "only 0xa0154 (ppg_br_algo_step__3) calls 0x75b28; 204 bytes"
+    module: SENSORS_SYNC
   - name: WPP_CMD_STORED_MEASURE_SIGNAL_GET__3__1
     address: 0x765c4
     class: helper
     evidence: "only 0x6370c (WPP_CMD_STORED_MEASURE_SIGNAL_GET__3) calls 0x765c4; 4 bytes"
+  - name: ppg_arrhythmia_algo_step__1
+    address: 0x765cc
+    class: helper
+    evidence: "only 0x76460 (ppg_arrhythmia_algo_step) calls 0x765cc; 586 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_arrhythmia_algo_step__2__1
+    address: 0x76830
+    class: helper
+    evidence: "only 0x76a40 (ppg_arrhythmia_algo_step__2) calls 0x76830; 432 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_arrhythmia_algo_step__2
+    address: 0x76a40
+    class: helper
+    evidence: "only 0x76460 (ppg_arrhythmia_algo_step) calls 0x76a40; 384 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_arrhythmia_algo_step__2__2
+    address: 0x76d94
+    class: helper
+    evidence: "only 0x76a40 (ppg_arrhythmia_algo_step__2) calls 0x76d94; 380 bytes"
+    module: QRS_FEATURES
+  - name: ppg_heart_beats_algo_step__1
+    address: 0x76f7c
+    class: helper
+    evidence: "only 0xa053e (ppg_heart_beats_algo_step) calls 0x76f7c; 372 bytes"
+    module: SENSORS_SYNC
+  - name: hr_measure_on_algo_result__3__1
+    address: 0x7715c
+    class: helper
+    evidence: "only 0xa0b18 (hr_measure_on_algo_result__3) calls 0x7715c; 34 bytes"
+    module: HR_MEASURE
+  - name: hr_measure_on_algo_result__3__2
+    address: 0x77184
+    class: helper
+    evidence: "only 0xa0b18 (hr_measure_on_algo_result__3) calls 0x77184; 44 bytes"
+    module: HR_MEASURE
+  - name: ppg_rr_algo_step__1
+    address: 0x771b4
+    class: helper
+    evidence: "only 0x7710c (ppg_rr_algo_step) calls 0x771b4; 638 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_rr_algo_step__2__1
+    address: 0x77440
+    class: helper
+    evidence: "only 0xa0cf4 (ppg_rr_algo_step__2) calls 0x77440; 132 bytes"
+    module: SENSORS_SYNC
   - name: ecg_bad_diag_algo_version__1
     address: 0x77af0
     class: helper
     evidence: "only 0x4ac90 (ecg_bad_diag_algo_version) calls 0x77af0; 4 bytes"
     module: ECG
+  - name: main_task__7__1
+    address: 0x78ec0
+    class: helper
+    evidence: "only 0x4bc40 (main_task__7) calls 0x78ec0; 82 bytes"
+    module: INIT
+  - name: sleep_wake_algo_step__1
+    address: 0x79b1c
+    class: helper
+    evidence: "only 0x79560 (sleep_wake_algo_step) calls 0x79b1c; 290 bytes"
+    module: SENSORS_SYNC
+  - name: hr_algo_process_sample__1
+    address: 0x7b320
+    class: helper
+    evidence: "only 0xa22fc (hr_algo_process_sample) calls 0x7b320; 182 bytes"
+    module: SENSORS_SYNC
+  - name: algo_dispatch_sample__1
+    address: 0x7b7e4
+    class: helper
+    evidence: "only 0x7d4f0 (algo_dispatch_sample) calls 0x7b7e4; 32 bytes"
+    module: SENSORS_SYNC
+  - name: algo_dispatch_sample__2
+    address: 0x7b808
+    class: helper
+    evidence: "only 0x7d4f0 (algo_dispatch_sample) calls 0x7b808; 52 bytes"
+    module: SENSORS_SYNC
+  - name: hr_tempo_algo_step__1
+    address: 0x7b8f8
+    class: helper
+    evidence: "only 0x7b4b0 (hr_tempo_algo_step) calls 0x7b8f8; 842 bytes"
+    module: SENSORS_SYNC
+  - name: hr_tempo_algo_step__1__1
+    address: 0x7bc50
+    class: helper
+    evidence: "only 0x7b8f8 (hr_tempo_algo_step__1) calls 0x7bc50; 468 bytes"
+    module: SENSORS_SYNC
+  - name: hr_tempo_algo_step__1__2
+    address: 0x7be2c
+    class: helper
+    evidence: "only 0x7b8f8 (hr_tempo_algo_step__1) calls 0x7be2c; 68 bytes"
+    module: SENSORS_SYNC
+  - name: hr_tempo_algo_step__1__3
+    address: 0x7be74
+    class: helper
+    evidence: "only 0x7b8f8 (hr_tempo_algo_step__1) calls 0x7be74; 194 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_mono_algo_step__1
+    address: 0x7bf3c
+    class: helper
+    evidence: "only 0x2a038 (spo2_mono_algo_step) calls 0x7bf3c; 200 bytes"
+    module: SENSORS_SYNC
+  - name: algo_manager_publish_results__8
+    address: 0x7c080
+    class: helper
+    evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x7c080; 68 bytes"
+  - name: spo2_mono_algo_step__4__3
+    address: 0x7c0d0
+    class: helper
+    evidence: "only 0xa350e (spo2_mono_algo_step__4) calls 0x7c0d0; 376 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_mono_algo_step__2
+    address: 0x7c300
+    class: helper
+    evidence: "only 0x2a038 (spo2_mono_algo_step) calls 0x7c300; 816 bytes"
+    module: SENSORS_SYNC
+  - name: algo_manager_publish_results__9
+    address: 0x7c6dc
+    class: helper
+    evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x7c6dc; 56 bytes"
+  - name: spo2_multi_algo_step__6__1
+    address: 0x7cb04
+    class: helper
+    evidence: "only 0xa3732 (spo2_multi_algo_step__6) calls 0x7cb04; 130 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_multi_algo_step__6__2
+    address: 0x7cb94
+    class: helper
+    evidence: "only 0xa3732 (spo2_multi_algo_step__6) calls 0x7cb94; 16 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_multi_algo_step__3
+    address: 0x7cc10
+    class: helper
+    evidence: "only 0x7c71c (spo2_multi_algo_step) calls 0x7cc10; 438 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_multi_algo_step__4
+    address: 0x7cde4
+    class: helper
+    evidence: "only 0x7c71c (spo2_multi_algo_step) calls 0x7cde4; 280 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_multi_algo_step__4__1
+    address: 0x7cf68
+    class: helper
+    evidence: "only 0x7cde4 (spo2_multi_algo_step__4) calls 0x7cf68; 340 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_multi_algo_step__4__2
+    address: 0x7d110
+    class: helper
+    evidence: "only 0x7cde4 (spo2_multi_algo_step__4) calls 0x7d110; 152 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_hrv_algo_step__1
+    address: 0x7d778
+    class: helper
+    evidence: "only 0xa45a4 (ppg_hrv_algo_step) calls 0x7d778; 150 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_hrv_algo_step__1__1
+    address: 0x7d948
+    class: helper
+    evidence: "only 0x7d778 (ppg_hrv_algo_step__1) calls 0x7d948; 96 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_hrv_algo_step__1__2
+    address: 0x7d9b8
+    class: helper
+    evidence: "only 0x7d778 (ppg_hrv_algo_step__1) calls 0x7d9b8; 108 bytes"
+    module: SENSORS_SYNC
   - name: WPP_CMD_WAM_VASISTAS_GET__3
     address: 0x7da2c
     class: helper
     evidence: "only 0x33ea8 (WPP_CMD_WAM_VASISTAS_GET) calls 0x7da2c; 4 bytes"
+  - name: acquistion_task__1
+    address: 0x7e3f0
+    class: helper
+    evidence: "only 0x3b6f8 (acquistion_task) calls 0x7e3f0; 124 bytes"
+    module: ACQ
   - name: adc_not_using_internal_timer_setup
     address: 0x7e478
     class: logline
@@ -3912,6 +4866,13 @@ functions:
     class: logline
     evidence: "the only line 0x7faa4 logs, wlog('[TEMPERATURE] Stop acquisition task') at 0x7faaa"
     module: TEMPERATURE
+  - name: refresh_factory_test_temperature__1
+    address: 0x7fae0
+    class: helper
+    evidence: "only 0x8386c (refresh_factory_test_temperature) calls 0x7fae0; 46 bytes"
+    module: FACTORY
+    proto: "uint32_t refresh_factory_test_temperature__1(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: set_move_hands
     address: 0x7fcac
     class: string
@@ -3964,10 +4925,28 @@ functions:
     evidence: "wlog('[carousel_sport] face mode screen %d unknown') at 0x81320, tag is a C identifier"
     module: CAROUSEL_SPORT
     also_named: [carousel_sport_face_mode_screen_unknown (logline)]
+  - name: on_event_timer__2
+    address: 0x82008
+    class: helper
+    evidence: "only 0x8216c (on_event_timer) calls 0x82008; 184 bytes"
+    module: SCREEN_TIMER
+  - name: refresh_stopwatch__2
+    address: 0x8241c
+    class: helper
+    evidence: "only 0x82464 (refresh_stopwatch) calls 0x8241c; 66 bytes"
+    module: SCREEN_STOPWATCH
+  - name: refresh_alarm_ringing__1
+    address: 0x827f0
+    class: helper
+    evidence: "only 0x82960 (refresh_alarm_ringing) calls 0x827f0; 266 bytes"
   - name: toggle_alarm
     address: 0x82a58
     class: logline
     evidence: "the only line 0x82a58 logs, wlog('TOGGLE ALARM') at 0x82a7c"
+  - name: refresh_alarm__2
+    address: 0x82bbc
+    class: helper
+    evidence: "only 0x82c4c (refresh_alarm) calls 0x82bbc; 62 bytes"
   - name: symptoms_init
     address: 0x82fc8
     class: logline
@@ -3977,6 +4956,15 @@ functions:
     class: logline
     evidence: "the only line 0x833b4 logs, wlog('[LIGHT_SENSOR] light value = %d') at 0x83530"
     module: LIGHT_SENSOR
+  - name: on_event_factory_check__2
+    address: 0x83688
+    class: helper
+    evidence: "only 0x8370c (on_event_factory_check) calls 0x83688; 118 bytes"
+  - name: on_event_factory_test_temperature__1
+    address: 0x83a08
+    class: helper
+    evidence: "only 0x83ae4 (on_event_factory_test_temperature) calls 0x83a08; 84 bytes"
+    module: FACTORY
   - name: factory_temperature_factory_test_reset
     address: 0x83a78
     class: logline
@@ -4001,11 +4989,23 @@ functions:
     address: 0x83c64
     class: logline
     evidence: "the only line 0x83c64 logs, wlog('Failed to start lapping test task') at 0x83d58"
+  - name: on_event_factory_charging__1
+    address: 0x840f0
+    class: helper
+    evidence: "only 0x84110 (on_event_factory_charging) calls 0x840f0; 28 bytes"
+  - name: refresh_factory_reset_coutdown__1
+    address: 0x84810
+    class: helper
+    evidence: "only 0x84958 (refresh_factory_reset_coutdown) calls 0x84810; 100 bytes"
   - name: init_home_screen
     address: 0x85164
     class: string
     evidence: "wlog('%s dnd_state = %d \\t alarm_found = %d \\t alarm_activated = %d', 'init_home_screen') at 0x851e6"
     also_named: [dnd_state_alarm_found_alarm (logline)]
+  - name: refresh_low_battery_screen__1
+    address: 0x854fc
+    class: helper
+    evidence: "only 0xa5ffe (refresh_low_battery_screen) calls 0x854fc; 100 bytes"
   - name: ecg_err_no_sample_queue__3
     address: 0x85e3c
     class: helper
@@ -4035,20 +5035,62 @@ functions:
     address: 0x8666c
     class: logline
     evidence: "the only line 0x8666c logs, wlog('Display mode: %s') at 0x8668a"
+  - name: refresh_body_temperature__2
+    address: 0x86764
+    class: helper
+    evidence: "only 0x86930 (refresh_body_temperature) calls 0x86764; 174 bytes"
+  - name: refresh_body_temperature__3
+    address: 0x86840
+    class: helper
+    evidence: "only 0x86930 (refresh_body_temperature) calls 0x86840; 194 bytes"
   - name: spo2_measures_nb_days_since_last
     address: 0x86b2c
     class: logline
     evidence: "the only line 0x86b2c logs, wlog('[SPO2] %d/%d measures | nb_days_since_last_meas=%lu/%d -> Display tuto') at 0x86b72"
     module: SPO2
+  - name: refresh_spo2_meas__1
+    address: 0x86bcc
+    class: helper
+    evidence: "only 0xa649a (refresh_spo2_meas) calls 0x86bcc; 262 bytes"
+  - name: on_event_spo2_meas__1__1
+    address: 0x86e70
+    class: helper
+    evidence: "only 0x86efc (on_event_spo2_meas__1) calls 0x86e70; 116 bytes"
+    module: SPO2
+  - name: on_event_spo2_meas__1
+    address: 0x86efc
+    class: helper
+    evidence: "only 0x86f28 (on_event_spo2_meas) calls 0x86efc; 38 bytes"
+  - name: on_event_dbt_duration__1
+    address: 0x8772c
+    class: helper
+    evidence: "only 0x87778 (on_event_dbt_duration) calls 0x8772c; 72 bytes"
+  - name: on_event_alarm__1
+    address: 0x87cf4
+    class: helper
+    evidence: "only 0x82d5c (on_event_alarm) calls 0x87cf4; 20 bytes"
+  - name: on_enter_workout_low_batt__1
+    address: 0x87e54
+    class: helper
+    evidence: "only 0xa6754 (on_enter_workout_low_batt) calls 0x87e54; 48 bytes"
+    module: TRACKER_INACTIVITY
   - name: gui_notif_resources_available
     address: 0x88868
     class: logline
     evidence: "the only line 0x88868 logs, wlog('[GUI] On notif resources available') at 0x8886e"
     module: GUI
+  - name: on_event_battery_charging__1
+    address: 0x88d24
+    class: helper
+    evidence: "only 0x88f60 (on_event_battery_charging) calls 0x88d24; 10 bytes"
   - name: toggle_notifications
     address: 0x89374
     class: logline
     evidence: "the only line 0x89374 logs, wlog('TOGGLE NOTIFICATIONS') at 0x8937e"
+  - name: on_enter_hands_calibration_settings__1
+    address: 0x895b4
+    class: helper
+    evidence: "only 0x89608 (on_enter_hands_calibration_settings) calls 0x895b4; 44 bytes"
   - name: screen_calibration_no_motor_id_availabe
     address: 0x89630
     class: logline
@@ -4067,6 +5109,18 @@ functions:
     class: logline
     evidence: "the only line 0x8a460 logs, wlog('[SPORT CONGRATS]  => Go to summary') at 0x8a484"
     module: SPORT_CONGRATS
+  - name: refresh_pause_selection__1
+    address: 0x8a530
+    class: helper
+    evidence: "only 0x8a8c8 (refresh_pause_selection) calls 0x8a530; 28 bytes"
+  - name: on_enter_sport__2
+    address: 0x8a59c
+    class: helper
+    evidence: "only 0x818e8 (on_enter_sport) calls 0x8a59c; 6 bytes"
+  - name: on_enter_sport__3
+    address: 0x8a5a8
+    class: helper
+    evidence: "only 0x818e8 (on_enter_sport) calls 0x8a5a8; 6 bytes"
   - name: clear_info
     address: 0x8ac04
     class: logline
@@ -4076,6 +5130,16 @@ functions:
     class: logline
     evidence: "the only line 0x8ae3c logs, wlog('[WIDGET_SCROLLING_TEXT] E_INACTIVITY') at 0x8ae4e"
     module: WIDGET_SCROLLING_TEXT
+  - name: wui_task__1
+    address: 0x8b8d8
+    class: helper
+    evidence: "only 0x6ed34 (wui_task) calls 0x8b8d8; 34 bytes"
+    module: WUI
+  - name: wui_task__2
+    address: 0x8b900
+    class: helper
+    evidence: "only 0x6ed34 (wui_task) calls 0x8b900; 26 bytes"
+    module: WUI
   - name: warning_unknown_type_0x
     address: 0x8b924
     class: logline
@@ -4448,11 +5512,35 @@ functions:
     class: helper
     evidence: "only 0x80378 (wui_event_resent) calls 0x9200e; 66 bytes"
     module: WUI
+  - name: i2c_device_table_4_fn0
+    address: 0x920a8
+    class: slot
+    evidence: "0x920a8 is the fn0 slot of i2c_device_table row 4 (word 0xb2340); nothing calls it"
+  - name: i2c_device_table_4_fn1
+    address: 0x920be
+    class: slot
+    evidence: "0x920be is the fn1 slot of i2c_device_table row 4 (word 0xb2344); nothing calls it"
+  - name: i2c_device_table_4_fn3
+    address: 0x920d4
+    class: slot
+    evidence: "0x920d4 is the fn3 slot of i2c_device_table row 4 (word 0xb234c); nothing calls it"
+  - name: factory_reset_perform__2
+    address: 0x920ea
+    class: helper
+    evidence: "only 0x4bdd0 (factory_reset_perform) calls 0x920ea; 10 bytes"
+  - name: battery_status_fill_state__1
+    address: 0x9210a
+    class: helper
+    evidence: "only 0x9211e (battery_status_fill_state) calls 0x9210a; 20 bytes"
   - name: bt_e_bt_disconnect_evt_0x__3__1
     address: 0x92170
     class: helper
     evidence: "only 0x948a6 (bt_e_bt_disconnect_evt_0x__3) calls 0x92170; 58 bytes"
     module: BT
+  - name: sensors_sync_push_accel__3__5
+    address: 0x921da
+    class: helper
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__3) calls 0x921da; 4 bytes"
   - name: dbg_mask_change_ie_debug_mask__1
     address: 0x92272
     class: helper
@@ -4467,6 +5555,11 @@ functions:
     class: helper
     evidence: "only 0x44798 (wpp_clock_calib_move_motor) calls 0x9227a; 4 bytes"
     module: WPP
+  - name: main_task__2__3
+    address: 0x92324
+    class: helper
+    evidence: "only 0x2fbdc (main_task__2) calls 0x92324; 14 bytes"
+    module: INIT
   - name: fmode_set_mode_0x__1
     address: 0x9238a
     class: helper
@@ -4488,17 +5581,30 @@ functions:
     address: 0x9239e
     class: helper
     evidence: "only 0x344fc (shell_cmd_lp) calls 0x9239e; 6 bytes"
+  - name: on_event_power_reserve_screen__1
+    address: 0x923aa
+    class: helper
+    evidence: "only 0x85420 (on_event_power_reserve_screen) calls 0x923aa; 6 bytes"
   - name: sd_temp_get
     address: 0x923e0
     class: svc
     evidence: "svc #0x4c; bx lr at 0x923e0"
     header: s140/headers/nrf_soc.h
     proto: "uint32_t sd_temp_get(int32_t * p_temp);"
+  - name: sensors_sync_reset__1
+    address: 0x92418
+    class: helper
+    evidence: "only 0x5988c (sensors_sync_reset) calls 0x92418; 4 bytes"
+    module: TSM
   - name: day_goal_reached_times__2
     address: 0x9242a
     class: helper
     evidence: "only 0x92ba4 (day_goal_reached_times) calls 0x9242a; 16 bytes"
     module: DAY
+  - name: on_enter_sport__4
+    address: 0x9244e
+    class: helper
+    evidence: "only 0x818e8 (on_enter_sport) calls 0x9244e; 92 bytes"
   - name: wpp_workout_alwyas_on_set_unpack__1__1
     address: 0x92576
     class: helper
@@ -4531,6 +5637,16 @@ functions:
     class: helper
     evidence: "only 0x6d038 (WPP_CMD_TRACKER_MOVE_HANDS_SET) calls 0x9266a; 20 bytes"
     module: WPP
+  - name: on_enter_screen_update__1__1
+    address: 0x9267e
+    class: helper
+    evidence: "only 0x92914 (on_enter_screen_update__1) calls 0x9267e; 74 bytes"
+    module: WUI
+  - name: on_enter_screen_update__1
+    address: 0x92914
+    class: helper
+    evidence: "only 0x89f40 (on_enter_screen_update) calls 0x92914; 406 bytes"
+    module: WUI
   - name: ui_update_timeout__3
     address: 0x92abc
     class: helper
@@ -4549,6 +5665,10 @@ functions:
     class: helper
     evidence: "only 0x608a8 (wpp_lite_err_goal_unpack) calls 0x92cd6; 4 bytes"
     module: WPP_LITE
+  - name: on_event_alarm_ringing__1
+    address: 0x92cda
+    class: helper
+    evidence: "only 0x829bc (on_event_alarm_ringing) calls 0x92cda; 16 bytes"
   - name: WPP_CMD_SWAP_VASISTAS_GET
     address: 0x92eb2
     class: wppcmd
@@ -4617,6 +5737,15 @@ functions:
     address: 0x93248
     class: helper
     evidence: "only 0x5a3c4 (shell_cmd_probe) calls 0x93248; 4 bytes"
+  - name: main_task__14
+    address: 0x932a2
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x932a2; 48 bytes"
+    module: INIT
+  - name: factory_reset_perform__3
+    address: 0x932d2
+    class: helper
+    evidence: "only 0x4bdd0 (factory_reset_perform) calls 0x932d2; 46 bytes"
   - name: WPP_CMD_DEBUG_DUMP__3__2
     address: 0x93358
     class: helper
@@ -4627,6 +5756,16 @@ functions:
     class: helper
     evidence: "only 0x6522c (REBOOT) calls 0x9335c; 48 bytes"
     module: WPP
+  - name: alti__shared_1__4
+    address: 0x9338c
+    class: helper
+    evidence: "only 0x3dd58 (alti__shared_1) calls 0x9338c; 18 bytes"
+    module: MS5837
+  - name: nrfx_saadc_init__1
+    address: 0x933c6
+    class: helper
+    evidence: "only 0x7dcc0 (nrfx_saadc_init) calls 0x933c6; 14 bytes"
+    module: ADC
   - name: sd_evt_get
     address: 0x933d4
     class: svc
@@ -4717,6 +5856,10 @@ functions:
     class: bleevt
     evidence: "ble_evt_dispatch (0x37594) jump table at 0x375ac, case 60 (BLE_GATTC_EVT_WRITE_CMD_TX_COMPLETE), block 0x3765a calls it"
     module: GAP
+  - name: ble_task__1__1
+    address: 0x93446
+    class: helper
+    evidence: "only 0x37388 (ble_task__1) calls 0x93446; 44 bytes"
   - name: sd_ble_gap_addr_set
     address: 0x93472
     class: svc
@@ -5041,17 +6184,32 @@ functions:
     class: helper
     evidence: "only 0x7e478 (adc_not_using_internal_timer_setup) calls 0x937e2; 10 bytes"
     module: ADC
+  - name: acquistion_task__2__2
+    address: 0x937f0
+    class: helper
+    evidence: "only 0xa4e8a (acquistion_task__2) calls 0x937f0; 10 bytes"
+    module: ACQ
   - name: sd_rand_application_vector_get
     address: 0x938c4
     class: svc
     evidence: "svc #0x31; bx lr at 0x938c4"
     header: s140/headers/nrf_soc.h
     proto: "uint32_t sd_rand_application_vector_get(uint8_t * p_buff, uint8_t length);"
+  - name: acquistion_task__2__3
+    address: 0x93a4c
+    class: helper
+    evidence: "only 0xa4e8a (acquistion_task__2) calls 0x93a4c; 66 bytes"
+    module: ACQ
   - name: shell_cmd_account_secret__1
     address: 0x93d10
     class: helper
     evidence: "only 0x3b660 (shell_cmd_account_secret) calls 0x93d10; 58 bytes"
     module: M
+  - name: main_task__15
+    address: 0x93e22
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x93e22; 10 bytes"
+    module: INIT
   - name: go_to_system_off__2
     address: 0x93e34
     class: helper
@@ -5080,6 +6238,11 @@ functions:
     address: 0x94048
     class: helper
     evidence: "only 0x9433c (adxl367_continuous_measure_mode__2) calls 0x94048; 48 bytes"
+    module: ADXL367
+  - name: adxl367__shared_1__1
+    address: 0x94078
+    class: helper
+    evidence: "only 0x3bbe4 (adxl367__shared_1) calls 0x94078; 28 bytes"
     module: ADXL367
   - name: adxl367_continuous_measure_mode__1__3
     address: 0x940e8
@@ -5110,6 +6273,11 @@ functions:
     class: helper
     evidence: "only 0x3c6b8 (shell_cmd_adxl) calls 0x943c2; 48 bytes"
     module: ADXL367
+  - name: wpp__shared_4
+    address: 0x943f2
+    class: shared
+    evidence: "every caller of 0x943f2 is in WPP: WPP_CMD_SET_MULTI_ALARM, wpp_set_alarm"
+    module: WPP
   - name: WPP_CMD_GET_ALARM
     address: 0x9441c
     class: wppcmd
@@ -5137,6 +6305,11 @@ functions:
     module: ANCS
     header: s140/headers/ble.h
     proto: "uint32_t sd_ble_uuid_vs_add(ble_uuid128_t const *p_vs_uuid, uint8_t *p_uuid_type);"
+  - name: ancs_gattc_action__1
+    address: 0x94684
+    class: helper
+    evidence: "only 0x3e29c (ancs_gattc_action) calls 0x94684; 40 bytes"
+    module: ANCS
   - name: sd_ble_gap_device_name_get
     address: 0x9476c
     class: svc
@@ -5229,6 +6402,11 @@ functions:
     evidence: "svc #0x62; bx lr at 0x94970; second copy of sd_ble_uuid_vs_add (0x935bc)"
     header: s140/headers/ble.h
     proto: "uint32_t sd_ble_uuid_vs_add(ble_uuid128_t const *p_vs_uuid, uint8_t *p_uuid_type);"
+  - name: bat_charging_decision__1
+    address: 0x94a1a
+    class: helper
+    evidence: "only 0x2fc8c (bat_charging_decision) calls 0x94a1a; 12 bytes"
+    module: BAT
   - name: WPP_CMD_CALIBRATION_GET
     address: 0x94b52
     class: wppcmd
@@ -5243,6 +6421,12 @@ functions:
     address: 0x94c56
     class: helper
     evidence: "only 0x43fdc (type_id_ref_val) calls 0x94c56; 6 bytes"
+  - name: sensors_sync_push_accel__3__6
+    address: 0x9541c
+    class: helper
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__3) calls 0x9541c; 36 bytes"
+    proto: "uint32_t sensors_sync_push_accel__3__6(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: WPP_CMD_FRICTION_TEST__1
     address: 0x9544a
     class: helper
@@ -5280,6 +6464,14 @@ functions:
     address: 0x954e6
     class: helper
     evidence: "only 0x44a14 (shell_cmd_conso_log) calls 0x954e6; 4 bytes"
+  - name: debug_dump_ram_items_0_fetch
+    address: 0x954ea
+    class: slot
+    evidence: "0x954ea is the fetch slot of debug_dump_ram_items row 0 (word 0x27cf0); nothing calls it"
+  - name: wpp_bytes_received__1
+    address: 0x97520
+    class: helper
+    evidence: "only 0x392fc (wpp_bytes_received) calls 0x97520; 16 bytes"
   - name: dblib_defaultbank_old_doublon_ie_id
     address: 0x976d0
     class: logline
@@ -5290,6 +6482,10 @@ functions:
     class: helper
     evidence: "only 0x473b8 (dblib_element_size_mismatch_id) calls 0x97976; 4 bytes"
     module: DBLIB
+  - name: debug_dump_ram_items_3_count
+    address: 0x979a4
+    class: slot
+    evidence: "0x979a4 is the count slot of debug_dump_ram_items row 3 (word 0x27d18); nothing calls it"
   - name: WPP_CMD_DIGITAL_CROWN_CALIB__4
     address: 0x979a8
     class: helper
@@ -5308,6 +6504,11 @@ functions:
     module: ECG
     header: s140/headers/nrf_soc.h
     proto: "uint32_t sd_clock_hfclk_release(void);"
+  - name: ecg_task_state_machine__4
+    address: 0x97a06
+    class: helper
+    evidence: "only 0x4a068 (ecg_task_state_machine) calls 0x97a06; 24 bytes"
+    module: ECG
   - name: WPP_CMD_STORED_MEASURE_SIGNAL_GET__4
     address: 0x97a8a
     class: helper
@@ -5320,6 +6521,21 @@ functions:
     address: 0x97ae0
     class: helper
     evidence: "only 0x6e3e8 (WPP_CMD_STORED_MEASURE_SIGNAL_DEL) calls 0x97ae0; 10 bytes"
+  - name: ecg_task_state_machine__5
+    address: 0x97aea
+    class: helper
+    evidence: "only 0x4a068 (ecg_task_state_machine) calls 0x97aea; 6 bytes"
+    module: ECG
+  - name: ecg_task_state_machine__6
+    address: 0x97af0
+    class: helper
+    evidence: "only 0x4a068 (ecg_task_state_machine) calls 0x97af0; 10 bytes"
+    module: ECG
+  - name: ecg_task_state_machine__7
+    address: 0x97afa
+    class: helper
+    evidence: "only 0x4a068 (ecg_task_state_machine) calls 0x97afa; 6 bytes"
+    module: ECG
   - name: sd_clock_hfclk_request_copy_0x97b44
     address: 0x97b44
     class: svc
@@ -5334,6 +6550,11 @@ functions:
     module: DBT
     header: s140/headers/nrf_soc.h
     proto: "uint32_t sd_clock_hfclk_release(void);"
+  - name: flash_cache_init__1
+    address: 0x97f22
+    class: helper
+    evidence: "only 0x4c594 (flash_cache_init) calls 0x97f22; 2 bytes"
+    module: FLASH_CACHE
   - name: _read
     address: 0x97f26
     class: syscall
@@ -5371,6 +6592,11 @@ functions:
     address: 0x97ff4
     class: syscall
     evidence: "called by the reentrant wrapper _isatty_r at 0x91d1c, which the relinked newlib binds to _isatty; newlib syscall stub: returns 1 for fd 0..2 and 0 above; the body is an errno stub every such stub in libc_nano.a matches, so the archive's own name cannot be taken here"
+  - name: fwblk_table_parse__1
+    address: 0x97ffe
+    class: helper
+    evidence: "only 0x4ca80 (fwblk_table_parse) calls 0x97ffe; 12 bytes"
+    module: FWBLK
   - name: GREENTEG_SENSITIVITY_BIN_DEL
     address: 0x981f8
     class: wppcmd
@@ -5463,6 +6689,15 @@ functions:
     class: helper
     evidence: "only 0x50658 (WPP_CMD_GET_LIGHT_SENSOR) calls 0x9a9c6; 12 bytes"
     module: LIGHT_SENSOR
+  - name: i2c_device_table_3_fn1
+    address: 0x9a9d2
+    class: slot
+    evidence: "0x9a9d2 is the fn1 slot of i2c_device_table row 3 (word 0xb2328); nothing calls it"
+  - name: main_task__16
+    address: 0x9ab8a
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x9ab8a; 4 bytes"
+    module: INIT
   - name: shell_cmd_mcuflash__1
     address: 0x9ab8e
     class: helper
@@ -5486,10 +6721,24 @@ functions:
     class: wppcmd
     command: 2347
     evidence: "wpp_cmd_table row 0x27790: key 2347, label 'WPP_CMD_MCU_TEMP_CAL_SET', CMD_MCU_TEMP_CAL_SET in wpp/src/commands.rs"
+  - name: button_task__1__1
+    address: 0x9add6
+    class: helper
+    evidence: "only 0x2f49c (button_task__1) calls 0x9add6; 76 bytes"
   - name: shell_cmd_body_temperature__2
     address: 0x9ae22
     class: helper
     evidence: "only 0x434dc (shell_cmd_body_temperature) calls 0x9ae22; 50 bytes"
+  - name: ecg_adc_block_handler__1__1
+    address: 0x9ae72
+    class: helper
+    evidence: "only 0x4ae24 (ecg_adc_block_handler__1) calls 0x9ae72; 238 bytes"
+    module: MEASURE_LIVE_WPP
+  - name: alti__shared_1__5
+    address: 0x9aece
+    class: helper
+    evidence: "only 0x3dd58 (alti__shared_1) calls 0x9aece; 34 bytes"
+    module: MS5837
   - name: verify_cert__2
     address: 0x9af06
     class: helper
@@ -5504,10 +6753,19 @@ functions:
     address: 0x9aff6
     class: helper
     evidence: "only 0x56a6c (shell_cmd_pls) calls 0x9aff6; 32 bytes"
+  - name: wlog_level__1
+    address: 0x9b1b2
+    class: helper
+    evidence: "only 0x50ca8 (wlog_level) calls 0x9b1b2; 22 bytes"
   - name: error_no_oldest_rawdata_found__3
     address: 0x9b3f0
     class: helper
     evidence: "only 0x5819c (error_no_oldest_rawdata_found) calls 0x9b3f0; 206 bytes"
+  - name: main_task__9__2
+    address: 0x9b4d4
+    class: helper
+    evidence: "only 0x57ba8 (main_task__9) calls 0x9b4d4; 76 bytes"
+    module: INIT
   - name: raw_data_flash_usage_get__1
     address: 0x9b5da
     class: helper
@@ -5530,6 +6788,15 @@ functions:
     address: 0x9b7ae
     class: helper
     evidence: "only 0x587ec (shell_cmd_raw_data) calls 0x9b7ae; 2 bytes"
+  - name: main_task__17
+    address: 0x9b82e
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0x9b82e; 200 bytes"
+    module: INIT
+  - name: sensors_sync_push_accel__4
+    address: 0x9b8fa
+    class: helper
+    evidence: "only 0x3bd10 (sensors_sync_push_accel) calls 0x9b8fa; 18 bytes"
   - name: sd_ble_version_get
     address: 0x9b9a6
     class: svc
@@ -5548,10 +6815,18 @@ functions:
     address: 0x9b9ce
     class: shell
     evidence: "shell_cmd_table row 0x27214: command 'factory_reset', run slot (+4)"
+  - name: shell_cmd_table_32_run
+    address: 0x9b9e6
+    class: slot
+    evidence: "0x9b9e6 is the run slot of shell_cmd_table row 32 (word 0x27284); nothing calls it"
   - name: shell_cmd_exit
     address: 0x9b9f0
     class: shell
     evidence: "shell_cmd_table row 0x271fc: command 'exit', run slot (+4)"
+  - name: spi_flash_wake__1
+    address: 0x9bb4c
+    class: helper
+    evidence: "only 0x5b6bc (spi_flash_wake) calls 0x9bb4c; 8 bytes"
   - name: shell_cmd_spiflash__2
     address: 0x9bc52
     class: helper
@@ -5593,6 +6868,10 @@ functions:
     module: MAX86173
     proto: "uint32_t max86173_spi_could_not_allocate_buf__1(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: spi_flash_wait_wip_clear__1
+    address: 0x9be7e
+    class: helper
+    evidence: "only 0x9ba44 (spi_flash_wait_wip_clear) calls 0x9be7e; 4 bytes"
   - name: wpp_clock_calib_move_motor__1__1
     address: 0x9be9e
     class: helper
@@ -5617,11 +6896,20 @@ functions:
     class: helper
     evidence: "only 0x9335c (REBOOT__1) calls 0x9c076; 50 bytes"
     module: WPP
+  - name: refresh_spo2_meas_2__1
+    address: 0x9c122
+    class: helper
+    evidence: "only 0x86e30 (refresh_spo2_meas_2) calls 0x9c122; 30 bytes"
   - name: spo2_measures_nb_days_since_last__1
     address: 0x9c144
     class: helper
     evidence: "only 0x86b2c (spo2_measures_nb_days_since_last) calls 0x9c144; 30 bytes"
     module: SPO2
+  - name: algo_manager_publish_results__5__1
+    address: 0x9c1f4
+    class: helper
+    evidence: "only 0x631c0 (algo_manager_publish_results__5) calls 0x9c1f4; 8 bytes"
+    module: PPG_AFIB
   - name: FW_AVAILABLE__1__3
     address: 0x9c324
     class: helper
@@ -5631,6 +6919,10 @@ functions:
     address: 0x9ca18
     class: helper
     evidence: "only 0x67038 (shell_cmd_symptoms) calls 0x9ca18; 36 bytes"
+  - name: on_exit_cycletrackingsymptomsmenu__1
+    address: 0x9ca3c
+    class: helper
+    evidence: "only 0x830f8 (on_exit_cycletrackingsymptomsmenu) calls 0x9ca3c; 34 bytes"
   - name: WPP_CMD_GET_SYMPTOMS__1
     address: 0x9cbba
     class: helper
@@ -5640,10 +6932,23 @@ functions:
     class: helper
     evidence: "only 0x67648 (WPP_CMD_SET_SYMPTOMS) calls 0x9cc0c; 38 bytes"
     module: SYMPTOMS_TRACKING
+  - name: on_enter_factory_check__1
+    address: 0x9cc60
+    class: helper
+    evidence: "only 0x83644 (on_enter_factory_check) calls 0x9cc60; 24 bytes"
+    module: WUI
   - name: shell_cmd_oled__1__1
     address: 0x9cf98
     class: helper
     evidence: "only 0x67bc4 (shell_cmd_oled__1) calls 0x9cf98; 4 bytes"
+  - name: debug_dump_ram_items_1_fetch
+    address: 0x9d034
+    class: slot
+    evidence: "0x9d034 is the fetch slot of debug_dump_ram_items row 1 (word 0x27cfc); nothing calls it"
+  - name: debug_dump_ram_items_1_count
+    address: 0x9d03e
+    class: slot
+    evidence: "0x9d03e is the count slot of debug_dump_ram_items row 1 (word 0x27d00); nothing calls it"
   - name: wftl_post_update__2
     address: 0x9d238
     class: helper
@@ -5654,6 +6959,10 @@ functions:
     class: helper
     evidence: "only 0x69464 (wftl_post_update) calls 0x9d23c; 166 bytes"
     module: WFTL
+  - name: debug_dump_ram_items_5_count
+    address: 0x9d358
+    class: slot
+    evidence: "0x9d358 is the count slot of debug_dump_ram_items row 5 (word 0x27d30); nothing calls it"
   - name: sd_ble_version_get_copy_0x9d5c8
     address: 0x9d5c8
     class: svc
@@ -5698,17 +7007,311 @@ functions:
     class: wppcmd
     command: 2452
     evidence: "wpp_cmd_table row 0x27b80: key 2452, label 'WPP_CMD_EVENTS_DEL', CMD_EVENTS_DEL in wpp/src/commands.rs"
+  - name: wui_task__3
+    address: 0x9d746
+    class: helper
+    evidence: "only 0x6ed34 (wui_task) calls 0x9d746; 36 bytes"
+    module: WUI
+  - name: ble_task__5__5
+    address: 0x9e2ee
+    class: helper
+    evidence: "only 0x6bf04 (ble_task__5) calls 0x9e2ee; 62 bytes"
+    module: WPP_LITE
   - name: sd_app_evt_wait
     address: 0x9ea3a
     class: svc
     evidence: "svc #0x41; bx lr at 0x9ea3a"
     header: s140/headers/nrf_soc.h
     proto: "uint32_t sd_app_evt_wait(void);"
+  - name: ecg_nn_classify__1
+    address: 0x9eafc
+    class: helper
+    evidence: "only 0x78f1c (ecg_nn_classify) calls 0x9eafc; 14 bytes"
+    module: ECG
+  - name: ppg_hrv_algo_step__2
+    address: 0x9eb3e
+    class: helper
+    evidence: "only 0xa45a4 (ppg_hrv_algo_step) calls 0x9eb3e; 42 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_apnea_algo_step__7
+    address: 0x9ed8e
+    class: helper
+    evidence: "only 0x74ab8 (ppg_apnea_algo_step) calls 0x9ed8e; 26 bytes"
+    module: SENSORS_SYNC
+  - name: ecg_rr_interval_add__1__1
+    address: 0x9ee84
+    class: helper
+    evidence: "only 0x9ef62 (ecg_rr_interval_add__1) calls 0x9ee84; 50 bytes"
+    module: ECG
+  - name: ecg_rr_interval_add__1
+    address: 0x9ef62
+    class: helper
+    evidence: "only 0x78184 (ecg_rr_interval_add) calls 0x9ef62; 94 bytes"
+    module: ECG
+  - name: ecg_filter_process_sample__1
+    address: 0x9f08c
+    class: helper
+    evidence: "only 0x77df8 (ecg_filter_process_sample) calls 0x9f08c; 156 bytes"
+    module: ECG
+  - name: ppg_hrv_algo_step__4__1
+    address: 0x9f46c
+    class: helper
+    evidence: "only 0xa48e6 (ppg_hrv_algo_step__4) calls 0x9f46c; 30 bytes"
+    module: SENSORS_SYNC
   - name: shell_cmd_adxl__7
     address: 0x9fdc6
     class: helper
     evidence: "only 0x3c6b8 (shell_cmd_adxl) calls 0x9fdc6; 90 bytes"
     module: ADXL367
+  - name: ppg_apnea_algo_step__5__1
+    address: 0x9ff92
+    class: helper
+    evidence: "only 0x752b0 (ppg_apnea_algo_step__5) calls 0x9ff92; 68 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_br_algo_step__2
+    address: 0xa00b6
+    class: helper
+    evidence: "only 0xa0012 (ppg_br_algo_step) calls 0xa00b6; 158 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_br_algo_step__3
+    address: 0xa0154
+    class: helper
+    evidence: "only 0xa0012 (ppg_br_algo_step) calls 0xa0154; 148 bytes"
+    module: SENSORS_SYNC
+  - name: main_task__19__3
+    address: 0xa0374
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0xa0374; 10 bytes"
+    module: INIT
+  - name: main_task__19__4
+    address: 0xa03c0
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0xa03c0; 26 bytes"
+    module: INIT
+  - name: algo_manager_publish_results__5__2
+    address: 0xa03da
+    class: helper
+    evidence: "only 0x631c0 (algo_manager_publish_results__5) calls 0xa03da; 6 bytes"
+    module: PPG_AFIB
+  - name: algo_manager_publish_results__5__3
+    address: 0xa03e0
+    class: helper
+    evidence: "only 0x631c0 (algo_manager_publish_results__5) calls 0xa03e0; 6 bytes"
+    module: PPG_AFIB
+  - name: algo_manager_publish_results__5__4
+    address: 0xa03e6
+    class: helper
+    evidence: "only 0x631c0 (algo_manager_publish_results__5) calls 0xa03e6; 22 bytes"
+    module: PPG_AFIB
+  - name: ppg_arrhythmia_algo_step__1__1
+    address: 0xa03fc
+    class: helper
+    evidence: "only 0x765cc (ppg_arrhythmia_algo_step__1) calls 0xa03fc; 22 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_arrhythmia_algo_step__2__3
+    address: 0xa0412
+    class: helper
+    evidence: "only 0x76a40 (ppg_arrhythmia_algo_step__2) calls 0xa0412; 34 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_arrhythmia_algo_step__3
+    address: 0xa0490
+    class: helper
+    evidence: "only 0x76460 (ppg_arrhythmia_algo_step) calls 0xa0490; 50 bytes"
+    module: SENSORS_SYNC
+  - name: main_task__19__5
+    address: 0xa051c
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0xa051c; 34 bytes"
+    module: INIT
+  - name: main_task__19__6
+    address: 0xa07ce
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0xa07ce; 38 bytes"
+    module: INIT
+  - name: main_task__18
+    address: 0xa0a26
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0xa0a26; 16 bytes"
+    module: INIT
+  - name: main_task__19__7
+    address: 0xa0ab6
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0xa0ab6; 20 bytes"
+    module: INIT
+  - name: algo_dispatch_sample__3
+    address: 0xa0aca
+    class: helper
+    evidence: "only 0x7d4f0 (algo_dispatch_sample) calls 0xa0aca; 6 bytes"
+    module: SENSORS_SYNC
+  - name: main_task__19__8
+    address: 0xa0afa
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0xa0afa; 68 bytes"
+    module: INIT
+  - name: hr_measure_on_algo_result__3
+    address: 0xa0b18
+    class: helper
+    evidence: "only 0x62604 (hr_measure_on_algo_result) calls 0xa0b18; 218 bytes"
+    module: HR_MEASURE
+  - name: ppg_rr_algo_step__2
+    address: 0xa0cf4
+    class: helper
+    evidence: "only 0x7710c (ppg_rr_algo_step) calls 0xa0cf4; 138 bytes"
+    module: SENSORS_SYNC
+  - name: ecg_task_state_machine__8
+    address: 0xa0d92
+    class: helper
+    evidence: "only 0x4a068 (ecg_task_state_machine) calls 0xa0d92; 12 bytes"
+    module: ECG
+    proto: "uint32_t ecg_task_state_machine__8(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: main_task__19__9
+    address: 0xa13ce
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0xa13ce; 70 bytes"
+    module: INIT
+  - name: main_task__19__10
+    address: 0xa2220
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0xa2220; 220 bytes"
+    module: INIT
+  - name: algo_manager_publish_results__10__1
+    address: 0xa24c4
+    class: helper
+    evidence: "only 0xa24fa (algo_manager_publish_results__10) calls 0xa24c4; 28 bytes"
+  - name: algo_manager_publish_results__10
+    address: 0xa24fa
+    class: helper
+    evidence: "only 0x63ddc (algo_manager_publish_results) calls 0xa24fa; 78 bytes"
+  - name: hr_algo_process_sample__1__1
+    address: 0xa2e38
+    class: helper
+    evidence: "only 0x7b320 (hr_algo_process_sample__1) calls 0xa2e38; 426 bytes"
+    module: SENSORS_SYNC
+  - name: hr_algo_process_sample__2
+    address: 0xa304e
+    class: helper
+    evidence: "only 0xa22fc (hr_algo_process_sample) calls 0xa304e; 82 bytes"
+    module: SENSORS_SYNC
+  - name: algo_dispatch_sample__4
+    address: 0xa3252
+    class: helper
+    evidence: "only 0x7d4f0 (algo_dispatch_sample) calls 0xa3252; 4 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_mono_algo_step__3
+    address: 0xa3398
+    class: helper
+    evidence: "only 0x2a038 (spo2_mono_algo_step) calls 0xa3398; 68 bytes"
+    module: SENSORS_SYNC
+  - name: main_task__19__11
+    address: 0xa33dc
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0xa33dc; 120 bytes"
+    module: INIT
+  - name: spo2_mono_algo_step__4
+    address: 0xa350e
+    class: helper
+    evidence: "only 0x2a038 (spo2_mono_algo_step) calls 0xa350e; 284 bytes"
+    module: SENSORS_SYNC
+  - name: main_task__19__12
+    address: 0xa3664
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0xa3664; 94 bytes"
+    module: INIT
+  - name: algo_manager_publish_results__11
+    address: 0xa36c2
+    class: helper
+    evidence: "only 0x63ddc (algo_manager_publish_results) calls 0xa36c2; 10 bytes"
+  - name: algo_manager_publish_results__12
+    address: 0xa36cc
+    class: helper
+    evidence: "only 0x63ddc (algo_manager_publish_results) calls 0xa36cc; 32 bytes"
+  - name: spo2_multi_algo_step__5
+    address: 0xa36ec
+    class: helper
+    evidence: "only 0x7c71c (spo2_multi_algo_step) calls 0xa36ec; 70 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_multi_algo_step__6
+    address: 0xa3732
+    class: helper
+    evidence: "only 0x7c71c (spo2_multi_algo_step) calls 0xa3732; 206 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_multi_algo_step__6__3
+    address: 0xa3816
+    class: helper
+    evidence: "only 0xa3732 (spo2_multi_algo_step__6) calls 0xa3816; 90 bytes"
+    module: SENSORS_SYNC
+  - name: spo2_multi_algo_step__6__4
+    address: 0xa39d4
+    class: helper
+    evidence: "only 0xa3732 (spo2_multi_algo_step__6) calls 0xa39d4; 20 bytes"
+    module: SENSORS_SYNC
+  - name: main_task__19
+    address: 0xa425e
+    class: helper
+    evidence: "only 0x2e1d8 (main_task) calls 0xa425e; 204 bytes"
+    module: INIT
+  - name: sensors_sync_push_accel__3__7
+    address: 0xa446c
+    class: helper
+    evidence: "only 0x5f5c8 (sensors_sync_push_accel__3) calls 0xa446c; 40 bytes"
+  - name: main_task__19__13
+    address: 0xa4580
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0xa4580; 36 bytes"
+    module: INIT
+  - name: hr_measure_on_algo_result__4
+    address: 0xa4782
+    class: helper
+    evidence: "only 0x62604 (hr_measure_on_algo_result) calls 0xa4782; 112 bytes"
+    module: HR_MEASURE
+    proto: "uint32_t hr_measure_on_algo_result__4(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: algo_dispatch_sample__5
+    address: 0xa47f2
+    class: helper
+    evidence: "only 0x7d4f0 (algo_dispatch_sample) calls 0xa47f2; 4 bytes"
+    module: SENSORS_SYNC
+  - name: algo_dispatch_sample__6
+    address: 0xa47fe
+    class: helper
+    evidence: "only 0x7d4f0 (algo_dispatch_sample) calls 0xa47fe; 4 bytes"
+    module: SENSORS_SYNC
+  - name: algo_dispatch_sample__7
+    address: 0xa4806
+    class: helper
+    evidence: "only 0x7d4f0 (algo_dispatch_sample) calls 0xa4806; 4 bytes"
+    module: SENSORS_SYNC
+  - name: algo_dispatch_sample__8
+    address: 0xa480a
+    class: helper
+    evidence: "only 0x7d4f0 (algo_dispatch_sample) calls 0xa480a; 4 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_hrv_algo_step__3
+    address: 0xa4870
+    class: helper
+    evidence: "only 0xa45a4 (ppg_hrv_algo_step) calls 0xa4870; 6 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_hrv_algo_step__4__2
+    address: 0xa48c6
+    class: helper
+    evidence: "only 0xa48e6 (ppg_hrv_algo_step__4) calls 0xa48c6; 56 bytes"
+    module: SENSORS_SYNC
+  - name: ppg_hrv_algo_step__4
+    address: 0xa48e6
+    class: helper
+    evidence: "only 0xa45a4 (ppg_hrv_algo_step) calls 0xa48e6; 146 bytes"
+    module: SENSORS_SYNC
+  - name: main_task__19__14
+    address: 0xa49c2
+    class: helper
+    evidence: "only 0xa425e (main_task__19) calls 0xa49c2; 22 bytes"
+    module: INIT
+  - name: algo_dispatch_sample__9
+    address: 0xa49d8
+    class: helper
+    evidence: "only 0x7d4f0 (algo_dispatch_sample) calls 0xa49d8; 16 bytes"
+    module: SENSORS_SYNC
   - name: ppg_dbt_failed_turn_off_ppg_sensor__1
     address: 0xa49e8
     class: helper
@@ -5719,6 +7322,12 @@ functions:
     class: helper
     evidence: "only 0x63a20 (ppg_dbt_failed_turn_off_ppg_sensor) calls 0xa49fa; 6 bytes"
     module: PPG_DBT
+  - name: on_event_dbt_meas__3__1
+    address: 0xa4a00
+    class: helper
+    evidence: "only 0x638c4 (on_event_dbt_meas__3) calls 0xa4a00; 6 bytes"
+    proto: "uint32_t on_event_dbt_meas__3__1(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: ppg_dbt_failed_turn_off_ppg_sensor__3
     address: 0xa4a06
     class: helper
@@ -5729,6 +7338,17 @@ functions:
     class: helper
     evidence: "only 0x63a20 (ppg_dbt_failed_turn_off_ppg_sensor) calls 0xa4a0c; 6 bytes"
     module: PPG_DBT
+  - name: on_event_dbt_meas__1__1
+    address: 0xa4a9c
+    class: helper
+    evidence: "only 0x4b7ac (on_event_dbt_meas__1) calls 0xa4a9c; 6 bytes"
+    proto: "uint32_t on_event_dbt_meas__1__1(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: acquistion_task__2
+    address: 0xa4e8a
+    class: helper
+    evidence: "only 0x3b6f8 (acquistion_task) calls 0xa4e8a; 58 bytes"
+    module: ACQ
   - name: sd_rand_application_pool_capacity_get
     address: 0xa4f34
     class: svc
@@ -5760,6 +7380,19 @@ functions:
     class: helper
     evidence: "only 0xa70fc (gui_notif_resources_available__1) calls 0xa508a; 20 bytes"
     module: GUI
+  - name: refresh_sport_summary_2__1
+    address: 0xa5722
+    class: helper
+    evidence: "only 0xa5bd8 (refresh_sport_summary_2) calls 0xa5722; 30 bytes"
+  - name: refresh_carousel_clocks_2__1
+    address: 0xa5a18
+    class: helper
+    evidence: "only 0xa5a98 (refresh_carousel_clocks_2) calls 0xa5a18; 4 bytes"
+  - name: on_event_timer__3
+    address: 0xa5c14
+    class: helper
+    evidence: "only 0x8216c (on_event_timer) calls 0xa5c14; 100 bytes"
+    module: SCREEN_TIMER
   - name: stopwatch_helper_pause
     address: 0xa5c52
     class: string
@@ -5771,11 +7404,50 @@ functions:
     evidence: "svc #0x65; bx lr at 0xa5e04; second copy of sd_ble_version_get (0x9b9a6)"
     header: s140/headers/ble.h
     proto: "uint32_t sd_ble_version_get(ble_version_t *p_version);"
+  - name: on_enter_sport__5
+    address: 0xa6038
+    class: helper
+    evidence: "only 0x818e8 (on_enter_sport) calls 0xa6038; 40 bytes"
+    proto: "uint32_t on_enter_sport__5(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: on_foreground_ecg_fake__1
+    address: 0xa60aa
+    class: helper
+    evidence: "only 0xa60ea (on_foreground_ecg_fake) calls 0xa60aa; 22 bytes"
+  - name: refresh_ppg_afib__1__1
+    address: 0xa6738
+    class: helper
+    evidence: "only 0xa677e (refresh_ppg_afib__1) calls 0xa6738; 28 bytes"
+  - name: refresh_ppg_afib__1
+    address: 0xa677e
+    class: helper
+    evidence: "only 0xa67b4 (refresh_ppg_afib) calls 0xa677e; 72 bytes"
+  - name: on_event_sport_notif__1
+    address: 0xa6ed0
+    class: helper
+    evidence: "only 0x8a058 (on_event_sport_notif) calls 0xa6ed0; 12 bytes"
+  - name: on_event_notif__1
+    address: 0xa70f0
+    class: helper
+    evidence: "only 0x889d4 (on_event_notif) calls 0xa70f0; 12 bytes"
+    module: GUI
   - name: gui_notif_resources_available__1
     address: 0xa70fc
     class: helper
     evidence: "only 0x88868 (gui_notif_resources_available) calls 0xa70fc; 40 bytes"
     module: GUI
+  - name: on_enter_carousel_clocks__1
+    address: 0xa7152
+    class: helper
+    evidence: "only 0x812bc (on_enter_carousel_clocks) calls 0xa7152; 14 bytes"
+  - name: refresh_carousel_clocks_2__2
+    address: 0xa7160
+    class: helper
+    evidence: "only 0xa5a98 (refresh_carousel_clocks_2) calls 0xa7160; 6 bytes"
+  - name: max_led_config_task__3
+    address: 0xa7496
+    class: helper
+    evidence: "only 0x52b1c (max_led_config_task) calls 0xa7496; 12 bytes"
   - name: sqrt
     address: 0xa7c6e
     class: libm

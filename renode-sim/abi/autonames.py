@@ -4,7 +4,7 @@
     python3 abi/autonames.py                  # every class, writes abi/autonames.yaml
     python3 abi/autonames.py --classes svc    # one class
 
-Nine classes, in order of certainty:
+Twelve classes, in order of certainty:
 
   svc      a `svc #N; bx lr` body is the SoftDevice call whose SVC number is N,
            and the S140 headers give the number and the exact prototype.
@@ -32,8 +32,15 @@ Nine classes, in order of certainty:
   bleevt   the BLE event dispatcher switches on the SoftDevice event id through
            a `tbh` table, so each case names its handler out of the S140 event
            enumerations (symbols.txt confirms four cases independently).
-  helper   a function only one dispatch-table handler calls is that command's
-           private helper and takes its name with an index.
+  slot     a function nothing calls is entered through the word that holds its
+           address, so a declared table's pointer field names it by its row.
+  accessor a body that is one load or one store through a named global and a
+           return is that global's getter or setter.
+  shared   a body every caller of which sits in one log-tag module belongs to
+           that module, and is numbered by address within it.
+  helper   a function only one named function calls is that function's private
+           helper and takes its name with an index. The name may come from any
+           rule or from the hand map, not just from this run.
 
 The same log tags give a module partition (which file a function came from),
 which abi/out/ghidra/modules.json carries and every entry above records.
@@ -60,6 +67,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callargs  # noqa: E402  (the forward reading of a call's own block)
 import match  # noqa: E402  (same directory; the normaliser and matcher live there)
 import libc_find  # noqa: E402  (the archive-side body search)
+import shapes  # noqa: E402  (the declared tables and struct globals, from DWARF)
 import symbols as symmap  # noqa: E402  (the address map these names go into)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -107,7 +115,8 @@ EXT_VARIANTS = []
 
 # Which class names an address when two reach it; earlier wins. See main().
 CLASS_RANK = ["svc", "syscall", "libc", "libm", "extlib", "wppcmd", "shell", "wppobj", "string",
-              "logtag", "logcb", "bleevt", "logline", "helper"]
+              "logtag", "logcb", "bleevt", "logline", "slot", "accessor",
+              "shared", "helper"]
 
 INSN = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2,4} )+)\s*\t(\S+)\s*(.*)$")
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -139,6 +148,16 @@ class Image:
                 if t:
                     callees.add(int(t.group(1), 16))
         self.entries = sorted(a for a in callees if self.base <= a < self.end)
+        self._insn_at = [i[0] for i in self.insns]
+
+    def body(self, start, end):
+        """The instructions between two addresses, in order."""
+        i = bisect.bisect_left(self._insn_at, start)
+        out = []
+        while i < len(self.insns) and self.insns[i][0] < end:
+            out.append(self.insns[i])
+            i += 1
+        return out
 
     def owner(self, addr):
         """The `bl` target the address belongs to, i.e. the enclosing function."""
@@ -496,6 +515,13 @@ class Export:
             self.word_uses = json.load(open(os.path.join(outdir, "word_uses.json")))["uses"]
         except (OSError, KeyError):
             self.word_uses = []
+        self.pool_reads = {p["site"]: p["target"] for p in refs["pool_reads"]}
+        # Which word holds a function's Thumb address. A function nothing calls
+        # is reached through one of these or not at all.
+        self.holders = collections.defaultdict(list)
+        for w in refs["words"]:
+            if w["class"] == "thumb_function_start":
+                self.holders[w["item"]].append(w["addr"])
 
     def owner(self, addr):
         i = bisect.bisect_right(self._starts, addr) - 1
@@ -1276,8 +1302,27 @@ HELPER_MAX = 56
 # under something under a named function exists.
 HELPER_DEPTH = 2
 
+# A name that stands for where a body sits in the call graph rather than for
+# what it does. One may not be the stem of another.
+NICKNAMES = ("helper", "shared", "prose")
 
-def helper_names(ex, named):
+
+def map_seed(smap):
+    """Every name in the map strong enough to lend itself to a helper.
+
+    A helper's name is its caller's, so the seed is every settled or hand name,
+    whatever rule wrote it -- a `match`, a `kernel` create argument, a `wuiview`
+    slot, a `store` descriptor, a `codec` type, an `svc` number, a `vendor`
+    entry. The nicknames are not on the list, or one would breed another past
+    the depth limit, and neither is `prose`, which names an address without
+    saying what is there.
+    """
+    return dict((s.address, s.name) for s in smap.of_kind("function")
+                if s.klass not in NICKNAMES
+                and (s.klass == symmap.HAND or symmap.outranks(s.klass, "helper")))
+
+
+def helper_names(ex, named, blocked=(), reserved=()):
     """The private helpers under a named function.
 
     A function one named function calls that nothing else in the image calls is
@@ -1286,10 +1331,16 @@ def helper_names(ex, named):
     name is stable across runs. The chain is followed down as long as each step
     is still called by exactly one function, and stops where the derived name
     would be longer than a name is useful.
+
+    `blocked` are addresses the map already names under a class this rule may
+    not displace, and `reserved` the names it already spends elsewhere: the map
+    holds one name per address and one address per name, so a nickname that
+    would take either is not derived at all rather than refused at the write.
     """
     if not ex.ok:
         return []
     out, taken = [], dict(named)
+    spent = set(reserved) | set(named.values())
     frontier, depth = dict(named), 0
     while frontier and depth < HELPER_DEPTH:
         depth += 1
@@ -1299,16 +1350,182 @@ def helper_names(ex, named):
                 continue
             private = sorted(f for f in ex.callees.get(owner, ())
                              if ex.unnamed(f) and ex.callers.get(f) == {owner}
-                             and f not in taken)
+                             and f not in taken and f not in blocked)
             for n, fn in enumerate(private, 1):
                 name = "%s__%d" % (oname, n)
-                if len(name) > HELPER_MAX:
+                if len(name) > HELPER_MAX or name in spent:
                     continue
+                spent.add(name)
                 taken[fn] = nxt[fn] = name
                 out.append({"address": fn, "name": name, "class": "helper",
                             "evidence": "only 0x%x (%s) calls 0x%x; %d bytes"
                                         % (owner, oname, fn, ex.size(fn))})
         frontier = nxt
+    return out
+
+
+# --------------------------------------------------------------- class: slot
+
+def declared_slots(smap, types):
+    """Every pointer field of a declared table row or struct global, by address.
+
+    A function nothing calls is entered through the word that holds its Thumb
+    address, so that word is what names it -- but only where the word is a slot
+    the headers declare, because a bare pointer in an untyped run says where the
+    function is and nothing about what it is for.
+    """
+    out = {}
+    for tab in types.typed_regions(smap):
+        for index, row in enumerate(tab.rows()):
+            for field in tab.row.fields:
+                if field.kind != shapes.POINTER:
+                    continue
+                name = ("%s_%s" % (tab.name, field.name) if tab.count == 1
+                        else "%s_%d_%s" % (tab.name, index, field.name))
+                out[row + field.offset] = (name, tab.name, index, field.name)
+    return out
+
+
+def slot_names(ex, smap, types, blocked=()):
+    """The handlers a declared table reaches that nothing calls.
+
+    No call site names these: they are vtable and registry entries, so the
+    evidence is the slot itself. A function held by two slots of one table is
+    named by the first; one held by slots of two different tables is refused,
+    because the two claims are about different things.
+    """
+    if not ex.ok:
+        return []
+    slots = declared_slots(smap, types)
+    out = []
+    for fn in sorted(ex.fns):
+        if not ex.unnamed(fn) or ex.callers.get(fn) or fn in blocked:
+            continue
+        held = sorted(w for w in ex.holders.get(fn, ()) if w in slots)
+        if not held or len({slots[w][1] for w in held}) != 1:
+            continue
+        name, table, index, field = slots[held[0]]
+        out.append({"address": fn, "name": name, "class": "slot",
+                    "evidence": "0x%x is the %s slot of %s row %d (word 0x%x);"
+                                " nothing calls it"
+                                % (fn, field, table, index, held[0])})
+    return out
+
+
+# ----------------------------------------------------------- class: accessor
+
+# `ldr r3,[pc,#N]; ldr r0,[r3{,#K}]; bx lr` and its store twin: the whole body
+# is one access to one global, so the global names it.
+ACCESS = re.compile(r"^r0, \[r3(?:, #(0x[0-9a-f]+))?\]$")
+LOAD = ("ldr", "ldr.w", "ldrb", "ldrb.w", "ldrh", "ldrh.w",
+        "ldrsb", "ldrsb.w", "ldrsh", "ldrsh.w")
+STORE = ("str", "str.w", "strb", "strb.w", "strh", "strh.w")
+
+
+def library_ranges():
+    """The spans of the image abi/match.py's body matches bracket.
+
+    A body inside one of them is library code whose name comes from the
+    reference build, whatever the app's globals around it are called:
+    `xTaskGetTickCount` and `xTaskGetTickCountFromISR` are two identical loads
+    of FreeRTOS's own `xTickCount` and are not two accessors of it.
+    """
+    import yaml
+    path = os.path.join(HERE, "matches.yaml")
+    if not os.path.exists(path):
+        return []
+    doc = yaml.safe_load(open(path))
+    return [(r["start"], r["end"]) for r in doc.get("library_ranges") or []]
+
+
+def accessor_names(img, ex, smap, types, blocked=()):
+    """A body that is one load or one store through a named global.
+
+    The role comes from the global, never from the body: an identical three
+    instructions sit at nineteen addresses in this image, so the pool word is
+    the only thing that tells them apart. A global the map does not name, or an
+    offset its declaration gives no field, leaves the body unnamed.
+    """
+    if not ex.ok:
+        return []
+    library = library_ranges()
+    globals_ = dict((s.address, s.name) for s in smap.of_kind("global", "table"))
+    fields = {}
+    for region in types.typed_regions(smap):
+        if region.count != 1:
+            continue
+        for field in region.row.fields:
+            fields[(region.address, field.offset)] = field.name
+    out = []
+    for fn in sorted(ex.fns):
+        if not ex.unnamed(fn) or fn in blocked:
+            continue
+        if any(lo <= fn < hi for lo, hi in library):
+            continue
+        body = img.body(fn, fn + ex.size(fn))
+        if len(body) != 3 or body[2][1] != "bx" or body[2][2] != "lr":
+            continue
+        if body[0][1] != "ldr" or not body[0][2].startswith("r3, [pc"):
+            continue
+        access = ACCESS.match(body[1][2])
+        pool = ex.pool_reads.get(body[0][0])
+        if access is None or pool is None:
+            continue
+        base = img.word(pool)
+        name = globals_.get(base)
+        if name is None:
+            continue
+        offset = int(access.group(1), 16) if access.group(1) else 0
+        if offset:
+            field = fields.get((base, offset))
+            if field is None:
+                continue
+            name = "%s_%s" % (name, field)
+        verb = ("get" if body[1][1] in LOAD else
+                "set" if body[1][1] in STORE else None)
+        if verb is None:
+            continue
+        out.append({"address": fn, "name": "%s_%s" % (name, verb),
+                    "class": "accessor",
+                    "evidence": "the body is one %s through %s (pool word 0x%x"
+                                " = 0x%x) and a return"
+                                % (body[1][1], name, pool, base)})
+    return out
+
+
+# ------------------------------------------------------------- class: shared
+
+def shared_names(ex, named, modules, blocked=()):
+    """A body every caller of which sits in one module belongs to that module.
+
+    Several named callers give no one caller to take a name from, but where they
+    all come from the same log-tag module the body is that module's, so it is
+    named for the module and numbered by address. Callers spanning two modules
+    are refused: what the body is shared between is exactly what the name would
+    have to say.
+    """
+    if not ex.ok:
+        return []
+    per = collections.defaultdict(list)
+    for fn in sorted(ex.fns):
+        callers = ex.callers.get(fn, set())
+        if not ex.unnamed(fn) or len(callers) < 2 or fn in blocked:
+            continue
+        if not all(c in named for c in callers):
+            continue
+        where = {modules.get(c) for c in callers}
+        if len(where) != 1 or None in where:
+            continue
+        per[where.pop()].append(fn)
+    out = []
+    for module, fns in sorted(per.items()):
+        for n, fn in enumerate(sorted(fns), 1):
+            callers = sorted(named[c] for c in ex.callers[fn])
+            out.append({"address": fn, "name": "%s__shared_%d"
+                                               % (module.lower(), n),
+                        "class": "shared", "module": module,
+                        "evidence": "every caller of 0x%x is in %s: %s"
+                                    % (fn, module, ", ".join(callers))})
     return out
 
 
@@ -1635,7 +1852,7 @@ def yaml_str(s):
 
 # Every rule this script runs, as the class each writes into abi/symbols.yaml.
 DEFAULT_CLASSES = ("svc,syscall,libc,libm,extlib,string,logtag,logcb,wppcmd,"
-                   "shell,bleevt,wppobj,logline,helper")
+                   "shell,bleevt,wppobj,logline,slot,accessor,shared,helper")
 
 
 # The map classes a derivation owns. A function the seed carries under one of
@@ -1829,12 +2046,53 @@ def main():
         stats["logline"] = len(found)
         entries += found
 
+    # The map is the other half of the image's naming: a rule this run does not
+    # own named the sole caller, the table row or the global that the rules
+    # below take their names from, so the seed is the map's settled names with
+    # this run's own derivations over them.
+    smap = symmap.load()
+    types = shapes.load() if want & {"slot", "accessor"} else None
+    seeded = map_seed(smap)
+    # What the map holds that this run does not own, and so may not take: the
+    # classes in `want` are this run's own output from the last one and are
+    # about to be rewritten, which is what makes a second run a fixed point.
+    held = {s.address for s in smap.of_kind("function") if s.klass not in want}
+    reserved = {s.name for s in smap.symbols if s.klass not in want}
+    # The four rules below all read the call graph rather than the body, so
+    # they run last and over what the rules above have not already named.
+    taken = held | {e["address"] for e in entries}
+
+    if "slot" in want:
+        found = [e for e in slot_names(ex, smap, types, blocked=taken)
+                 if e["name"] not in reserved]
+        stats["slot"] = len(found)
+        entries += found
+        taken |= {e["address"] for e in found}
+
+    if "accessor" in want:
+        found = [e for e in accessor_names(img, ex, smap, types, blocked=taken)
+                 if e["name"] not in reserved]
+        stats["accessor"] = len(found)
+        entries += found
+        taken |= {e["address"] for e in found}
+
+    if "shared" in want:
+        named = dict(seeded)
+        named.update((e["address"], e["name"]) for e in entries)
+        found = shared_names(ex, named, modules, blocked=taken)
+        stats["shared"] = len(found)
+        entries += found
+        taken |= {e["address"] for e in found}
+
     if "helper" in want:
-        # Every name derived above, so a helper is named under whatever names
-        # its sole caller; a helper may not seed another helper's name from a
-        # name this run did not derive.
-        named = {e["address"]: e["name"] for e in entries}
-        found = helper_names(ex, named)
+        # A helper is named under whatever names its sole caller, wherever that
+        # name came from: seeding only from this run's own output left every
+        # body under a `match`, `kernel`, `wuiview`, `store` or hand name
+        # nameless.
+        named = dict(seeded)
+        named.update((e["address"], e["name"]) for e in entries)
+        found = helper_names(ex, named, blocked=taken,
+                             reserved=reserved | {e["name"] for e in entries})
         stats["helper"] = len(found)
         entries += found
 

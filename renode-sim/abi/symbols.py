@@ -112,7 +112,7 @@ HAND = "hand"
 RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "vendor", "string",
         "wppcmd", "codec", "wppobj", "wuiview", "vasistas", "store", "sensor",
         "kernel", "global", "trace", "runtime", "shell", "logtag", "logcb",
-        "bleevt", "logline", "helper", "prose"]
+        "bleevt", "logline", "slot", "accessor", "shared", "helper", "prose"]
 
 
 # The derivations that settle an address rather than read it: a byte verdict
@@ -124,7 +124,7 @@ RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "vendor", "string",
 # the repo is standing on.
 SETTLED = ("libc", "libm", "extlib", "svc", "syscall", "string",
            "wppcmd", "shell", "bleevt", "codec", "wuiview", "store",
-           "vasistas", "sensor", "trace", "kernel")
+           "vasistas", "sensor", "trace", "kernel", "slot")
 
 
 # The kinds that name code. A pointer to Thumb code carries the low bit set, so
