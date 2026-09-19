@@ -143,7 +143,8 @@ def main():
             # removeBookmarks throws on a type the program has not defined, so
             # both are defined before they are cleared.
             for kind, image, color in (("Review", "images/warning.png", Color.RED),
-                                       ("Pointer", "images/flag.png", Color.BLUE)):
+                                       ("Pointer", "images/flag.png", Color.BLUE),
+                                       ("Unnamed", "images/notes.gif", Color.GRAY)):
                 bookmarks.defineType(kind, ResourceManager.loadImage(image), color, 0)
                 bookmarks.removeBookmarks(kind)
             for r in rows:
