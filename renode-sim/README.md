@@ -11,7 +11,7 @@ It simulates the main SoC (nRF52840) running the three images in flash
 All the main sensors are modelled
 
 | device | bus / pins |
-|---|---|---|
+|---|---|
 | MX25R6435F SPI flash | SPIM2 (0x40023000), CS P0.15 |
 | ADXL367 accelerometer | SPIM2, CS P0.16, INT1 P0.27 |
 | MAX86173 optical HR front end | SPIM1 (0x40004000), CS P0.26, INT P1.14 |
