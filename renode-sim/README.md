@@ -1,12 +1,12 @@
 # Renode simulation of the ScanWatch 2 (HWA10)
 
-At the moment there are patches needed, so it's only been verified on firmware version 3411
-
 It simulates the main SoC (nRF52840) running the three images in flash
 
 - Nordic's MBR (forwards interrupts and SVCs)
 - S140 SoftDevice (Nordic's BLE stack and SoC services)
 - The application
+
+<img src="../screenshots/renode-sim.png" width="420" alt="Now">
 
 All the main sensors are modelled
 
