@@ -41,6 +41,7 @@ import archive_cost
 
 import datagen
 import objectify
+import ramparts
 import shapes
 import symbols as symmap
 from objectify import (APP_BASE, APP_END, R_ARM_ABS32, R_ARM_THM_CALL,
@@ -151,16 +152,21 @@ def build(sections, blob, symbols, path):
                               (bind << 4) | styp, 0, shndx)
 
     bodies, headers = [], [b"\0" * 40]
-    SHT_PROGBITS, SHT_REL, SHT_SYMTAB, SHT_STRTAB = 1, 9, 2, 3
-    SHF_ALLOC, SHF_EXEC = 2, 4
+    SHT_PROGBITS, SHT_NOBITS, SHT_REL, SHT_SYMTAB, SHT_STRTAB = 1, 8, 9, 2, 3
+    SHF_WRITE, SHF_ALLOC, SHF_EXEC = 1, 2, 4
     symtab_index = 1 + len(sections) + len(rel_of)
 
     for s in sections:
-        bodies.append(bytes(blob[s.start - APP_BASE:s.end - APP_BASE]))
+        # A NOBITS section has a size and no bytes; the size is what the linker
+        # reserves and the startup's zero fill is what fills it.
+        bodies.append(b"" if s.nobits
+                      else bytes(blob[s.start - APP_BASE:s.end - APP_BASE]))
         align = 4 if s.start % 4 == 0 else (2 if s.start % 2 == 0 else 1)
-        flags = SHF_ALLOC | (SHF_EXEC if s.kind == "code" else 0)
-        headers.append([name_in(shstr, s.name), SHT_PROGBITS, flags, 0, 0,
-                        len(bodies[-1]), 0, 0, align, 0])
+        flags = SHF_ALLOC | (SHF_EXEC if s.kind == "code" else 0) \
+            | (SHF_WRITE if s.vma is not None else 0)
+        headers.append([name_in(shstr, s.name),
+                        SHT_NOBITS if s.nobits else SHT_PROGBITS, flags, 0, 0,
+                        s.end - s.start, 0, 0, align, 0])
     for target, s in rel_of:
         rel = b"".join(struct.pack("<II", off, (symbols.index[sym] << 8) | rtype)
                        for off, sym, rtype in s.relocs)
@@ -248,7 +254,7 @@ def emit_data(directory, sources, delegated, blob, section_names, forced,
             if text is not None:
                 emitted.append((s, text, "typed"))
                 continue
-            untyped.append((table[3], why))
+            untyped.append((tables[s.start].name, why))
         # The partition calls a component data when no function entry point
         # opens it, and a few such components still hold instructions the
         # boundary scan found a call in. Those relocations sit on the
@@ -259,6 +265,138 @@ def emit_data(directory, sources, delegated, blob, section_names, forced,
         emitted.append((s, datagen.render_bytes(s, body, names, words, branches),
                         "bytes"))
     return datagen.write(directory, emitted, sources), untyped
+
+
+class RamLayout(object):
+    """The RAM items as sections, and the symbol a RAM address relocates to.
+
+    A `.data` item and the flash section holding its initialiser are one
+    section with two addresses: the bytes, the words inside them and the
+    relocations those words take are all at the flash address, and the RAM
+    address is what a pointer to the item holds. So the `.data` side is the
+    partition's own sections retyped rather than sections of their own, which
+    is also what keeps the identity link byte-identical -- the same bytes are
+    still linked from the same place, they are only named twice.
+
+    A `.bss` item has no bytes anywhere, so it is a section this makes up.
+    """
+
+    def __init__(self, ram, sections, blob_object, reserved):
+        self.ram = ram
+        self.data, self.bss = [], []
+        # The map names a RAM object after the library global it is -- the
+        # SoftDevice header's nrf_nvic_state among them -- and a definition of
+        # that name here would answer the link the source build is meant to
+        # answer, exactly as a blob copy of a library body would. The same
+        # uniquing settles it: the blob's copy is called after its address.
+        taken = set(s.sym for s in sections)
+        run = next(r for r in ram.runs if r.kind == "data")
+        inside = sorted((s for s in sections if run.load <= s.start
+                         < run.load + (run.end - run.start)),
+                        key=lambda s: s.start)
+        by_load = dict((i.load, i) for i in ram.items if i.kind == "data")
+        for s in inside:
+            item = by_load.get(s.start)
+            if item is None or item.size != s.end - s.start:
+                raise SystemExit(
+                    "the initialiser image's section at 0x%x (%d bytes) is not"
+                    " one RAM item: the cut and the RAM partition disagree"
+                    % (s.start, s.end - s.start))
+            s.vma = item.start
+            s.sym = objectify.unique(taken, reserved, item.name, item.start)
+            s.name = ".data." + s.sym
+            s.aliases.append(address_alias(item.start))
+            self.data.append(s)
+        if len(self.data) != len(by_load):
+            raise SystemExit("%d of the %d .data items have no section"
+                             % (len(by_load) - len(self.data), len(by_load)))
+        for item in ram.items:
+            if item.kind != "data":
+                sym = objectify.unique(taken, reserved, item.name, item.start)
+                s = objectify.Section(item.start, item.end, "data", sym)
+                s.name = ".bss." + sym
+                s.vma, s.nobits = item.start, True
+                s.aliases.append(address_alias(item.start))
+                s.object = blob_object
+                self.bss.append(s)
+        self.by_start = dict((s.vma, s) for s in self.data + self.bss)
+
+    @property
+    def sections(self):
+        return self.data + self.bss
+
+    @property
+    def runs(self):
+        return self.ram.runs
+
+    def bound(self, word_addr, value):
+        """The linker's name for a run bound, where this word holds one.
+
+        The startup's own three reads are bounds by what they are used for --
+        the copy's source, destination and end -- and a run's end is a bound
+        wherever it is read, because it is one past the last byte and no item
+        holds it. Everything else about a run is a reference to an item in it.
+        """
+        return self.ram.bounds.get(word_addr) or self.ram.ends.get(value)
+
+    def label(self, addr):
+        """The symbol naming a RAM address, or None where no item holds it.
+
+        An address inside an item is an interior label on it, the same way a
+        word naming row 17 of a flash table is: the item is one object and the
+        offset is a point in it, not a section of its own.
+        """
+        item = self.ram.at(addr)
+        if item is None:
+            return None
+        s = self.by_start[item.start]
+        if addr == item.start:
+            return s.sym
+        # A label's value is its offset from the section's `start`, which for a
+        # `.data` item is the initialiser in flash and not the RAM address the
+        # word holds: the key is the byte, the name is what the byte is called
+        # at run time.
+        return s.labels.setdefault((s.start + (addr - item.start), False),
+                                   "D_%08x" % addr)
+
+
+def ram_relocations(blob, layout, ramlayout, words, skip):
+    """Every flash word naming an app RAM item, as an R_ARM_ABS32 against it.
+
+    Until RAM had sections these were constants -- a static's address does not
+    change when flash moves -- and the only reason they could be left alone.
+    With the items placed by the linker the word is an address like any other
+    and has to name the object rather than hold a number.
+
+    A RAM address no item holds keeps its value: the SoftDevice's RAM, the
+    retained block below the app's own base, the stack, and the peripheral
+    and event buffers facts.yaml pins. Nothing in the image bounds those, so
+    there is nothing to relocate them against.
+    """
+    counts = {"pointer": 0, "fixed": 0, "bound": 0}
+    for row in words:
+        if row["addr"] in skip:
+            continue
+        bound = ramlayout.bound(row["addr"], row["value"])
+        if bound is None and row["signal"] != "ram":
+            # Only the startup's own reads are bounds outside RAM: the copy's
+            # source word holds a flash address, and it is the run's load
+            # address rather than a pointer to the bytes.
+            continue
+        sym = bound or ramlayout.label(row["value"])
+        if sym is None:
+            counts["fixed"] += 1
+            continue
+        counts["bound"] += 1 if bound else 0
+        section = layout.at(row["addr"])
+        if section is None or row["addr"] + 4 > section.end:
+            raise SystemExit("word 0x%x is not inside one section" % row["addr"])
+        off = row["addr"] - APP_BASE
+        blob[off:off + 4] = b"\0\0\0\0"
+        section.relocs.append((row["addr"] - section.start, sym, R_ARM_ABS32))
+        skip.add(row["addr"])
+        counts["pointer"] += 1
+    return counts
 
 
 def boundary_relocations(blob, boundary, layout):
@@ -1059,7 +1197,8 @@ def main():
     boundary = yaml.safe_load(open(os.path.join(HERE, "boundary.yaml")))
     facts = yaml.safe_load(open(os.path.join(HERE, "facts.yaml")))
     types = shapes.load()
-    tables = types.tables(symmap.load())
+    smap = symmap.load()
+    tables = types.tables(smap)
     blob = bytearray(open(args.image, "rb").read())
     if len(blob) != APP_END - APP_BASE:
         sys.exit("%s is %d bytes, the app image is %d"
@@ -1138,6 +1277,12 @@ def main():
     named |= set(t for _, t in reads)
     named |= set(a for a in reserved.values() if a >= 0)
     named |= set(int(str(f["addr"]), 0) for f in facts["fixed_points"])
+    # The initialiser image is one run to the copy loop and one item per RAM
+    # object to the linker: cutting it where the RAM partition cuts RAM is what
+    # lets each `.data` item be its own section, so the copy the linker lays out
+    # is the copy the startup makes.
+    ram = ramparts.load(args.export, args.image, smap, types)
+    named |= set(i.load for i in ram.items if i.kind == "data")
     named |= set(f["start"] for f in items["functions"])
     # A declared table is an object whatever the run around it looks like, and
     # both its ends are points: the declaration is what says where the rows
@@ -1158,18 +1303,35 @@ def main():
     for table in tables:
         table_bounds.add(table.address)
         table_bounds.add(table.end)
+    # A RAM item's initialiser starts at a point the code takes the address of,
+    # which is a declaration in the same sense a table's bounds are: the bytes
+    # on both sides are still whatever they were, and a run of non-NUL bytes
+    # that crosses the point would put two RAM objects in one section.
+    table_bounds |= set(i.load for i in ram.items if i.kind == "data")
     strings = objectify.string_runs(blob, covered, table_bounds)
+    # A word that becomes a relocation is one slot whatever its target is, so
+    # the four bytes may not be split between two sections. A RAM word is one
+    # of those now that the item it names has a section.
+    slots = [w["addr"] for w in words if w["class"] == "pointer"]
+    slots += [w["addr"] for w in words
+              if w["signal"] == "ram" and ram.at(w["value"]) is not None]
     sections, shared, slivers, distant = objectify.build_sections(
-        items, refs["calls"], reads, refs["fallthrough"],
-        [w["addr"] for w in words if w["class"] == "pointer"], strings, reserved,
-        named)
+        items, refs["calls"], reads, refs["fallthrough"], slots, strings,
+        reserved, named)
     layout = objectify.Layout(sections)
+    ramlayout = RamLayout(ram, sections, "*" + os.path.basename(args.o),
+                          reserved)
 
     retarget = replacements.bind(layout, refs, reads, words)
     owned, boundary_counts = boundary_relocations(blob, boundary, layout)
     owned |= pruned
     counts, unrelocatable, indirect = objectify.internal_relocations(
         blob, layout, refs["calls"], owned, retarget)
+    # Before the word pass, because a word the startup reads a run bound out of
+    # is a bound and not a pointer to whatever happens to be at that address:
+    # the copy's source word names the whole initialiser image, and binding it
+    # to the first item's section would relocate it to that item's RAM address.
+    ram_counts = ram_relocations(blob, layout, ramlayout, words, owned)
     word_counts = objectify.word_relocations(blob, layout, words, owned, retarget)
     global_counts = objectify.global_relocations(blob, layout, words, owned,
                                                  replacements.globals)
@@ -1189,7 +1351,11 @@ def main():
     # blob's own copy of a library body the library's own name and a global one
     # would swallow the link meant for the source build.
     delegated = [s for s in sections if s.kind == "data"] if args.data_source else []
-    in_blob = [s for s in sections if s.kind != "data"] if args.data_source else sections
+    in_blob = [s for s in sections if s.kind != "data"] if args.data_source else list(sections)
+    # A `.bss` section has no bytes, so there is nothing for datagen to write
+    # and nothing a source file could say about it that the size does not: it
+    # stays in the blob object under every configuration.
+    in_blob += ramlayout.bss
     for i, s in enumerate(in_blob):
         s.index = i
     delegated_set = set(id(s) for s in delegated)
@@ -1198,6 +1364,7 @@ def main():
         """Every name the object gives this section, as (offset, name, is_func)."""
         rows = [(0, s.sym, s.kind == "code"), (0, address_alias(s.start),
                                                s.kind == "code")]
+        rows += [(0, alias, False) for alias in s.aliases]
         for addr in s.functions:
             rows.append((addr - s.start, address_alias(addr), True))
         for (addr, is_func), label in sorted(s.labels.items()):
@@ -1236,6 +1403,8 @@ def main():
         styp = STT_FUNC if s.kind == "code" else STT_OBJECT
         symbols.add(address_alias(s.start), 1 if styp == STT_FUNC else 0,
                     s.index + 1, STB_LOCAL, styp)
+        for alias in s.aliases:
+            symbols.add(alias, 0, s.index + 1, STB_LOCAL, STT_OBJECT)
         for addr in s.functions:
             symbols.add(address_alias(addr), (addr - s.start) | 1, s.index + 1,
                         STB_LOCAL, STT_FUNC)
@@ -1439,7 +1608,7 @@ def main():
     if args.gc:
         objectify.placement(sections, moves, args.place, obj,
                             keep=dict((s.start, why) for s, why in keep),
-                            drop=dead, hole=hole, spill=args.spill)
+                            drop=dead, hole=hole, spill=args.spill, ram=ramlayout)
         reasons = collections.Counter(why.split(" 0x")[0].split("/")[0]
                                       for _, why in keep)
         print("  --gc keeps %d sections (%d bytes) the linker cannot see: %s"
@@ -1450,7 +1619,7 @@ def main():
                                     args.place, obj)
     else:
         objectify.placement(sections, moves, args.place, obj, drop=dead,
-                            hole=hole, spill=args.spill)
+                            hole=hole, spill=args.spill, ram=ramlayout)
     with open(os.path.splitext(args.place)[0] + "-moves.json", "w") as fh:
         json.dump([{"section": s.sym, "old": s.start, "end": s.end,
                     "new": moves[s.sym]} for s in sections if s.sym in moves], fh)
@@ -1477,9 +1646,19 @@ def main():
           " %d cross-section transfers through a register or a word"
           % (counts[R_ARM_THM_CALL], counts[R_ARM_THM_JUMP24],
              counts[R_ARM_THM_JUMP19], indirect))
-    print("  words: %d R_ARM_ABS32 (%d into code, %d RAM pointers left as"
-          " constants because RAM does not move yet)"
-          % (word_counts["pointer"], word_counts["into_code"], word_counts["ram"]))
+    print("  words: %d R_ARM_ABS32 (%d into code, %d into RAM, %d RAM addresses"
+          " no item holds and that stay constants)"
+          % (word_counts["pointer"] + ram_counts["pointer"],
+             word_counts["into_code"], ram_counts["pointer"],
+             ram_counts["fixed"]))
+    print("  ram: %d items (%d .data in %d bytes, %d .bss in %d bytes) over"
+          " 0x%08x..0x%08x"
+          % (len(ram.items),
+             sum(1 for i in ram.items if i.kind == "data"),
+             sum(i.size for i in ram.items if i.kind == "data"),
+             sum(1 for i in ram.items if i.kind == "bss"),
+             sum(i.size for i in ram.items if i.kind == "bss"),
+             ram.start, ram.end))
     if replacements.globals:
         print("  globals: %s"
               % ", ".join("%s (0x%x) relocated in %d words" % (g["as"], g["at"],

@@ -22,6 +22,11 @@ MEMORY
      * the highest static a 600 s run wrote and ends 0x6000 below the deepest
      * the main stack reached in the same run. */
     LRAM  (rw)  : ORIGIN = 0x2002b000, LENGTH = 0x0000e000
+    /* The app's own static RAM, as abi/ramparts.py reads it off the startup:
+     * the `.data` image the copy loop moves and the two runs it zeroes. It
+     * ends where the heap begins and LIBRARY_RAM starts above that, so the two
+     * regions cannot overlap. */
+    RAM   (rw)  : ORIGIN = 0x20006000, LENGTH = 0x00021244
 }
 
 ENTRY(Reset_Handler)
@@ -50,6 +55,17 @@ SECTIONS
         *appl-data.o(.text.* .rodata.*)
         . = ALIGN(4);
     } > LIB
+
+    /* The same catch for the app's RAM sections. The placement fragment above
+     * names every one of them, so this is empty in every configuration; a
+     * section that reaches it would otherwise be swept into the library's own
+     * `.bss`/`.data` below and silently given the library's RAM. */
+    .blobdeadram (NOLOAD) : ALIGN(4)
+    {
+        *appl-blob.o(.bss.*)
+        *appl-data.o(.data.*)
+        . = ALIGN(4);
+    } > LRAM
 
     .libtext : ALIGN(4)
     {

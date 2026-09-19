@@ -34,7 +34,13 @@ python3 blobify.py -o "$OUT/appl-blob.o" ${REPLACE_ARGS:-} ${RESERVE_ARGS:-} ${D
 if [ -n "${DATA:-}" ]; then ./datagen.sh; fi
 "$GCC-ld" -L ../out -T identity.ld --emit-relocs -e 0 \
     -o "$OUT/identity.elf" "$OUT/appl-blob.o" $DATA_OBJ "$OUT/stock-defs.o"
-"$GCC-objcopy" -O binary --only-section=.blob "$OUT/identity.elf" "$OUT/identity.bin"
+# The three output sections the image is made of, in load order: the flash
+# below the .data initialiser image, the image itself (whose VMA is RAM and
+# whose LMA is where the copy loop reads it), and the flash above it. objcopy
+# lays a binary out by load address, so naming all three reproduces the app
+# slice exactly; the .bss sections are NOLOAD and contribute nothing.
+"$GCC-objcopy" -O binary --only-section=.blob --only-section=.appdata \
+    --only-section=.blobtail "$OUT/identity.elf" "$OUT/identity.bin"
 
 python3 - "$OUT/identity.bin" ../flash.bin "$OUT/identity.elf" "$OUT/appl-blob.o" $DATA_OBJ <<'PY'
 import struct
@@ -69,17 +75,53 @@ def relocations(path, kind):
     return sites
 
 
+def symbols(path):
+    """The ELF's symbol table as name -> value."""
+    data = open(path, "rb").read()
+    shoff, = struct.unpack_from("<I", data, 0x20)
+    entsize, num = struct.unpack_from("<HH", data, 0x2E)
+    heads = [struct.unpack_from("<10I", data, shoff + i * entsize)
+             for i in range(num)]
+    out = {}
+    for h in heads:
+        if h[1] != 2:               # SHT_SYMTAB
+            continue
+        names = heads[h[6]]
+        for at in range(h[4], h[4] + h[5], h[9]):
+            n, value = struct.unpack_from("<II", data, at)
+            end = data.index(b"\0", names[4] + n)
+            out[data[names[4] + n:end].decode()] = value
+    return out
+
+
+# The initialiser image has two addresses: a relocation inside it is recorded at
+# the RAM address the run has at run time, and the byte it wrote is at the flash
+# address the linker loaded it from. Every other relocation is in flash already.
+sym = symbols(sys.argv[3])
+DATA_VMA, DATA_END = sym["__data_start__"], sym["__data_end__"]
+DATA_LMA = sym["__data_load__"]
+
+
+def in_image(a):
+    """`a` as an offset into the app image, or None if it is not in it."""
+    if 0x27000 <= a < 0xf117c:
+        return a - 0x27000
+    if DATA_VMA <= a < DATA_END:
+        return DATA_LMA + (a - DATA_VMA) - 0x27000
+    return None
+
+
 # The bytes agreeing is not by itself proof that the words the object declares
 # as relocations are the words the linker wrote: a relocation the linker dropped
 # would leave the blanked word behind, and a word blobify never blanked would
 # agree for the wrong reason. --emit-relocs hands back what was really applied.
-emitted = [a for a in relocations(sys.argv[3], "linked") if 0x27000 <= a < 0xf117c]
+emitted = [a for a in relocations(sys.argv[3], "linked") if in_image(a) is not None]
 declared = [a for path in sys.argv[4:] for a in relocations(path, "object")]
 if len(emitted) != len(declared):
     sys.exit("the objects declare %d absolute relocations, the link emitted %d"
              % (len(declared), len(emitted)))
 bad = [a for a in emitted
-       if linked[a - 0x27000:a - 0x27000 + 4] != stock[a - 0x27000:a - 0x27000 + 4]]
+       if linked[in_image(a):in_image(a) + 4] != stock[in_image(a):in_image(a) + 4]]
 if bad:
     sys.exit("%d absolute relocations did not resolve to the original word"
              % len(bad))

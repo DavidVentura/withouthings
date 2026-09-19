@@ -14,6 +14,12 @@ MEMORY
 {
     APP   (rx)  : ORIGIN = 0x00027000, LENGTH = 0x000ca17c
     LIB   (rx)  : ORIGIN = 0x000f1180, LENGTH = 0x0000ae80
+    /* The app's static RAM, as the startup establishes it: the two runs the
+     * Reset_Handler zeroes with the `.data` image it copies between them.
+     * Below it is RAM nothing in the image bounds -- the SoftDevice's and the
+     * retained block -- and above it the heap and the main stack, none of
+     * which the partition owns. */
+    RAM   (rw)  : ORIGIN = 0x20006000, LENGTH = 0x00021244
 }
 
 SECTIONS

@@ -56,6 +56,19 @@ class Section(object):
     def __init__(self, start, end, kind, sym):
         self.start, self.end, self.kind, self.sym = start, end, kind, sym
         self.name = ("%s.%s" % (".text" if kind == "code" else ".rodata", sym))
+        # Every other name the object gives the section's first byte: the
+        # address alias of a RAM item is its RAM address, while the section's
+        # own `start` is where its initialiser sits in flash.
+        self.aliases = []
+        # Where the section's bytes live at run time, when that is not where
+        # they are in the image. A `.data` item is the only thing with two
+        # addresses: `start` is its initialiser in flash, which is where its
+        # words are and where the link loads it from, and `vma` is the RAM the
+        # startup copies it to, which is what a pointer to it holds.
+        self.vma = None
+        # A `.bss` item has no bytes at all: the section reserves RAM and the
+        # startup's zero fill is what puts the zeroes there.
+        self.nobits = False
         self.relocs = []            # (offset, symbol, type)
         self.labels = {}            # (address, is_function) -> symbol, interior targets
         self.functions = []         # the entry points the section holds
@@ -879,8 +892,16 @@ def reclaim_placement(sections, pinned, path, obj):
 
 
 def placement(sections, moves, path, obj, keep=None, drop=(), hole=None,
-              spill=()):
+              spill=(), ram=None):
     """The SECTIONS fragment that places every section.
+
+    `ram` is the RAM partition. Its `.data` items are sections of the image
+    with two addresses, so the flash placement is cut in two around their load
+    image and `.appdata` sits between the halves: the location counter of the
+    output section runs in RAM while `AT()` puts the bytes back in flash where
+    the image has them, which is the same arrangement the original linker
+    script made and the reason the byte-identical link still holds. The `.bss`
+    runs are NOLOAD and take no flash at all.
 
     `keep` is the gc link: a section named in it is KEEPed, every other one is
     named without KEEP so `--gc-sections` may drop it. The addresses stay the
@@ -929,28 +950,69 @@ def placement(sections, moves, path, obj, keep=None, drop=(), hole=None,
                  " sections goes%s. */\n"
                  % ("" if keep is None else ", and which of them --gc-sections"
                     " may not drop"))
-        fh.write(".blob 0x%08x :\n{\n" % APP_BASE)
         # The flash the packing freed, handed to the library: the archive whose
         # replacements made the hole is the archive linked into it. The `. =`
         # that follows is the bound -- the location counter moves backwards and
         # the link fails if the spill does not fit. Nothing is placed inside the
         # hole, so it goes after the last section below it.
-        def spill_block():
+        def spill_block(base):
             fh.write("  /* 0x%08x..0x%08x: %d bytes the packing freed */\n"
                      % (hole[0], hole[1], hole[1] - hole[0]))
-            fh.write("  . = 0x%06x;\n" % (hole[0] - APP_BASE))
+            fh.write("  . = 0x%06x;\n" % (hole[0] - base))
             for pattern in spill:
                 fh.write("  %s(.text .text.* .rodata .rodata.*)\n" % pattern)
-            fh.write("  . = 0x%06x;\n" % (hole[1] - APP_BASE))
-        spilled = hole is None
-        for at, s in image:
-            if not spilled and at >= hole[1]:
-                spill_block()
-                spilled = True
-            fh.write(line(at, APP_BASE, s))
-        if not spilled:
-            spill_block()
-        fh.write("  . = 0x%06x;\n} > APP\n" % (APP_END - APP_BASE))
+            fh.write("  . = 0x%06x;\n" % (hole[1] - base))
+
+        state = {"spilled": hole is None}
+
+        def flash_block(name, base, end, rows, region="APP"):
+            fh.write("%s 0x%08x :\n{\n" % (name, base))
+            for at, s in rows:
+                if not state["spilled"] and at >= hole[1]:
+                    spill_block(base)
+                    state["spilled"] = True
+                fh.write(line(at, base, s))
+            if not state["spilled"] and end >= hole[1]:
+                spill_block(base)
+                state["spilled"] = True
+            fh.write("  . = 0x%06x;\n} > %s\n" % (end - base, region))
+
+        if ram is None:
+            flash_block(".blob", APP_BASE, APP_END, image)
+        else:
+            run = next(r for r in ram.runs if r.kind == "data")
+            lo, hi = run.load, run.load + (run.end - run.start)
+            flash_block(".blob", APP_BASE, lo,
+                        [(a, s) for a, s in image if a < lo])
+            # The RAM runs in address order, so the location counter only ever
+            # moves forward. The initialiser image is placed in RAM and loaded
+            # from flash: one `. =` per item and one `AT()` for the run, which
+            # is the arrangement under which the single copy the startup makes
+            # is the copy the linker described. Both ends of every run are
+            # linker-defined, because the startup reads them out of words that
+            # are now relocations against these names.
+            for zero in ram.runs:
+                held = sorted((s for s in ram.sections
+                               if zero.start <= s.vma < zero.end),
+                              key=lambda s: s.vma)
+                if zero.kind == "data":
+                    fh.write(".appdata 0x%08x : AT(0x%08x)\n{\n"
+                             % (zero.start, lo))
+                else:
+                    fh.write(".app%s 0x%08x (NOLOAD) :\n{\n"
+                             % (zero.name, zero.start))
+                fh.write("  __%s_start__ = .;\n" % zero.name)
+                for s in held:
+                    fh.write("  . = 0x%06x; KEEP(%s(%s))   /* 0x%08x%s */\n"
+                             % (s.vma - zero.start, s.object or obj, s.name,
+                                s.vma, "" if s.nobits
+                                else " from 0x%08x" % s.start))
+                fh.write("  . = 0x%06x;\n  __%s_end__ = .;\n} > RAM\n"
+                         % (zero.end - zero.start, zero.name))
+                if zero.kind == "data":
+                    fh.write("__data_load__ = LOADADDR(.appdata);\n")
+            flash_block(".blobtail", hi, APP_END,
+                        [(a, s) for a, s in image if a >= hi])
         if not spare:
             return
         fh.write(".blobmoved 0x%08x :\n{\n" % spare[0][0])
