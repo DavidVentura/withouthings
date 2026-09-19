@@ -1533,6 +1533,15 @@ def main():
     # but which some other rule already claimed. Both are the flash side's
     # review list, read in RAM.
     ram_keep = {}
+    # An item whose start is not an established boundary is not an object: it
+    # is a field or a row of the object above it, and only that object's head
+    # is ever the target of a word. Dropping it is how a live table loses
+    # every row but its first -- the WFTL block table comes back with a "last
+    # block" for every type at once -- so it lives and dies with its unit.
+    for item in ram.items:
+        if item.start not in ram.established:
+            ram_keep[item.start] = "inside the object whose head is at a" \
+                " lower address, which is what the code walks from"
     for row in ram_unrelocated:
         ram_keep.setdefault(ram.at(row["value"]).start,
                             "named by the unrelocated word 0x%x" % row["addr"])
