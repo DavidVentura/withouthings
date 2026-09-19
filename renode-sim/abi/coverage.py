@@ -90,6 +90,15 @@ def main():
           % (len(types.structs), len(smap.of_kind("table")),
              len(smap.of_kind("global")), len(types.enums)))
 
+    # Static RAM is where the names still run out, so it is counted on its
+    # own: a word with a name and, of those, the bytes an extent or a
+    # declaration establishes, which is what bounds a RAM item.
+    ram = [x for x in smap.of_kind("global", "table")
+           if 0x20000000 <= x.address < 0x20040000]
+    print("ram: %d named entries, %d of them with an established extent,"
+          " %d bytes" % (len(ram), sum(1 for x in ram if x.size),
+                         sum(x.size or 0 for x in ram)))
+
     per_module(items, named)
     worklist(items, named)
 
