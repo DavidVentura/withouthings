@@ -246,24 +246,15 @@ sysbus:
         Tag <0x100000a4, 0x100000a7> "DEVICEADDR[0]" 0xAABBCCDD
         Tag <0x10001200, 0x10001203> "PSELRESET"
 
+// The RAM the pipe reads and writes -- the buffer the application hands
+// sd_ble_evt_get, its WPP service context, the pairing record and the ANCS UUID
+// table -- belongs to the image rather than to the platform, the way the hook
+// sites do: the run script passes all four to AttachRam from abi/rig.py's
+// generated values, so a --ram-layout run is followed.
 wppPipe: Miscellaneous.WppPipe @ sysbus
     port: 7788
-    // The two RAM addresses the pipe reads: the buffer the application hands
-    // sd_ble_evt_get and its WPP service context. These are the stock layout's,
-    // so unlike the three hook sites -- which the run script passes to Attach
-    // from abi/rig.py's generated values -- the pipe does not follow a
-    // --ram-layout run and must not be used with one until they come from the
-    // rig as well.
-    evtBuffer: 0x20017ce0
-    wppServiceContext: 0x20017f28
     sdEventIrq: 22
-    // The ANCS channel's own listener, and the two more RAM addresses that side
-    // reads: the pairing module's live peer record, which the ANCS module's
-    // bonded-peer guard reads, and the four ble_uuid_t the module registers the
-    // Withings notification service under, whose type byte is whatever
-    // sd_ble_uuid_vs_add handed out at run time.
+    // The ANCS channel's own listener, where the pipe is the GATT server.
     ancsPort: 7789
-    pairingRecord: 0x200076fa
-    ancsUuidTable: 0x20024d5e
     preinit:
         include @models/WppPipe.cs

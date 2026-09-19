@@ -12,6 +12,7 @@ runMacro $fastStartup
 
 logLevel -1 sysbus.wppPipe
 emulation SetAdvanceImmediately true
+sysbus.wppPipe AttachRam $ram_evt_buffer $ram_wpp_service_context $ram_pairing_record $ram_ancs_uuid_table
 sysbus.wppPipe Attach $hook_ble_evt_present $hook_ble_evt_poll $hook_hvx_thunk
 sysbus.wppPipe AttachAncs $hook_gattc_prim_srvc_disc_thunk $hook_gattc_char_disc_thunk $hook_gattc_desc_disc_thunk $hook_gattc_write_thunk
 start

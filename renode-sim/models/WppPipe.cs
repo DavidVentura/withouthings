@@ -62,19 +62,40 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 {
     public class WppPipe : IPeripheral, IDisposable
     {
-        public WppPipe(IMachine machine, int port, ulong evtBuffer, ulong wppServiceContext,
-                       int sdEventIrq, int ancsPort, ulong pairingRecord, ulong ancsUuidTable)
+        public WppPipe(IMachine machine, int port, int sdEventIrq, int ancsPort)
         {
             this.machine = machine;
             this.port = port;
-            this.evtBuffer = evtBuffer;
-            this.wppServiceContext = wppServiceContext;
             this.sdEventIrq = sdEventIrq;
             this.ancsPort = ancsPort;
-            this.pairingRecord = pairingRecord;
-            this.ancsUuidTable = ancsUuidTable;
             inbound = new ConcurrentQueue<byte[]>();
             pending = new Dictionary<ushort, List<byte>>();
+        }
+
+        // The four RAM addresses the pipe reads and writes are the app's own
+        // statics, so a --ram-layout link moves them the way it moves the hook
+        // sites' code: they come from abi/rig.py too, and the platform
+        // description cannot hold them. The update run calls this again for the
+        // image the bootloader installed.
+        public void AttachRam(ulong evtBuffer, ulong wppServiceContext,
+                              ulong pairingRecord, ulong ancsUuidTable)
+        {
+            this.evtBuffer = evtBuffer;
+            this.wppServiceContext = wppServiceContext;
+            this.pairingRecord = pairingRecord;
+            this.ancsUuidTable = ancsUuidTable;
+            ramAttached = true;
+        }
+
+        // A run that attaches a hook before it has said where the RAM the hook
+        // reads is would read and write the stock layout's addresses in an
+        // image that may not have them.
+        private void RequireRam()
+        {
+            if(!ramAttached)
+            {
+                throw new RecoverableException("AttachRam must be called before the pipe is attached");
+            }
         }
 
         // The three hook sites are addresses in the application image, so they
@@ -86,6 +107,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         // application with one whose text is laid out differently.
         public void Attach(ulong evtPresentHook, ulong evtPollHook, ulong hvxThunk)
         {
+            RequireRam();
             if(cpu == null)
             {
                 cpu = machine.SystemBus.GetCPUs().OfType<ICPUWithHooks>().Single();
@@ -118,6 +140,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         public void AttachAncs(ulong primaryServiceDiscoverThunk, ulong characteristicsDiscoverThunk,
                                ulong descriptorsDiscoverThunk, ulong writeThunk)
         {
+            RequireRam();
             if(ancsListener == null)
             {
                 ancsListener = new TcpListener(IPAddress.Loopback, ancsPort);
@@ -853,14 +876,16 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private Thread ancsWorker;
         private volatile bool running = true;
 
+        private ulong evtBuffer;
+        private ulong wppServiceContext;
+        private ulong pairingRecord;
+        private ulong ancsUuidTable;
+        private bool ramAttached;
+
         private readonly IMachine machine;
         private readonly int port;
-        private readonly ulong evtBuffer;
-        private readonly ulong wppServiceContext;
         private readonly int sdEventIrq;
         private readonly int ancsPort;
-        private readonly ulong pairingRecord;
-        private readonly ulong ancsUuidTable;
         private readonly ConcurrentQueue<byte[]> inbound;
         private readonly Dictionary<ushort, List<byte>> pending;
         private readonly bool[] subscribed = new bool[2];

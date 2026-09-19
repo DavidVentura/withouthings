@@ -162,6 +162,32 @@ def resolve_variable(entry, symbols):
     return address, how
 
 
+def resolve_ram(entry, symbols, linked):
+    """Where one sim.yaml RAM item is in the run about to start.
+
+    The address the entry carries is the one the item has in the stock image,
+    which a run with no ELF is; a link answers through abi/blobify.py's alias
+    for that address, which is where the placement put the item's section.
+    """
+    address = int(str(entry["address"]), 0)
+    if not 0x20000000 <= address < 0x20040000:
+        sys.exit("%s names 0x%x, which is not SRAM" % (entry["name"], address))
+    if linked:
+        alias = blobify.address_alias(address)
+        placed = symbols.get(alias, set())
+        if len(placed) != 1:
+            sys.exit("%s names 0x%x, which the symbol table defines %s as %s"
+                     % (entry["name"], address,
+                        "not at all" if not placed else
+                        "at " + ", ".join("0x%x" % v for v in sorted(placed)),
+                        alias))
+        address = next(iter(placed))
+    if not 0x20000000 <= address < 0x20040000:
+        sys.exit("%s resolves to 0x%x, which is not SRAM"
+                 % (entry["name"], address))
+    return address
+
+
 def commented(why, indent):
     return "".join("%s# %s\n" % (indent, line) for line in
                    textwrap.wrap(" ".join(str(why).split()), 78 - len(indent)))
@@ -211,6 +237,11 @@ def main():
         fh.write(head)
         for entry in spec["hooks"]:
             address = resolve(entry, symbols, names, image, meta)
+            resolved += 1
+            fh.write("\n" + commented(entry["why"], ""))
+            fh.write("$%s=0x%x\n" % (entry["name"], address))
+        for entry in spec["ram"]:
+            address = resolve_ram(entry, symbols, args.symbols != "partition")
             resolved += 1
             fh.write("\n" + commented(entry["why"], ""))
             fh.write("$%s=0x%x\n" % (entry["name"], address))

@@ -237,3 +237,36 @@ variables:
       xTaskIncrementTick loads at 0x731b4; in a relink against the source
       kernel it is wherever the link put the kernel's own, so a number read
       off the stock image reports whatever RAM happens to be at it.
+
+# RAM item starts the run hands to a peripheral, rather than code it patches or
+# hooks. Nothing is written at them here and there is nothing to byte-check,
+# since RAM holds nothing before the run; what stands in for the byte check is
+# that the address is an item the RAM partition cut, so abi/blobify.py gives it
+# an `a_<address>` alias and a `--ram-layout` run answers with where the item
+# went. A run with no ELF is the stock image, whose layout these addresses were
+# read off. Each becomes a `$name` monitor variable in out/rig/hooks.resc.
+ram:
+  - name: ram_evt_buffer
+    address: 0x20017ce0
+    why: >
+      The ble_evt_t buffer the application hands sd_ble_evt_get, which the WPP
+      pipe writes a synthesised event into.
+
+  - name: ram_wpp_service_context
+    address: 0x20017f28
+    why: >
+      The WPP service context, which the pipe reads the notification
+      characteristic's handle out of.
+
+  - name: ram_pairing_record
+    address: 0x200076fa
+    why: >
+      The pairing module's live peer record. Connecting the ANCS socket marks
+      the link bonded in it, which the ANCS module's bonded-peer guard reads.
+
+  - name: ram_ancs_uuid_table
+    address: 0x20024d5e
+    why: >
+      The four ble_uuid_t the notification module registers its service under,
+      whose vendor type byte is whatever sd_ble_uuid_vs_add handed out at run
+      time.
