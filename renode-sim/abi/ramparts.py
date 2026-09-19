@@ -314,8 +314,16 @@ def load(export=None, image=None, symbols_map=None, types=None):
     names, sizes = {}, {}
     if symbols_map is not None:
         for addr, sym in symbols_map.by_address.items():
-            if lo <= addr < hi:
-                names.setdefault(addr, sym.name)
+            if not lo <= addr < hi:
+                continue
+            names.setdefault(addr, sym.name)
+            # abi/globals.py measures a RAM global's width off the accesses --
+            # a settings cache word's load width, a struct's field offsets, a
+            # table's stride and row count -- so the map carries the one thing
+            # the startup cannot say: where an object stops. That is a bound in
+            # the same sense a declared table's is.
+            if sym.row.get("size"):
+                sizes.setdefault(addr, sym.row["size"])
     if types is not None and symbols_map is not None:
         for table in types.typed_regions(symbols_map):
             if lo <= table.address < hi and table.end > table.address:
@@ -324,11 +332,13 @@ def load(export=None, image=None, symbols_map=None, types=None):
     points = set()
     for word in words:
         if lo <= word["value"] < hi:
+            # Rounded down to the word, because a `.data` item's initialiser
+            # carries relocations and a cut inside one of their four bytes
+            # would split a slot. An address the map names is taken exactly:
+            # a byte global at an odd address is that byte and not the word
+            # around it.
             points.add(word["value"] & ~3)
-    points |= set(a for a in names if a % 4 == 0)
-    # A fill inside the region names both ends of one object: the only evidence
-    # in the image that a zeroed item stops before the next address something
-    # takes.
+    points |= set(names)
     # An inner fill zeroes one object, so both its ends are established: the
     # length is in the instruction stream, not inferred from what comes next.
     established = set()
