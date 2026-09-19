@@ -4902,6 +4902,19 @@ symbols:
     channel configuration's two upper fields into it, then calls sensors_sync_ring_push
     with r0 = 1 (0x523f6). The 0x40-byte buffer and the channel-indexed slot are
     the PPG stream's size and layout.
+- address: 0x52498
+  name: max8617x_swdog_feed
+  kind: function
+  class: trace
+  module: MAX8617X
+  evidence: 'eighteen bytes that log the format at 0xd9b4d, ''[max8617x] [%d] %d'',
+    through wlog_fmt_r0d and then tail call swdog_feed (0x5df94) with the constant
+    6. Six is the software watchdog the front end takes out for itself: the console
+    prints ''[SWDOG] enable swdog #6, timeo=10000ms'' on every `max8617x start`
+    and ''[SWDOG] disable swdog #6'' on every stop, so the body is the sample path
+    saying the front end is still delivering. 7384 calls in the run that started
+    the front end in each of its thirteen measurement modes, against 57806 of ppg_sample_channel_slot
+    in the same run, and none in any of the other five'
 - address: 0x52580
   name: max86173_kill_max86173_interrupt_task
   kind: function
@@ -5646,6 +5659,20 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x273b8: command ''shell'', --help slot (+8)'
+- address: 0x59be4
+  name: shell_uart_rx_byte
+  kind: function
+  class: trace
+  module: shell
+  evidence: 'the byte the UART0 interrupt handler at 0x3b3ec read out of RXD, pushed
+    into the console''s character queue: it loads the shell context from 0x2001f8e4,
+    takes the queue handle at +0xb8 and calls xQueueGenericSendFromISR (0x9e7ac)
+    with a pointer to the byte and a woken flag, then sets PENDSVSET in SCB->ICSR
+    when the send woke the reader. Its address is written into the driver''s callback
+    slot 0x2001828c by 0x59cc4, which is why no static caller reaches it. 655 calls
+    in the run that typed 655 characters at the console and 107 in the one that
+    typed 107 before a command took the console back, and none in the four that
+    leave P0.08 low. One call per character received is the whole rate'
 - address: 0x59c24
   name: shell_cmd_shell
   kind: function
@@ -17725,6 +17752,44 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x52b1c (max_led_config_task) calls 0xa7496; 12 bytes
+- address: 0xa7540
+  name: nn_activation_identity
+  kind: function
+  class: trace
+  module: body_temp
+  evidence: 'two bytes, `bx lr`. On its own that names nothing; what names it is
+    where the two bytes sit: the word at 0xf0c90 holds 0xa7541 between the words
+    holding nn_activation_elu and nn_activation_logistic, and what follows them
+    at 0xf0c98 is a chain of {weights, in, out} triples -- 0xbcab8 with 1 and 1,
+    0xbcabc with 8 and 2, then 1 and 8. A row of an activation table that does nothing
+    to its vector is the linear activation, and a layer declared with one is a layer
+    with no non-linearity. 188 calls in the body-temperature run, one for each of
+    nn_activation_elu, and none in any of the other five'
+- address: 0xa7542
+  name: nn_activation_logistic
+  kind: function
+  class: trace
+  module: body_temp
+  evidence: 'for each of the n floats its pointer argument walks it writes 1 / (expf(-x)
+    + 1): vldr the element, vneg, expf (0x8c9dc), add the 1.0 held in s16 since
+    the prologue and vdiv that 1.0 by the sum (0xa755c..0xa7570). That is the logistic
+    function over a vector and nothing else is. Its address is the third of three
+    consecutive words at 0xf0c8c, beside 0xa7577 and 0xa7541, and nothing in the
+    image references that trio: an activation table a model descriptor indexes,
+    which is why no static caller reaches any of the three. 376 calls in the body-temperature
+    run, two for each of the 188 of the two bodies beside it, and none in any of
+    the other five'
+- address: 0xa7576
+  name: nn_activation_elu
+  kind: function
+  class: trace
+  module: body_temp
+  evidence: 'the same vector walk with a different rule: an element already above
+    zero is left alone and every other one is replaced by expm1f of itself (the
+    vcmpe against zero at 0xa7588 and the call to 0x8cacc). x for x > 0 and exp(x)
+    - 1 otherwise is the exponential linear unit at alpha one. It is the first of
+    the three words at 0xf0c8c. 188 calls in the body-temperature run and none in
+    any of the other five'
 - address: 0xa7c6e
   name: sqrt
   kind: function
