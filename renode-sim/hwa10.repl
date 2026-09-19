@@ -249,9 +249,11 @@ sysbus:
 wppPipe: Miscellaneous.WppPipe @ sysbus
     port: 7788
     // The two RAM addresses the pipe reads: the buffer the application hands
-    // sd_ble_evt_get and its WPP service context. RAM is not relaid out, so
-    // unlike the three hook sites -- which the run script passes to Attach from
-    // abi/rig.py's generated values -- these are the same for every layout.
+    // sd_ble_evt_get and its WPP service context. These are the stock layout's,
+    // so unlike the three hook sites -- which the run script passes to Attach
+    // from abi/rig.py's generated values -- the pipe does not follow a
+    // --ram-layout run and must not be used with one until they come from the
+    // rig as well.
     evtBuffer: 0x20017ce0
     wppServiceContext: 0x20017f28
     sdEventIrq: 22
