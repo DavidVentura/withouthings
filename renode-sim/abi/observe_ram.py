@@ -20,9 +20,11 @@ the create and then only ever by that task, and an algorithm's context is
 written first by its init.
 
 The observation is one write watchpoint per item on its first byte, one per
-access width, and it records the first write only -- an item written in a loop would otherwise
-cost an IronPython call per iteration, which is what abi/observe_words.py
-measured the display run at ten minutes for. The running task comes from
+access width, and it records the first few distinct writers only -- an item
+written in a loop would otherwise cost an IronPython call per iteration, which
+is what abi/observe_words.py measured the display run at ten minutes for. A
+write before the scheduler starts is not recorded at all, because the startup's
+own zero fill and .data copy write every item in the region and say nothing. The running task comes from
 pxCurrentTCB, which PendSV_Handler's own pool word establishes, and its name
 string from the TCB's pcTaskName.
 

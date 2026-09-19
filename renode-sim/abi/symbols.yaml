@@ -743,6 +743,12 @@ symbols:
   module: null
   evidence: the name string 'CONTRAST' and the entry pointer 0x303a1 that xTaskCreateStatic
     at 0x305ba was given
+- address: 0x304d8
+  name: contrast_state_set
+  kind: function
+  class: provenance
+  evidence: 0x304d8 reaches contrast_state through its own literal pool and no other
+    named global; the body sets through it
 - address: 0x30588
   name: contrast_task_create
   kind: label
@@ -5379,10 +5385,17 @@ symbols:
   evidence: the only line 0x4bef8 logs, wlog('[FEATURE_TAGS] Nothings stored') at
     0x4bf12
 - address: 0x4bf28
+  name: feature_tags_struct_2001a26c_check
   kind: function
-  class: bymodule
-  module: FEATURE_TAGS
-  evidence: 0x4bf28 calls only feature_tags_nothings_stored
+  class: provenance
+  evidence: 0x4bf28 reaches feature_tags_struct_2001a26c through its own literal
+    pool and no other named global; the body checks through it
+- address: 0x4bf68
+  name: feature_tags_struct_2001a26c_copy
+  kind: function
+  class: provenance
+  evidence: 0x4bf68 reaches feature_tags_struct_2001a26c through its own literal
+    pool and no other named global; the body copys through it
 - address: 0x4bfcc
   name: shell_cmd_feature_tags
   kind: function
@@ -16468,6 +16481,11 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x5f5c8 (sensors_sync_push_accel__1) calls 0x921da; 4 bytes
+- address: 0x9225e
+  name: feature_tags_struct_2001a26c_copy__1
+  kind: function
+  class: helper
+  evidence: only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x9225e; 20 bytes
 - address: 0x92272
   name: dbg_mask_change_ie_debug_mask__1
   kind: function
@@ -16718,6 +16736,12 @@ symbols:
   class: bymodule
   module: BLUETOOTH
   evidence: '0x9314e every caller is a body this rule placed in BLUETOOTH: 0x395dc'
+- address: 0x931ca
+  name: feature_tags_struct_2001a26c_copy__2
+  kind: function
+  class: helper
+  evidence: only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x931ca; 126
+    bytes
 - address: 0x93248
   name: shell_cmd_probe__3
   kind: function
@@ -31196,6 +31220,22 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WPP] (1 read it,
     2 write it)
+- address: 0x2001a26c
+  name: feature_tags_struct_2001a26c
+  kind: global
+  class: global
+  module: FEATURE_TAGS
+  size: 6
+  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (2
+    read it, 0 write it)
+- address: 0x2001a30c
+  name: feature_tags_word_2001a30c
+  kind: global
+  class: global
+  module: FEATURE_TAGS
+  size: 4
+  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (1
+    read it, 0 write it)
 - address: 0x2001a3ac
   name: flash_cache
   kind: global
@@ -33413,6 +33453,15 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [VIB] (2 read it,
     2 write it)
+- address: 0x20020408
+  name: cycle_tracking_symptoms_state
+  kind: global
+  class: hand
+  module: wui
+  evidence: over twelve runs the only body that writes it is the symptoms menu's
+    on_exit at 0x9cabc, which clears 0x40 bytes and walks 0x24-byte rows through
+    it; no flash word takes its address and it is reached through the .data pointer
+    at 0x2000719c.
 - address: 0x20020838
   name: ppg_afib_store_mutex_static
   kind: global
@@ -35140,6 +35189,15 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [BATTERY] (1 read
     it, 2 write it)
+- address: 0x20024f40
+  name: contrast_state
+  kind: global
+  class: hand
+  module: contrast
+  evidence: the three flash words that hold it are all inside the contrast task's
+    own code (0x303b8, 0x304fc, 0x305a6) and nothing else takes it; over twelve
+    runs the only bodies that write it are that task's own and, once, the kernel's
+    copy on behalf of it.
 - address: 0x2002506e
   name: raw_data_mode_flag_2002506e
   kind: global
