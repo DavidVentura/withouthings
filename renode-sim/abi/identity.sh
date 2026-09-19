@@ -58,7 +58,11 @@ print("byte-identical: %d bytes at 0x27000..0xf117c" % len(stock))
 
 
 def relocations(path, kind):
-    """Every R_ARM_ABS32 site of an ELF32-LE file, from its REL sections."""
+    """Every word-sized relocation site of an ELF32-LE file, from its REL sections.
+
+    R_ARM_ABS32 is an address and R_ARM_REL32 a distance, and both replace a
+    word the image already held, so both are checked the same way.
+    """
     data = open(path, "rb").read()
     shoff, = struct.unpack_from("<I", data, 0x20)
     entsize, num = struct.unpack_from("<HH", data, 0x2E)
@@ -70,7 +74,7 @@ def relocations(path, kind):
             continue
         for at in range(off, off + size, ent):
             r_offset, r_info = struct.unpack_from("<II", data, at)
-            if r_info & 0xFF == 2:
+            if r_info & 0xFF in (2, 3):
                 sites.append(r_offset)
     return sites
 
@@ -118,14 +122,14 @@ def in_image(a):
 emitted = [a for a in relocations(sys.argv[3], "linked") if in_image(a) is not None]
 declared = [a for path in sys.argv[4:] for a in relocations(path, "object")]
 if len(emitted) != len(declared):
-    sys.exit("the objects declare %d absolute relocations, the link emitted %d"
+    sys.exit("the objects declare %d word relocations, the link emitted %d"
              % (len(declared), len(emitted)))
 bad = [a for a in emitted
        if linked[in_image(a):in_image(a) + 4] != stock[in_image(a):in_image(a) + 4]]
 if bad:
-    sys.exit("%d absolute relocations did not resolve to the original word"
+    sys.exit("%d word relocations did not resolve to the original word"
              % len(bad))
-print("%d absolute relocations resolve to the word they replaced" % len(emitted))
+print("%d word relocations resolve to the word they replaced" % len(emitted))
 PY
 
 # The reservation checked rather than assumed: LINK_ARCHIVES is the archives the

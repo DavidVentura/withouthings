@@ -29,8 +29,9 @@ One shape the plan did not list turns up in the flow: `ldr rN,[pc,#k]` followed
 by `add rN,pc`, 29 words in one compilation unit, where the word holds the
 distance from the adding instruction to its target rather than the target. Such
 a word is neither a pointer nor a number: it is stale as soon as either end
-moves alone, and since 28 of the 29 name RAM, which does not move, it pins the
-reading instruction. They are written out as `displacements` for blobify to pin.
+moves alone, and 28 of the 29 name RAM. They are written out as
+`displacements`, and blobify emits each RAM one as an R_ARM_REL32 so the
+linker recomputes it; the one naming flash is pinned at both ends instead.
 
 The use signal comes from abi/ghidra/word_uses.py, which follows every value a
 pc-relative load defines forward through the function's p-code and through the

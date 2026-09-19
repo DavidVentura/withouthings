@@ -44,8 +44,9 @@ import objectify
 import ramparts
 import shapes
 import symbols as symmap
-from objectify import (APP_BASE, APP_END, R_ARM_ABS32, R_ARM_THM_CALL,
-                       R_ARM_THM_JUMP24, R_ARM_THM_JUMP19, SELF_BL, SELF_B)
+from objectify import (APP_BASE, APP_END, R_ARM_ABS32, R_ARM_REL32,
+                       R_ARM_THM_CALL, R_ARM_THM_JUMP24, R_ARM_THM_JUMP19,
+                       SELF_BL, SELF_B)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIM = os.path.dirname(HERE)
@@ -403,6 +404,49 @@ def ram_relocations(blob, layout, ramlayout, words, skip):
         skip.add(row["addr"])
         counts["pointer"] += 1
     return counts, unrelocated
+
+
+def displacement_relocations(blob, layout, ramlayout, displacements, skip):
+    """Every `ldr rN,[pc]; add rN,pc` word naming a RAM item, as an R_ARM_REL32.
+
+    The word holds the distance from the adding instruction to its target, so
+    it is right only while both ends keep their distance. The reading
+    instruction is in flash and the target is a static, which used to be two
+    fixed points; with the RAM items placed by the linker the target moves on
+    its own and the distance is a stale address computed at run time, which no
+    scan of the image can see because the word never holds the address. The
+    greenteg CBTA unit is the one that has them, and under `--ram-layout
+    reverse` its context pointer still named where the object had been, which
+    was by then the heart-rate median window's buffer.
+
+    R_ARM_REL32 is `S + A - P`, where P is the word. The word's own distance to
+    the instruction is fixed -- the pc-relative pool travels in the reading
+    function's section -- so that distance is the addend and the linker
+    recomputes the rest wherever it puts the two ends.
+    """
+    relocated = set()
+    for d in displacements:
+        sym = ramlayout.label(d["target"])
+        if sym is None:
+            continue            # the one flash target, which --layout pins
+        section = layout.at(d["word"])
+        if section is None or d["word"] + 4 > section.end:
+            raise SystemExit("displacement word 0x%x is not inside one section"
+                             % d["word"])
+        if not section.start <= d["site"] < section.end:
+            raise SystemExit("displacement word 0x%x and the instruction at"
+                             " 0x%x that adds it are in different sections, so"
+                             " their distance is not the addend"
+                             % (d["word"], d["site"]))
+        if d["word"] in skip:
+            raise SystemExit("displacement word 0x%x is already relocated as an"
+                             " address; it holds a distance" % d["word"])
+        off = d["word"] - APP_BASE
+        blob[off:off + 4] = struct.pack("<i", d["word"] - d["site"] - 4)
+        section.relocs.append((d["word"] - section.start, sym, R_ARM_REL32))
+        skip.add(d["word"])
+        relocated.add(d["word"])
+    return relocated
 
 
 def boundary_relocations(blob, boundary, layout):
@@ -1328,6 +1372,9 @@ def main():
     slots = [w["addr"] for w in words if w["class"] == "pointer"]
     slots += [w["addr"] for w in words
               if w["signal"] == "ram" and ram.at(w["value"]) is not None]
+    # A displacement word becomes a relocation too, so it is a slot like any
+    # other and its four bytes may not be split between two sections.
+    slots += [d["word"] for d in classified["displacements"]]
     sections, shared, slivers, distant = objectify.build_sections(
         items, refs["calls"], reads, refs["fallthrough"], slots, strings,
         reserved, named)
@@ -1351,6 +1398,8 @@ def main():
                                                  replacements.globals)
     ram_counts, ram_unrelocated = ram_relocations(blob, layout, ramlayout,
                                                   words, owned)
+    displaced = displacement_relocations(blob, layout, ramlayout,
+                                         classified["displacements"], owned)
     word_counts = objectify.word_relocations(blob, layout, words, owned, retarget)
     if unrelocatable:
         for row in unrelocatable[:20]:
@@ -1577,7 +1626,13 @@ def main():
         pinned = pinned_addresses(facts, layout)
         anchors = dict((w["value"] & ~1, "review") for w in words
                        if w["class"] == "review")
+        # A displacement the linker now computes needs no anchor: the
+        # relocation is the statement that the two ends may move. What is left
+        # is the one whose target is in flash, where both ends have to keep
+        # their distance because nothing names the target.
         for d in classified["displacements"]:
+            if d["word"] in displaced:
+                continue
             anchors[d["site"]] = "displacement"
             anchors[d["target"]] = "displacement"
         # A run that is copied out in one go is one object to the code that
@@ -1713,6 +1768,9 @@ def main():
           % (word_counts["pointer"] + ram_counts["pointer"],
              word_counts["into_code"], ram_counts["pointer"],
              ram_counts["fixed"]))
+    print("  displacements: %d R_ARM_REL32 of %d, the rest naming flash and"
+          " pinned by --layout"
+          % (len(displaced), len(classified["displacements"])))
     print("  ram: %d items (%d .data in %d bytes, %d .bss in %d bytes) over"
           " 0x%08x..0x%08x"
           % (len(ram.items),
