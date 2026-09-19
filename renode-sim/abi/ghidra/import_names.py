@@ -16,6 +16,7 @@ once it is here.
 import argparse
 import datetime
 import glob
+import json
 import os
 import re
 import sys
@@ -27,12 +28,16 @@ sys.path.insert(0, ABI)
 import symbols  # noqa: E402
 
 GHIDRA_OWN = re.compile(r"^(FUN|LAB|DAT|block|caseD|thunk|sliver|switchD|SUB)_")
+# Names the analysis scripts themselves give (seed_symbols.py's vector and
+# SVC passes), not the map's and not a person's.
+ANALYSIS_OWN = re.compile(r"^(svc_\d+_wrapper|vector_\d+_handler|Reset_Handler)$")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", default=os.path.join(ROOT, "ghidra-project"))
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--seed", default=os.path.join(ABI, "out", "ghidra", "seed.json"))
     args = ap.parse_args()
     import pyghidra
     found = sorted(glob.glob(os.path.join(ROOT, "ghidra", "ghidra_*")))
@@ -43,6 +48,14 @@ def main():
     from java.lang import Object as JObject
     smap = symbols.load()
     by_addr = {sym.address & ~1: sym for sym in smap.symbols}
+    # What the seed itself named is not a GUI rename: the seed carries the
+    # SVC wrappers' own names and the prose aliases as labels, which Ghidra
+    # then shows as the function's name where the map carries another.
+    seed = json.load(open(args.seed))
+    seeded = {}
+    for key in ("functions", "labels"):
+        for e in seed.get(key, []):
+            seeded.setdefault(e["address"] & ~1, set()).add(e["name"])
     project = pyghidra.open_project(args.project, "hwa10", create=False)
     consumer = JObject()
     new, refused = [], []
@@ -53,10 +66,19 @@ def main():
             for fn in program.getFunctionManager().getFunctions(True):
                 name = str(fn.getName())
                 addr = int(fn.getEntryPoint().getOffset())
-                if GHIDRA_OWN.match(name):
+                # A thunk carries its target's name in Ghidra; the map names
+                # the thunk by its own address, so that is not a rename.
+                if GHIDRA_OWN.match(name) or fn.isThunk():
                     continue
                 cur = by_addr.get(addr)
                 if cur is not None and (cur.name == name or name in cur.aliases):
+                    continue
+                if name in seeded.get(addr, ()) or ANALYSIS_OWN.match(name):
+                    continue
+                elsewhere = smap.by_name.get(name)
+                if elsewhere is not None and (elsewhere.address & ~1) != addr:
+                    refused.append((addr, name, "%s at 0x%x" % (elsewhere.name, elsewhere.address & ~1),
+                                    "same name elsewhere"))
                     continue
                 if cur is not None and cur.klass != "hand":
                     refused.append((addr, name, cur.name, cur.klass))
