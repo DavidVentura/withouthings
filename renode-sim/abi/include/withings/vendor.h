@@ -58,7 +58,14 @@ int vendor_greenteg_cbta_sport_init(void);
 void vendor_greenteg_cbta_free_living_reset(void);
 void vendor_greenteg_cbta_sport_reset(void);
 
-/* The configuration in, the model's two inputs out. */
+/* The configuration in, the model's two inputs out. What 0x8bd04 computes:
+   the bin character is a sensitivity in microvolts per unit, (c - 'A' + 1)/10
+   for a letter of either case and (c - 0xa4)/10 + 0.05 for the half-step
+   range above 0xa4, so 'J' is 1.0; the heat flux is the raw bridge reading
+   over that sensitivity, over the integration factor, less the heat-flux
+   offset; and the skin temperature is the raw thermometer reading less the
+   skin-temperature offset. A non-positive integration factor makes the call
+   answer zero and convert nothing, which is the only thing it refuses. */
 void vendor_greenteg_cbta_sample_convert(const struct greenteg_cbta_config *cfg,
                                          float *out_heat_flux,
                                          float *out_skin_temperature,
@@ -67,18 +74,25 @@ void vendor_greenteg_cbta_sample_convert(const struct greenteg_cbta_config *cfg,
 void vendor_greenteg_cbta_config_apply(const struct greenteg_cbta_config *cfg);
 int vendor_greenteg_cbta_config_validate(const struct greenteg_cbta_config *cfg);
 
-/* One sample. The first two are the converted readings; the third is the
-   third float the shell sweeps independently of them, and the last three are
-   one value the shell passes three times, so what distinguishes them is not
-   established and they are declared as what the call passes. */
+/* One sample. The first two are the converted readings and the third is the
+   heart rate: 0x8c0cc runs a mean over each of s0, s1 and s2 and over nothing
+   else, and the minute-means then go through the three centres the network
+   normalises against -- 31.87/2.42, 84.89/42.60 and 75.85/21.51 -- which is
+   skin temperature in degrees, heat flux, and beats per minute. What the
+   firmware logs as the interface agrees: "Hourly stats: ... last{worn_ts=%u,
+   bpm=%u, skinT=%u, Hflux=%d, ...}" (0x42fb0).
+
+   The last three floats the call takes are read by neither instance: the free
+   living step reads s0, s1 and s2, the sport step the same three. They are
+   declared as what the shell test and 0x42558 pass. */
 int vendor_greenteg_cbta_free_living_update(float heat_flux,
                                             float skin_temperature,
-                                            float ambient,
+                                            float heart_rate_bpm,
                                             float aux_a, float aux_b,
                                             float aux_c);
 int vendor_greenteg_cbta_sport_update(float heat_flux,
                                       float skin_temperature,
-                                      float ambient,
+                                      float heart_rate_bpm,
                                       float aux_a, float aux_b,
                                       float aux_c);
 

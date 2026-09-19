@@ -126,10 +126,15 @@ def load_partition(items_path, smap, ignore=()):
 
     A class this run rewrites is dropped: a record this tool wrote last time is
     not evidence about the image, so leaving it in would make the closure shrink
-    to nothing on the second run.
+    to nothing on the second run. An address already attributed to a component
+    goes with it whatever class carries the name, because a hand that reads an
+    interior and says what it does has not moved it out of the drop: leaving
+    such a name in would cut it out of its own closure and then report the
+    component as calling it, which is the leak test answering a question about
+    this file instead of about the image.
     """
     named = {s.address: s for s in smap.of_kind("function")
-             if s.klass not in ignore}
+             if s.klass not in ignore and not (ignore and s.component)}
     fns = {}
     for f in items_path["functions"]:
         size = (f["bytes"] if "bytes" in f else

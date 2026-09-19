@@ -15505,22 +15505,44 @@ symbols:
     FL %s" when it returns zero; it runs the constructor 0x8c230 over the free-living
     state and sets the instance's ready flag.
 - address: 0x8c000
-  name: greenteg_cbta__8c0cc__1
+  name: greenteg_cbta_network_run
   kind: function
-  class: helper
-  evidence: only 0x8c0cc (greenteg_cbta__8c0cc) calls 0x8c000; 166 bytes
+  class: hand
+  component: greenteg_cbta
+  supersedes: greenteg_cbta__8c0cc__1
+  evidence: 'the network itself: it lays five tensor descriptors and two shapes
+    on its own stack, runs one GRU timestep over the caller''s three floats with
+    the hidden state at instance+0x48 (0xa78ce) and then the output layer, 8 to
+    1 with the identity activation (0xa76aa), and returns the single float the second
+    writes. Its weights are greenteg_cbta_nn_tensors and its activations the three
+    slots at 0x200074dc.'
 - address: 0x8c0cc
-  name: greenteg_cbta__8c0cc
+  name: greenteg_cbta_free_living_step
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__8c0cc
+  evidence: 'the body of vendor_greenteg_cbta_free_living_update 0x8bf48: it feeds
+    the sample''s heat flux, skin temperature and heart rate to the three means
+    (0x8c0e8..0x8c10a), and on every sixtieth sample -- the udiv by 0x3c at 0x8c15c
+    -- normalises the three minute-means against the centres at 0x8c210..0x8c228,
+    runs the network at 0x8c1c0, turns the one number it answers into degrees with
+    37.1392 + 0.5900 * y (0x8c1cc) and puts that through the output smoother. On
+    the other fifty-nine it takes the interim blend instead and re-reads the smoother,
+    which is why the reported temperature moves every second and the model runs
+    once a minute.'
 - address: 0x8c230
-  name: greenteg_cbta__8c230
+  name: greenteg_cbta_free_living_construct
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__8c230
+  evidence: 'vendor_greenteg_cbta_free_living_init 0x8bfdc''s only callee and the
+    thing that says how big the free-living instance is: it memsets 120 bytes and
+    then builds four running-mean objects over them -- the three input means at
+    +0x18, +0x28 and +0x38 with a smoothing factor of 0.1 (0x8c28c) and the output
+    smoother at +0x68 with 0.05 (0x8c290) -- and answers zero the moment one of
+    them refuses, which is what 0x42974 logs as ''FL algorithm init failed''.'
 - address: 0x8c294
   name: vendor_greenteg_cbta_sport_update
   kind: function
@@ -15542,23 +15564,36 @@ symbols:
   evidence: The free-living init's twin against the second state, over the constructor
     0x8c774; 0x42974 logs its failure as "[BODY_TEMP][err] WO %s".
 - address: 0x8c340
-  name: greenteg_cbta__8c340
+  name: greenteg_cbta_sport_features
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__8c340
+  evidence: 'the sport instance''s per-sample statistics, called twice from 0x8c500:
+    five running means over the three readings (+0xb8 to +0x118), the difference
+    between two of them latched on the 300-sample boundary into +0x158, and the
+    squared deviations of the skin temperature and the heat flux from their own
+    means into +0x128 and +0x138 -- variances, not layers.'
 - address: 0x8c500
-  name: greenteg_cbta__8c500
+  name: greenteg_cbta_sport_step
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__8c500
+  evidence: 'the body of vendor_greenteg_cbta_sport_update 0x8c294, and the evidence
+    that the sport instance is not the same algorithm: it runs no network at all.
+    Its period is 300 samples rather than 60 (the udiv by 0x12c at 0x8c38a and 0xa7ade)
+    and what it accumulates are means and squared deviations from them.'
 - address: 0x8c774
-  name: greenteg_cbta__8c774
+  name: greenteg_cbta_sport_construct
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__8c774
+  evidence: 'vendor_greenteg_cbta_sport_init 0x8c31c''s only callee, the free-living
+    constructor''s opposite number: it builds a much larger state -- eleven running
+    means, two 300-sample windows and four tables built by 0x8bbc0 -- and 0x42974
+    logs its failure as ''WO algorithm init failed''.'
 - address: 0x8c8fc
   name: pow
   kind: function
@@ -23503,29 +23538,43 @@ symbols:
   module: M
   evidence: only 0x7fc2c (screen_timer_ptr_20021b84_update) calls 0xa74ac; 4 bytes
 - address: 0xa74b0
-  name: greenteg_cbta__a74b0
+  name: greenteg_cbta_mean_init
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__a74b0
+  evidence: 'the constructor of the four-word running-mean object every input and
+    output of both instances goes through: it refuses a smoothing factor outside
+    [0, 1] and otherwise writes {value 0, factor, window, count 0}. Called by the
+    two constructors and by 0x8bf14 and 0xa79d0, which derive the factor as 1 /
+    window.'
 - address: 0xa74de
-  name: greenteg_cbta__a74de
+  name: greenteg_cbta_mean_update
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__a74de
+  evidence: 'one sample into that object: value += w * (x - value), where w is 1
+    / (count + 1) while count is below the window and the stored factor after it
+    (the branch at 0xa74f0). A cumulative mean that turns into an exponential one,
+    and with a window of zero -- which is what both constructors pass -- an exponential
+    one throughout.'
 - address: 0xa7532
-  name: greenteg_cbta__a7532
+  name: greenteg_cbta_mean_set
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__a7532
+  evidence: 'one store: the mean''s value, without touching its factor, window or
+    count. 0x8c0cc uses it to seed the three means with the first sample and the
+    smoother with the first temperature.'
 - address: 0xa753a
-  name: greenteg_cbta__a753a
+  name: greenteg_cbta_mean_get
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__a753a
+  evidence: 'one load: the mean''s current value. The only way anything reads one.'
 - address: 0xa7540
   name: nn_activation_identity
   kind: function
@@ -23619,41 +23668,64 @@ symbols:
     run, one for each of nn_gru_cell, and none in any of the other five: the model
     is run one timestep at a time'
 - address: 0xa7a1c
-  name: greenteg_cbta__a7a1c
+  name: greenteg_cbta_free_living_means_latch
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__a7a1c
+  evidence: 'the three means read out into the snapshot fields the normalisation
+    reads: +0x18 into +0x10, +0x28 into +0xc and +0x38 into +0x14. 0x8c0cc calls
+    it on the first sample and again right after each inference, so what the network
+    normalises is the minute that just closed.'
 - address: 0xa7a44
-  name: greenteg_cbta__a7a44
+  name: greenteg_cbta_free_living_means_blend
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__a7a44
+  evidence: 'the same three fields, updated for a minute that has not closed: with
+    k the sample counter modulo 60, each becomes (k * snapshot + mean) / (k + 1).
+    It is what 0x8c0cc runs on the fifty-nine samples between inferences, and it
+    is why the interface has a fresh reading every second out of a model that runs
+    once a minute.'
 - address: 0xa7ab4
-  name: greenteg_cbta__a7ab4
+  name: greenteg_cbta_free_living_result_copy
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__a7ab4
+  evidence: 'the eight bytes at instance+4 -- the temperature float and the two
+    status bytes -- copied through the caller''s pointer, answering zero if either
+    pointer is null. What vendor_greenteg_cbta_free_living_get 0x8bf94 calls and
+    what the shell prints as ''fl: %d %lf''.'
 - address: 0xa7aca
-  name: greenteg_cbta__a7aca
+  name: greenteg_cbta_sport_sample_latch
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__a7aca
+  evidence: 'the sport instance''s per-sample bookkeeping: it shifts the previous
+    sample''s three readings up to +0x24..+0x2c, writes the new ones at +0xc..+0x14,
+    clears +0x20 and on a 300-sample boundary seeds +0x18 and +0x1c with the new
+    heart rate. 0x8c500 and 0x8c774 are its only callers.'
 - address: 0xa7b5c
-  name: greenteg_cbta__a7b5c
+  name: greenteg_cbta_sport_means_blend
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__a7b5c
+  evidence: greenteg_cbta_free_living_means_blend's opposite number on the sport
+    state, with the same k = counter mod 60 weighting and a squared deviation carried
+    alongside the mean (0xa7b94).
 - address: 0xa7c58
-  name: greenteg_cbta__a7c58
+  name: greenteg_cbta_sport_result_copy
   kind: function
-  class: vendor
+  class: hand
   component: greenteg_cbta
-  evidence: 'interior: reached only through greenteg_cbta''s entries'
+  supersedes: greenteg_cbta__a7c58
+  evidence: 'byte for byte greenteg_cbta_free_living_result_copy against the sport
+    state: the eight bytes at +4 through the caller''s pointer. What vendor_greenteg_cbta_sport_get
+    0x8c2e0 calls and what the shell prints as ''workout: %d %lf''.'
 - address: 0xa7c6e
   name: sqrt
   kind: function
