@@ -10,6 +10,7 @@ than an impression. The shapes the map's globals and tables are declared with
 are C, so they are counted out of abi/include/withings/*.h through
 abi/shapes.py.
 """
+import collections
 import json
 import os
 import re
@@ -29,6 +30,12 @@ LABELS = {symmap.HAND: "hand (manifest)", "match": "library match"}
 # explained -- they belong to a library the firmware did not write and reaches
 # only through the entries -- without any claim about what each body does.
 VENDOR_ENTRY, VENDOR_INTERIOR = "vendor entry", "vendor interior"
+
+# The placeholder names the partition gives a body nothing names, and the
+# depth past which abi/ghidra/mark_review.py stops counting steps up the
+# call graph; both are that script's, so the two reports agree.
+UNNAMED = re.compile(r"^(FUN|LAB|block|caseD|thunk|sliver)_")
+MAX_DEPTH = 5
 
 
 def main():
@@ -50,8 +57,7 @@ def main():
         size = f["bytes"] if "bytes" in f else sum(b - a for a, b in f.get("ranges", [(f["start"], f["end"])]))
         k = named.get(f["start"])
         if k is None:
-            k = ("unnamed" if re.match(r"^(FUN|LAB|block|caseD|thunk)_", f["name"])
-                 else "other name")
+            k = "unnamed" if UNNAMED.match(f["name"]) else "other name"
         n, b = kinds.get(k, (0, 0))
         kinds[k] = (n + 1, b + size)
     total_n = sum(n for n, _ in kinds.values())
@@ -72,6 +78,91 @@ def main():
     print("map: %d structs, %d tables, %d globals, %d enums"
           % (len(types.structs), len(smap.of_kind("table")),
              len(smap.of_kind("global")), len(types.enums)))
+
+    per_module(items, named)
+    worklist(items, named)
+
+
+def per_module(items, named):
+    """How much of each log-tag module still has no name.
+
+    The partition into modules is abi/out/ghidra/modules.json, which
+    abi/autonames.py writes from the tags the firmware's own log lines carry,
+    so the unnamed count per module is what says where the next rule has to
+    reach: a module that is 95 percent unnamed has no per-function log line
+    and nothing the call graph can hang a name on.
+    """
+    modules = json.load(open(os.path.join(OUT, "modules.json")))
+    by_start = {f["start"]: f for f in items["functions"]}
+    rows = {}
+    for address, module in module_of(modules).items():
+        f = by_start.get(address)
+        if f is None:
+            continue
+        total, un = rows.get(module, (0, 0))
+        rows[module] = (total + 1, un + (1 if is_unnamed(f, named) else 0))
+    print("modules: %d, %d functions in one"
+          % (len(rows), sum(n for n, _ in rows.values())))
+    for module, (total, un) in sorted(rows.items(), key=lambda kv: -kv[1][1])[:15]:
+        print("  %-22s %4d fns, %4d unnamed %3.0f%%"
+              % (module, total, un, 100.0 * un / total))
+
+
+def module_of(modules):
+    """address -> module, whichever shape modules.json was written in."""
+    out = {}
+    m = modules.get("functions") or modules.get("modules") or modules
+    for key, value in m.items():
+        if isinstance(value, dict) and "module" in value:
+            out[int(key, 0)] = value["module"]
+        elif isinstance(value, list):
+            for a in value:
+                out[int(a, 0) if isinstance(a, str) else a] = key
+    return out
+
+
+def is_unnamed(f, named):
+    return f["start"] not in named and bool(UNNAMED.match(f["name"]))
+
+
+def worklist(items, named):
+    """The naming worklist abi/ghidra/mark_review.py bookmarks, as counts.
+
+    Unnamed1 is a body a named function calls directly, which is the shallow
+    end the bookmark list starts at; the number is the one to watch, because a
+    rule that names a body promotes its own callees into it.
+    """
+    refs = json.load(open(os.path.join(OUT, "references.json")))
+    by_start = {f["start"]: f for f in items["functions"]}
+    callers = collections.defaultdict(set)
+    for c in refs["calls"]:
+        if c["kind"] not in ("call", "jump"):
+            continue
+        src, dst = c.get("function"), c["to"]
+        if src in by_start and dst in by_start:
+            callers[dst].add(src)
+    has_name = {a for a, f in by_start.items() if not is_unnamed(f, named)}
+    depth, frontier, level = {}, set(), 1
+    for callee, srcs in callers.items():
+        if callee not in has_name and srcs & has_name:
+            depth[callee] = 1
+            frontier.add(callee)
+    while frontier and level < MAX_DEPTH:
+        level += 1
+        nxt = set()
+        for callee, srcs in callers.items():
+            if callee in has_name or callee in depth:
+                continue
+            if srcs & frontier:
+                depth[callee] = level
+                nxt.add(callee)
+        frontier = nxt
+    counts = collections.Counter(
+        "Unnamed%d" % depth[a] if a in depth else "UnnamedDeep"
+        for a in by_start if a not in has_name)
+    print("worklist: %d unnamed, %s"
+          % (sum(counts.values()),
+             ", ".join("%s %d" % kv for kv in sorted(counts.items()))))
 
 
 if __name__ == "__main__":
