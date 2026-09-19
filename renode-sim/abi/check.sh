@@ -23,6 +23,13 @@
 # line for line and its tick is one above stock's, 59536 against 59535, which is
 # where the two tickless-idle implementations round the last suppressed tick.
 #
+# `plain-ff` and `ram-moved-ff` are those two links again with RAM brought up
+# holding 0xFF rather than zero, which is what a cold power-on gives the watch:
+# the retained block at 0x20002800 is neither copied nor zeroed, so its CRC is
+# invalid on that first boot and the firmware says so in three lines. Those two
+# are diffed against each other rather than against the zero-RAM baseline, so
+# what they ask is that a moved RAM layout reads nothing the stock one does not.
+#
 # The update test and the ECG run are not here: they need fixed ports and
 # minutes of virtual time, so they stay separate runs.
 # The `sleep` feeding Renode's stdin is the run's wall-clock budget, not its
@@ -110,11 +117,13 @@ pass=0
 fail=0
 rows=()
 BASELINE=""
+FILLED_BASELINE=""
 for entry in "${CONFIGS[@]}"; do
     WANT=${entry%%:*}
     env_line=${entry#*:}
     wanted "$@" || continue
     start=$SECONDS
+    fill=$(ramfill_of "$env_line")
     log=$SIM/out/check-$WANT.log
     verdict=""
 
@@ -140,14 +149,31 @@ for entry in "${CONFIGS[@]}"; do
                       "$SIM/out/relink/relinked.elf")
         if [ -z "$dir" ]; then
             verdict="rig refused the image"
-        elif ! display_run "$dir" "$(ramfill_of "$env_line")"; then
+        elif ! display_run "$dir" "$fill"; then
             verdict="display run did not finish"
-        elif [ -z "$BASELINE" ]; then
-            BASELINE=$dir/out/uart0.log
-            verdict="ok (baseline)"
         else
-            lines=$(diff "$BASELINE" "$dir/out/uart0.log" | grep -c '^[<>]')
-            [ "$lines" = 0 ] && verdict="ok" || verdict="$lines log lines differ"
+            # A run under a RAM fill is diffed against the first run under one
+            # rather than against the zero-RAM baseline: the fill invalidates
+            # the retained block's CRC and the firmware says so, which is three
+            # boot lines every configuration has and none of them says anything
+            # about a link. What a filled configuration is asked is that it says
+            # exactly what the plain link under the same fill said.
+            if [ -n "$fill" ]; then
+                baseline=$FILLED_BASELINE
+            else
+                baseline=$BASELINE
+            fi
+            if [ -z "$baseline" ]; then
+                if [ -n "$fill" ]; then
+                    FILLED_BASELINE=$dir/out/uart0.log
+                else
+                    BASELINE=$dir/out/uart0.log
+                fi
+                verdict="ok (baseline)"
+            else
+                lines=$(diff "$baseline" "$dir/out/uart0.log" | grep -c '^[<>]')
+                [ "$lines" = 0 ] && verdict="ok" || verdict="$lines log lines differ"
+            fi
         fi
     fi
 
