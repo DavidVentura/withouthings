@@ -76,3 +76,42 @@ reference_build:
     notes: 'The SDK''s FreeRTOS port hardcodes RTC1 as the tick source. This firmware''s
       tick is RTC2: 0x74034 writes RTC2''s PRESCALER as 0x20 and vector 52, RTC2''s,
       is the tick ISR. The path is relative to the SDK''s freertos/portable.'
+
+# Log tags that are one module written two ways. Derived by
+# abi/module_aliases.py, which re-checks this block against the image; the
+# evidence per group is what that measurement found. A pair with neither
+# reading stays two modules, and abi/autonames.py's `bymodule` refusal at the
+# bodies on the seam stands: DBLIB/DBLIB_PORT, CHUNKED_UPDATE/FLASH,
+# BT/BLE_WPP_C and AUTO_BURST against HR, SPO2 and PPG_AFIB are all refused
+# here, the last three because AUTO_BURST shares one word with SPO2 and
+# another with PPG_AFIB, and merging on that would make SPO2 and PPG_AFIB
+# one module.
+module_aliases:
+- module: DBLIB
+  tags: [DBLIB, INITDBLIB]
+  evidence: 'Five RAM words that the functions tagged DBLIB or INITDBLIB reach
+    and no third tagged module reaches: 0x20006ff8, 0x20007028, 0x20019204,
+    0x20019220, 0x20019224. INITDBLIB is the database library logging its own
+    initialisation.'
+- module: MAX86173
+  tags: [MAX86173, MAX8617X]
+  evidence: '0x52b1c logs under both tags, and four RAM words are reached by
+    the functions tagged either and by no third tagged module: 0x20014820,
+    0x20014828, 0x2001be0c, 0x2001be10. The optical front end''s part number
+    with and without its last digit spelled out.'
+- module: MS5837
+  tags: [MS5837, MS5849]
+  evidence: '0x3dde0 logs under both tags and 0x20025284 is reached by the
+    functions tagged either and by no third tagged module. One pressure-sensor
+    driver that carries the part numbers of the two parts it supports.'
+- module: WPP
+  tags: [WPP, WPP_LITE]
+  evidence: 'Three RAM words reached by the functions tagged either and by no
+    third tagged module: 0x20020914, 0x20020920, 0x20020950. WPP_LITE is the
+    same protocol stack''s cut-down path, not a second module.'
+- module: WUAPP
+  tags: [BLE_WPP_C, WUAPP]
+  evidence: '0x41d60, 0x41dd8 and 0x422e0 each log under both tags, and
+    0x20024d72 is reached by the functions tagged either and by no third
+    tagged module. The watch-side WPP client and the app it serves are one
+    body of code.'
