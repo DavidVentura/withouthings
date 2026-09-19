@@ -932,7 +932,7 @@ def ram_relayout(runs, sections, mode, free_end):
 RAM_SHIFT = 0x1000
 
 
-def reclaim_placement(sections, pinned, path, obj):
+def reclaim_placement(sections, pinned, path, obj, ram):
     """A placement that lets the linker drop and pack, for the size measurement.
 
     Nothing is pinned but the fixed points and nothing is KEEPed but them, so
@@ -951,6 +951,13 @@ def reclaim_placement(sections, pinned, path, obj):
             if s.start in pinned:
                 fh.write("  KEEP(%s(%s))\n" % (s.object or obj, s.name))
         fh.write("  %s(.text.*)\n  %s(.rodata.*)\n} > APP\n" % (obj, obj))
+        # The RAM items are swept up whole rather than measured: this link
+        # answers how much flash is dead, and a RAM section with nowhere to go
+        # would be placed by the linker's own orphan rules, which is the one
+        # outcome that makes the flash number wrong for a reason nothing names.
+        fh.write(".appdata 0x%08x : AT(0x%08x)\n{\n  %s(.data.*)\n} > RAM\n"
+                 % (ram.runs[0].start, min(s.start for s in ram.data), obj))
+        fh.write(".appbss (NOLOAD) :\n{\n  %s(.bss.*)\n} > RAM\n" % obj)
 
 
 def placement(sections, moves, path, obj, keep=None, drop=(), hole=None,

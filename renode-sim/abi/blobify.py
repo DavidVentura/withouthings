@@ -386,7 +386,7 @@ def ram_relocations(blob, layout, ramlayout, words, skip):
             # a RAM item and is not relocated is still a reference the linker
             # cannot see, so the item it names goes on the keep list rather
             # than being dropped as unreached.
-            if ramlayout.label(row["value"]) is not None:
+            if ramlayout.ram.at(row["value"]) is not None:
                 unrelocated.append(row)
             continue
         sym = bound or ramlayout.label(row["value"])
@@ -1340,15 +1340,18 @@ def main():
     owned |= pruned
     counts, unrelocatable, indirect = objectify.internal_relocations(
         blob, layout, refs["calls"], owned, retarget)
-    # Before the word pass, because a word the startup reads a run bound out of
-    # is a bound and not a pointer to whatever happens to be at that address:
-    # the copy's source word names the whole initialiser image, and binding it
-    # to the first item's section would relocate it to that item's RAM address.
+    # A replacement's RAM global goes first: the object it names has moved into
+    # the library, so the word is the library's to answer and not a reference
+    # to the blob's item at that address. Then the RAM pass, before the word
+    # pass, because a word the startup reads a run bound out of is a bound and
+    # not a pointer to whatever happens to be there: the copy's source word
+    # names the whole initialiser image, and binding it to the first item's
+    # section would relocate it to that item's RAM address.
+    global_counts = objectify.global_relocations(blob, layout, words, owned,
+                                                 replacements.globals)
     ram_counts, ram_unrelocated = ram_relocations(blob, layout, ramlayout,
                                                   words, owned)
     word_counts = objectify.word_relocations(blob, layout, words, owned, retarget)
-    global_counts = objectify.global_relocations(blob, layout, words, owned,
-                                                 replacements.globals)
     if unrelocatable:
         for row in unrelocatable[:20]:
             print("0x%x: %s (%d bytes) to 0x%x leaves its section and cannot be"
@@ -1657,7 +1660,7 @@ def main():
                  ", ".join("%s %d" % (k, n) for k, n in sorted(reasons.items()))))
     elif args.reclaim:
         objectify.reclaim_placement(sections, pinned_addresses(facts, layout),
-                                    args.place, obj)
+                                    args.place, obj, ramlayout)
     else:
         objectify.placement(sections, moves, args.place, obj, drop=dead,
                             hole=hole, spill=args.spill, ram=ramlayout)
