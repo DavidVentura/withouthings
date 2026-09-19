@@ -44,6 +44,7 @@ samples it synthesises.
 """
 
 import argparse
+import json
 import os
 import struct
 import sys
@@ -326,6 +327,40 @@ def describe(model):
     return "\n".join(lines)
 
 
+def export(model):
+    """The model as data, with every float carried exactly.
+
+    A decimal repr of a float32 read back into a float64 is not the same
+    number, so each value is written both as its exact hex float and as the
+    decimal a reader will want to look at; the hex is the one to load.
+    """
+    def tensor(name, t):
+        return {"name": name, "address": "0x%x" % t.address, "rank": t.rank,
+                "rows": t.rows, "cols": t.cols,
+                "values_hex": [float(v).hex() for v in t.data],
+                "values": t.data}
+    return {
+        "component": "greenteg_cbta",
+        "model": "one-step GRU, gates z/r/n, logistic gates, ELU candidate,"
+                 " then dense %d->1 with identity" % model.units,
+        "units": model.units, "inputs": model.inputs,
+        "gate_order": ["update", "reset", "candidate"],
+        "gru_bias_layout": "b_ih[z,r,n] then b_hh[z,r,n], each `units` floats",
+        "weight_layout": "row-major, rows are inputs, cols are outputs; the"
+                         " three gate blocks are stacked along rows",
+        "input_normalisation": [{"name": n, "mean": m, "mean_hex": float(m).hex(),
+                                 "scale": sc, "scale_hex": float(sc).hex()}
+                                for n, m, sc in NORMALISE],
+        "output_degc": {"offset": OUTPUT_OFFSET_C,
+                        "offset_hex": float(OUTPUT_OFFSET_C).hex(),
+                        "scale": OUTPUT_SCALE_C,
+                        "scale_hex": float(OUTPUT_SCALE_C).hex()},
+        "tensors": [tensor(n, getattr(model, n)) for n in
+                    ("out_bias", "out_weight", "gru_bias", "weight_ih",
+                     "weight_hh")],
+    }
+
+
 def read_pairs(path):
     """The (input vector, hidden state, output) triples a run captured.
 
@@ -358,9 +393,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--image", default=os.path.join(SIM, "flash.bin"))
     ap.add_argument("--pairs")
+    ap.add_argument("--export", help="write the tensors and constants as JSON")
     args = ap.parse_args()
     model = load(args.image)
     print(describe(model))
+    if args.export:
+        with open(args.export, "w") as fh:
+            json.dump(export(model), fh, indent=1)
+        print("wrote %s" % args.export)
     if not args.pairs:
         return
     pairs = read_pairs(args.pairs)
