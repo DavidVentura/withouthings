@@ -1696,12 +1696,146 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x27124: command ''altimeter'', run slot (+4)'
+- address: 0x3e0e4
+  name: ancs_step
+  kind: label
+  class: hand
+  module: ancs
+  evidence: '`ldr r3, [0x20018628+0x2c0]; bx r3`, the tail call every ANCS callback
+    and every state of ancs_discovery_step ends with. The cell is a function pointer
+    rather than a direct branch, which is why the discovery walk is reachable from
+    a callback without either naming the other.'
+- address: 0x3e0f0
+  name: ancs_context_reset
+  kind: function
+  class: hand
+  module: ancs
+  evidence: 'zeroes the ANCS context at 0x20018628 -- the service handle range at
+    +0x00, the three value handles at +0x0c, +0x16 and +0x20, the two configuration
+    handles at +0x22 and +0x24, the state at +0x26, the attribute buffer at +0x273
+    -- and unregisters the two hvx callbacks it registered for the handles at +0x16
+    and +0x20 through 0x94952. Every field it clears is one a later state writes.'
 - address: 0x3e150
   name: ancs_service_disc_cb
   kind: function
   class: logcb
   evidence: wlog('[ANCS] ancs_service_disc_cb err_code=%d (start_handle = 0x%04x
     | end_handle = 0x%04x)') at 0x3e17c, leading identifier is a callback name
+- address: 0x3e1e4
+  name: ancs_control_point_write_cb
+  kind: label
+  class: hand
+  module: ancs
+  evidence: 'the callback ancs_discovery_step hands the control-point write it
+    builds in state 9 (stored to the request at 0x3ef64). On success it moves the
+    state from 10 to 11, which is the state ancs_data_source_parse runs in while
+    the answer arrives; on failure it goes back to 9 and asks again.'
+- address: 0x3e21c
+  name: ancs_ns_unsubscribe_cb
+  kind: label
+  class: hand
+  module: ancs
+  evidence: 'the callback for the notification-source unsubscribe ancs_discovery_step
+    writes in state 13 (stored at 0x3effa): it moves the state to 12, which is the
+    data-source unsubscribe.'
+- address: 0x3e260
+  name: ancs_ns_cccd_disc_cb
+  kind: label
+  class: hand
+  module: ancs
+  evidence: 'the callback for the descriptor discovery ancs_discovery_step issues
+    in state 5 (stored at 0x3ed98), over the single handle after the notification
+    source value. It stores descs[0].handle as the context''s +0x24 and moves the
+    state to 6, the data source''s descriptor discovery.'
+- address: 0x3e29c
+  name: ancs_gattc_action
+  kind: function
+  class: hand
+  module: ancs
+  evidence: 'every ANCS state passes its ble_gattc request here: it hands the
+    request to bluetooth_le_gattc_action (0x41684) and, when that refuses because
+    the queue is busy, re-arms the current state through 0x94684 and answers -1.
+    The request is the discriminated struct that function''s own jump table reads,
+    op at +0x00, and the ANCS states build ops 1 to 4 and 7 in it.'
+- address: 0x3e2dc
+  name: ancs_data_source_complete
+  kind: function
+  class: hand
+  module: ancs
+  evidence: 'the tail of a data-source answer. ancs_data_source_parse leaves the
+    attribute in the context and sets +0x27a to say which kind it was; this reads
+    that byte and calls 0x3f7a0 for an attribute of the notification itself or
+    ancs_request_display_info_to_app (0x3f9b0) for an application''s display name,
+    passing the notification uid at +0x26c, the category at +0x280 and the two
+    counts at +0x276 and +0x278.'
+- address: 0x3e328
+  name: ancs_data_source_parse
+  kind: function
+  class: hand
+  module: ancs
+  evidence: 'the only function logging the [ANCS][DS PARSING] lines (Unknown command
+    %d, Bad UID, Invalid App ID received). It runs the data source''s byte stream
+    through a state machine at the context''s +0x272: command byte, then the
+    notification uid as four little-endian bytes compared against +0x26c, then an
+    attribute id and a sixteen-bit length, then the value appended at +0x273 with
+    the running length at +0x2bd. It runs in state 11 and ends in state 9.'
+- address: 0x3e560
+  name: ancs_ds_cccd_subscribe_cb
+  kind: function
+  class: hand
+  module: ancs
+  evidence: wlog('[ANCS] DS cccd Subscribe Failed - Retry (handle = 0x%04x)') at
+    0x3e594, the failure arm; the success arm moves the state from 8 to 7, which is
+    the notification source's subscription.
+- address: 0x3e5d4
+  name: ancs_ns_cccd_subscribe_cb
+  kind: function
+  class: hand
+  module: ancs
+  evidence: wlog('[ANCS] NS cccd Subscribe Failed - Retry (handle = 0x%04x)') at
+    0x3e608, the failure arm; the success arm moves the state from 7 to 9, which is
+    where ANCS waits for a notification.
+- address: 0x3e648
+  name: ancs_ds_unsubscribe_cb
+  kind: function
+  class: hand
+  module: ancs
+  evidence: 'the callback for the data-source unsubscribe ancs_discovery_step writes
+    in state 12 (stored at 0x3efc0). On success it drops the connection-parameter
+    request ANCS held (0x409a8, 0x40d30, 0x40c34, the mode 1 latency) and leaves the
+    state at 0.'
+- address: 0x3e690
+  name: ancs_ds_cccd_disc_cb
+  kind: label
+  class: hand
+  module: ancs
+  evidence: 'the callback for the descriptor discovery ancs_discovery_step issues
+    in state 6 (stored at 0x3edbc). It stores descs[0].handle as the context''s
+    +0x22 and moves the state to 8, the data source''s subscription.'
+- address: 0x3e6cc
+  name: ancs_characteristics_disc_cb
+  kind: function
+  class: hand
+  module: ancs
+  evidence: wlog('[ANCS] Characteristics Disc cb cp=0x%x,0x%x ns=0x%x,0x%x ds=0x%x,0x%x')
+    at 0x3e722. It matches each discovered characteristic's uuid against the three
+    ble_uuid_t at 0x20024d5e, 0x20024d62 and 0x20024d66 and copies the ten byte
+    record to the context's +0x04 (control point), +0x0e (notification source) or
+    +0x18 (data source), so the value handles land at +0x0c, +0x16 and +0x20.
+- address: 0x3ec14
+  name: ancs_discovery_step
+  kind: function
+  class: hand
+  module: ancs
+  evidence: 'the ANCS state machine, entered through ancs_step and branching on the
+    context''s state byte at +0x26 (a tbh over states 3 to 13 at 0x3ec24). It logs
+    every ANCS line that names a step -- Device not bonded, Not activated on this
+    device, Too many discovery attempts, TRY DISC ANDROID, TRY DISC IOS,
+    Characteristics Disc range, NS/DS cccd Disc, NS/DS cccd Subscribe, NS/DS cccd
+    Unsubscribe -- and registers the four vendor UUIDs before the first discovery:
+    the Withings base at 0xd36e4 with 0x57, 0x58, 0x59 and 0x5a, or the Apple ANCS
+    bases at 0xd21e6..0xd2216 with 0xf431, 0xd8f3, 0x120d and 0xc6e9, into the
+    four ble_uuid_t at 0x20024d5e.'
 - address: 0x3e8c0
   name: WPP_CMD_REMOTE_NOTIFICATIONS_CONFIG_SET__1
   kind: function
@@ -1720,6 +1854,15 @@ symbols:
   class: wppcmd
   evidence: 'wpp_cmd_table row 0x275c8: key 2353, label ''WPP_CMD_REMOTE_NOTIFICATIONS_CONFIG_GET'',
     CMD_REMOTE_NOTIFICATIONS_CONFIG_GET in wpp/src/commands.rs'
+- address: 0x3f328
+  name: ancs_app_bundle_id
+  kind: function
+  class: hand
+  module: ancs
+  evidence: wlog('[ANCS] APP bundle ID %s = %u') at 0x3f34a. It turns the bundle
+    identifier the data source delivered into the crc the notification store keys
+    an application by, and answers the three defaults ('defaultCalendarApp',
+    'defaultDialerApp', 'defaultMessagingApp') from their own strings.
 - address: 0x3f9b0
   name: ancs_request_display_info_to_app
   kind: function
