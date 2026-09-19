@@ -1130,6 +1130,13 @@ def main():
                          " image up over the bodies a replacement group made"
                          " unreferenced, which leaves one hole at the top of the"
                          " text for --spill to link a library archive into.")
+    ap.add_argument("--ram-layout", choices=("shift", "reverse"),
+                    help="move every RAM item the same way --layout moves the"
+                         " text: `shift` slides the runs up, `reverse` also"
+                         " turns each zeroed run's item order round. The"
+                         " stale-address scan reads the image and the"
+                         " initialiser image for a word that still holds an"
+                         " old RAM address.")
     ap.add_argument("--spill", action="append", default=[], metavar="PATTERN",
                     help="a linker input-file pattern whose text and rodata go"
                          " into the flash --layout pack freed, instead of into"
@@ -1509,6 +1516,22 @@ def main():
                 if name and name not in listed:
                     keep.append((by_name[name], "asked for on the command line"))
 
+    ram_was = [s.vma for s in ramlayout.sections]
+    if args.ram_layout:
+        # LIBRARY_RAM's base is the bound: facts.yaml argues that the RAM
+        # between the app's statics and it was never written in a 600 s run,
+        # which is the room a moved layout has, and the library's own statics
+        # start there.
+        free_end = next(r["start"] for r in facts["regions"]
+                        if r["name"] == "LIBRARY_RAM")
+        objectify.ram_relayout(ram.runs, ramlayout.sections, args.ram_layout,
+                               free_end)
+        print("  ram layout %s: %d items moved, 0x%08x..0x%08x"
+              % (args.ram_layout,
+                 sum(1 for s, was in zip(ramlayout.sections, ram_was)
+                     if s.vma != was),
+                 ram.runs[0].start, ram.runs[-1].end))
+
     hole, dead = None, set()
     if args.layout:
         # A layout moves the app's data as well as its text, and the data can
@@ -1620,6 +1643,15 @@ def main():
     else:
         objectify.placement(sections, moves, args.place, obj, drop=dead,
                             hole=hole, spill=args.spill, ram=ramlayout)
+    # Where each RAM item is and where its bytes come from, for the scan: a
+    # word inside the initialiser image is read at a RAM address in the linked
+    # ELF and was classified at the flash address it is loaded from, so the
+    # scan cannot join the two without this.
+    with open(os.path.splitext(args.place)[0] + "-ram.json", "w") as fh:
+        json.dump([{"section": s.name, "vma": s.vma, "was": was,
+                    "size": s.end - s.start,
+                    "lma": None if s.nobits else s.start}
+                   for s, was in zip(ramlayout.sections, ram_was)], fh)
     with open(os.path.splitext(args.place)[0] + "-moves.json", "w") as fh:
         json.dump([{"section": s.sym, "old": s.start, "end": s.end,
                     "new": moves[s.sym]} for s in sections if s.sym in moves], fh)

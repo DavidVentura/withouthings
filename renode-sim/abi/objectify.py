@@ -870,6 +870,68 @@ def relayout(sections, mode, pinned, anchors, cuts=(), dead=(), data=False):
     return moves, spare, held, dead
 
 
+def ram_relayout(runs, sections, mode, free_end):
+    """Give every RAM item a new address, keeping what the image depends on.
+
+    Two constraints, the same two the flash side has and for the same reasons.
+    An item keeps its address modulo 4, because the code indexes into it and a
+    field's alignment is part of its layout. And an item stays inside its own
+    run: a `.data` item's bytes come out of one copy and a `.bss` item's zeroes
+    out of one fill, so an item that changed runs would be initialised by the
+    wrong statement.
+
+    `shift` slides every run up by one page of the free RAM above the app's
+    `.bss`, so every RAM address changes and nothing else does; `reverse` also
+    turns the zeroed runs' item order round, so an item's neighbours change too
+    and a reference that only worked because the run moved rigidly stops
+    working. The runs are laid out end to end from the first one's base,
+    because both ends of every run are linker-defined now and the padding the
+    alignment costs has to go somewhere.
+
+    The `.data` run keeps its item order under both. Its items are laid out
+    twice -- once in RAM and once as the load image in flash -- and the flash
+    half has to stay the length the image gave it, since the version trailer
+    starts where it stops; reordering it would cost alignment padding it has
+    nowhere to put.
+    """
+    if mode not in ("shift", "reverse"):
+        raise SystemExit("no RAM layout called %s" % mode)
+    by_run = collections.defaultdict(list)
+    for s in sections:
+        run = next(r for r in runs if r.start <= s.vma < r.end)
+        by_run[run.start].append(s)
+    # Both modes slide as well as reorder, so that under `reverse` the `.data`
+    # run moves too: its item order is fixed, and without the slide it would be
+    # the one run a reverse layout leaves exactly where it was.
+    at = runs[0].start + RAM_SHIFT
+    moves = {}
+    for run in runs:
+        held = sorted(by_run[run.start], key=lambda s: s.vma)
+        if mode == "reverse" and run.kind == "bss":
+            held.reverse()
+        at = (at + 3) & ~3
+        run.start = at
+        for s in held:
+            while at % 4 != s.vma % 4:
+                at += 1
+            moves[s.vma] = at
+            at += s.end - s.start
+        run.end = at
+    if at > free_end:
+        raise SystemExit("the RAM layout runs to 0x%x, past the 0x%x the app's"
+                         " static RAM may reach" % (at, free_end))
+    for s in sections:
+        s.vma = moves[s.vma]
+    return moves
+
+
+# How far `--ram-layout shift` slides the app's static RAM. It is one page of
+# the free RAM between the top of the app's `.bss` and facts.yaml's LIBRARY_RAM,
+# which is the only room a shift has: below the app's base is the SoftDevice's
+# RAM and the retained block, and above LIBRARY_RAM is the main stack.
+RAM_SHIFT = 0x1000
+
+
 def reclaim_placement(sections, pinned, path, obj):
     """A placement that lets the linker drop and pack, for the size measurement.
 
@@ -980,8 +1042,11 @@ def placement(sections, moves, path, obj, keep=None, drop=(), hole=None,
         if ram is None:
             flash_block(".blob", APP_BASE, APP_END, image)
         else:
-            run = next(r for r in ram.runs if r.kind == "data")
-            lo, hi = run.load, run.load + (run.end - run.start)
+            # The load image's own extent in flash, read off the sections
+            # rather than off the run: a RAM layout changes where the run is
+            # and how long it is, and the bytes stay where the image has them.
+            lo = min(s.start for s in ram.data)
+            hi = max(s.end for s in ram.data)
             flash_block(".blob", APP_BASE, lo,
                         [(a, s) for a, s in image if a < lo])
             # The RAM runs in address order, so the location counter only ever

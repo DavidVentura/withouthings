@@ -193,6 +193,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--elf", default=os.path.join(SIM, "out", "relink", "identity.elf"))
     ap.add_argument("--moves", default=os.path.join(SIM, "out", "relink-place-moves.json"))
+    ap.add_argument("--ram", default=os.path.join(SIM, "out", "relink-place-ram.json"),
+                    help="where abi/blobify.py put each RAM item and where its"
+                         " initialiser is loaded from")
     ap.add_argument("--words", default=os.path.join(HERE, "out", "ghidra", "words.json"))
     ap.add_argument("--items", default=os.path.join(HERE, "out", "ghidra", "items.json"))
     ap.add_argument("--dropped", help="ld --print-gc-sections output; the"
@@ -224,7 +227,21 @@ def main():
 
     with open(args.moves) as fh:
         moves = json.load(fh)
-    targets = moves
+    # The RAM items. Two things come out of the same file. A `.data` item's
+    # words are read at its RAM address in the linked ELF and were classified
+    # at the flash address the linker loads them from, so the scan needs that
+    # translation whether anything moved or not; and a RAM item that moved is
+    # a target like any moved text section, so a word still holding its old
+    # RAM address is a survivor.
+    with open(args.ram) as fh:
+        ram = json.load(fh)
+    loads = [{"section": r["section"], "old": r["lma"], "new": r["vma"],
+              "end": r["lma"] + r["size"]}
+             for r in ram if r["lma"] is not None]
+    ram_moved = [{"section": r["section"], "old": r["was"], "new": r["vma"],
+                  "end": r["was"] + r["size"]}
+                 for r in ram if r["vma"] != r["was"]]
+    targets = moves + ram_moved
     if args.map:
         moves = gc_moves(args.map, args.place, args.object)
         targets = moves + (dropped_sections(args.dropped, args.place, args.object)
@@ -254,7 +271,8 @@ def main():
     # The scan reads the linked image, so a word's address there is its new one;
     # the classification is keyed by where the word was. Only moved sections
     # need the translation, and they do not overlap.
-    news = sorted((m["new"], m["new"] + m["end"] - m["old"], m["old"]) for m in moves)
+    news = sorted((m["new"], m["new"] + m["end"] - m["old"], m["old"])
+                  for m in moves + loads)
 
     def original(at):
         lo, hi = 0, len(news)

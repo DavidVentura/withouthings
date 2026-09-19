@@ -26,7 +26,7 @@ MEMORY
      * the `.data` image the copy loop moves and the two runs it zeroes. It
      * ends where the heap begins and LIBRARY_RAM starts above that, so the two
      * regions cannot overlap. */
-    RAM   (rw)  : ORIGIN = 0x20006000, LENGTH = 0x00021244
+    RAM   (rw)  : ORIGIN = 0x20006000, LENGTH = 0x00025000
 }
 
 ENTRY(Reset_Handler)

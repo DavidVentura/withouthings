@@ -19,7 +19,7 @@ MEMORY
      * Below it is RAM nothing in the image bounds -- the SoftDevice's and the
      * retained block -- and above it the heap and the main stack, none of
      * which the partition owns. */
-    RAM   (rw)  : ORIGIN = 0x20006000, LENGTH = 0x00021244
+    RAM   (rw)  : ORIGIN = 0x20006000, LENGTH = 0x00025000
 }
 
 SECTIONS
