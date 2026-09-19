@@ -175,8 +175,13 @@ SCENARIOS = collections.OrderedDict(
                  "twenty minutes of watch time, worn and at rest, with nobody"
                  " talking to it: what runs on a schedule and on nothing else."
                  " Twenty because the passive heart rate's cadence is ten"
-                 " minutes, so the window holds two of them",
-                 setup=RESTING + SKIN,
+                 " minutes, so the window holds two of them. The wrist is"
+                 " shaken through the run because the burst that fires at ten"
+                 " minutes waits on the worn tracker -- the log says"
+                 " '[AUTO_BURST][  HR_MEASURE] wait for tracker_worn:"
+                 " is_ready=0, is_worn=1' -- and that detector is only ready"
+                 " once the accelerometer has given it something",
+                 setup=RESTING + SKIN, motion=True,
                  body=['emulation RunFor "1200.0"']),
     ])
 
