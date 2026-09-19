@@ -179,6 +179,46 @@ hooks:
       The sd_ble_gatts_hvx thunk, where the WPP pipe takes the notification and
       returns success without running the SVC.
 
+  - name: hook_gattc_prim_srvc_disc_thunk
+    address: 0x93574
+    offset: 0
+    width: 2
+    original: 0xdf9b
+    why: >
+      The sd_ble_gattc_primary_services_discover thunk. On the ANCS channel the
+      pipe is the GATT server, so it answers the discovery itself and returns
+      success without running the SVC, which the SoftDevice would fail for want
+      of a peer.
+
+  - name: hook_gattc_char_disc_thunk
+    address: 0x93578
+    offset: 0
+    width: 2
+    original: 0xdf9d
+    why: >
+      The sd_ble_gattc_characteristics_discover thunk, answered from the pipe's
+      ANCS attribute table.
+
+  - name: hook_gattc_desc_disc_thunk
+    address: 0x9357c
+    offset: 0
+    width: 2
+    original: 0xdf9e
+    why: >
+      The sd_ble_gattc_descriptors_discover thunk, which the pipe answers with
+      the client characteristic configuration descriptor of the characteristic
+      the range falls in.
+
+  - name: hook_gattc_write_thunk
+    address: 0x93584
+    offset: 0
+    width: 2
+    original: 0xdfa3
+    why: >
+      The sd_ble_gattc_write thunk. The firmware writes the two subscriptions
+      and every control-point request through it, each as a prepared write and
+      an execute, and the pipe answers each with its own write response.
+
 # RAM cells the scripts read, rather than code they patch or hook. A cell holds
 # nothing before the run, so there are no bytes to check against; what stands in
 # for the byte check is the name. The source kernel a relink links defines

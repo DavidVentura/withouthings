@@ -255,5 +255,13 @@ wppPipe: Miscellaneous.WppPipe @ sysbus
     evtBuffer: 0x20017ce0
     wppServiceContext: 0x20017f28
     sdEventIrq: 22
+    // The ANCS channel's own listener, and the two more RAM addresses that side
+    // reads: the pairing module's live peer record, which the ANCS module's
+    // bonded-peer guard reads, and the four ble_uuid_t the module registers the
+    // Withings notification service under, whose type byte is whatever
+    // sd_ble_uuid_vs_add handed out at run time.
+    ancsPort: 7789
+    pairingRecord: 0x200076fa
+    ancsUuidTable: 0x20024d5e
     preinit:
         include @models/WppPipe.cs

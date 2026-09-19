@@ -1,3 +1,4 @@
+mod ancs;
 mod dblib;
 mod update;
 
@@ -7,11 +8,12 @@ use std::net::TcpStream;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use wpp::ancs::{Category, NotificationId};
 use wpp::client::{probe_frame, Credentials};
 use wpp::commands::Command;
 use wpp::frame::{Channel, Frame};
 use wpp::objects::{
-    ActivitySubcategory, Alarm, Distance, InfoType, LocalNotification, MeasureCategory,
+    ActivitySubcategory, Alarm, AncsStatus, Distance, InfoType, LocalNotification, MeasureCategory,
     MeasureLiveAppStatus, Pace, PauseState, ProbeChallenge, ProbeChallengeResponse, ProbeReply,
     SleepActivityGet, Speed, StartTime, TimeSet, Uint32, VasistasType, Version, WamAutoSleep,
     WamVasistasGet, WorkoutGpsStatus,
@@ -41,6 +43,15 @@ const ACTIVITY_SUBCATEGORY_RUNNING: i16 = 2;
 /// workout or a sleep window writes carry a plausible timestamp rather than
 /// the watch's uptime. 2025-09-18 09:00:00 UTC.
 const DEFAULT_SCENARIO_TIME: u32 = 1758186000;
+/// The bundle a notification comes from when the caller does not name one.
+const DEFAULT_BUNDLE_ID: &str = "dev.davidv.withoutings";
+/// How long the phone keeps answering attribute requests after the last one it
+/// served. The watch asks for the app id, then the title, the subtitle and the
+/// message, one request at a time, with a screen redraw in between.
+const ANCS_QUIET: Duration = Duration::from_secs(10);
+/// How long the watch is given to discover the service and subscribe to it,
+/// which it does once, on the command that turns notifications on.
+const ANCS_DISCOVERY: Duration = Duration::from_secs(30);
 
 /// A scenario's duration argument, which every live scenario takes the same way.
 fn seconds(arguments: &mut impl Iterator<Item = String>, flag: &str) -> u64 {
@@ -578,6 +589,74 @@ fn notify(link: &mut Link) -> std::io::Result<()> {
     Ok(())
 }
 
+/// The ANCS scenario: turn the watch's notification client on, announce what
+/// the caller asked for, and serve the attribute requests the watch writes
+/// back. The ANCS channel is the WPP port plus one, which is how the pipe lays
+/// its two listeners out.
+///
+/// The socket is opened before the command that turns ANCS on, because the
+/// pipe's ANCS connection is what stands for a bonded phone and the watch
+/// refuses to discover anything without one.
+fn announce(
+    link: &mut Link,
+    endpoint: &str,
+    bundle_id: &str,
+    notifications: &[(String, String)],
+    dismissals: &[u32],
+) -> std::io::Result<()> {
+    let (host, port) = endpoint
+        .rsplit_once(':')
+        .unwrap_or_else(|| panic!("{endpoint} is not host:port"));
+    let port: u16 = port.parse().unwrap_or_else(|_| panic!("{endpoint} is not host:port"));
+    let ancs_endpoint = format!("{host}:{}", port + 1);
+    let mut phone = ancs::Phone::connect(&ancs_endpoint)?;
+    println!("[ancs] connected to {ancs_endpoint}");
+    run(
+        link,
+        &Step {
+            label: "notifications on",
+            frame: Frame::new(
+                Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_SET,
+                vec![WppObject::AncsStatus(AncsStatus { status: 1 })],
+            ),
+            answers: Answers::One,
+        },
+    )?;
+    if !phone.subscribed(ANCS_DISCOVERY)? {
+        println!("[ancs] the watch has not subscribed; announcing anyway");
+    }
+    for (title, message) in notifications {
+        phone.post(bundle_id, title, message, Category::Social)?;
+        let served = phone.serve(ANCS_QUIET)?;
+        println!("[ancs] served {served} attribute requests");
+    }
+    // What the watch says about a notification it now holds, which is the half
+    // of the notification path WPP owns.
+    for step in [
+        Step {
+            label: "notification get",
+            frame: Frame::new(Command::CMD_NOTIFICATION_GET, Vec::new()),
+            answers: Answers::One,
+        },
+        Step {
+            label: "local event notify",
+            frame: Frame::new(
+                Command::CMD_LOCAL_EVENT_NOTIFY,
+                vec![WppObject::LocalNotification(LocalNotification { id: 1, status: 1 })],
+            ),
+            answers: Answers::One,
+        },
+    ] {
+        run(link, &step)?;
+    }
+    for id in dismissals {
+        phone.dismiss(NotificationId(*id))?;
+        let served = phone.serve(ANCS_QUIET)?;
+        println!("[ancs] served {served} attribute requests after the dismissal");
+    }
+    Ok(())
+}
+
 fn report(frame: &Frame) {
     println!("<- {:?}", frame.command.opcode_name());
     for object in &frame.objects {
@@ -650,6 +729,11 @@ fn main() -> ExitCode {
     let mut sleep_seconds: Option<u64> = None;
     let mut alarm_scenario = false;
     let mut notify_scenario = false;
+    // The notifications to announce over ANCS, each a title and a message, and
+    // the ids to take back afterwards.
+    let mut notifications: Vec<(String, String)> = Vec::new();
+    let mut bundle_id = DEFAULT_BUNDLE_ID.to_string();
+    let mut dismissals: Vec<u32> = Vec::new();
     // A bare command by number, for asking the watch what it does with one.
     // Removing a command from the dispatch table is only half an answer; what
     // the phone sees is the other half, and nothing else here can send a
@@ -702,6 +786,21 @@ fn main() -> ExitCode {
             "--hr-measure" => hr_seconds = Some(seconds(&mut arguments, "--hr-measure")),
             "--sleep" => sleep_seconds = Some(seconds(&mut arguments, "--sleep")),
             "--alarm" => alarm_scenario = true,
+            "--notification" => {
+                let text = arguments.next().expect("--notification takes \"<title>|<message>\"");
+                let (title, message) = text.split_once('|').unwrap_or_else(|| {
+                    panic!("--notification takes \"<title>|<message>\", got {text:?}")
+                });
+                notifications.push((title.to_string(), message.to_string()));
+            }
+            "--app" => bundle_id = arguments.next().expect("--app takes a bundle id"),
+            "--dismiss" => dismissals.push(
+                arguments
+                    .next()
+                    .expect("--dismiss takes a notification id")
+                    .parse()
+                    .expect("--dismiss takes a notification id"),
+            ),
             "--notify" => notify_scenario = true,
             "--ecg" => {
                 ecg_seconds = Some(
@@ -720,7 +819,7 @@ fn main() -> ExitCode {
                     .expect("--send takes a command number"),
             ),
             other => {
-                eprintln!("usage: wpp-sim-client [--endpoint host:port | --port n] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--workout <seconds> [--activity <n>]] [--hr-measure <seconds>] [--sleep <seconds>] [--alarm] [--notify] [--send <command>] [--update <package> [--version-address <hex>]]");
+                eprintln!("usage: wpp-sim-client [--endpoint host:port | --port n] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--workout <seconds> [--activity <n>]] [--hr-measure <seconds>] [--sleep <seconds>] [--alarm] [--notify] [--notification \"<title>|<message>\" [--app <bundle id>]] [--dismiss <id>] [--send <command>] [--update <package> [--version-address <hex>]]");
                 eprintln!("unknown argument {other}");
                 return ExitCode::FAILURE;
             }
@@ -776,7 +875,9 @@ fn main() -> ExitCode {
         || hr_seconds.is_some()
         || sleep_seconds.is_some()
         || alarm_scenario
-        || notify_scenario;
+        || notify_scenario
+        || !notifications.is_empty()
+        || !dismissals.is_empty();
     if scenario {
         let now = set_time.unwrap_or(DEFAULT_SCENARIO_TIME);
         run(
@@ -808,6 +909,10 @@ fn main() -> ExitCode {
         }
         if notify_scenario {
             notify(&mut link).expect("the link stays up");
+        }
+        if !notifications.is_empty() || !dismissals.is_empty() {
+            announce(&mut link, &endpoint, &bundle_id, &notifications, &dismissals)
+                .expect("the link stays up");
         }
         if let Some(seconds) = sleep_seconds {
             sleep(&mut link, seconds, now as i32).expect("the link stays up");

@@ -1,7 +1,8 @@
 :name: HWA10 WPP pipe
 :description: Batch run with a WPP link into the firmware and no radio peer.
 :  The pipe listens on 127.0.0.1:7788, framing [len u16 big-endian][payload];
-:  a TCP connection stands for the BLE one. Drive it with wpp-sim-client:
+:  a TCP connection stands for the BLE one. ANCS is on 127.0.0.1:7789, where
+:  the pipe is the GATT server instead. Drive both with wpp-sim-client:
 :    renode --disable-xwt --console -e "include @scripts/wpp-pipe.resc"
 :    cargo run -p wpp-sim-client            # once out/uart0.log has "Add WPPS chars."
 
@@ -12,4 +13,5 @@ runMacro $fastStartup
 logLevel -1 sysbus.wppPipe
 emulation SetAdvanceImmediately true
 sysbus.wppPipe Attach $hook_ble_evt_present $hook_ble_evt_poll $hook_hvx_thunk
+sysbus.wppPipe AttachAncs $hook_gattc_prim_srvc_disc_thunk $hook_gattc_char_disc_thunk $hook_gattc_desc_disc_thunk $hook_gattc_write_thunk
 start

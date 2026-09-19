@@ -73,6 +73,14 @@ renode --disable-xwt --console -e "include @scripts/wpp-pipe.resc" < <(sleep 100
 cargo run -p wpp-sim-client -- --secret-from-dump external_flash.bin   # once out/uart0.log shows "Add WPPS chars."
 ```
 
+The same pipe serves ANCS on the next port, where the watch is the GATT client, so
+a notification goes in over that:
+
+```bash
+cargo run -p wpp-sim-client -- --secret-from-dump external_flash.bin \
+    --notification "Hello watch|ANCS works" --app dev.davidv.withoutings --dismiss 1
+```
+
 There's a hardcoded 30s start-up delay on the firmware, `scripts/live.resc` patches that out.
 
 If you want to render the screen capture .bin files to png:
