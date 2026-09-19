@@ -65,6 +65,40 @@ fixed_points:
     in the first place.
 
     '
+ram_fixed_points:
+- start: 536870912
+  end: 536895488
+  name: softdevice_ram_and_retained_block
+  read_by: MBR, SoftDevice, the app across a reset
+  notes: 'RAM below the app''s static base at 0x20006000. Nothing in the image
+    bounds it: abi/ramparts.py reads the app''s own RAM off the startup, and the
+    startup''s copy and its two zero fills reach 0x20006000 at the lowest, so
+    there is no statement in the image about where anything down here begins or
+    ends. Two things live in it and both need the address they have. The MBR
+    keeps the forwarding words at 0x20000000 and 0x20000004 and reads them by
+    absolute address on every interrupt and SVC, and the SoftDevice is handed a
+    RAM start and owns everything under it. And rambkp_block at 0x20002800 is
+    the block that survives a reset -- the boot log prints the hand positions
+    the fault handler left behind -- which it can only do by being neither
+    copied nor zeroed, so the one thing that would give it a section is exactly
+    the thing it must not have. 27 pool words name it as a struct base and they
+    stay constants.
+
+    '
+- start: 537031236
+  end: 537133056
+  name: app_heap_and_main_stack
+  read_by: the FreeRTOS heap, the main stack
+  notes: 'RAM above the app''s last zero fill, which ends at 0x20027244. The
+    initial MSP in the app''s vector table is 0x20040000 and the main stack
+    grows down from it, and facts.yaml''s LIBRARY_RAM is cut out of the middle
+    of this range on the evidence of a 600 s run. Nothing here is a static: the
+    startup neither copies nor zeroes it, so the partition has nothing to cut
+    it with and no layout may place into it. Two words hold 0x20027244 and
+    0x20027248, and the first is the end of the app''s `.bss` and relocates
+    against the linker''s own `__bss1_end__`.
+
+    '
 reference_build:
   tick_timer:
     header: CMSIS/nrf52/portmacro_cmsis.h

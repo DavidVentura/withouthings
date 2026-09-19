@@ -31,6 +31,8 @@ import re
 import struct
 import sys
 
+import yaml
+
 APP_BASE = 0x27000
 APP_END = 0xF117C
 RAM_BASE, RAM_END = 0x20000000, 0x20040000
@@ -285,6 +287,16 @@ def load(export=None, image=None, symbols_map=None, types=None):
     fills = zero_fills(blob, refs)
     runs = startup_runs(words, fills, blob, refs)
     lo, hi = runs[0].start, runs[-1].end
+    # The RAM no layout may place into, with the argument for each in
+    # facts.yaml. The check is that the startup's own reading agrees with it:
+    # a run that reached into the SoftDevice's RAM or into the stack would be
+    # the partition claiming bytes the image never said were the app's.
+    facts = yaml.safe_load(open(os.path.join(HERE, "facts.yaml")))
+    for fixed in facts["ram_fixed_points"]:
+        if lo < fixed["end"] and fixed["start"] < hi:
+            sys.exit("the app's static RAM (0x%x..0x%x) overlaps the fixed"
+                     " point %s (0x%x..0x%x)"
+                     % (lo, hi, fixed["name"], fixed["start"], fixed["end"]))
 
     names, sizes = {}, {}
     if symbols_map is not None:

@@ -954,7 +954,7 @@ def reclaim_placement(sections, pinned, path, obj):
 
 
 def placement(sections, moves, path, obj, keep=None, drop=(), hole=None,
-              spill=(), ram=None):
+              spill=(), ram=None, ram_keep=None):
     """The SECTIONS fragment that places every section.
 
     `ram` is the RAM partition. Its `.data` items are sections of the image
@@ -1068,10 +1068,15 @@ def placement(sections, moves, path, obj, keep=None, drop=(), hole=None,
                              % (zero.name, zero.start))
                 fh.write("  __%s_start__ = .;\n" % zero.name)
                 for s in held:
-                    fh.write("  . = 0x%06x; KEEP(%s(%s))   /* 0x%08x%s */\n"
-                             % (s.vma - zero.start, s.object or obj, s.name,
+                    why = None if ram_keep is None else ram_keep.get(s.vma)
+                    fh.write("  . = 0x%06x; %s   /* 0x%08x%s%s */\n"
+                             % (s.vma - zero.start,
+                                "%s(%s)" % (s.object or obj, s.name)
+                                if ram_keep is not None and why is None
+                                else "KEEP(%s(%s))" % (s.object or obj, s.name),
                                 s.vma, "" if s.nobits
-                                else " from 0x%08x" % s.start))
+                                else " from 0x%08x" % s.start,
+                                "" if why is None else ": " + why))
                 fh.write("  . = 0x%06x;\n  __%s_end__ = .;\n} > RAM\n"
                          % (zero.end - zero.start, zero.name))
                 if zero.kind == "data":

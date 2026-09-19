@@ -374,6 +374,7 @@ def ram_relocations(blob, layout, ramlayout, words, skip):
     there is nothing to relocate them against.
     """
     counts = {"pointer": 0, "fixed": 0, "bound": 0}
+    unrelocated = []
     for row in words:
         if row["addr"] in skip:
             continue
@@ -381,7 +382,12 @@ def ram_relocations(blob, layout, ramlayout, words, skip):
         if bound is None and row["signal"] != "ram":
             # Only the startup's own reads are bounds outside RAM: the copy's
             # source word holds a flash address, and it is the run's load
-            # address rather than a pointer to the bytes.
+            # address rather than a pointer to the bytes. A word that lands in
+            # a RAM item and is not relocated is still a reference the linker
+            # cannot see, so the item it names goes on the keep list rather
+            # than being dropped as unreached.
+            if ramlayout.label(row["value"]) is not None:
+                unrelocated.append(row)
             continue
         sym = bound or ramlayout.label(row["value"])
         if sym is None:
@@ -396,7 +402,7 @@ def ram_relocations(blob, layout, ramlayout, words, skip):
         section.relocs.append((row["addr"] - section.start, sym, R_ARM_ABS32))
         skip.add(row["addr"])
         counts["pointer"] += 1
-    return counts
+    return counts, unrelocated
 
 
 def boundary_relocations(blob, boundary, layout):
@@ -1338,7 +1344,8 @@ def main():
     # is a bound and not a pointer to whatever happens to be at that address:
     # the copy's source word names the whole initialiser image, and binding it
     # to the first item's section would relocate it to that item's RAM address.
-    ram_counts = ram_relocations(blob, layout, ramlayout, words, owned)
+    ram_counts, ram_unrelocated = ram_relocations(blob, layout, ramlayout,
+                                                  words, owned)
     word_counts = objectify.word_relocations(blob, layout, words, owned, retarget)
     global_counts = objectify.global_relocations(blob, layout, words, owned,
                                                  replacements.globals)
@@ -1516,6 +1523,16 @@ def main():
                 if name and name not in listed:
                     keep.append((by_name[name], "asked for on the command line"))
 
+    # What --gc-sections may not drop in RAM. Every relocation into a RAM item
+    # is an edge the linker walks itself, so the only items that need naming
+    # are the ones a word reaches without a relocation: a word the
+    # classification left undecided, and a word whose value lands in an item
+    # but which some other rule already claimed. Both are the flash side's
+    # review list, read in RAM.
+    ram_keep = {}
+    for row in ram_unrelocated:
+        ram_keep.setdefault(ram.at(row["value"]).start,
+                            "named by the unrelocated word 0x%x" % row["addr"])
     ram_was = [s.vma for s in ramlayout.sections]
     if args.ram_layout:
         # LIBRARY_RAM's base is the bound: facts.yaml argues that the RAM
@@ -1631,7 +1648,8 @@ def main():
     if args.gc:
         objectify.placement(sections, moves, args.place, obj,
                             keep=dict((s.start, why) for s, why in keep),
-                            drop=dead, hole=hole, spill=args.spill, ram=ramlayout)
+                            drop=dead, hole=hole, spill=args.spill,
+                            ram=ramlayout, ram_keep=ram_keep)
         reasons = collections.Counter(why.split(" 0x")[0].split("/")[0]
                                       for _, why in keep)
         print("  --gc keeps %d sections (%d bytes) the linker cannot see: %s"
