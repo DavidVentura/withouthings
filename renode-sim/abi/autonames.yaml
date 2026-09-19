@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {accessor: 22, bleevt: 28, bymodule: 155, bymodule_contested: 18, extlib: 0, helper: 651, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1821, modules: 179, prototypes_derived: 35, provenance: 492, provenance_body_call_sites_disagree_or_say_nothing: 642, provenance_body_field: 10, provenance_body_global: 24, provenance_body_literal: 104, provenance_body_more_than_one_named_global_in_its_own_pool: 112, provenance_body_no_named_global_in_its_own_pool: 1355, provenance_body_param: 107, provenance_body_reaches_one_global_and_dereferences_none_of_it: 39, provenance_body_the_displacement_names_no_declared_field: 9, provenance_body_the_offset_it_accesses_names_no_declared_field: 9, provenance_body_unknown: 933, provenance_leaf_call_sites_disagree_or_say_nothing: 405, provenance_leaf_field: 5, provenance_leaf_global: 19, provenance_leaf_literal: 56, provenance_leaf_more_than_one_named_global_in_its_own_pool: 21, provenance_leaf_no_named_global_in_its_own_pool: 869, provenance_leaf_param: 41, provenance_leaf_reaches_one_global_and_dereferences_none_of_it: 16, provenance_leaf_the_displacement_names_no_declared_field: 5, provenance_leaf_the_offset_it_accesses_names_no_declared_field: 9, provenance_leaf_unknown: 578, provenance_named_check: 116, provenance_named_copy: 1, provenance_named_get: 118, provenance_named_on_no_verb_: 15, provenance_named_set: 117, provenance_named_update: 127, role: 4, shared: 21, shell: 156, shell_table_rows: 79, slot: 134, string: 20, svc: 79, syscall: 9, vector: 54, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114, wrapper: 36}
+  counts: {accessor: 21, bleevt: 28, bymodule: 143, bymodule_contested: 20, extlib: 0, helper: 653, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1821, modules: 179, prototypes_derived: 33, provenance: 468, provenance_body_call_sites_disagree_or_say_nothing: 642, provenance_body_field: 10, provenance_body_global: 24, provenance_body_literal: 104, provenance_body_more_than_one_named_global_in_its_own_pool: 108, provenance_body_no_named_global_in_its_own_pool: 1370, provenance_body_param: 107, provenance_body_reaches_one_global_and_dereferences_none_of_it: 38, provenance_body_the_displacement_names_no_declared_field: 9, provenance_body_the_offset_it_accesses_names_no_declared_field: 9, provenance_body_unknown: 933, provenance_leaf_call_sites_disagree_or_say_nothing: 406, provenance_leaf_field: 5, provenance_leaf_global: 19, provenance_leaf_literal: 56, provenance_leaf_more_than_one_named_global_in_its_own_pool: 20, provenance_leaf_no_named_global_in_its_own_pool: 886, provenance_leaf_param: 41, provenance_leaf_reaches_one_global_and_dereferences_none_of_it: 15, provenance_leaf_the_displacement_names_no_declared_field: 5, provenance_leaf_the_offset_it_accesses_names_no_declared_field: 9, provenance_leaf_unknown: 578, provenance_named_check: 110, provenance_named_copy: 1, provenance_named_get: 112, provenance_named_on_no_verb_: 15, provenance_named_set: 110, provenance_named_update: 122, role: 4, shared: 17, shell: 156, shell_table_rows: 79, slot: 134, string: 20, svc: 79, syscall: 9, vector: 54, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114, wrapper: 35}
   known_addresses: {agree: 194, disagree: 0}
 
 functions:
@@ -625,33 +625,33 @@ functions:
     address: 0x31cfc
     class: shell
     evidence: "shell_cmd_table row 0x27454: command 'trig', --help slot (+8)"
-  - name: max86173_struct_200076e8_update_1
+  - name: max8617x_struct_200076e8_update_1
     address: 0x31e50
     class: provenance
-    evidence: "0x31e50 reaches max86173_struct_200076e8 through its own literal pool and no other named global; the body updates through it"
+    evidence: "0x31e50 reaches max8617x_struct_200076e8 through its own literal pool and no other named global; the body updates through it"
     module: TRIG
-  - name: max86173_struct_200076e8_update_2
+  - name: max8617x_struct_200076e8_update_2
     address: 0x31eb4
     class: provenance
-    evidence: "0x31eb4 reaches max86173_struct_200076e8 through its own literal pool and no other named global; the body updates through it"
-  - name: max86173_struct_200076e8_update_3
+    evidence: "0x31eb4 reaches max8617x_struct_200076e8 through its own literal pool and no other named global; the body updates through it"
+  - name: max8617x_struct_200076e8_update_3
     address: 0x31ed0
     class: provenance
-    evidence: "0x31ed0 reaches max86173_struct_200076e8 through its own literal pool and no other named global; the body updates through it"
-  - name: max86173_struct_200076e8_update_4
+    evidence: "0x31ed0 reaches max8617x_struct_200076e8 through its own literal pool and no other named global; the body updates through it"
+  - name: max8617x_struct_200076e8_update_4
     address: 0x31eec
     class: provenance
-    evidence: "0x31eec reaches max86173_struct_200076e8 through its own literal pool and no other named global; the body updates through it"
+    evidence: "0x31eec reaches max8617x_struct_200076e8 through its own literal pool and no other named global; the body updates through it"
     module: MAX86173
-  - name: max86173_struct_200076e8_update_5
+  - name: max8617x_struct_200076e8_update_5
     address: 0x31f10
     class: provenance
-    evidence: "0x31f10 reaches max86173_struct_200076e8 through its own literal pool and no other named global; the body updates through it"
+    evidence: "0x31f10 reaches max8617x_struct_200076e8 through its own literal pool and no other named global; the body updates through it"
     module: MAX86173
-  - name: max86173_struct_200076e8_set
+  - name: max8617x_struct_200076e8_set
     address: 0x31f34
     class: provenance
-    evidence: "0x31f34 reaches max86173_struct_200076e8 through its own literal pool and no other named global; the body sets through it"
+    evidence: "0x31f34 reaches max8617x_struct_200076e8 through its own literal pool and no other named global; the body sets through it"
   - name: trig_start_clock_in_mode
     address: 0x31f44
     class: logline
@@ -775,15 +775,6 @@ functions:
     address: 0x33fe4
     class: logline
     evidence: "the only line 0x33fe4 logs, wlog('chronometer_start') at 0x33fee"
-  - name: wpp_ptr_20017c54_get
-    address: 0x3401c
-    class: provenance
-    evidence: "0x3401c reaches wpp_ptr_20017c54 through its own literal pool and no other named global; the body gets through it"
-    module: WPP
-  - name: wpp_ptr_20017c54_check
-    address: 0x34030
-    class: provenance
-    evidence: "0x34030 reaches wpp_ptr_20017c54 through its own literal pool and no other named global; the body checks through it"
   - name: WPP_CMD_GET_LUMINOSITY_LEVEL
     address: 0x340f8
     class: wppcmd
@@ -1780,19 +1771,19 @@ functions:
     evidence: "wlog('[ANCS] ancs_service_disc_cb err_code=%d (start_handle = 0x%04x | end_handle = 0x%04x)') at 0x3e17c, leading identifier is a callback name"
     module: ANCS
     also_named: [ancs_service_disc_cb_err (logline)]
-  - name: wpp_struct_20025286_set
+  - name: wpp_lite_struct_20025286_set
     address: 0x3e808
     class: provenance
-    evidence: "0x3e808 reaches wpp_struct_20025286 through its own literal pool and no other named global; the body sets through it"
-  - name: wpp_struct_20025286_check_1
+    evidence: "0x3e808 reaches wpp_lite_struct_20025286 through its own literal pool and no other named global; the body sets through it"
+  - name: wpp_lite_struct_20025286_check_1
     address: 0x3e8c0
     class: provenance
-    evidence: "0x3e8c0 reaches wpp_struct_20025286 through its own literal pool and no other named global; the body checks through it"
+    evidence: "0x3e8c0 reaches wpp_lite_struct_20025286 through its own literal pool and no other named global; the body checks through it"
     module: WPP
-  - name: wpp_struct_20025286_check_2
+  - name: wpp_lite_struct_20025286_check_2
     address: 0x3e924
     class: provenance
-    evidence: "0x3e924 reaches wpp_struct_20025286 through its own literal pool and no other named global; the body checks through it"
+    evidence: "0x3e924 reaches wpp_lite_struct_20025286 through its own literal pool and no other named global; the body checks through it"
   - name: ancs_app_bundle_id__1
     address: 0x3eb20
     class: helper
@@ -2163,52 +2154,52 @@ functions:
     class: provenance
     evidence: "0x419fc reaches service_changed_struct_20018e38 through its own literal pool and no other named global; the body updates through it"
     module: SERVICE_CHANGED
-  - name: wuapp_struct_20018e54_check
+  - name: ble_wpp_c_struct_20018e54_check
     address: 0x41b8c
     class: provenance
-    evidence: "0x41b8c reaches wuapp_struct_20018e54 through its own literal pool and no other named global; the body checks through it"
+    evidence: "0x41b8c reaches ble_wpp_c_struct_20018e54 through its own literal pool and no other named global; the body checks through it"
     module: WUAPP
   - name: wuapp_service_discover_attempts
     address: 0x41b9c
     class: logline
     evidence: "the only line 0x41b9c logs, wlog('[BLE_WPP_C] Service Discover (attempts = %d)') at 0x41bbe"
     module: WUAPP
-  - name: wuapp_struct_20018e54_set_1
+  - name: ble_wpp_c_struct_20018e54_set_1
     address: 0x41bdc
     class: provenance
-    evidence: "0x41bdc reaches wuapp_struct_20018e54 through its own literal pool and no other named global; the body sets through it"
-  - name: wuapp_struct_20018e54_update_1
+    evidence: "0x41bdc reaches ble_wpp_c_struct_20018e54 through its own literal pool and no other named global; the body sets through it"
+  - name: ble_wpp_c_struct_20018e54_update_1
     address: 0x41c00
     class: provenance
-    evidence: "0x41c00 reaches wuapp_struct_20018e54 through its own literal pool and no other named global; the body updates through it"
-  - name: wuapp_struct_20018e54_get
+    evidence: "0x41c00 reaches ble_wpp_c_struct_20018e54 through its own literal pool and no other named global; the body updates through it"
+  - name: ble_wpp_c_struct_20018e54_get
     address: 0x41c70
     class: provenance
-    evidence: "0x41c70 reaches wuapp_struct_20018e54 through its own literal pool and no other named global; the body gets through it"
+    evidence: "0x41c70 reaches ble_wpp_c_struct_20018e54 through its own literal pool and no other named global; the body gets through it"
     module: WUAPP
-  - name: wuapp_struct_20018e54_update_2
+  - name: ble_wpp_c_struct_20018e54_update_2
     address: 0x41c80
     class: provenance
-    evidence: "0x41c80 reaches wuapp_struct_20018e54 through its own literal pool and no other named global; the body updates through it"
-  - name: wuapp_struct_20018e54_update_3
+    evidence: "0x41c80 reaches ble_wpp_c_struct_20018e54 through its own literal pool and no other named global; the body updates through it"
+  - name: ble_wpp_c_struct_20018e54_update_3
     address: 0x41cb0
     class: provenance
-    evidence: "0x41cb0 reaches wuapp_struct_20018e54 through its own literal pool and no other named global; the body updates through it"
+    evidence: "0x41cb0 reaches ble_wpp_c_struct_20018e54 through its own literal pool and no other named global; the body updates through it"
     module: WUAPP
-  - name: wuapp_struct_20018e54_set_2
+  - name: ble_wpp_c_struct_20018e54_set_2
     address: 0x41cd8
     class: provenance
-    evidence: "0x41cd8 reaches wuapp_struct_20018e54 through its own literal pool and no other named global; the body sets through it"
+    evidence: "0x41cd8 reaches ble_wpp_c_struct_20018e54 through its own literal pool and no other named global; the body sets through it"
     module: BT
-  - name: wuapp_struct_20018e54_set_3
+  - name: ble_wpp_c_struct_20018e54_set_3
     address: 0x41ce8
     class: provenance
-    evidence: "0x41ce8 reaches wuapp_struct_20018e54 through its own literal pool and no other named global; the body sets through it"
+    evidence: "0x41ce8 reaches ble_wpp_c_struct_20018e54 through its own literal pool and no other named global; the body sets through it"
     module: BT
-  - name: wuapp_struct_20018e54_update_4
+  - name: ble_wpp_c_struct_20018e54_update_4
     address: 0x41d00
     class: provenance
-    evidence: "0x41d00 reaches wuapp_struct_20018e54 through its own literal pool and no other named global; the body updates through it"
+    evidence: "0x41d00 reaches ble_wpp_c_struct_20018e54 through its own literal pool and no other named global; the body updates through it"
     module: WUAPP
   - name: ble_task__3
     address: 0x41d60
@@ -2657,10 +2648,10 @@ functions:
     class: logline
     evidence: "the only line 0x473b8 logs, wlog('[DBLIB] Element size mismatch id : %d') at 0x473ee"
     module: DBLIB
-  - name: dblib_half_20024d90_get__1
+  - name: initdblib_half_20024d90_get__1
     address: 0x47400
     class: helper
-    evidence: "only 0x47470 (dblib_half_20024d90_get) calls 0x47400; 10 bytes"
+    evidence: "only 0x47470 (initdblib_half_20024d90_get) calls 0x47400; 10 bytes"
   - name: debug_dump_struct_20020b78_update_2__1
     address: 0x47410
     class: helper
@@ -2670,37 +2661,29 @@ functions:
     class: bymodule
     evidence: "0x47434 reaches only dblib_ptr_20019220, dblib_ptr_20019224"
     module: DBLIB
-  - name: dblib_half_20024d90_update_1
+  - name: initdblib_half_20024d90_update_1
     address: 0x4744c
     class: provenance
-    evidence: "0x4744c reaches dblib_half_20024d90 through its own literal pool and no other named global; the body updates through it"
-  - name: dblib_half_20024d90_get
+    evidence: "0x4744c reaches initdblib_half_20024d90 through its own literal pool and no other named global; the body updates through it"
+  - name: initdblib_half_20024d90_get
     address: 0x47470
     class: provenance
-    evidence: "0x47470 reaches dblib_half_20024d90 through its own literal pool and no other named global; the body gets through it"
-  - name: dblib_half_20024d90_set_1
+    evidence: "0x47470 reaches initdblib_half_20024d90 through its own literal pool and no other named global; the body gets through it"
+  - name: initdblib_half_20024d90_set_1
     address: 0x474b8
     class: provenance
-    evidence: "0x474b8 reaches dblib_half_20024d90 through its own literal pool and no other named global; the body sets through it"
-  - name: dblib_half_20024d90_set_2
+    evidence: "0x474b8 reaches initdblib_half_20024d90 through its own literal pool and no other named global; the body sets through it"
+  - name: initdblib_half_20024d90_set_2
     address: 0x47668
     class: provenance
-    evidence: "0x47668 reaches dblib_half_20024d90 through its own literal pool and no other named global; the body sets through it"
-  - name: dblib_half_20024d90_update_2
+    evidence: "0x47668 reaches initdblib_half_20024d90 through its own literal pool and no other named global; the body sets through it"
+  - name: initdblib_half_20024d90_update_2
     address: 0x47690
     class: provenance
-    evidence: "0x47690 reaches dblib_half_20024d90 through its own literal pool and no other named global; the body updates through it"
-  - address: 0x47790
-    class: bymodule
-    evidence: "0x47790 every caller is a body this rule placed in DBLIB: 0x47894"
-    module: DBLIB
+    evidence: "0x47690 reaches initdblib_half_20024d90 through its own literal pool and no other named global; the body updates through it"
   - address: 0x4785c
     class: bymodule
     evidence: "0x4785c reaches only dblib_ptr_20019220, dblib_ptr_20019224"
-    module: DBLIB
-  - address: 0x47894
-    class: bymodule
-    evidence: "0x47894 reaches only dblib_half_20024d90, dblib_ptr_20019220, dblib_ptr_20019224, dblib_struct_20007010"
     module: DBLIB
   - name: ws_events_event_with_time_deleted__1
     address: 0x47b3c
@@ -2771,8 +2754,8 @@ functions:
     module: PART_ID
   - address: 0x4838c
     class: bymodule
-    evidence: "0x4838c reaches only dblib_struct_20007010"
-    module: DBLIB
+    evidence: "0x4838c reaches only initdblib_struct_20007010"
+    module: INITDBLIB
   - name: shell_cmd_perso__1
     address: 0x483d0
     class: helper
@@ -2800,19 +2783,19 @@ functions:
     class: provenance
     evidence: "0x48a84 reaches rambkp_block through its own literal pool and no other named global; the body sets through it"
     module: DBLIB
-  - name: dblib_ptr_20019228_update
+  - name: initdblib_ptr_20019228_update
     address: 0x48aac
     class: provenance
-    evidence: "0x48aac reaches dblib_ptr_20019228 through its own literal pool and no other named global; the body updates through it"
+    evidence: "0x48aac reaches initdblib_ptr_20019228 through its own literal pool and no other named global; the body updates through it"
     module: DBLIB
-  - name: dblib_ptr_20019228_get_1
+  - name: initdblib_ptr_20019228_get_1
     address: 0x48ac4
     class: provenance
-    evidence: "0x48ac4 reaches dblib_ptr_20019228 through its own literal pool and no other named global; the body gets through it"
-  - name: dblib_ptr_20019228_get_2
+    evidence: "0x48ac4 reaches initdblib_ptr_20019228 through its own literal pool and no other named global; the body gets through it"
+  - name: initdblib_ptr_20019228_get_2
     address: 0x48ad4
     class: provenance
-    evidence: "0x48ad4 reaches dblib_ptr_20019228 through its own literal pool and no other named global; the body gets through it"
+    evidence: "0x48ad4 reaches initdblib_ptr_20019228 through its own literal pool and no other named global; the body gets through it"
   - name: dblib_flash_usage_rom_user
     address: 0x48ae8
     class: logline
@@ -3825,51 +3808,29 @@ functions:
     class: accessor
     evidence: "the body is one ldr through debug_dump_ptr_2001ae08 (pool word 0x51b5c = 0x2001ae08) and a return"
     module: DEBUG_DUMP
-  - name: max86173_table_2001af9c_check_1
+  - name: max86173__shared_1__2__1
     address: 0x51b60
-    class: provenance
-    evidence: "0x51b60 reaches max86173_table_2001af9c through its own literal pool and no other named global; the body checks through it"
-    module: MAX86173
-  - name: max86173_table_2001af9c_check_2
-    address: 0x51b98
-    class: provenance
-    evidence: "0x51b98 reaches max86173_table_2001af9c through its own literal pool and no other named global; the body checks through it"
-  - name: max86173_table_2001af9c_check_3
-    address: 0x51bcc
-    class: provenance
-    evidence: "0x51bcc reaches max86173_table_2001af9c through its own literal pool and no other named global; the body checks through it"
-  - name: max86173_table_2001af9c_check_4
-    address: 0x51bf4
-    class: provenance
-    evidence: "0x51bf4 reaches max86173_table_2001af9c through its own literal pool and no other named global; the body checks through it"
-  - name: max86173_struct_20007418_update_4__1
-    address: 0x51c1c
     class: helper
-    evidence: "only 0x8b4a8 (max86173_struct_20007418_update_4) calls 0x51c1c; 80 bytes"
+    evidence: "only 0x51e0c (max86173__shared_1__2) calls 0x51b60; 50 bytes"
     module: MAX86173
-  - name: max86173__shared_1
-    address: 0x51c74
-    class: shared
-    evidence: "every caller of 0x51c74 is in MAX86173: max86173_struct_20007418_set, max86173_struct_20007418_update_1, max86173_struct_20007418_update_2, max86173_struct_20007418_update_3, max86173_struct_20007418_update_4"
-    module: MAX86173
-  - name: max86173__shared_2__1
+  - name: sensors_sync_push_ppg__1
+    address: 0x51bf4
+    class: helper
+    evidence: "only 0x523cc (sensors_sync_push_ppg) calls 0x51bf4; 36 bytes"
+  - name: max86173__shared_1__1
     address: 0x51d58
     class: helper
-    evidence: "only 0x524b0 (max86173__shared_2) calls 0x51d58; 150 bytes"
+    evidence: "only 0x524b0 (max86173__shared_1) calls 0x51d58; 150 bytes"
     module: MAX86173
-  - name: max86173_table_2001af9c_check_5
+  - name: max86173__shared_1__2
     address: 0x51e0c
-    class: provenance
-    evidence: "0x51e0c reaches max86173_table_2001af9c through its own literal pool and no other named global; the body checks through it"
+    class: helper
+    evidence: "only 0x524b0 (max86173__shared_1) calls 0x51e0c; 682 bytes"
     module: MAX86173
-  - name: max86173_ptr_2001be14_update_2__1
+  - name: max8617x_ptr_2001be14_update_2__1
     address: 0x520c8
     class: helper
-    evidence: "only 0x53014 (max86173_ptr_2001be14_update_2) calls 0x520c8; 34 bytes"
-  - address: 0x520f0
-    class: bymodule
-    evidence: "0x520f0 reaches only max86173_ptr_2001be10, max86173_table_20014828, max_led_config_task_handle"
-    module: MAX86173
+    evidence: "only 0x53014 (max8617x_ptr_2001be14_update_2) calls 0x520c8; 34 bytes"
   - name: max86173_table_20014828_update_1
     address: 0x5216c
     class: provenance
@@ -3880,12 +3841,12 @@ functions:
     class: logline
     evidence: "the only line 0x52224 logs, wlog('[max8617x] (0x%06x) [0x%03x] 0x%05x') at 0x5228c"
     module: MAX86173
-  - name: max86173__shared_2__2
+  - name: max86173__shared_1__3
     address: 0x522ac
     class: helper
-    evidence: "only 0x524b0 (max86173__shared_2) calls 0x522ac; 76 bytes"
+    evidence: "only 0x524b0 (max86173__shared_1) calls 0x522ac; 76 bytes"
     module: MAX86173
-  - name: max86173__shared_2
+  - name: max86173__shared_1
     address: 0x524b0
     class: shared
     evidence: "every caller of 0x524b0 is in MAX86173: max86173_kill_max86173_interrupt_task, max_led_config_task"
@@ -3899,14 +3860,6 @@ functions:
     address: 0x52610
     class: provenance
     evidence: "0x52610 reaches max86173_table_20014828 through its own literal pool and no other named global; the body gets through it"
-  - address: 0x526d8
-    class: bymodule
-    evidence: "0x526d8 reaches only max86173_ptr_2001be10, max86173_queue, max86173_queue_static, max86173_sem, max86173_sem_static, max86173_struct_20014818, max86173_table_20014828, max_led_config_task_handle"
-    module: MAX86173
-  - address: 0x5284c
-    class: bymodule
-    evidence: "0x5284c reaches only max86173_ptr_2001be10, max86173_queue, max86173_sem, max86173_table_20014828, max_led_config_task_handle"
-    module: MAX86173
   - name: max86173_table_20014828_update_2
     address: 0x52914
     class: provenance
@@ -3917,7 +3870,7 @@ functions:
     class: helper
     evidence: "only 0x5345c (shell_cmd_max8617x) calls 0x52958; 48 bytes"
     module: MAX86173
-  - name: max86173_table_20014828_check
+  - name: max86173_table_20014828_check_1
     address: 0x529ec
     class: provenance
     evidence: "0x529ec reaches max86173_table_20014828 through its own literal pool and no other named global; the body checks through it"
@@ -3927,28 +3880,27 @@ functions:
     class: provenance
     evidence: "0x52a04 reaches max86173_table_20014828 through its own literal pool and no other named global; the body updates through it"
     module: MAX86173
-  - name: shell_cmd_max8617x__2
+  - name: max86173_table_20014828_check_2
     address: 0x52c3c
-    class: helper
-    evidence: "only 0x5345c (shell_cmd_max8617x) calls 0x52c3c; 208 bytes"
+    class: provenance
+    evidence: "0x52c3c reaches max86173_table_20014828 through its own literal pool and no other named global; the body checks through it"
   - name: max86173_factory_debug
     address: 0x52e78
     class: logline
     evidence: "the only line 0x52e78 logs, wlog('[max8617x][factory][debug] %s,%d,%ld,%d,%d,%d') at 0x52f4e"
     module: MAX86173
-  - name: max86173_ptr_2001be14_update_1
+  - name: max8617x_ptr_2001be14_update_1
     address: 0x52f68
     class: provenance
-    evidence: "0x52f68 reaches max86173_ptr_2001be14 through its own literal pool and no other named global; the body updates through it"
+    evidence: "0x52f68 reaches max8617x_ptr_2001be14 through its own literal pool and no other named global; the body updates through it"
     module: MAX86173
-  - name: max86173_ptr_2001be14_update_2
+  - name: max8617x_ptr_2001be14_update_2
     address: 0x53014
     class: provenance
-    evidence: "0x53014 reaches max86173_ptr_2001be14 through its own literal pool and no other named global; the body updates through it"
-  - name: max86173__shared_3
-    address: 0x531c8
-    class: shared
-    evidence: "every caller of 0x531c8 is in MAX86173: max86173_struct_20007418_set, max86173_struct_20007418_update_1, max86173_struct_20007418_update_2, max86173_struct_20007418_update_3, max86173_struct_20007418_update_4"
+    evidence: "0x53014 reaches max8617x_ptr_2001be14 through its own literal pool and no other named global; the body updates through it"
+  - address: 0x531c8
+    class: bymodule
+    evidence: "0x531c8 reaches only max86173_table_2001be18"
     module: MAX86173
   - name: max86173_tag_0x_vs_expected_0x
     address: 0x531e4
@@ -3970,21 +3922,21 @@ functions:
     class: helper
     evidence: "only 0x52b1c (max_led_config_task) calls 0x53300; 4 bytes"
     module: MAX86173
-  - name: max86173_byte_20026bcc_set_1
+  - name: max8617x_byte_20026bcc_set_1
     address: 0x53308
     class: provenance
-    evidence: "0x53308 reaches max86173_byte_20026bcc through its own literal pool and no other named global; the body sets through it"
+    evidence: "0x53308 reaches max8617x_byte_20026bcc through its own literal pool and no other named global; the body sets through it"
     module: MAX86173
-  - name: max86173_byte_20026bcc_get
+  - name: max8617x_byte_20026bcc_get
     address: 0x53324
     class: accessor
-    evidence: "the body is one ldrb through max86173_byte_20026bcc (pool word 0x5332c = 0x20026bcc) and a return"
-    proto: "uint32_t max86173_byte_20026bcc_get(void *);"
+    evidence: "the body is one ldrb through max8617x_byte_20026bcc (pool word 0x5332c = 0x20026bcc) and a return"
+    proto: "uint32_t max8617x_byte_20026bcc_get(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
-  - name: max86173_byte_20026bcc_set_2
+  - name: max8617x_byte_20026bcc_set_2
     address: 0x53330
     class: provenance
-    evidence: "0x53330 reaches max86173_byte_20026bcc through its own literal pool and no other named global; the body sets through it"
+    evidence: "0x53330 reaches max8617x_byte_20026bcc through its own literal pool and no other named global; the body sets through it"
     module: MAX86173
   - name: max_led_config_task__2
     address: 0x53370
@@ -3995,11 +3947,11 @@ functions:
     address: 0x533d8
     class: shell
     evidence: "shell_cmd_table row 0x272e0: command 'max8617x', --help slot (+8)"
-  - name: shell_cmd_max8617x__3
+  - name: shell_cmd_max8617x__2
     address: 0x533e8
     class: helper
     evidence: "only 0x5345c (shell_cmd_max8617x) calls 0x533e8; 32 bytes"
-  - name: shell_cmd_max8617x__4
+  - name: shell_cmd_max8617x__3
     address: 0x5340c
     class: helper
     evidence: "only 0x5345c (shell_cmd_max8617x) calls 0x5340c; 68 bytes"
@@ -4181,14 +4133,14 @@ functions:
     class: provenance
     evidence: "0x556cc reaches ancs_ptr_2001bf90 through its own literal pool and no other named global; the body gets through it"
     module: ANCS
-  - name: wpp_byte_20026bce_update
+  - name: wpp_lite_byte_20026bce_update
     address: 0x55704
     class: provenance
-    evidence: "0x55704 reaches wpp_byte_20026bce through its own literal pool and no other named global; the body updates through it"
-  - name: wpp_byte_20026bce_set
+    evidence: "0x55704 reaches wpp_lite_byte_20026bce through its own literal pool and no other named global; the body updates through it"
+  - name: wpp_lite_byte_20026bce_set
     address: 0x55788
     class: provenance
-    evidence: "0x55788 reaches wpp_byte_20026bce through its own literal pool and no other named global; the body sets through it"
+    evidence: "0x55788 reaches wpp_lite_byte_20026bce through its own literal pool and no other named global; the body sets through it"
     module: WPP
   - name: notification_enabled_fetch
     address: 0x55800
@@ -4858,10 +4810,6 @@ functions:
     address: 0x5df44
     class: provenance
     evidence: "0x5df44 reaches swdog_table_2001fbac through its own literal pool and no other named global; the body sets through it"
-  - address: 0x5df78
-    class: bymodule
-    evidence: "0x5df78 every caller is a body this rule placed in MAX86173: 0x5284c"
-    module: MAX86173
   - name: swdog_id_timeout
     address: 0x5dfac
     class: logline
@@ -6260,32 +6208,16 @@ functions:
     address: 0x6bbf8
     class: slot
     evidence: "0x6bbf8 is the fetch slot of debug_dump_ram_items row 5 (word 0x27d2c); nothing calls it"
-  - name: wpp_struct_20020920_set_1
+  - name: WPP_CMD_PROBE__1
     address: 0x6bc0c
-    class: provenance
-    evidence: "0x6bc0c reaches wpp_struct_20020920 through its own literal pool and no other named global; the body sets through it"
+    class: helper
+    evidence: "only 0x6c84c (WPP_CMD_PROBE) calls 0x6bc0c; 14 bytes"
     module: WPP
-  - name: wpp_struct_20020920_set_2
+  - name: WPP_CMD_PROBE__2
     address: 0x6bc20
-    class: provenance
-    evidence: "0x6bc20 reaches wpp_struct_20020920 through its own literal pool and no other named global; the body sets through it"
+    class: helper
+    evidence: "only 0x6c84c (WPP_CMD_PROBE) calls 0x6bc20; 6 bytes"
     module: WPP
-  - name: wpp_struct_20020920_get_1
-    address: 0x6bc2c
-    class: provenance
-    evidence: "0x6bc2c reaches wpp_struct_20020920 through its own literal pool and no other named global; the body gets through it"
-  - name: wpp_struct_20020920_get_2
-    address: 0x6bc38
-    class: provenance
-    evidence: "0x6bc38 reaches wpp_struct_20020920 through its own literal pool and no other named global; the body gets through it"
-  - name: wpp_struct_20020920_get_3
-    address: 0x6bc44
-    class: provenance
-    evidence: "0x6bc44 reaches wpp_struct_20020920 through its own literal pool and no other named global; the body gets through it"
-  - name: wpp_struct_20020920_get
-    address: 0x6bc50
-    class: accessor
-    evidence: "the body is one ldrb through wpp_struct_20020920 (pool word 0x6bc58 = 0x20020920) and a return"
   - name: wpp_struct_20020944_set
     address: 0x6bc5c
     class: provenance
@@ -6295,105 +6227,68 @@ functions:
     address: 0x6bc6c
     class: helper
     evidence: "only 0x3914c (wpp_service_ctx_set_2) calls 0x6bc6c; 30 bytes"
-  - name: wpp_struct_20020920_set_3
+  - name: wpp_service_ctx_update_2__1
     address: 0x6bc8c
-    class: provenance
-    evidence: "0x6bc8c reaches wpp_struct_20020920 through its own literal pool and no other named global; the body sets through it"
-  - name: wpp_struct_20020920_update
-    address: 0x6bcb4
-    class: provenance
-    evidence: "0x6bcb4 reaches wpp_struct_20020920 through its own literal pool and no other named global; the body updates through it"
-    module: WPP
+    class: helper
+    evidence: "only 0x391b0 (wpp_service_ctx_update_2) calls 0x6bc8c; 78 bytes"
   - name: wpp_state_disc_or_not_slave
     address: 0x6bd0c
     class: logline
     evidence: "the only line 0x6bd0c logs, wlog('[WPP LITE] state DISC or not slave req') at 0x6bd2a"
     module: WPP
-  - name: wpp_struct_20020920_check
-    address: 0x6bd54
-    class: provenance
-    evidence: "0x6bd54 reaches wpp_struct_20020920 through its own literal pool and no other named global; the body checks through it"
-  - name: wpp_struct_20020920_set_4
-    address: 0x6bdfc
-    class: provenance
-    evidence: "0x6bdfc reaches wpp_struct_20020920 through its own literal pool and no other named global; the body sets through it"
-  - name: wpp_struct_20020920_set_5
-    address: 0x6be14
-    class: provenance
-    evidence: "0x6be14 reaches wpp_struct_20020920 through its own literal pool and no other named global; the body sets through it"
   - name: ble_task__4
     address: 0x6bf04
     class: helper
     evidence: "only 0x34068 (ble_task) calls 0x6bf04; 678 bytes"
     module: WPP
-  - name: wpp_struct_20020920_set_6
-    address: 0x6bf60
-    class: provenance
-    evidence: "0x6bf60 reaches wpp_struct_20020920 through its own literal pool and no other named global; the body sets through it"
-  - name: wpp_struct_20020920_get_4
+  - name: wpp_lite_byte_20026c15_check__1
     address: 0x6bf6c
-    class: provenance
-    evidence: "0x6bf6c reaches wpp_struct_20020920 through its own literal pool and no other named global; the body gets through it"
+    class: helper
+    evidence: "only 0x6c300 (wpp_lite_byte_20026c15_check) calls 0x6bf6c; 6 bytes"
     module: WPP
   - name: wpp_cancel_func
     address: 0x6bf78
     class: logline
     evidence: "the only line 0x6bf78 logs, wlog('[WPP] cancel func %p') at 0x6bf86"
     module: WPP
-  - address: 0x6bfa8
-    class: bymodule
-    evidence: "0x6bfa8 reaches only wpp_table_20020950, wpp_word_20020b68"
-    module: WPP
-  - address: 0x6c164
-    class: bymodule
-    evidence: "0x6c164 reaches only wpp_table_20020950"
-    module: WPP
   - name: wpp_tx_complete_process_continue_nb
     address: 0x6c184
     class: logline
     evidence: "the only line 0x6c184 logs, wlog('[WPP_LITE] tx complete (process_continue = %p | nb slots = %d)') at 0x6c196"
     module: WPP
-  - name: wpp_byte_20026c15_check
+  - name: wpp_lite_byte_20026c15_check
     address: 0x6c300
     class: provenance
-    evidence: "0x6c300 reaches wpp_byte_20026c15 through its own literal pool and no other named global; the body checks through it"
+    evidence: "0x6c300 reaches wpp_lite_byte_20026c15 through its own literal pool and no other named global; the body checks through it"
     module: WPP
-  - name: wpp_byte_20026c15_update
+  - name: wpp_lite_byte_20026c15_update
     address: 0x6c37c
     class: provenance
-    evidence: "0x6c37c reaches wpp_byte_20026c15 through its own literal pool and no other named global; the body updates through it"
+    evidence: "0x6c37c reaches wpp_lite_byte_20026c15 through its own literal pool and no other named global; the body updates through it"
   - name: push_cannot_insert_item_limit
     address: 0x6c38c
     class: logline
     evidence: "the only line 0x6c38c logs, wlog('[Channel %d] Push - Cannot insert item, limit reached (nb = %d/%d | size = %d)') at 0x6c3f8"
     module: WPP
-  - address: 0x6c460
-    class: bymodule
-    evidence: "0x6c460 reaches only wpp_byte_20026c15, wpp_struct_200071a0, wpp_struct_200071ac"
-    module: WPP
   - address: 0x6c4f4
     class: bymodule
-    evidence: "0x6c4f4 reaches only wpp_struct_200071a0, wpp_struct_200071ac"
-    module: WPP
+    evidence: "0x6c4f4 reaches only wpp_lite_struct_200071a0, wpp_lite_struct_200071ac"
+    module: WPP_LITE
   - address: 0x6c534
     class: bymodule
-    evidence: "0x6c534 reaches only wpp_struct_200071ac"
-    module: WPP
-  - address: 0x6c540
-    class: bymodule
-    evidence: "0x6c540 reaches only wpp_struct_200071a0, wpp_struct_200071ac"
-    module: WPP
-  - name: wpp_struct_200071a0_get
+    evidence: "0x6c534 reaches only wpp_lite_struct_200071ac"
+    module: WPP_LITE
+  - name: wpp_lite_struct_200071a0_get
     address: 0x6c578
     class: provenance
-    evidence: "0x6c578 reaches wpp_struct_200071a0 through its own literal pool and no other named global; the body gets through it"
+    evidence: "0x6c578 reaches wpp_lite_struct_200071a0 through its own literal pool and no other named global; the body gets through it"
     module: WPP
   - name: wpp_state_auth_required
     address: 0x6c60c
     class: logline
     evidence: "the only line 0x6c60c logs, wlog('[WPP] state : AUTH_REQUIRED') at 0x6c632"
     module: WPP
-  - name: WPP_CMD_PROBE__1
+  - name: WPP_CMD_PROBE__3
     address: 0x6c654
     class: helper
     evidence: "only 0x6c84c (WPP_CMD_PROBE) calls 0x6c654; 76 bytes"
@@ -6525,10 +6420,6 @@ functions:
     evidence: "wpp_cmd_table row 0x27a00: key 2476, label 'WPP_CMD_TRACKER_MOVE_HANDS_GET', CMD_TRACKER_MOVE_HANDS_GET in wpp/src/commands.rs"
     module: WPP
     also_named: [wpp_error_tracker_move_hands_not (logline)]
-  - address: 0x6d250
-    class: bymodule
-    evidence: "0x6d250 every caller is a body this rule placed in WPP: 0x6bfa8"
-    module: WPP
   - name: WPP_CMD_MTU_EXCH
     address: 0x6d2e0
     class: wppcmd
@@ -6639,11 +6530,6 @@ functions:
     address: 0x6e4f8
     class: helper
     evidence: "only 0x89e48 (ui_update_timeout) calls 0x6e4f8; 16 bytes"
-  - name: wpp_struct_20020920_update__1
-    address: 0x6e50c
-    class: helper
-    evidence: "only 0x6bcb4 (wpp_struct_20020920_update) calls 0x6e50c; 56 bytes"
-    module: WPP
   - name: WPP_CMD_UP_FIRMWARE_START__1
     address: 0x6e598
     class: helper
@@ -6660,10 +6546,6 @@ functions:
     class: logline
     evidence: "the only line 0x6e6c4 logs, wlog('[UP] Updating end') at 0x6e6ce"
     module: UP
-  - address: 0x6e6f4
-    class: bymodule
-    evidence: "0x6e6f4 every caller is a body this rule placed in WPP: 0x6bfa8"
-    module: WPP
   - name: wpp_lite_client_cmd_dropped
     address: 0x6e7e8
     class: logline
@@ -7668,39 +7550,10 @@ functions:
     class: logline
     evidence: "the only line 0x8ae3c logs, wlog('[WIDGET_SCROLLING_TEXT] E_INACTIVITY') at 0x8ae4e"
     module: WIDGET_SCROLLING_TEXT
-  - name: max86173_struct_20007418_update_1
-    address: 0x8af40
-    class: provenance
-    evidence: "0x8af40 reaches max86173_struct_20007418 through its own literal pool and no other named global; the body updates through it"
-    module: MAX86173
-  - name: max86173_struct_20007418_update_2
-    address: 0x8b094
-    class: provenance
-    evidence: "0x8b094 reaches max86173_struct_20007418 through its own literal pool and no other named global; the body updates through it"
-    module: MAX86173
-  - name: max86173_struct_20007418_set
-    address: 0x8b208
-    class: provenance
-    evidence: "0x8b208 reaches max86173_struct_20007418 through its own literal pool and no other named global; the body sets through it"
-    module: MAX86173
-    proto: "uint32_t max86173_struct_20007418_set(void *);"
-    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
-  - name: max86173_struct_20007418_update_3
-    address: 0x8b358
-    class: provenance
-    evidence: "0x8b358 reaches max86173_struct_20007418 through its own literal pool and no other named global; the body updates through it"
-    module: MAX86173
-    proto: "uint32_t max86173_struct_20007418_update_3(void *);"
-    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
-  - name: max86173_struct_20007418_update_4
-    address: 0x8b4a8
-    class: provenance
-    evidence: "0x8b4a8 reaches max86173_struct_20007418 through its own literal pool and no other named global; the body updates through it"
-    module: MAX86173
-  - name: max86173_struct_20007418_get
+  - name: max86173__shared_2
     address: 0x8b7a4
-    class: provenance
-    evidence: "0x8b7a4 reaches max86173_struct_20007418 through its own literal pool and no other named global; the body gets through it"
+    class: shared
+    evidence: "every caller of 0x8b7a4 is in MAX86173: max86173_factory_debug, max86173_table_20014828_update_3"
     module: MAX86173
   - name: wui_ptr_2002499c_check_1
     address: 0x8b7b0
@@ -8257,10 +8110,10 @@ functions:
     class: helper
     evidence: "only 0x6e6c4 (up_updating_end) calls 0x92618; 6 bytes"
     module: UP
-  - name: wpp_struct_20020920_set_3__1
+  - name: wpp_service_ctx_update_2__1__1
     address: 0x92624
     class: helper
-    evidence: "only 0x6bc8c (wpp_struct_20020920_set_3) calls 0x92624; 6 bytes"
+    evidence: "only 0x6bc8c (wpp_service_ctx_update_2__1) calls 0x92624; 6 bytes"
   - name: wpp_state_auth_required__1
     address: 0x9262a
     class: helper
@@ -9524,19 +9377,19 @@ functions:
     address: 0x9a9d2
     class: slot
     evidence: "0x9a9d2 is the slot_1 slot of i2c_device_table row 3 (word 0xb2328); nothing calls it"
-  - name: max86173__shared_4
+  - name: max86173__shared_3
     address: 0x9aa30
     class: shared
     evidence: "every caller of 0x9aa30 is in MAX86173: max86173_kill_max86173_interrupt_task, max_led_config_task"
     module: MAX86173
-  - name: max86173_ptr_2001be14_update_2__2
+  - name: max8617x_ptr_2001be14_update_2__2
     address: 0x9aa5e
     class: helper
-    evidence: "only 0x53014 (max86173_ptr_2001be14_update_2) calls 0x9aa5e; 30 bytes"
-  - name: max86173_table_2001af9c_check_5__1
+    evidence: "only 0x53014 (max8617x_ptr_2001be14_update_2) calls 0x9aa5e; 30 bytes"
+  - name: max86173__shared_1__2__2
     address: 0x9ab64
     class: helper
-    evidence: "only 0x51e0c (max86173_table_2001af9c_check_5) calls 0x9ab64; 38 bytes"
+    evidence: "only 0x51e0c (max86173__shared_1__2) calls 0x9ab64; 38 bytes"
     module: MAX86173
   - name: main_task__12
     address: 0x9ab8a
@@ -9922,23 +9775,14 @@ functions:
     address: 0x9d440
     class: helper
     evidence: "only 0x6bc6c (wpp_service_ctx_set_2__1) calls 0x9d440; 4 bytes"
-  - name: wpp_struct_20020920_set_3__2
+  - name: wpp_service_ctx_update_2__1__2
     address: 0x9d444
     class: helper
-    evidence: "only 0x6bc8c (wpp_struct_20020920_set_3) calls 0x9d444; 160 bytes"
-  - name: wpp_struct_20020920_update__2
-    address: 0x9d452
-    class: helper
-    evidence: "only 0x6bcb4 (wpp_struct_20020920_update) calls 0x9d452; 4 bytes"
-    module: WPP
+    evidence: "only 0x6bc8c (wpp_service_ctx_update_2__1) calls 0x9d444; 160 bytes"
   - address: 0x9d48e
     class: bymodule
-    evidence: "0x9d48e every caller is a body this rule placed in WPP: 0x6c4f4"
-    module: WPP
-  - name: wpp_struct_20020920_get_wrap
-    address: 0x9d5ba
-    class: wrapper
-    evidence: "0x9d5ba is 6 instructions with one call, to wpp_struct_20020920_get, and returns"
+    evidence: "0x9d48e every caller is a body this rule placed in WPP_LITE: 0x6c4f4"
+    module: WPP_LITE
   - name: sd_ble_version_get_copy_0x9d5c8
     address: 0x9d5c8
     class: svc
@@ -10043,19 +9887,19 @@ functions:
     class: helper
     evidence: "only 0xa48e6 (ppg_hrv_algo_step__4) calls 0x9f46c; 30 bytes"
     module: SENSORS_SYNC
-  - name: max86173_ptr_2001be14_update_2__3__1
+  - name: max8617x_ptr_2001be14_update_2__3__1
     address: 0x9f97a
     class: helper
-    evidence: "only 0x9fe20 (max86173_ptr_2001be14_update_2__3) calls 0x9f97a; 110 bytes"
+    evidence: "only 0x9fe20 (max8617x_ptr_2001be14_update_2__3) calls 0x9f97a; 110 bytes"
   - name: shell_cmd_adxl__6
     address: 0x9fdc6
     class: helper
     evidence: "only 0x3c6b8 (shell_cmd_adxl) calls 0x9fdc6; 90 bytes"
     module: ADXL367
-  - name: max86173_ptr_2001be14_update_2__3
+  - name: max8617x_ptr_2001be14_update_2__3
     address: 0x9fe20
     class: helper
-    evidence: "only 0x53014 (max86173_ptr_2001be14_update_2) calls 0x9fe20; 84 bytes"
+    evidence: "only 0x53014 (max8617x_ptr_2001be14_update_2) calls 0x9fe20; 84 bytes"
   - address: 0x9fe74
     class: bymodule
     evidence: "0x9fe74 every caller is a body this rule placed in SPORT: 0x5c714"
@@ -10739,30 +10583,6 @@ functions:
     address: 0xa7160
     class: helper
     evidence: "only 0xa5a98 (refresh_carousel_clocks_2) calls 0xa7160; 6 bytes"
-  - name: max86173__shared_7__1
-    address: 0xa7178
-    class: helper
-    evidence: "only 0xa71f8 (max86173__shared_7) calls 0xa7178; 94 bytes"
-    module: MAX86173
-  - name: max86173__shared_5
-    address: 0xa71e0
-    class: shared
-    evidence: "every caller of 0xa71e0 is in MAX86173: max86173_struct_20007418_set, max86173_struct_20007418_update_1, max86173_struct_20007418_update_2, max86173_struct_20007418_update_3, max86173_struct_20007418_update_4"
-    module: MAX86173
-  - name: max86173__shared_6
-    address: 0xa71f0
-    class: shared
-    evidence: "every caller of 0xa71f0 is in MAX86173: max86173_struct_20007418_set, max86173_struct_20007418_update_1, max86173_struct_20007418_update_2, max86173_struct_20007418_update_3, max86173_struct_20007418_update_4"
-    module: MAX86173
-  - name: max86173__shared_7
-    address: 0xa71f8
-    class: shared
-    evidence: "every caller of 0xa71f8 is in MAX86173: max86173_struct_20007418_set, max86173_struct_20007418_update_1, max86173_struct_20007418_update_2, max86173_struct_20007418_update_3, max86173_struct_20007418_update_4"
-    module: MAX86173
-  - address: 0xa744e
-    class: bymodule
-    evidence: "0xa744e every caller is a body this rule placed in MAX86173: 0x526d8, 0x5284c"
-    module: MAX86173
   - name: max86173_table_20014828_update_3__1
     address: 0xa7480
     class: helper
