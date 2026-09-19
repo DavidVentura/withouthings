@@ -28,18 +28,20 @@ enum dblib_ie {
        0x5e0d4, 0x5e210, 0x5e2f8, 0x5e3e0; entry length 0xc.
        */
     DBLIB_IE_004 = 0x4,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    /* scanwatch_ble's dblib.py reads id 0x7 off a watch as LOCALE.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x510f4, 0x51170; entry length 0x6.
        */
-    DBLIB_IE_007 = 0x7,
+    DBLIB_IE_LOCALE = 0x7,
     /* perso shell table row 0xb421c {"mfgid", 0xb, 0x5a581}; reached through
        dblib_get 0x48294 from 0x36ed8; entry length 0x4.
        */
     DBLIB_IE_MFGID = 0xb,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the
+    /* scanwatch_ble's dblib.py reads id 0xf off a watch as TIME_DELTA.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the
        setter at 0x47f58 from 0x5dfe4, 0x5e024, 0x5e18c; entry length 0x4.
        */
-    DBLIB_IE_00F = 0xf,
+    DBLIB_IE_TIME_DELTA = 0xf,
     /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x4c8a0, 0x4c908; entry length 0x4.
        */
@@ -86,18 +88,21 @@ enum dblib_ie {
        0x33028, 0x330f8; entry length 0x180.
        */
     DBLIB_IE_068 = 0x68,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    /* scanwatch_ble's dblib.py reads id 0x6f off a watch as STEP_GOAL.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x607e4, 0x60854; entry length 0x4.
        */
-    DBLIB_IE_06F = 0x6f,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    DBLIB_IE_STEP_GOAL = 0x6f,
+    /* scanwatch_ble's dblib.py reads id 0x70 off a watch as SLEEP_GOAL.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x60824, 0x60854; entry length 0x4.
        */
-    DBLIB_IE_070 = 0x70,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    DBLIB_IE_SLEEP_GOAL = 0x70,
+    /* scanwatch_ble's dblib.py reads id 0x75 off a watch as ALARMCLOCK.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x3d450, 0x3d65c, 0x9444a, 0x944e2; entry length 0x50.
        */
-    DBLIB_IE_075 = 0x75,
+    DBLIB_IE_ALARMCLOCK = 0x75,
     /* the shell's quartz calibration command 0x34654 reads it under `get`
        and writes it under `set`; reached through dblib_get 0x48294, the
        setter at 0x48200 from 0x34654; entry length 0x4.
@@ -149,10 +154,11 @@ enum dblib_ie {
     DBLIB_IE_09B = 0x9b,
     /* reached through the setter at 0x48200 from 0x6d0e0; entry length 0x12. */
     DBLIB_IE_09D = 0x9d,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    /* scanwatch_ble's dblib.py reads id 0xa2 off a watch as FACTORY_STATE.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x4bcb0, 0x4bd18; entry length 0x1.
        */
-    DBLIB_IE_0A2 = 0xa2,
+    DBLIB_IE_FACTORY_STATE = 0xa2,
     /* reached through dblib_get 0x48294, the setter at 0x48200, the setter
        at 0x4814c from 0x53b78, 0x53c08, 0x53db4, 0x9abba; entry length 0x20.
        */
@@ -200,10 +206,11 @@ enum dblib_ie {
     DBLIB_IE_0BB = 0xbb,
     /* reached through dblib_get_first 0x9776e from 0x2e1d8. */
     DBLIB_IE_0BC = 0xbc,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the
+    /* scanwatch_ble's dblib.py reads id 0xc0 off a watch as ACTIVITY_VASISTAS_MIGRATION_BASE.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc, the
        setter at 0x47e58 from 0x2e50c, 0x3119c, 0x9259c; entry length 0x18.
        */
-    DBLIB_IE_0C0 = 0xc0,
+    DBLIB_IE_ACTIVITY_VASISTAS_MIGRATION_BASE = 0xc0,
     /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x4be68, 0x4be9c; entry length 0x4.
        */
@@ -230,10 +237,11 @@ enum dblib_ie {
        0x3cec0, 0x82a58, 0x923b0, 0x94480; entry length 0x1.
        */
     DBLIB_IE_0E8 = 0xe8,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    /* scanwatch_ble's dblib.py reads id 0xeb off a watch as WLOG_DISPLAY_LEVEL.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x50abc, 0x50ebc; entry length 0x2.
        */
-    DBLIB_IE_0EB = 0xeb,
+    DBLIB_IE_WLOG_DISPLAY_LEVEL = 0xeb,
     /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x69464, 0x6976c; entry length 0x4.
        */
@@ -254,22 +262,25 @@ enum dblib_ie {
        0x69414, 0x69464; entry length 0x48.
        */
     DBLIB_IE_102 = 0x102,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    /* scanwatch_ble's dblib.py reads id 0x103 off a watch as VAS_CACHE.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x658bc, 0x658e8, 0x6593c; entry length 0x4.
        */
-    DBLIB_IE_103 = 0x103,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    DBLIB_IE_VAS_CACHE = 0x103,
+    /* scanwatch_ble's dblib.py reads id 0x104 off a watch as ADXL367_MODE.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x4cdd4, 0x4ce0c; entry length 0x1.
        */
-    DBLIB_IE_104 = 0x104,
+    DBLIB_IE_ADXL367_MODE = 0x104,
     /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x576d4, 0x57800; entry length 0xc.
        */
     DBLIB_IE_106 = 0x106,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    /* scanwatch_ble's dblib.py reads id 0x107 off a watch as FLASH_CACHE.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x4c300, 0x4c32c, 0x4c360; entry length 0x4.
        */
-    DBLIB_IE_107 = 0x107,
+    DBLIB_IE_FLASH_CACHE = 0x107,
     /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x378f4, 0x37a58.
        */
@@ -292,10 +303,11 @@ enum dblib_ie {
        0x9c0e6; entry length 0x1.
        */
     DBLIB_IE_120 = 0x120,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    /* scanwatch_ble's dblib.py reads id 0x124 off a watch as GSS_CACHE.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x4ddc0, 0x4ddec, 0x4de24; entry length 0x4.
        */
-    DBLIB_IE_124 = 0x124,
+    DBLIB_IE_GSS_CACHE = 0x124,
     /* perso shell table row 0xb4264 {"crt", 0x12b, 0x5abbd}; 0x974fc reads
        it as the client certificate mbedTLS is handed; reached through
        dblib_get 0x48294 from 0x974fc; entry length 0x202.
@@ -317,10 +329,11 @@ enum dblib_ie {
        0x982da; entry length 0x4.
        */
     DBLIB_IE_132 = 0x132,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    /* scanwatch_ble's dblib.py reads id 0x133 off a watch as WUP_DEVICE.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x37004, 0x37028; entry length 0x4.
        */
-    DBLIB_IE_133 = 0x133,
+    DBLIB_IE_WUP_DEVICE = 0x133,
     /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x59a44, 0x9b926; entry length 0x1.
        */
@@ -344,14 +357,16 @@ enum dblib_ie {
        length 0x34.
        */
     DBLIB_IE_146 = 0x146,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    /* scanwatch_ble's dblib.py reads id 0x147 off a watch as LOCAL_NOTIFICATIONS_CONFIG.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x51554, 0x516d8; entry length 0x28.
        */
-    DBLIB_IE_147 = 0x147,
-    /* reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
+    DBLIB_IE_LOCAL_NOTIFICATIONS_CONFIG = 0x147,
+    /* scanwatch_ble's dblib.py reads id 0x148 off a watch as WORKOUT_SCREEN_ALWAYS_ON.
+       reached through dblib_get_first 0x9776e, the setter at 0x47ebc from
        0x6adfc, 0x6ae38; entry length 0x1.
        */
-    DBLIB_IE_148 = 0x148,
+    DBLIB_IE_WORKOUT_SCREEN_ALWAYS_ON = 0x148,
     /* reached through dblib_query_init 0x47b00 from 0x9ac8c, 0x9acda,
        0x9ad18, 0x9ad72; entry length 0xc.
        */
