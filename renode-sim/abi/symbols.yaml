@@ -28453,6 +28453,44 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [WUI] (1 read it,
     0 write it)
+- address: 0x20007990
+  name: algo_manager_ctx
+  kind: global
+  class: hand
+  module: algo_manager
+  evidence: 'the object every algo_manager entry point is handed as its first argument:
+    algo_manager_feed_sample at 0x316b0, algo_manager_request_pause at 0x31414 and
+    0x4ec98, the publish walk at 0x620c0, the per-algorithm enable at 0x638bc and
+    0x616e8, and the manager''s own init from main_task at 0x2e4c6. The twelfth
+    flash word holding this address, 0x36e64, is the startup''s own __bss1_start__
+    bound and not a reference.'
+- address: 0x2000aa18
+  name: inactivity_algo_ctx
+  kind: global
+  class: hand
+  module: inactivity
+  evidence: the object periodic_task_sweep (0x2f9ae) and inactivity_user_notified
+    (0x5ec6e) both hand to 0xa083c, and the only two flash words that hold it; written
+    first, in every scenario, by 0xa07ce under the algorithm library's init.
+- address: 0x2000bacc
+  name: sleep_wake_algo_ctx
+  kind: global
+  class: hand
+  module: algo_manager
+  evidence: shell_cmd_tracker_algo loads it into r11 at 0x64182 and hands it to
+    the step at 0xa1420 only on the arm where argv[0] is "sleep_wake" (0xe136e);
+    the .data pointer that holds it, 0x20007144, sits beside algo_tree_table, whose
+    four decision trees are what a sleep/wake classifier runs. Written first, in
+    every scenario, by 0xa13ce under the algorithm library's init.
+- address: 0x2000c7fc
+  name: hr_algo_object
+  kind: global
+  class: hand
+  module: hr
+  evidence: 'struct hr_algo, which abi/include/withings/hr.h declares at this address
+    off the pointer algo_dispatch_sample hands hr_algo_process_sample. The map already
+    rests on it: hr_algo_result_block at 0x2000f480 is its +0x2c84, so the run above
+    it stops here.'
 - address: 0x2000f480
   name: hr_algo_result_block
   kind: global
@@ -28460,6 +28498,22 @@ symbols:
   module: hr
   evidence: reached only as the HR algorithm object's +0x2c84, never by its own
     literal
+- address: 0x20010b30
+  name: hrv_algo_object
+  kind: global
+  class: hand
+  module: hr
+  evidence: the object hr_measure_on_algo_result hands hrv_get_sdnn (0xa47f6), hrv_get_rmssd
+    (0xa47fa) and hrv_get_quality (0xa4802) at 0x62680, 0x62688 and 0x62690; written
+    under the algorithm library's init and then by ppg_hrv_algo_step.
+- address: 0x20011030
+  name: rr_algo_object
+  kind: global
+  class: hand
+  module: hr
+  evidence: the object hr_measure_on_algo_result hands rr_get_interval (0xa0bf2)
+    and rr_get_is_censored (0xa0bf8) at 0x628aa..0x628ba and again at 0x62b48..0x62b58;
+    written by ppg_rr_algo_step's own collector under the ppgmodes run.
 - address: 0x200114a4
   name: light_sensor_word_200114a4
   kind: global
@@ -28585,6 +28639,14 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [ECG] (0 read it,
     1 write it)
+- address: 0x20011690
+  name: ecg_algo_ctx
+  kind: global
+  class: hand
+  module: ecg
+  evidence: the object ecg_adc_block_handler hands ecg_algo_process_sample at 0x49ef6
+    and ecg_algo_heart_rate_from_rr at 0x49faa, on the arm the session byte selects;
+    no other flash word holds it.
 - address: 0x20012330
   name: ecg_word_20012330
   kind: global
@@ -28601,6 +28663,15 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [ECG] (1 read it,
     0 write it)
+- address: 0x20013ae0
+  name: ecg_sample_ring_storage
+  kind: global
+  class: hand
+  module: ecg
+  size: 288
+  evidence: the 144 int16 samples ecg_sample_ring_push indexes at 0x49d20 as [0x20011668
+    + (0x123c + head) * 2] and ecg_sample_ring_flush reads back at 0x4a02a; the
+    head at 0x20013c00 wraps at 0x90, which is what fixes the length at 144 entries.
 - address: 0x20013c00
   name: ecg_half_20013c00
   kind: global
@@ -28617,6 +28688,16 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [ECG] (2 read it,
     1 write it)
+- address: 0x20013c04
+  name: ecg_filter_ctx
+  kind: global
+  class: hand
+  module: ecg
+  evidence: the object ecg_module_init configures at 0x4a718 with the front end's
+    300 Hz and 1610, and that ecg_adc_block_handler then hands ecg_filter_process_sample
+    (0x49eb6) and ecg_filter_output (0x49ec8) for every sample; ecg_sample_ring_flush
+    reaches the same object as its own base +0x59c. Written first, in every scenario,
+    by the vendor configure under ecg_module_init.
 - address: 0x20014734
   name: ecg_word_20014734
   kind: global
@@ -28801,6 +28882,14 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [MAX86173] (1 read
     it, 0 write it)
+- address: 0x200148b0
+  name: wui_view_notif_ctx
+  kind: global
+  class: hand
+  module: wui
+  evidence: 'the one object the three notification view descriptors carry at +0x14:
+    "Fake Notif 3" (0xb9330), "Fake Notif 1" (0xb9390) and "Notif" (0xb9430) all
+    hold this address and nothing else does.'
 - address: 0x20014b44
   name: tracker_inactivity_word_20014b44
   kind: global
@@ -28809,6 +28898,27 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [TRACKER_INACTIVITY]
     (0 read it, 1 write it)
+- address: 0x20014ba0
+  name: idle_task_stack
+  kind: global
+  class: hand
+  module: freertos
+  size: 320
+  evidence: the second out-parameter vApplicationGetIdleTaskMemory (0x2eca8) writes,
+    which vTaskStartScheduler hands xTaskCreateStatic at 0x73032 as the idle task's
+    stack; the same call's third out-parameter is 0x50 words, which is what fixes
+    the length. Filled first, in every scenario, by prvInitialiseNewTask's own stack
+    paint.
+- address: 0x20014ce0
+  name: idle_task_tcb
+  kind: global
+  class: hand
+  module: freertos
+  size: 96
+  evidence: the first out-parameter vApplicationGetIdleTaskMemory (0x2eca8) writes,
+    which vTaskStartScheduler hands xTaskCreateStatic at 0x73032 as the idle task's
+    control block; 0x60 bytes, the same as every static TCB the other creates are
+    handed.
 - address: 0x20014d40
   name: main_task_tcb
   kind: global
@@ -30762,6 +30872,15 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [DBT] (1 read it,
     0 write it)
+- address: 0x200193a0
+  name: dbt_algo_ctx
+  kind: global
+  class: hand
+  module: dbt
+  evidence: 'the object every body-temperature body hands its own step: 0x4b5a2,
+    0x4b7ae and the eight sites in 0x4b7d0 are the only flash words that hold it
+    and all of them log under [DBT]. Written first, in every scenario, from inside
+    that module.'
 - address: 0x2001a264
   name: dbt_flag_2001a264
   kind: global
@@ -31461,6 +31580,16 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [RAW] (4 read it,
     1 write it)
+- address: 0x2001c20c
+  name: raw_data_ring
+  kind: global
+  class: hand
+  module: raw_data
+  evidence: 'the ring the raw-data task walks: 0x581fe reads its write cursor at
+    +8 and its read cursor at +0xc and indexes the payload from its own base, and
+    0x578f8 and 0x57bee take the same address, with the -0x28 twin selected by bit
+    6 of the mode byte. Written first, in every scenario, by the kernel''s own copy
+    on behalf of a sender (the writer''s return address is inside xQueueGenericSend).'
 - address: 0x2001d280
   name: sensors_sync_mutex_static
   kind: global
@@ -31483,6 +31612,15 @@ symbols:
   evidence: 'the one buffer both streams write into, 0x2600 bytes; the wrap is the
     `cmp #0x80` in the push (0x597c0), in the consumer''s read cursor (0x596a4)
     and in the `and #0x7f` at 0x5963a.'
+- address: 0x2001f2d8
+  name: sensors_sync_ring
+  kind: global
+  class: hand
+  module: sensors_sync
+  evidence: the object sensors_sync_ring_push (0x59756), sensors_sync_drain (0x595bc),
+    sensors_sync_reset (0x598a2) and sensors_sync_set_flush_cb (0x59880) all take,
+    and no function outside sensors_sync does; the first write is the push's own
+    memcpy, under the max_LED_config task.
 - address: 0x2001f8d8
   name: sensors_sync_flush_cb
   kind: global
@@ -33433,6 +33571,14 @@ symbols:
   kind: global
   class: hand
   module: freertos
+- address: 0x200219fc
+  name: pxCurrentTCB
+  kind: global
+  class: hand
+  module: freertos
+  size: 4
+  evidence: the word PendSV_Handler reads through its own pool word at 0x27eb0 to
+    save the outgoing task's stack pointer into and to reload the incoming one from.
 - address: 0x20021a23
   name: adc_byte_20021a23
   kind: global
@@ -33520,6 +33666,27 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [SCREEN_TIMER] (3
     read it, 1 write it)
+- address: 0x20021dbc
+  name: wui_view_custo_2_ctx
+  kind: global
+  class: hand
+  module: wui
+  size: 5120
+  evidence: the word at +0x14 of the "Custo 2" view descriptor (0xb9da4), which
+    wui_vtable_custo_2_on_enter loads at 0x883a2 and hands to 0x88084; that body
+    reaches +0x12c8, +0x1350, +0x13d8 and the flags at +0x3f0 and +0x3f1 of its
+    +0x1000, so the object is the 0x1400 bytes that end where the "Custo 1" twin
+    begins.
+- address: 0x200231bc
+  name: wui_view_custo_1_ctx
+  kind: global
+  class: hand
+  module: wui
+  size: 5120
+  evidence: 'the word at +0x14 of the "Custo 1" view descriptor (0xb9dbc), the twin
+    of wui_view_custo_2_ctx: the two descriptors share the vtable at 0xbaefc, and
+    0x883fe swaps between the two objects by reloading +0x14 from whichever descriptor
+    the parity byte picks.'
 - address: 0x20024654
   name: wui_struct_20024654
   kind: global
@@ -34256,6 +34423,15 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WUI] (7 read it,
     1 write it)
+- address: 0x200249a0
+  name: greenteg_cbta_instance
+  kind: global
+  class: hand
+  module: greenteg
+  evidence: the object vendor_greenteg_cbta_config_apply writes under the body-temperature
+    task and that nn_gru_run's caller clears before a run; no flash word takes its
+    address, so the network reaches it through the instance pointer the component
+    keeps.
 - address: 0x20024d1c
   name: bat_half_20024d1c
   kind: global
@@ -35107,6 +35283,24 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [WPP] (3 read it,
     2 write it)
+- address: 0x20026c16
+  name: wpp_watch_originated_buffer
+  kind: global
+  class: hand
+  module: wpp
+  size: 850
+  evidence: the buffer word of the row at 0xb4c40, whose next word is its length
+    (0x352) and whose predicate is wpp_opcode_is_watch_originated; the length lands
+    exactly on wpp_master_request_buffer, the next row's buffer.
+- address: 0x20026f68
+  name: wpp_master_request_buffer
+  kind: global
+  class: hand
+  module: wpp
+  size: 340
+  evidence: the buffer word of the row at 0xb4c58, whose next word is its length
+    (0x154) and whose predicate is wpp_opcode_is_master_request; the length lands
+    exactly on wui_queue_storage.
 - address: 0x200270bc
   name: wui_queue_storage
   kind: global
