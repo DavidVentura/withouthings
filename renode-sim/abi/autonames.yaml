@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {accessor: 1, bleevt: 28, extlib: 0, helper: 706, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1788, modules: 184, prototypes_derived: 22, shared: 12, shell: 156, shell_table_rows: 79, slot: 28, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {accessor: 22, bleevt: 28, extlib: 0, helper: 700, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1788, modules: 184, prototypes_derived: 23, shared: 12, shell: 156, shell_table_rows: 79, slot: 28, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 194, disagree: 0}
 
 functions:
@@ -264,6 +264,10 @@ functions:
     class: helper
     evidence: "only 0x2fbdc (main_task__2) calls 0x2fed0; 10 bytes"
     module: INIT
+  - name: ppg_afib_store_flag_20017158_get
+    address: 0x3023c
+    class: accessor
+    evidence: "the body is one ldr through ppg_afib_store_flag_20017158 (pool word 0x30244 = 0x20017158) and a return"
   - name: shell_cmd_hwa10__1
     address: 0x30248
     class: helper
@@ -301,6 +305,10 @@ functions:
     address: 0x307b8
     class: logline
     evidence: "the only line 0x307b8 logs, wlog('go_to_system_off') at 0x307c6"
+  - name: raw_data_mode_flag_2002506e_get
+    address: 0x30d2c
+    class: accessor
+    evidence: "the body is one ldrb through raw_data_mode_flag_2002506e (pool word 0x30d34 = 0x2002506e) and a return"
   - name: WPP_CMD_DEBUG_DUMP__3__1
     address: 0x30d38
     class: helper
@@ -341,6 +349,10 @@ functions:
     class: helper
     evidence: "only 0x31884 (stopwatch_helper_reset) calls 0x3177c; 24 bytes"
     module: STOPWATCH
+  - name: stopwatch_table_20011518_get
+    address: 0x317a4
+    class: accessor
+    evidence: "the body is one ldr through stopwatch_table_20011518 (pool word 0x317ac = 0x20011518) and a return"
   - name: on_enter_stopwatch__1
     address: 0x317bc
     class: helper
@@ -390,6 +402,10 @@ functions:
     class: string
     evidence: "wlog('[STOPWATCH] %s', 'stopwatch_helper_reload') at 0x31992"
     module: STOPWATCH
+  - name: timer_table_20017598_get
+    address: 0x31a64
+    class: accessor
+    evidence: "the body is one ldr through timer_table_20017598 (pool word 0x31a6c = 0x20017598) and a return"
   - name: timer_update_new_timer_last_duration
     address: 0x31a88
     class: logline
@@ -623,11 +639,15 @@ functions:
     class: logtag
     evidence: "wlog('[product_get_erase_flag] Something went wrong No IE FIRMWARE_VERSION (try to erase)') at 0x36fd0, tag is a C identifier"
     module: PRODUCT_GET_ERASE_FLAG
-  - name: wpp_wup_device__1
-    address: 0x37028
-    class: helper
-    evidence: "only 0x6d38c (wpp_wup_device) calls 0x37028; 34 bytes"
-    module: WPP
+  - name: wpps_word_20017c80_get
+    address: 0x36fec
+    class: accessor
+    evidence: "the body is one ldr through wpps_word_20017c80 (pool word 0x36ff4 = 0x20017c80) and a return"
+    module: WPPS
+  - name: wpps_word_20017c80_set
+    address: 0x36ff8
+    class: accessor
+    evidence: "the body is one str through wpps_word_20017c80 (pool word 0x37000 = 0x20017c80) and a return"
   - name: on_enter_alarm_ringing__1
     address: 0x370f8
     class: helper
@@ -1057,6 +1077,10 @@ functions:
     address: 0x3c4a8
     class: helper
     evidence: "only 0x3bd10 (sensors_sync_push_accel) calls 0x3c4a8; 452 bytes"
+  - name: adxl367_struct_20006fa0_get
+    address: 0x3c670
+    class: accessor
+    evidence: "the body is one ldrb through adxl367_struct_20006fa0 (pool word 0x3c678 = 0x20006fa0) and a return"
   - name: adxl367_continuous_measure_mode__1__2
     address: 0x3c67c
     class: helper
@@ -1542,6 +1566,10 @@ functions:
     class: logline
     evidence: "the only line 0x44798 logs, wlog('[WPP] clock_calib_move motor %d') at 0x447a6"
     module: WPP
+  - name: screen_calibration_flag_20025290_get
+    address: 0x447f0
+    class: accessor
+    evidence: "the body is one ldrb through screen_calibration_flag_20025290 (pool word 0x447f8 = 0x20025290) and a return"
   - name: screen_calibration_no_motor_id_availabe__2
     address: 0x447fc
     class: helper
@@ -2167,10 +2195,6 @@ functions:
     class: logline
     evidence: "the only line 0x4e9d4 logs, wlog('[HR_COMPRESSION] Store %lu, %ubpm, %us') at 0x4ea4e"
     module: HR_COMPRESSION
-  - name: WPP_CMD_HR_AUTO_ALGORITHM_SET__1
-    address: 0x4eac0
-    class: helper
-    evidence: "only 0x4eaf4 (WPP_CMD_HR_AUTO_ALGORITHM_SET) calls 0x4eac0; 36 bytes"
   - name: WPP_CMD_HR_AUTO_ALGORITHM_GET__1
     address: 0x4eae8
     class: helper
@@ -2441,6 +2465,10 @@ functions:
     class: logline
     evidence: "the only line 0x51170 logs, wlog('[LOC] Stored locale: %s') at 0x51194"
     module: LOC
+  - name: locale_get
+    address: 0x511c8
+    class: accessor
+    evidence: "the body is one ldr through locale (pool word 0x511d0 = 0x2001ada4) and a return"
   - name: refresh_install_go__1
     address: 0x511d4
     class: helper
@@ -2503,6 +2531,16 @@ functions:
     address: 0x51994
     class: helper
     evidence: "only 0x36e84 (xTaskIncrementTick__1) calls 0x51994; 30 bytes"
+  - name: debug_dump_ptr_2001ae0c_get
+    address: 0x51b48
+    class: accessor
+    evidence: "the body is one ldr through debug_dump_ptr_2001ae0c (pool word 0x51b50 = 0x2001ae0c) and a return"
+    module: DEBUG_DUMP
+  - name: debug_dump_ptr_2001ae08_get
+    address: 0x51b54
+    class: accessor
+    evidence: "the body is one ldr through debug_dump_ptr_2001ae08 (pool word 0x51b5c = 0x2001ae08) and a return"
+    module: DEBUG_DUMP
   - name: sensors_sync_push_ppg__1
     address: 0x51bf4
     class: helper
@@ -2545,6 +2583,12 @@ functions:
     address: 0x53300
     class: helper
     evidence: "only 0x52b1c (max_led_config_task) calls 0x53300; 4 bytes"
+  - name: max8617x_byte_20026bcc_get
+    address: 0x53324
+    class: accessor
+    evidence: "the body is one ldrb through max8617x_byte_20026bcc (pool word 0x5332c = 0x20026bcc) and a return"
+    proto: "uint32_t max8617x_byte_20026bcc_get(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: max_led_config_task__2
     address: 0x53370
     class: helper
@@ -2867,11 +2911,11 @@ functions:
     address: 0x573ec
     class: helper
     evidence: "only 0x57468 (shell_cmd_push_button) calls 0x573ec; 62 bytes"
-  - name: shell_cmd_push_button__4
+  - name: pb_ptr_2001c0d0_get
     address: 0x5743c
-    class: helper
-    evidence: "only 0x57468 (shell_cmd_push_button) calls 0x5743c; 6 bytes"
-  - name: shell_cmd_push_button__5
+    class: accessor
+    evidence: "the body is one ldr through pb_ptr_2001c0d0 (pool word 0x57444 = 0x2001c0d0) and a return"
+  - name: shell_cmd_push_button__4
     address: 0x57448
     class: helper
     evidence: "only 0x57468 (shell_cmd_push_button) calls 0x57448; 12 bytes"
@@ -3182,10 +3226,10 @@ functions:
     address: 0x5ce14
     class: logline
     evidence: "the only line 0x5ce14 logs, wlog('lap=%d/%d, hand_id=%d') at 0x5ce48"
-  - name: refresh_lapping_test__1
+  - name: lapping_word_2001fad4_get
     address: 0x5ce58
-    class: helper
-    evidence: "only 0x83ee0 (refresh_lapping_test) calls 0x5ce58; 6 bytes"
+    class: accessor
+    evidence: "the body is one ldr through lapping_word_2001fad4 (pool word 0x5ce60 = 0x2001fad4) and a return"
   - name: friction_long_test_all_with_params
     address: 0x5d030
     class: string
@@ -3394,6 +3438,10 @@ functions:
     class: helper
     evidence: "only 0x92ba4 (day_goal_reached_times) calls 0x5f054; 4 bytes"
     module: DAY
+  - name: tracker_struct_2001fce0_get
+    address: 0x5f3a4
+    class: accessor
+    evidence: "the body is one ldr through tracker_struct_2001fce0 (pool word 0x5f3ac = 0x2001fce0) and a return"
   - name: WPP_CMD_DISPLAYED_INFO_GET__1
     address: 0x5f3bc
     class: helper
@@ -3451,6 +3499,10 @@ functions:
     class: helper
     evidence: "only 0x6cd40 (WPP_CMD_DISPLAYED_INFO_GET) calls 0x5f6f8; 6 bytes"
     module: WPP
+  - name: tracker_live_struct_2001fca8_get
+    address: 0x5f704
+    class: accessor
+    evidence: "the body is one ldr through tracker_live_struct_2001fca8 (pool word 0x5f70c = 0x2001fca8) and a return"
   - name: tracker_live_stairs_confirmed_min_delta_total
     address: 0x5f710
     class: logline
@@ -3473,10 +3525,10 @@ functions:
     address: 0x5fec4
     class: helper
     evidence: "only 0x5ffd0 (shell_cmd_tracker_live) calls 0x5fec4; 6 bytes"
-  - name: shell_cmd_tracker_live__2
+  - name: tracker_word_2001fd18_get
     address: 0x5fed0
-    class: helper
-    evidence: "only 0x5ffd0 (shell_cmd_tracker_live) calls 0x5fed0; 6 bytes"
+    class: accessor
+    evidence: "the body is one ldr through tracker_word_2001fd18 (pool word 0x5fed8 = 0x2001fd18) and a return"
   - name: wpp_lite_err_duration_unpack__1
     address: 0x5fee8
     class: helper
@@ -3505,6 +3557,10 @@ functions:
     address: 0x60330
     class: helper
     evidence: "only 0x8aa78 (refresh_sport_heart_rate) calls 0x60330; 8 bytes"
+  - name: user_table_2001fd40_get
+    address: 0x6033c
+    class: accessor
+    evidence: "the body is one ldr through user_table_2001fd40 (pool word 0x60344 = 0x2001fd40) and a return"
   - name: WPP_CMD_TRACKER_USER_SET
     address: 0x60528
     class: wppcmd
@@ -3571,6 +3627,10 @@ functions:
     address: 0x60b2c
     class: helper
     evidence: "only 0x60c68 (WPP_CMD_USER_UNIT) calls 0x60b2c; 24 bytes"
+  - name: unit_byte_20026be4_get
+    address: 0x60b48
+    class: accessor
+    evidence: "the body is one ldrb through unit_byte_20026be4 (pool word 0x60b50 = 0x20026be4) and a return"
   - name: WPP_CMD_USER_UNIT__4
     address: 0x60b60
     class: helper
@@ -4180,11 +4240,6 @@ functions:
     address: 0x6adc0
     class: logline
     evidence: "the only line 0x6adc0 logs, wlog('[WPP] Notify WPP_CMD_WORKOUT_LIVE_DATA') at 0x6addc"
-    module: WPP
-  - name: wpp_workout_alwyas_on_set_unpack__1
-    address: 0x6ae38
-    class: helper
-    evidence: "only 0x6ab54 (wpp_workout_alwyas_on_set_unpack) calls 0x6ae38; 60 bytes"
     module: WPP
   - name: WPP_CMD_WORKOUT_SCREEN_LIST_GET
     address: 0x6b0e4
@@ -4873,6 +4928,10 @@ functions:
     module: FACTORY
     proto: "uint32_t refresh_factory_test_temperature__1(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: temperature_struct_20007228_get
+    address: 0x7fb18
+    class: accessor
+    evidence: "the body is one ldrb through temperature_struct_20007228 (pool word 0x7fb20 = 0x20007228) and a return"
   - name: set_move_hands
     address: 0x7fcac
     class: string
@@ -5079,6 +5138,10 @@ functions:
     class: logline
     evidence: "the only line 0x88868 logs, wlog('[GUI] On notif resources available') at 0x8886e"
     module: GUI
+  - name: tracker_inactivity_word_20024934_get
+    address: 0x88b64
+    class: accessor
+    evidence: "the body is one ldr through tracker_inactivity_word_20024934 (pool word 0x88b6c = 0x20024934) and a return"
   - name: on_event_battery_charging__1
     address: 0x88d24
     class: helper
@@ -5546,10 +5609,10 @@ functions:
     class: helper
     evidence: "only 0x48f68 (dbg_mask_change_ie_debug_mask) calls 0x92272; 4 bytes"
     module: DBG_MASK
-  - name: WPP_CMD_HR_AUTO_ALGORITHM_SET__1__1
+  - name: dblib_setting_0xe2_set__1
     address: 0x92276
     class: helper
-    evidence: "only 0x4eac0 (WPP_CMD_HR_AUTO_ALGORITHM_SET__1) calls 0x92276; 4 bytes"
+    evidence: "only 0x4eac0 (dblib_setting_0xe2_set) calls 0x92276; 4 bytes"
   - name: wpp_clock_calib_move_motor__2
     address: 0x9227a
     class: helper
@@ -5605,10 +5668,10 @@ functions:
     address: 0x9244e
     class: helper
     evidence: "only 0x818e8 (on_enter_sport) calls 0x9244e; 92 bytes"
-  - name: wpp_workout_alwyas_on_set_unpack__1__1
+  - name: workout_screen_always_on_set__1
     address: 0x92576
     class: helper
-    evidence: "only 0x6ae38 (wpp_workout_alwyas_on_set_unpack__1) calls 0x92576; 30 bytes"
+    evidence: "only 0x6ae38 (workout_screen_always_on_set) calls 0x92576; 30 bytes"
     module: WPP
   - name: up_updating_end__1
     address: 0x92618
