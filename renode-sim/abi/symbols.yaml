@@ -186,16 +186,16 @@ symbols:
   kind: table
   class: hand
   module: misc
-  evidence: 'four twelve-byte rows of {u32 period, void (*run)(void), state *},
-    walked by periodic_task_sweep 0x3fc14 between the pool words 0x27d64 and 0x27d94
-    at its own stride of 12, which is what fixes the row size against the twelve
-    bytes factory_reset_hooks'' entry used to call sixteen. Every row''s period is
-    600, which is where the ten-minute cadence of the watch''s passive measurements
-    is written down; the handlers are 0x56bd4, 0x61ac0, 0x62410 and 0x63128 and the
+  evidence: four twelve-byte rows of {u32 period, void (*run)(void), state *}, walked
+    by periodic_task_sweep 0x3fc14 between the pool words 0x27d64 and 0x27d94 at
+    its own stride of 12, which is what fixes the row size against the twelve bytes
+    factory_reset_hooks' entry used to call sixteen. Every row's period is 600,
+    which is where the ten-minute cadence of the watch's passive measurements is
+    written down; the handlers are 0x56bd4, 0x61ac0, 0x62410 and 0x63128 and the
     state blocks 0x2001c0b8, 0x2001fe88, 0x2001ffe8 and 0x200200b4, each holding
-    the next deadline in its first word and an enable byte at +4. abi/algos.py''s
+    the next deadline in its first word and an enable byte at +4. abi/algos.py's
     twenty-minute schedule run entered 0x62410 nine times and no other scenario
-    entered it at all.'
+    entered it at all.
 - address: 0x27da0
   name: prvIdleTask
   kind: function
@@ -17452,11 +17452,16 @@ symbols:
     639 times the new input, divides by 9480 and stores the result as the new output
     (0xa148a..0xa14d4). Reached only from the split body at 0xa1420, which sensors_sync_push_accel
     reaches through 0xa446c, so it is a stage of the wrist-activity chain and the
-    motion run is what separates it from the still ones. 466 calls in the workout
-    run against 9 in each of the hr, sleep and misc runs and 14 in the ecg one:
-    it runs at the rate the wrist moves and at nothing else. In the four runs that
-    are not the ECG one it is one for one with motion_energy_step; in the ECG run
-    that body runs 137 times to its 14, so the two share an input and not a gate'
+    motion run is what separates it from the still ones. exactly 200 calls in the
+    run that typed `tracker_algo sleep_wake 200` at the console, which is one per
+    iteration the shell asked for and names the algorithm it belongs to outright:
+    the command''s body at 0x64158 compares argv[0] against "sleep_wake" and calls
+    0xa1420 that many times, and nothing else in that run entered this body. Before
+    the console could be driven the reading was a ratio instead: 466 calls in the
+    workout run against 9 in each of the hr, sleep and misc runs and 14 in the ecg
+    one, one for one with motion_energy_step in the four runs that are not the ECG
+    one, where that body runs 137 times to its 14, so the two share an input and
+    not a gate'
 - address: 0xa17f8
   name: fft_complex_transform
   kind: function

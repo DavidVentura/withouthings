@@ -121,12 +121,17 @@ ROWS = [
     # --- the accelerometer chain under sensors_sync_push_accel ---------------
     dict(address=0xA1466, name="acc_iir4_i16_step", kind="function",
          module="sensors_sync", settled=True,
-         rate="466 calls in the workout run against 9 in each of the hr, sleep"
-              " and misc runs and 14 in the ecg one: it runs at the rate the"
-              " wrist moves and at nothing else. In the four runs that are not"
-              " the ECG one it is one for one with motion_energy_step; in the"
-              " ECG run that body runs 137 times to its 14, so the two share"
-              " an input and not a gate",
+         rate="exactly 200 calls in the run that typed `tracker_algo"
+              " sleep_wake 200` at the console, which is one per iteration the"
+              " shell asked for and names the algorithm it belongs to outright:"
+              " the command's body at 0x64158 compares argv[0] against"
+              " \"sleep_wake\" and calls 0xa1420 that many times, and nothing"
+              " else in that run entered this body. Before the console could be"
+              " driven the reading was a ratio instead: 466 calls in the workout"
+              " run against 9 in each of the hr, sleep and misc runs and 14 in"
+              " the ecg one, one for one with motion_energy_step in the four"
+              " runs that are not the ECG one, where that body runs 137 times"
+              " to its 14, so the two share an input and not a gate",
          evidence="a fourth-order direct-form-I fixed-point filter step: it"
                   " shifts the two int16 delay lines its arguments point at"
                   " back one place and writes the new input at +8"
