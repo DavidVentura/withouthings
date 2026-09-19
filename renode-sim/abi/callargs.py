@@ -105,6 +105,24 @@ class Table(Value):
         return "[%s + %s]" % (self.base, self.index)
 
 
+class Param(Value):
+    """The nth argument the enclosing function was itself called with.
+
+    A register the block never wrote, in a block that reaches the function's
+    own entry, still holds what the caller put there. The value is one hop
+    further back rather than unknown, which is what lets a reader ask the
+    callers the same question.
+    """
+
+    kind = "param"
+
+    def __init__(self, index):
+        self.index = index
+
+    def text(self):
+        return "arg%d" % self.index
+
+
 class Unknown(Value):
     """Written by something this does not model, or never written in the block."""
 
@@ -148,16 +166,25 @@ class Frame(object):
         return self.stack.get(4 * (n - 4), Unknown("stack slot never written"))
 
 
-def resolve(img, insns, call):
+def resolve(img, insns, call, initial=None, start=None):
     """The frame a call is made with, from the block that sets it up.
+
+    `initial` is what the registers hold on entry to the block, which the block
+    itself cannot say: the callee-saved registers a function loads once and the
+    argument registers it was called with. Everything the block writes lands on
+    top of it in the usual way.
+
+    `start` widens the window past the last control transfer, for a caller that
+    has established that the instructions before it are on every path into the
+    call. The default is the straight line, which needs no such argument.
 
     Forward abstract interpretation over the block: every write lands in the
     register file, so a move chain, an add on a pool word and a store into an
     outgoing stack slot all carry, and a write this does not model poisons its
     destination instead of leaving the register's older value standing.
     """
-    regs, stack = {}, {}
-    for i in range(block_start(insns, call), call):
+    regs, stack = dict(initial or {}), {}
+    for i in range(block_start(insns, call) if start is None else start, call):
         _, mnem, ops = insns[i]
         if mnem.startswith("str"):
             slot = STACK.match(ops)
@@ -200,9 +227,10 @@ def _value(img, regs, mnem, ops):
                      "ldrh": "u16", "ldrh.w": "u16", "ldrsb": "i8",
                      "ldrsh": "i16"}.get(mnem, mnem)
             base = regs.get(field.group(2))
-            # A field of something the block itself loaded is a field of a known
-            # object, and naming the pool word is what makes that legible.
-            if isinstance(base, Pool):
+            # A field of something whose address is known is a field of a known
+            # object, and naming the address is what makes that legible. An Imm
+            # here is a pool word an `add` displaced, which is still an address.
+            if isinstance(base, (Pool, Imm)):
                 base = "0x%x" % base.value
             else:
                 base = field.group(2)
