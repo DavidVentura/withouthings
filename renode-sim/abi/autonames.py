@@ -36,6 +36,9 @@ Fifteen classes, in order of certainty:
            address, so a declared table's pointer field names it by its row.
   accessor a body that is one load or one store through a named global and a
            return is that global's getter or setter.
+  provenance a body every caller of which points at one named global, or whose
+           own literal pool reaches exactly one, is that object's; the verb
+           comes from its own loads and stores. See abi/provenance.py.
   shared   a body every caller of which sits in one log-tag module belongs to
            that module, and is numbered by address within it.
   helper   a function only one named function calls is that function's private
@@ -50,8 +53,10 @@ Fifteen classes, in order of certainty:
            no name but the callee's.
   bymodule the partition below, read downwards: a body that calls only named
            functions of one module, or reaches only named globals of one, is
-           that module's whatever calls it, and so is a body all of whose
-           callers this rule placed in it.
+           part of that module's implementation, and so is a body all of whose
+           callers this rule placed in it. A module is not a name, so this one
+           writes an entry that carries the module and the evidence and no
+           name at all; the body stays unnamed and stays on the worklist.
 
 The same log tags give a module partition (which file a function came from),
 which abi/out/ghidra/modules.json carries and every entry above records.
@@ -76,6 +81,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callargs  # noqa: E402  (the forward reading of a call's own block)
+import module_aliases  # noqa: E402  (the tags that are one module, from facts.yaml)
+import provenance  # noqa: E402  (what a body is called with, and what it touches)
 import match  # noqa: E402  (same directory; the normaliser and matcher live there)
 import libc_find  # noqa: E402  (the archive-side body search)
 import shapes  # noqa: E402  (the declared tables and struct globals, from DWARF)
@@ -127,7 +134,8 @@ EXT_VARIANTS = []
 # Which class names an address when two reach it; earlier wins. See main().
 CLASS_RANK = ["svc", "syscall", "libc", "libm", "extlib", "wppcmd", "shell", "wppobj", "string",
               "logtag", "logcb", "bleevt", "logline", "slot", "accessor",
-              "vector", "shared", "helper", "role", "wrapper", "bymodule"]
+              "vector", "provenance", "shared", "helper", "role", "wrapper",
+              "bymodule"]
 
 INSN = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2,4} )+)\s*\t(\S+)\s*(.*)$")
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -781,13 +789,26 @@ def string_argument_shapes(sites):
     return counts
 
 
-def log_tag(fmt):
+def raw_log_tag(fmt):
     """The `[MODULE]` a format string opens with, normalised, or None."""
     m = LOG_TAG.match(fmt)
     if not m or "%" in m.group(1):
         return None
     tag = re.sub(r"[^A-Za-z0-9]+", "_", m.group(1)).strip("_").upper()
     return tag or None
+
+
+def log_tag(fmt):
+    """The same tag under the one spelling the partition uses for its module.
+
+    A module that logs under two tags is two modules to a partition read off
+    the tags alone, and the bodies on the seam between them are refused by
+    every rule that asks which module a body is in. abi/module_aliases.py is
+    the measurement that says which tags are one module and abi/facts.yaml
+    records it; this is where the partition reads the answer.
+    """
+    tag = raw_log_tag(fmt)
+    return module_aliases.load().get(tag, tag)
 
 
 def log_modules(ex, sites):
@@ -1594,12 +1615,14 @@ def shared_names(ex, named, modules, blocked=()):
 # library, which belongs to no module of Withings' own partition.
 LIBRARY_CLASSES = ("libc", "libm", "extlib", "svc", "syscall", "match",
                    "kernel", "vendor")
-# The classes the three rules below write themselves. A name one of them left
-# in the map is this run's own output rather than something the image
-# established, so none of them reads one back: a rule that took its own last
-# answer as evidence would derive one more name every time the map is
-# rewritten instead of settling.
-CALLEE_SIDE_CLASSES = ("role", "wrapper", "bymodule")
+# The classes this run writes that the three rules below read the map for. A
+# name under one of them is this run's own output rather than something the
+# image established, so none of them reads one back: a rule that took its own
+# last answer as evidence would derive one more name every time the map is
+# rewritten instead of settling. `provenance` is on the list because it is
+# written after the map is loaded and before these rules run, so reading it
+# back would make the second run wrap ten names the first run did not.
+CALLEE_SIDE_CLASSES = ("role", "wrapper", "bymodule", "provenance")
 # A wrapper is a call and the instructions that set it up; past this many the
 # body is doing something of its own that the callee's name would not say.
 WRAPPER_MAX = 12
@@ -1807,7 +1830,7 @@ def _module_of_globals(img, ex, smap, fn):
     return where.pop(), "reaches only %s" % ", ".join(sorted(touched))
 
 
-def bymodule_names(img, ex, smap, modules, blocked=()):
+def bymodule_attributions(img, ex, smap, modules, blocked=()):
     """A body its own callees and globals place in one module, and its helpers.
 
     The partition abi/out/ghidra/modules.json carries reads the call graph
@@ -1816,8 +1839,12 @@ def bymodule_names(img, ex, smap, modules, blocked=()):
     named functions of one module, or reaches only named globals of one, is
     part of that module's implementation whatever its callers are, which is
     what the bodies with callers in two modules have been waiting for. The
-    module is all the evidence establishes, so the name says the module and the
-    rule that found it, and numbers by address within the module.
+    The module is all the evidence establishes, and a module is not a name: a
+    `<module>__by_callees_N` says only where a body lives, so it inflates the
+    coverage and takes the body off the list a reader still has to read. The
+    rule therefore writes an entry with no name -- the module, the evidence and
+    nothing else -- and the body keeps the partition's placeholder, stays
+    unnamed to abi/coverage.py and keeps its bookmark in the Ghidra pass.
 
     One step of propagation follows: a body a settled body of this rule calls
     privately is in the same module, at depth 1 only. Chaining further would be
@@ -1867,18 +1894,10 @@ def bymodule_names(img, ex, smap, modules, blocked=()):
         evidence[fn] = ("every caller is a body this rule placed in %s: %s"
                         % (settled[fn], ", ".join("0x%x" % c
                                                   for c in sorted(callers))))
-    per = collections.defaultdict(list)
-    for fn, module in settled.items():
-        per[module].append(fn)
     out = []
-    for module, fns in sorted(per.items()):
-        for n, fn in enumerate(sorted(fns), 1):
-            name = "%s__by_callees_%d" % (module.lower(), n)
-            if len(name) > DERIVED_MAX:
-                continue
-            out.append({"address": fn, "name": name, "class": "bymodule",
-                        "module": module,
-                        "evidence": "0x%x %s" % (fn, evidence[fn])})
+    for fn in sorted(settled):
+        out.append({"address": fn, "class": "bymodule", "module": settled[fn],
+                    "evidence": "0x%x %s" % (fn, evidence[fn])})
     return out, contested
 
 # --------------------------------------------------------------- prototypes
@@ -1917,7 +1936,7 @@ def derived_prototypes(ex, entries):
     n = 0
     for e in entries:
         seen = params.get(e["address"])
-        if not seen or e.get("proto"):
+        if not seen or e.get("proto") or not e.get("name"):
             continue
         idx = sorted(seen)
         if idx != list(range(len(idx))) or len(idx) > 4:
@@ -2120,7 +2139,7 @@ def cross_check(entries):
     hand.update(by_hand)
     agree, disagree, emit = [], [], []
     for e in entries:
-        was = hand.get(e["address"])
+        was = hand.get(e["address"]) if e.get("name") else None
         if was is not None:
             (agree if was == e["name"] else disagree).append((e, was))
         if e["address"] not in owned:
@@ -2137,8 +2156,9 @@ def map_entries(entries):
     """
     rows = []
     for e in sorted(entries, key=lambda e: e["address"]):
-        row = {"address": e["address"], "name": e["name"], "kind": "function",
-               "class": e["class"]}
+        row = {"address": e["address"], "kind": "function", "class": e["class"]}
+        if e.get("name"):
+            row["name"] = e["name"]
         # The module a derivation was made in is part of what it established,
         # and a rule that reads the callee side needs it on the callee's entry
         # rather than in a second file beside the map.
@@ -2172,8 +2192,11 @@ def write_yaml(path, entries, agree, disagree, stats):
         "functions:",
     ]
     for e in sorted(entries, key=lambda e: e["address"]):
-        lines.append("  - name: %s" % e["name"])
-        lines.append("    address: 0x%x" % e["address"])
+        if e.get("name"):
+            lines.append("  - name: %s" % e["name"])
+            lines.append("    address: 0x%x" % e["address"])
+        else:
+            lines.append("  - address: 0x%x" % e["address"])
         lines.append("    class: %s" % e["class"])
         if "command" in e:
             lines.append("    command: %d" % e["command"])
@@ -2209,8 +2232,8 @@ def yaml_str(s):
 
 # Every rule this script runs, as the class each writes into abi/symbols.yaml.
 DEFAULT_CLASSES = ("svc,syscall,libc,libm,extlib,string,logtag,logcb,wppcmd,"
-                   "shell,bleevt,wppobj,logline,slot,accessor,vector,shared,"
-                   "helper,role,wrapper,bymodule")
+                   "shell,bleevt,wppobj,logline,slot,accessor,vector,provenance,"
+                   "shared,helper,role,wrapper,bymodule")
 
 
 # The map classes a derivation owns. A function the seed carries under one of
@@ -2409,7 +2432,7 @@ def main():
     # below take their names from, so the seed is the map's settled names with
     # this run's own derivations over them.
     smap = symmap.load()
-    types = shapes.load() if want & {"slot", "accessor"} else None
+    types = shapes.load() if want & {"slot", "accessor", "provenance"} else None
     seeded = map_seed(smap)
     # What the map holds that this run does not own, and so may not take: the
     # classes in `want` are this run's own output from the last one and are
@@ -2428,12 +2451,16 @@ def main():
         taken |= {e["address"] for e in found}
 
     if "vector" in want:
-        # Every address the map holds, whatever kind it holds it as: five of
-        # the handlers are `prose` labels rather than functions, and a vector
-        # number is not a better name than the one a hand wrote against the
-        # line the handler logs.
+        # Every address the map holds under a class this run does not own,
+        # whatever kind it holds it as: five of the handlers are `prose` labels
+        # rather than functions, and a vector number is not a better name than
+        # the one a hand wrote against the line the handler logs. The rule's own
+        # class is excluded for the same reason every other rule excludes it:
+        # blocking on the last run's answer makes the rule derive nothing and
+        # the entries survive only because an empty class is not rewritten.
         found = [e for e in vector_names(
-            img, blocked=taken | {s.address for s in smap.symbols})
+            img, blocked=taken | {s.address for s in smap.symbols
+                                  if s.klass not in want})
                  if e["name"] not in reserved]
         stats["vector"] = len(found)
         entries += found
@@ -2443,6 +2470,19 @@ def main():
         found = [e for e in accessor_names(img, ex, smap, types, blocked=taken)
                  if e["name"] not in reserved]
         stats["accessor"] = len(found)
+        entries += found
+        taken |= {e["address"] for e in found}
+
+    if "provenance" in want:
+        # Before the nicknames: the object a body operates on is a stronger
+        # reading of it than the name of whatever happens to call it.
+        found, outcome = provenance.entries(
+            img, ex, smap, types, call_sites(img, ex), blocked=taken,
+            library=library_ranges())
+        found = [e for e in found if e["name"] not in reserved]
+        stats["provenance"] = len(found)
+        for key, n in sorted(outcome.items()):
+            stats["provenance_" + re.sub(r"[^a-z0-9]+", "_", key)] = n
         entries += found
         taken |= {e["address"] for e in found}
 
@@ -2482,8 +2522,10 @@ def main():
         taken |= {e["address"] for e in found}
 
     if "bymodule" in want:
-        found, contested = bymodule_names(img, ex, smap, modules, blocked=taken)
-        found = [e for e in found if e["name"] not in reserved]
+        # No name filter: the rule proposes none, so nothing it writes can
+        # collide with a name the map already spends.
+        found, contested = bymodule_attributions(img, ex, smap, modules,
+                                                 blocked=taken)
         stats["bymodule"] = len(found)
         stats["bymodule_contested"] = len(contested)
         for pair, n in sorted(collections.Counter(
@@ -2507,8 +2549,14 @@ def main():
     for e in sorted(entries, key=lambda e: (e["address"], CLASS_RANK.index(e["class"]))):
         if e["address"] in by_addr:
             other = by_addr[e["address"]]
-            if other["name"] != e["name"]:
+            # An attribution names nothing, so it is not a second reading of
+            # the name that won the address; it is dropped without a word.
+            if e.get("name") and other.get("name") != e["name"]:
                 other.setdefault("also_named", []).append("%s (%s)" % (e["name"], e["class"]))
+            continue
+        if e.get("name") is None:
+            by_addr[e["address"]] = e
+            final.append(e)
             continue
         if e["name"] in by_name:
             # SVCALL is a static naked stub, so a header used by two translation
