@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {accessor: 21, bleevt: 28, extlib: 0, helper: 723, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1788, modules: 184, prototypes_derived: 25, shared: 13, shell: 156, shell_table_rows: 79, slot: 132, string: 20, svc: 79, syscall: 9, vector: 54, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {accessor: 21, bleevt: 28, extlib: 0, helper: 728, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1788, modules: 184, prototypes_derived: 25, shared: 13, shell: 156, shell_table_rows: 79, slot: 134, string: 20, svc: 79, syscall: 9, vector: 0, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 194, disagree: 0}
 
 functions:
@@ -208,6 +208,10 @@ functions:
     class: logline
     evidence: "the only line 0x2f7b0 logs, wlog('[ALTI] Failed to take pressure measure') at 0x2f7dc"
     module: ALTI
+  - name: periodic_task_sweep__1
+    address: 0x2f9ac
+    class: helper
+    evidence: "only 0x3fc14 (periodic_task_sweep) calls 0x2f9ac; 48 bytes"
   - name: bat_battery_management_start__1__1
     address: 0x2f9e0
     class: helper
@@ -591,11 +595,6 @@ functions:
     address: 0x34764
     class: shell
     evidence: "shell_cmd_table row 0x274a8: command 'xtal32m', run slot (+4)"
-  - name: vector_2_handler
-    address: 0x349d8
-    class: vector
-    evidence: "word 2 of the vector table at 0x27000 holds 0x349d9"
-    also_named: [vector_4_handler (vector), vector_5_handler (vector), vector_6_handler (vector), vector_7_handler (vector), vector_8_handler (vector), vector_9_handler (vector), vector_10_handler (vector), vector_12_handler (vector), vector_13_handler (vector), vector_15_handler (vector), vector_16_handler (vector), vector_17_handler (vector), vector_21_handler (vector), vector_24_handler (vector), vector_27_handler (vector), vector_28_handler (vector), vector_29_handler (vector), vector_30_handler (vector), vector_31_handler (vector), vector_34_handler (vector), vector_35_handler (vector), vector_36_handler (vector), vector_37_handler (vector), vector_39_handler (vector), vector_40_handler (vector), vector_41_handler (vector), vector_42_handler (vector), vector_43_handler (vector), vector_45_handler (vector), vector_46_handler (vector), vector_47_handler (vector), vector_48_handler (vector), vector_53_handler (vector), vector_54_handler (vector), vector_55_handler (vector), vector_56_handler (vector), vector_57_handler (vector), vector_58_handler (vector), vector_59_handler (vector), vector_60_handler (vector), vector_62_handler (vector)]
   - name: invalid_irq
     address: 0x36a04
     class: logline
@@ -960,26 +959,6 @@ functions:
     class: logline
     evidence: "the only line 0x39c60 logs, wlog('Add WPPS chars.') at 0x39c6e"
     module: BLE_WPP
-  - name: vector_22_handler
-    address: 0x39fb8
-    class: vector
-    evidence: "word 22 of the vector table at 0x27000 holds 0x39fb9"
-  - name: vector_44_handler
-    address: 0x3a5b8
-    class: vector
-    evidence: "word 44 of the vector table at 0x27000 holds 0x3a5b9"
-  - name: vector_49_handler
-    address: 0x3a5c8
-    class: vector
-    evidence: "word 49 of the vector table at 0x27000 holds 0x3a5c9"
-  - name: vector_50_handler
-    address: 0x3a5d8
-    class: vector
-    evidence: "word 50 of the vector table at 0x27000 holds 0x3a5d9"
-  - name: vector_61_handler
-    address: 0x3a5e8
-    class: vector
-    evidence: "word 61 of the vector table at 0x27000 holds 0x3a5e9"
   - name: step_motor_step_toward__1
     address: 0x3a664
     class: helper
@@ -996,44 +975,16 @@ functions:
     address: 0x3aa78
     class: shell
     evidence: "shell_cmd_table row 0x27394: command 'rtc', --help slot (+8)"
-  - name: vector_19_handler
-    address: 0x3abf4
-    class: vector
-    evidence: "word 19 of the vector table at 0x27000 holds 0x3abf5"
-  - name: vector_20_handler
-    address: 0x3ac04
-    class: vector
-    evidence: "word 20 of the vector table at 0x27000 holds 0x3ac05"
-  - name: vector_51_handler
-    address: 0x3ac14
-    class: vector
-    evidence: "word 51 of the vector table at 0x27000 holds 0x3ac15"
-  - name: vector_63_handler
-    address: 0x3ac24
-    class: vector
-    evidence: "word 63 of the vector table at 0x27000 holds 0x3ac25"
   - name: spim_failed_to_malloc_temporary_buffer
     address: 0x3ac5c
     class: logline
     evidence: "the only line 0x3ac5c logs, wlog('[SPIM] Failed to malloc temporary buffer(s)') at 0x3ad9a"
     module: SPIM
-  - name: vector_25_handler
-    address: 0x3af6c
-    class: vector
-    evidence: "word 25 of the vector table at 0x27000 holds 0x3af6d"
-  - name: vector_26_handler
-    address: 0x3af80
-    class: vector
-    evidence: "word 26 of the vector table at 0x27000 holds 0x3af81"
   - name: acquistion_task__2__1
     address: 0x3b010
     class: helper
     evidence: "only 0xa4e8a (acquistion_task__2) calls 0x3b010; 38 bytes"
     module: ACQ
-  - name: vector_18_handler
-    address: 0x3b3ec
-    class: vector
-    evidence: "word 18 of the vector table at 0x27000 holds 0x3b3ed"
   - name: shell_cmd_ecg__1
     address: 0x3b484
     class: helper
@@ -2944,6 +2895,11 @@ functions:
     address: 0x56a6c
     class: shell
     evidence: "shell_cmd_table row 0x27328: command 'pls', run slot (+4)"
+  - name: periodic_task_sweep__2
+    address: 0x56bd4
+    class: helper
+    evidence: "only 0x3fc14 (periodic_task_sweep) calls 0x56bd4; 140 bytes"
+    module: PPG_BACKGROUND_RAW_DATA
   - name: pwr_negative_counter
     address: 0x56d24
     class: logline
@@ -3753,6 +3709,11 @@ functions:
     address: 0x61968
     class: helper
     evidence: "only 0xa63b2 (wui_vtable_spo2_meas_2_slot_12) calls 0x61968; 16 bytes"
+  - name: periodic_task_sweep__3
+    address: 0x61ac0
+    class: helper
+    evidence: "only 0x3fc14 (periodic_task_sweep) calls 0x61ac0; 144 bytes"
+    module: AUTO_BURST
   - name: wui_vtable_spo2_meas_slot_13__1
     address: 0x61b98
     class: helper
@@ -3792,6 +3753,11 @@ functions:
     class: logline
     evidence: "the only line 0x623c0 logs, wlog('[HR_MEASURE] Cannot call hr_measure_release with BURST_AUTO_STOP mode') at 0x623fc"
     module: HR_MEASURE
+  - name: periodic_task_table_2_run
+    address: 0x62410
+    class: slot
+    evidence: "0x62410 is the run slot of periodic_task_table row 2 (word 0x27d80); nothing calls it"
+    module: AUTO_BURST
   - name: WPP_CMD_HR_MEASURE
     address: 0x624e4
     class: wppcmd
@@ -3821,6 +3787,21 @@ functions:
     address: 0x62f24
     class: helper
     evidence: "only 0x8658c (wui_vtable_high_hr_popup_on_enter) calls 0x62f24; 6 bytes"
+  - name: periodic_task_table_3_run__1__1
+    address: 0x63084
+    class: helper
+    evidence: "only 0x630bc (periodic_task_table_3_run__1) calls 0x63084; 14 bytes"
+    module: PPG_AFIB
+  - name: periodic_task_table_3_run__1
+    address: 0x630bc
+    class: helper
+    evidence: "only 0x63128 (periodic_task_table_3_run) calls 0x630bc; 86 bytes"
+    module: PPG_AFIB
+  - name: periodic_task_table_3_run
+    address: 0x63128
+    class: slot
+    evidence: "0x63128 is the run slot of periodic_task_table row 3 (word 0x27d8c); nothing calls it"
+    module: AUTO_BURST
   - name: algo_manager_publish_results__5
     address: 0x631c0
     class: helper

@@ -482,6 +482,11 @@ symbols:
   class: logline
   evidence: the only line 0x2f7b0 logs, wlog('[ALTI] Failed to take pressure measure')
     at 0x2f7dc
+- address: 0x2f9ac
+  name: periodic_task_sweep__1
+  kind: function
+  class: helper
+  evidence: only 0x3fc14 (periodic_task_sweep) calls 0x2f9ac; 48 bytes
 - address: 0x2f9e0
   name: bat_battery_management_start__1__1
   kind: function
@@ -5442,6 +5447,11 @@ symbols:
   module: boot
   evidence: the same walk over post_update_hooks calling +4 of each row; 0x2e1d8
     calls it at 0x2e3e8, after the module inits
+- address: 0x56bd4
+  name: periodic_task_sweep__2
+  kind: function
+  class: helper
+  evidence: only 0x3fc14 (periodic_task_sweep) calls 0x56bd4; 140 bytes
 - address: 0x56d24
   name: pwr_negative_counter
   kind: function
@@ -6764,6 +6774,11 @@ symbols:
   kind: function
   class: helper
   evidence: only 0xa63b2 (wui_vtable_spo2_meas_2_slot_12) calls 0x61968; 16 bytes
+- address: 0x61ac0
+  name: periodic_task_sweep__3
+  kind: function
+  class: helper
+  evidence: only 0x3fc14 (periodic_task_sweep) calls 0x61ac0; 144 bytes
 - address: 0x61b98
   name: wui_vtable_spo2_meas_slot_13__1
   kind: function
@@ -6835,6 +6850,12 @@ symbols:
   class: logline
   evidence: the only line 0x623c0 logs, wlog('[HR_MEASURE] Cannot call hr_measure_release
     with BURST_AUTO_STOP mode') at 0x623fc
+- address: 0x62410
+  name: periodic_task_table_2_run
+  kind: function
+  class: slot
+  evidence: 0x62410 is the run slot of periodic_task_table row 2 (word 0x27d80);
+    nothing calls it
 - address: 0x624b0
   name: hr_measure_get_screen_data
   kind: function
@@ -6887,6 +6908,22 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x8658c (wui_vtable_high_hr_popup_on_enter) calls 0x62f24; 6 bytes
+- address: 0x63084
+  name: periodic_task_table_3_run__1__1
+  kind: function
+  class: helper
+  evidence: only 0x630bc (periodic_task_table_3_run__1) calls 0x63084; 14 bytes
+- address: 0x630bc
+  name: periodic_task_table_3_run__1
+  kind: function
+  class: helper
+  evidence: only 0x63128 (periodic_task_table_3_run) calls 0x630bc; 86 bytes
+- address: 0x63128
+  name: periodic_task_table_3_run
+  kind: function
+  class: slot
+  evidence: 0x63128 is the run slot of periodic_task_table row 3 (word 0x27d8c);
+    nothing calls it
 - address: 0x631c0
   name: algo_manager_publish_results__5
   kind: function
@@ -9368,6 +9405,20 @@ symbols:
   evidence: the call under algo_enabled(0xe) (0x7d6ba, 0x7d71e); id 14 is SLEEP_WAKE.
     The four HRV getters feed it on the stack (0x7d6ea..0x7d706). 1279 calls in
     the trace, one per popped slot.
+- address: 0x79974
+  name: ewma_pair_step
+  kind: function
+  class: sensor
+  module: sensors_sync
+  evidence: two first-order low passes over one input, at two time constants. It
+    reads x from +0x8a0 and writes 0.06 * x + 0.94 * a back over a at +0x898 and
+    0.03 * x + 0.97 * b back over b at +0x89c, with the four coefficients as literal
+    pool words 0x3d75c290, 0x3f70a3d7, 0x3cf5c280 and 0x3f7851ec (0x79974..0x799b4).
+    Each pair sums to one, which is what makes each of them an exponential moving
+    average and not a gain, and the two alphas differ by a factor of two, which
+    is what makes the pair a fast and a slow estimate of the same quantity. 19 calls
+    in the 1200 s schedule run, one for each of motion_window_decide and two hooks
+    after it, and none in any of the other eight scenarios
 - address: 0x79b1c
   name: sleep_wake_algo_step__1
   kind: function
@@ -16971,7 +17022,9 @@ symbols:
     at 0x9ecae: the 64-bit coefficient in r2:r3 is negated into its own complement
     at 0x9ec74..0x9ec7a, and the two 64-bit products state * alpha and x * (1 -
     alpha) are summed with `umull`/`mla`/`adc` and rounded (0x9ec86..0x9eca8). One
-    coefficient, one state, one sample'
+    coefficient, one state, one sample. 82596 calls in the 1200 s schedule run against
+    27532 of motion_energy_step, exactly three per sample, which is one filter per
+    accelerometer axis'
 - address: 0x9ecae
   name: ewma_step
   kind: function
@@ -17252,19 +17305,25 @@ symbols:
     +0x2c becomes 1 when it is above the threshold argument and 0 when it is not
     (0xa0724..0xa0734). motion_detection_algo_step calls it with 300 once every
     25 samples, off the counter that wraps at 0x18 (0x2a00e, 0x2a022), so the two
-    rates are one per sample and one per second of accelerometer at 25 Hz'
+    rates are one per sample and one per second of accelerometer at 25 Hz. 19 calls
+    in the 1200 s schedule run and none in any of the other eight, all of them after
+    the passive burst had started -- the first at hook 170692 against motion_energy_step''s
+    7032. Nineteen windows is the whole of what MOTION_DETECTION ran'
 - address: 0xa073a
   name: motion_energy_step
   kind: function
   class: sensor
   module: sensors_sync
-  evidence: the per-sample half of motion detection. Each axis is smoothed by its
+  evidence: 'the per-sample half of motion detection. Each axis is smoothed by its
     own ewma_fixed_step at +4, +8 and +0xc (0xa0762, 0xa0770, 0xa077e), and the
     distance between the raw sample and the smoothed one is stored at +0x10 and
     added to the 64-bit accumulator at +0x18 -- as the sum of the three squared
     differences (0xa0796..0xa07a2) or, when the byte at +0x2d is set, as the sum
     of their magnitudes (0xa07b2 onwards). The halfword at +0 seeds the three filters
-    with the first sample instead of smoothing it
+    with the first sample instead of smoothing it. 27532 calls in the 1200 s schedule
+    run, first entered in its first minute and long before MOTION_DETECTION starts:
+    it runs for whatever consumes accelerometer samples and not for this algorithm
+    alone'
 - address: 0xa07ce
   name: main_task__19__6
   kind: function
