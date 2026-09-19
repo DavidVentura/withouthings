@@ -1016,10 +1016,11 @@ symbols:
   evidence: wlog('[product_get_erase_flag] Something went wrong No IE FIRMWARE_VERSION
     (try to erase)') at 0x36fd0, tag is a C identifier
 - address: 0x37028
-  name: wpp_wup_device__1
+  name: wup_device_set
   kind: function
-  class: helper
-  evidence: only 0x6d38c (wpp_wup_device) calls 0x37028; 34 bytes
+  class: global
+  evidence: the only function that persists dblib id 0x133, comparing and storing
+    the cache word at 0x20006ef8 first
 - address: 0x37050
   name: oled_gpio_power_cfg
   kind: label
@@ -2571,11 +2572,11 @@ symbols:
   class: shell
   evidence: 'shell_cmd_table row 0x271c0: command ''dblib'', --help slot (+8)'
 - address: 0x48f68
-  name: dbg_mask_change_ie_debug_mask
+  name: debug_mask_set
   kind: function
-  class: logline
-  evidence: the only line 0x48f68 logs, wlog('[DBG_MASK] Change IE_DEBUG_MASK to
-    %x') at 0x48f96
+  class: global
+  evidence: the only function that persists dblib id 0x5b, comparing and storing
+    the cache word at 0x20019234 first
 - address: 0x48fd4
   name: shell_help_debug_mask
   kind: function
@@ -3091,6 +3092,17 @@ symbols:
   kind: label
   class: prose
   evidence: fills 52B descriptor; banks @0x6000 / 0x11f000
+- address: 0x4ce00
+  name: adxl367_mode_get
+  kind: function
+  class: global
+  evidence: its whole body copies the cache word at 0x200254ce out; dblib id 0x104
+- address: 0x4ce0c
+  name: adxl367_mode_set
+  kind: function
+  class: global
+  evidence: the only function that persists dblib id 0x104, comparing and storing
+    the cache word at 0x200254ce first
 - address: 0x4d2b8
   name: GLANCE_SET
   kind: function
@@ -3247,10 +3259,11 @@ symbols:
   evidence: the only line 0x4e9d4 logs, wlog('[HR_COMPRESSION] Store %lu, %ubpm,
     %us') at 0x4ea4e
 - address: 0x4eac0
-  name: WPP_CMD_HR_AUTO_ALGORITHM_SET__1
+  name: dblib_setting_0xe2_set
   kind: function
-  class: helper
-  evidence: only 0x4eaf4 (WPP_CMD_HR_AUTO_ALGORITHM_SET) calls 0x4eac0; 36 bytes
+  class: global
+  evidence: the only function that persists dblib id 0xe2, comparing and storing
+    the cache word at 0x200254cf first
 - address: 0x4eae8
   name: WPP_CMD_HR_AUTO_ALGORITHM_GET__1
   kind: function
@@ -4205,6 +4218,12 @@ symbols:
   module: null
   evidence: the name string 'wlog' and the entry pointer 0x51085 that xTaskCreateStatic
     at 0x50f16 was given
+- address: 0x510f4
+  name: locale_set
+  kind: function
+  class: global
+  evidence: the only function that persists dblib id 0x7, comparing and storing
+    the cache word at 0x2001ada4 first
 - address: 0x51170
   name: loc_stored_locale
   kind: function
@@ -4254,6 +4273,12 @@ symbols:
   class: wppcmd
   evidence: 'wpp_cmd_table row 0x2776c: key 2449, label ''WPP_CMD_LOCAL_NOTIFICATIONS_CONFIG_GET'',
     CMD_LOCAL_NOTIFICATIONS_CONFIG_GET in wpp/src/commands.rs'
+- address: 0x51554
+  name: local_notifications_config_set
+  kind: function
+  class: global
+  evidence: the only function that persists dblib id 0x147, comparing and storing
+    the cache word at 0x200070d8 first
 - address: 0x5160c
   name: WPP_CMD_LOCAL_NOTIFICATIONS_CONFIG_SET
   kind: function
@@ -5696,6 +5721,23 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x27448: command ''tracker_user'', run slot (+4)'
+- address: 0x607e4
+  name: step_goal_set
+  kind: function
+  class: global
+  evidence: the only function that persists dblib id 0x6f, comparing and storing
+    the cache word at 0x2001fd98 first
+- address: 0x60824
+  name: sleep_goal_set
+  kind: function
+  class: global
+  evidence: the only function that persists dblib id 0x70, comparing and storing
+    the cache word at 0x2001fd9c first
+- address: 0x6089c
+  name: step_goal_get
+  kind: function
+  class: global
+  evidence: its whole body copies the cache word at 0x2001fd98 out; dblib id 0x6f
 - address: 0x608a8
   name: WPP_CMD_TRACKER_GOAL_SET
   kind: function
@@ -6780,10 +6822,11 @@ symbols:
   evidence: the only line 0x6adc0 logs, wlog('[WPP] Notify WPP_CMD_WORKOUT_LIVE_DATA')
     at 0x6addc
 - address: 0x6ae38
-  name: wpp_workout_alwyas_on_set_unpack__1
+  name: workout_screen_always_on_set
   kind: function
-  class: helper
-  evidence: only 0x6ab54 (wpp_workout_alwyas_on_set_unpack) calls 0x6ae38; 60 bytes
+  class: global
+  evidence: the only function that persists dblib id 0x148, comparing and storing
+    the cache word at 0x20026c13 first
 - address: 0x6ae78
   name: workout_cache_write_version
   kind: function
@@ -8288,6 +8331,11 @@ symbols:
   evidence: reads dblib item DBLIB_IE_MOVE_HANDS (0x156); if it is missing it derives
     the answer from the model code in r0 and writes it back, and either way ends
     on wlog('[UI] move_hands feature %sabled') at 0x7fbb6
+- address: 0x7fc98
+  name: move_hands_get
+  kind: function
+  class: global
+  evidence: its whole body copies the cache word at 0x20007243 out; dblib id 0x156
 - address: 0x7fcac
   name: set_move_hands
   kind: function
@@ -17518,6 +17566,14 @@ symbols:
   kind: global
   class: hand
   module: boot
+- address: 0x20002816
+  name: update_choosing_block_byte_20002816
+  kind: global
+  class: global
+  module: UPDATE_CHOOSING_BLOCK
+  size: 1
+  evidence: every function that loads or stores it logs under [UPDATE_CHOOSING_BLOCK]
+    (1 read it, 0 write it)
 - address: 0x20002824
   name: step_motor_positions
   kind: table
@@ -17527,11 +17583,427 @@ symbols:
     survive the reset the fault handler takes and the boot log can print them as
     '[M] last min t=%d, h=%d, m=%d'. step_motor_pwm_handler moves the word and step_motor_load_cal_ph
     fills the phase byte at +5
+- address: 0x2000282c
+  name: vas_store_bkp_word_2000282c
+  kind: global
+  class: global
+  module: VAS_STORE_BKP
+  size: 4
+  evidence: every function that loads or stores it logs under [VAS_STORE_BKP] (5
+    read it, 0 write it)
+- address: 0x20002834
+  name: vas_store_bkp_word_20002834
+  kind: global
+  class: global
+  module: VAS_STORE_BKP
+  size: 4
+  evidence: every function that loads or stores it logs under [VAS_STORE_BKP] (6
+    read it, 0 write it)
+- address: 0x20002840
+  name: step_motor_word_20002840
+  kind: global
+  class: global
+  module: STEP_MOTOR
+  size: 4
+  evidence: stored in the same straight line as wlog('[STEP_MOTOR] save cal ph.')
+    at 0x5cd54
+- address: 0x200028a4
+  name: timer_word_200028a4
+  kind: global
+  class: global
+  module: TIMER
+  size: 4
+  evidence: every function that loads or stores it logs under [TIMER] (2 read it,
+    1 write it)
+- address: 0x200028a8
+  name: timer_byte_200028a8
+  kind: global
+  class: global
+  module: TIMER
+  size: 1
+  evidence: every function that loads or stores it logs under [TIMER] (1 read it,
+    1 write it)
+- address: 0x200028b8
+  name: stopwatch_byte_200028b8
+  kind: global
+  class: global
+  module: STOPWATCH
+  size: 1
+  evidence: every function that loads or stores it logs under [STOPWATCH] (2 read
+    it, 1 write it)
+- address: 0x200028d5
+  name: vas_store_bkp_byte_200028d5
+  kind: global
+  class: global
+  module: VAS_STORE_BKP
+  size: 1
+  evidence: every function that loads or stores it logs under [VAS_STORE_BKP] (2
+    read it, 1 write it)
+- address: 0x200028d6
+  name: tracker_flag_200028d6
+  kind: global
+  class: global
+  module: TRACKER
+  size: 2
+  evidence: every function that loads or stores it logs under [TRACKER] (0 read
+    it, 3 write it)
+- address: 0x200028d8
+  name: respiratory_scan_word_200028d8
+  kind: global
+  class: global
+  module: RESPIRATORY_SCAN
+  size: 4
+  evidence: every function that loads or stores it logs under [RESPIRATORY_SCAN]
+    (1 read it, 3 write it)
+- address: 0x200028dc
+  name: inactivity_word_200028dc
+  kind: global
+  class: global
+  module: INACTIVITY
+  size: 4
+  evidence: every function that loads or stores it logs under [INACTIVITY] (1 read
+    it, 1 write it)
+- address: 0x200028e0
+  name: tracker_word_200028e0
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: every function that loads or stores it logs under [TRACKER] (1 read
+    it, 1 write it)
+- address: 0x200028e4
+  name: tracker_word_200028e4
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: every function that loads or stores it logs under [TRACKER] (1 read
+    it, 1 write it)
+- address: 0x200028e8
+  name: tracker_word_200028e8
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: every function that loads or stores it logs under [TRACKER] (1 read
+    it, 1 write it)
 - address: 0x20006000
   name: crown_ctx
   kind: global
   class: hand
   module: crown
+- address: 0x20006004
+  name: algo_manager_byte_20006004
+  kind: global
+  class: global
+  module: ALGO_MANAGER
+  size: 1
+  evidence: every function that loads or stores it logs under [ALGO_MANAGER] (1
+    read it, 0 write it)
+- address: 0x20006008
+  name: algo_manager_word_20006008
+  kind: global
+  class: global
+  module: ALGO_MANAGER
+  size: 4
+  evidence: every function that loads or stores it logs under [ALGO_MANAGER] (1
+    read it, 1 write it)
+- address: 0x2000600c
+  name: algo_manager_word_2000600c
+  kind: global
+  class: global
+  module: ALGO_MANAGER
+  size: 4
+  evidence: every function that loads or stores it logs under [ALGO_MANAGER] (1
+    read it, 1 write it)
+- address: 0x20006010
+  name: algo_manager_half_20006010
+  kind: global
+  class: global
+  module: ALGO_MANAGER
+  size: 2
+  evidence: every function that loads or stores it logs under [ALGO_MANAGER] (1
+    read it, 0 write it)
+- address: 0x20006012
+  name: algo_manager_half_20006012
+  kind: global
+  class: global
+  module: ALGO_MANAGER
+  size: 2
+  evidence: every function that loads or stores it logs under [ALGO_MANAGER] (1
+    read it, 0 write it)
+- address: 0x20006014
+  name: algo_manager_half_20006014
+  kind: global
+  class: global
+  module: ALGO_MANAGER
+  size: 2
+  evidence: every function that loads or stores it logs under [ALGO_MANAGER] (1
+    read it, 0 write it)
+- address: 0x20006449
+  name: wpp_byte_20006449
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    0 write it)
+- address: 0x20006454
+  name: screen_list_set_struct_20006454
+  kind: global
+  class: global
+  module: SCREEN_LIST_SET
+  size: 12
+  evidence: every function that loads or stores it logs under [SCREEN_LIST_SET]
+    (3 read it, 5 write it)
+- address: 0x20006470
+  name: workout_cache_wpp_byte_20006470
+  kind: global
+  class: global
+  module: WORKOUT_CACHE_WPP
+  size: 1
+  evidence: stored in the same straight line as wlog('[WORKOUT CACHE WPP] [WPP]
+    Store info') at 0x6b32e
+- address: 0x20006471
+  name: wpp_byte_20006471
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    1 write it)
+- address: 0x20006472
+  name: workout_cache_wpp_half_20006472
+  kind: global
+  class: global
+  module: WORKOUT_CACHE_WPP
+  size: 2
+  evidence: stored in the same straight line as wlog('[WORKOUT CACHE WPP] [WPP]
+    Store info') at 0x6b32e
+- address: 0x20006474
+  name: workout_cache_wpp_half_20006474
+  kind: global
+  class: global
+  module: WORKOUT_CACHE_WPP
+  size: 2
+  evidence: every function that loads or stores it logs under [WORKOUT_CACHE_WPP]
+    (1 read it, 2 write it)
+- address: 0x20006475
+  name: workout_cache_wpp_byte_20006475
+  kind: global
+  class: global
+  module: WORKOUT_CACHE_WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WORKOUT_CACHE_WPP]
+    (2 read it, 0 write it)
+- address: 0x20006476
+  name: workout_cache_wpp_byte_20006476
+  kind: global
+  class: global
+  module: WORKOUT_CACHE_WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WORKOUT_CACHE_WPP]
+    (2 read it, 2 write it)
+- address: 0x20006489
+  name: wpp_byte_20006489
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    1 write it)
+- address: 0x2000648c
+  name: wpp_ptr_2000648c
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    1 write it)
+- address: 0x200064b4
+  name: ws_events_wpp_flag_200064b4
+  kind: global
+  class: global
+  module: WS_EVENTS_WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WS_EVENTS_WPP] (1
+    read it, 2 write it)
+- address: 0x200064d4
+  name: custo_screen_word_200064d4
+  kind: global
+  class: global
+  module: CUSTO_SCREEN
+  size: 4
+  evidence: every function that loads or stores it logs under [CUSTO_SCREEN] (0
+    read it, 1 write it)
+- address: 0x200064d8
+  name: custo_screen_word_200064d8
+  kind: global
+  class: global
+  module: CUSTO_SCREEN
+  size: 4
+  evidence: every function that loads or stores it logs under [CUSTO_SCREEN] (0
+    read it, 1 write it)
+- address: 0x200064dc
+  name: custo_screen_byte_200064dc
+  kind: global
+  class: global
+  module: CUSTO_SCREEN
+  size: 1
+  evidence: stored in the same straight line as wlog('[CUSTO_SCREEN][WPP] img_type
+    = %u | sx = %u | sy = %u | depth = %u\n') at 0x6b8d8
+- address: 0x200064e0
+  name: custo_screen_byte_200064e0
+  kind: global
+  class: global
+  module: CUSTO_SCREEN
+  size: 1
+  evidence: stored in the same straight line as wlog('[CUSTO_SCREEN][WPP] img_type
+    = %u | sx = %u | sy = %u | depth = %u\n') at 0x6b8d8
+- address: 0x200064e1
+  name: custo_screen_byte_200064e1
+  kind: global
+  class: global
+  module: CUSTO_SCREEN
+  size: 1
+  evidence: stored in the same straight line as wlog('[CUSTO_SCREEN][WPP] img_type
+    = %u | sx = %u | sy = %u | depth = %u\n') at 0x6b8d8
+- address: 0x200064e8
+  name: custo_screen_struct_200064e8
+  kind: global
+  class: global
+  module: CUSTO_SCREEN
+  size: 12
+  evidence: stored in the same straight line as wlog('[CUSTO_SCREEN][WPP] img_type
+    = %u | sx = %u | sy = %u | depth = %u\n') at 0x6b8d8
+- address: 0x200064f4
+  name: wpp_half_200064f4
+  kind: global
+  class: global
+  module: WPP
+  size: 2
+  evidence: 'stored in the same straight line as wlog(''[WPP] Custo screen data
+    transfer completed: %d / %d \n'') at 0x6b936'
+- address: 0x200064f8
+  name: custo_screen_ptr_200064f8
+  kind: global
+  class: global
+  module: CUSTO_SCREEN
+  size: 4
+  evidence: every function that loads or stores it logs under [CUSTO_SCREEN] (4
+    read it, 1 write it)
+- address: 0x200064fc
+  name: custo_screen_byte_200064fc
+  kind: global
+  class: global
+  module: CUSTO_SCREEN
+  size: 1
+  evidence: every function that loads or stores it logs under [CUSTO_SCREEN] (1
+    read it, 1 write it)
+- address: 0x200064fe
+  name: custo_screen_half_200064fe
+  kind: global
+  class: global
+  module: CUSTO_SCREEN
+  size: 2
+  evidence: every function that loads or stores it logs under [CUSTO_SCREEN] (1
+    read it, 1 write it)
+- address: 0x20006500
+  name: custo_screen_half_20006500
+  kind: global
+  class: global
+  module: CUSTO_SCREEN
+  size: 2
+  evidence: every function that loads or stores it logs under [CUSTO_SCREEN] (1
+    read it, 1 write it)
+- address: 0x20006504
+  name: custo_screen_word_20006504
+  kind: global
+  class: global
+  module: CUSTO_SCREEN
+  size: 4
+  evidence: every function that loads or stores it logs under [CUSTO_SCREEN] (1
+    read it, 1 write it)
+- address: 0x20006524
+  name: workout_cache_wpp_half_20006524
+  kind: global
+  class: global
+  module: WORKOUT_CACHE_WPP
+  size: 2
+  evidence: every function that loads or stores it logs under [WORKOUT_CACHE_WPP]
+    (1 read it, 2 write it)
+- address: 0x20006588
+  name: feature_tags_byte_20006588
+  kind: global
+  class: global
+  module: FEATURE_TAGS
+  size: 1
+  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (1
+    read it, 1 write it)
+- address: 0x20006589
+  name: feature_tags_byte_20006589
+  kind: global
+  class: global
+  module: FEATURE_TAGS
+  size: 1
+  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (1
+    read it, 1 write it)
+- address: 0x2000658a
+  name: feature_tags_flag_2000658a
+  kind: global
+  class: global
+  module: FEATURE_TAGS
+  size: 1
+  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (1
+    read it, 1 write it)
+- address: 0x200065c8
+  name: screen_list_set_byte_200065c8
+  kind: global
+  class: global
+  module: SCREEN_LIST_SET
+  size: 1
+  evidence: every function that loads or stores it logs under [SCREEN_LIST_SET]
+    (1 read it, 1 write it)
+- address: 0x20006e70
+  name: algo_manager_word_20006e70
+  kind: global
+  class: global
+  module: ALGO_MANAGER
+  size: 4
+  evidence: every function that loads or stores it logs under [ALGO_MANAGER] (1
+    read it, 1 write it)
+- address: 0x20006e74
+  name: algo_manager_word_20006e74
+  kind: global
+  class: global
+  module: ALGO_MANAGER
+  size: 4
+  evidence: every function that loads or stores it logs under [ALGO_MANAGER] (1
+    read it, 1 write it)
+- address: 0x20006e78
+  name: wpp_struct_20006e78
+  kind: global
+  class: global
+  module: WPP
+  size: 8
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    1 write it)
+- address: 0x20006e79
+  name: wpp_byte_20006e79
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    1 write it)
+- address: 0x20006e7c
+  name: wpp_word_20006e7c
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    0 write it)
 - address: 0x20006e84
   name: step_motors
   kind: global
@@ -17539,16 +18011,950 @@ symbols:
   module: hands
   evidence: the three step_motor objects, tracker, hour and minute in that order,
     as step_motor_init walks them against step_motor_positions
+- address: 0x20006e88
+  name: lapping_ptr_20006e88
+  kind: global
+  class: global
+  module: LAPPING
+  size: 4
+  evidence: every function that loads or stores it logs under [LAPPING] (3 read
+    it, 0 write it)
+- address: 0x20006e8c
+  name: lapping_ptr_20006e8c
+  kind: global
+  class: global
+  module: LAPPING
+  size: 4
+  evidence: every function that loads or stores it logs under [LAPPING] (2 read
+    it, 0 write it)
+- address: 0x20006ef4
+  name: rre_fonts_ptr_20006ef4
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 4
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (1 read
+    it, 0 write it)
+- address: 0x20006ef8
+  name: wup_device
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: 'the cache word of wup_device: dblib id 0x133, persisted by 0x37028
+    with dblib_set(0x133, &0x20006ef8, 4)'
+- address: 0x20006f00
+  name: ble_ptr_20006f00
+  kind: global
+  class: global
+  module: BLE
+  size: 4
+  evidence: every function that loads or stores it logs under [BLE] (1 read it,
+    1 write it)
+- address: 0x20006f01
+  name: ble_byte_20006f01
+  kind: global
+  class: global
+  module: BLE
+  size: 1
+  evidence: every function that loads or stores it logs under [BLE] (1 read it,
+    1 write it)
+- address: 0x20006f02
+  name: ble_byte_20006f02
+  kind: global
+  class: global
+  module: BLE
+  size: 1
+  evidence: every function that loads or stores it logs under [BLE] (1 read it,
+    1 write it)
+- address: 0x20006f03
+  name: ble_byte_20006f03
+  kind: global
+  class: global
+  module: BLE
+  size: 1
+  evidence: every function that loads or stores it logs under [BLE] (2 read it,
+    3 write it)
+- address: 0x20006f0c
+  name: ble_ptr_20006f0c
+  kind: global
+  class: global
+  module: BLE
+  size: 4
+  evidence: every function that loads or stores it logs under [BLE] (1 read it,
+    0 write it)
+- address: 0x20006f0d
+  name: ble_byte_20006f0d
+  kind: global
+  class: global
+  module: BLE
+  size: 1
+  evidence: every function that loads or stores it logs under [BLE] (3 read it,
+    0 write it)
+- address: 0x20006f68
+  name: softdevice_ble_core_ptr_20006f68
+  kind: global
+  class: global
+  module: SOFTDEVICE_BLE_CORE
+  size: 4
+  evidence: every function that loads or stores it logs under [SOFTDEVICE_BLE_CORE]
+    (1 read it, 1 write it)
+- address: 0x20006f6e
+  name: bt_half_20006f6e
+  kind: global
+  class: global
+  module: BT
+  size: 2
+  evidence: every function that loads or stores it logs under [BT] (2 read it, 1
+    write it)
+- address: 0x20006f78
+  name: ble_ptr_20006f78
+  kind: global
+  class: global
+  module: BLE
+  size: 4
+  evidence: every function that loads or stores it logs under [BLE] (1 read it,
+    1 write it)
+- address: 0x20006f7c
+  name: mcuflash_ptr_20006f7c
+  kind: global
+  class: global
+  module: MCUFLASH
+  size: 4
+  evidence: every function that loads or stores it logs under [MCUFLASH] (2 read
+    it, 3 write it)
+- address: 0x20006fa0
+  name: adxl367_struct_20006fa0
+  kind: global
+  class: global
+  module: ADXL367
+  size: 26
+  evidence: every function that loads or stores it logs under [ADXL367] (2 read
+    it, 2 write it)
+- address: 0x20006fa4
+  name: adxl367_ptr_20006fa4
+  kind: global
+  class: global
+  module: ADXL367
+  size: 4
+  evidence: every function that loads or stores it logs under [ADXL367] (1 read
+    it, 2 write it)
+- address: 0x20006fa8
+  name: adxl367_struct_20006fa8
+  kind: global
+  class: global
+  module: ADXL367
+  size: 18
+  evidence: every function that loads or stores it logs under [ADXL367] (1 read
+    it, 2 write it)
+- address: 0x20006fac
+  name: adxl367_ptr_20006fac
+  kind: global
+  class: global
+  module: ADXL367
+  size: 4
+  evidence: every function that loads or stores it logs under [ADXL367] (1 read
+    it, 2 write it)
+- address: 0x20006fae
+  name: adxl367_struct_20006fae
+  kind: global
+  class: global
+  module: ADXL367
+  size: 10
+  evidence: every function that loads or stores it logs under [ADXL367] (1 read
+    it, 2 write it)
+- address: 0x20006fb2
+  name: adxl367_half_20006fb2
+  kind: global
+  class: global
+  module: ADXL367
+  size: 2
+  evidence: every function that loads or stores it logs under [ADXL367] (1 read
+    it, 2 write it)
+- address: 0x20006fb4
+  name: adxl367_ptr_20006fb4
+  kind: global
+  class: global
+  module: ADXL367
+  size: 4
+  evidence: every function that loads or stores it logs under [ADXL367] (1 read
+    it, 2 write it)
+- address: 0x20006fb8
+  name: adxl367_ptr_20006fb8
+  kind: global
+  class: global
+  module: ADXL367
+  size: 4
+  evidence: every function that loads or stores it logs under [ADXL367] (2 read
+    it, 1 write it)
+- address: 0x2000700d
+  name: dblib_byte_2000700d
+  kind: global
+  class: global
+  module: DBLIB
+  size: 1
+  evidence: every function that loads or stores it logs under [DBLIB] (1 read it,
+    1 write it)
+- address: 0x20007010
+  name: initdblib_struct_20007010
+  kind: global
+  class: global
+  module: INITDBLIB
+  size: 22
+  evidence: every function that loads or stores it logs under [INITDBLIB] (0 read
+    it, 1 write it)
+- address: 0x20007040
+  name: ecg_struct_20007040
+  kind: global
+  class: global
+  module: ECG
+  size: 124
+  evidence: every function that loads or stores it logs under [ECG] (3 read it,
+    2 write it)
+- address: 0x20007044
+  name: ecg_tracker_ptr_20007044
+  kind: global
+  class: global
+  module: ECG_TRACKER
+  size: 4
+  evidence: stored in the same straight line as wlog('[ECG_TRACKER] Signal Meta:')
+    at 0x4a9a6
+- address: 0x20007048
+  name: ecg_ptr_20007048
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    0 write it)
+- address: 0x2000704a
+  name: ecg_half_2000704a
+  kind: global
+  class: global
+  module: ECG
+  size: 2
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x2000704c
+  name: ecg_ptr_2000704c
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x2000704d
+  name: ecg_byte_2000704d
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    0 write it)
+- address: 0x2000704e
+  name: ecg_byte_2000704e
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x2000704f
+  name: ecg_byte_2000704f
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x20007050
+  name: ecg_ptr_20007050
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x20007054
+  name: ecg_ptr_20007054
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    2 write it)
+- address: 0x20007064
+  name: ecg_ptr_20007064
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x20007068
+  name: ecg_ptr_20007068
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x2000706c
+  name: ecg_tracker_word_2000706c
+  kind: global
+  class: global
+  module: ECG_TRACKER
+  size: 4
+  evidence: stored in the same straight line as wlog('[ECG_TRACKER] Signal Meta:')
+    at 0x4a9a6
+- address: 0x20007074
+  name: ecg_word_20007074
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x20007080
+  name: ecg_flag_20007080
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (0 read it,
+    1 write it)
+- address: 0x20007084
+  name: ecg_word_20007084
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (0 read it,
+    1 write it)
+- address: 0x20007088
+  name: ecg_word_20007088
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (0 read it,
+    2 write it)
+- address: 0x2000708c
+  name: ecg_word_2000708c
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (0 read it,
+    1 write it)
+- address: 0x20007090
+  name: ecg_word_20007090
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (0 read it,
+    1 write it)
+- address: 0x200070b8
+  name: ecg_tracker_word_200070b8
+  kind: global
+  class: global
+  module: ECG_TRACKER
+  size: 4
+  evidence: stored in the same straight line as wlog('[ECG_TRACKER] Signal Meta:')
+    at 0x4a9a6
+- address: 0x200070d4
+  name: local_notifications_table_200070d4
+  kind: global
+  class: global
+  module: LOCAL_NOTIFICATIONS
+  size: 40
+  evidence: every function that loads or stores it logs under [LOCAL_NOTIFICATIONS]
+    (2 read it, 0 write it)
+- address: 0x200070d8
+  name: local_notifications_config
+  kind: global
+  class: global
+  module: LOCAL_NOTIFICATIONS
+  size: 40
+  evidence: 'the cache word of local_notifications_config: dblib id 0x147, persisted
+    by 0x51554 with dblib_set(0x147, &0x200070d8, 40)'
+- address: 0x20007100
+  name: respiratory_scan_struct_20007100
+  kind: global
+  class: global
+  module: RESPIRATORY_SCAN
+  size: 21
+  evidence: every function that loads or stores it logs under [RESPIRATORY_SCAN]
+    (4 read it, 1 write it)
+- address: 0x20007104
+  name: respiratory_scan_word_20007104
+  kind: global
+  class: global
+  module: RESPIRATORY_SCAN
+  size: 4
+  evidence: every function that loads or stores it logs under [RESPIRATORY_SCAN]
+    (1 read it, 1 write it)
+- address: 0x20007108
+  name: respiratory_scan_word_20007108
+  kind: global
+  class: global
+  module: RESPIRATORY_SCAN
+  size: 4
+  evidence: every function that loads or stores it logs under [RESPIRATORY_SCAN]
+    (1 read it, 1 write it)
+- address: 0x2000710c
+  name: respiratory_scan_byte_2000710c
+  kind: global
+  class: global
+  module: RESPIRATORY_SCAN
+  size: 1
+  evidence: every function that loads or stores it logs under [RESPIRATORY_SCAN]
+    (3 read it, 3 write it)
+- address: 0x20007114
+  name: respiratory_scan_byte_20007114
+  kind: global
+  class: global
+  module: RESPIRATORY_SCAN
+  size: 1
+  evidence: every function that loads or stores it logs under [RESPIRATORY_SCAN]
+    (1 read it, 3 write it)
 - address: 0x20007118
   name: sensors_sync_ring_ppg
   kind: global
   class: hand
   module: sensors_sync
+- address: 0x2000711c
+  name: tsm_word_2000711c
+  kind: global
+  class: global
+  module: TSM
+  size: 4
+  evidence: every function that loads or stores it logs under [TSM] (0 read it,
+    1 write it)
+- address: 0x2000711e
+  name: sensors_sync_half_2000711e
+  kind: global
+  class: global
+  module: SENSORS_SYNC
+  size: 2
+  evidence: every function that loads or stores it logs under [SENSORS_SYNC] (2
+    read it, 2 write it)
+- address: 0x20007121
+  name: tsm_byte_20007121
+  kind: global
+  class: global
+  module: TSM
+  size: 1
+  evidence: every function that loads or stores it logs under [TSM] (0 read it,
+    1 write it)
 - address: 0x20007124
   name: sensors_sync_ring_acc
   kind: global
   class: hand
   module: sensors_sync
+- address: 0x20007128
+  name: tsm_word_20007128
+  kind: global
+  class: global
+  module: TSM
+  size: 4
+  evidence: every function that loads or stores it logs under [TSM] (0 read it,
+    1 write it)
+- address: 0x2000712a
+  name: sensors_sync_half_2000712a
+  kind: global
+  class: global
+  module: SENSORS_SYNC
+  size: 2
+  evidence: every function that loads or stores it logs under [SENSORS_SYNC] (2
+    read it, 2 write it)
+- address: 0x2000712d
+  name: tsm_byte_2000712d
+  kind: global
+  class: global
+  module: TSM
+  size: 1
+  evidence: every function that loads or stores it logs under [TSM] (0 read it,
+    1 write it)
+- address: 0x20007148
+  name: shell_struct_20007148
+  kind: global
+  class: global
+  module: SHELL
+  size: 16
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    1 write it)
+- address: 0x2000714c
+  name: shell_word_2000714c
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    1 write it)
+- address: 0x20007150
+  name: shell_word_20007150
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    1 write it)
+- address: 0x20007154
+  name: shell_word_20007154
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    1 write it)
+- address: 0x20007158
+  name: spo2_word_20007158
+  kind: global
+  class: global
+  module: SPO2
+  size: 4
+  evidence: every function that loads or stores it logs under [SPO2] (2 read it,
+    2 write it)
+- address: 0x2000715c
+  name: spo2_word_2000715c
+  kind: global
+  class: global
+  module: SPO2
+  size: 4
+  evidence: every function that loads or stores it logs under [SPO2] (1 read it,
+    1 write it)
+- address: 0x2000716e
+  name: tsm_byte_2000716e
+  kind: global
+  class: global
+  module: TSM
+  size: 1
+  evidence: every function that loads or stores it logs under [TSM] (1 read it,
+    1 write it)
+- address: 0x20007170
+  name: tsm_word_20007170
+  kind: global
+  class: global
+  module: TSM
+  size: 4
+  evidence: every function that loads or stores it logs under [TSM] (2 read it,
+    1 write it)
+- address: 0x200071a0
+  name: wpp_lite_struct_200071a0
+  kind: global
+  class: global
+  module: WPP_LITE
+  size: 9
+  evidence: every function that loads or stores it logs under [WPP_LITE] (1 read
+    it, 0 write it)
+- address: 0x200071a8
+  name: wpp_lite_byte_200071a8
+  kind: global
+  class: global
+  module: WPP_LITE
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP_LITE] (2 read
+    it, 0 write it)
+- address: 0x200071ac
+  name: wpp_lite_struct_200071ac
+  kind: global
+  class: global
+  module: WPP_LITE
+  size: 9
+  evidence: every function that loads or stores it logs under [WPP_LITE] (1 read
+    it, 0 write it)
+- address: 0x200071b4
+  name: wpp_lite_byte_200071b4
+  kind: global
+  class: global
+  module: WPP_LITE
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP_LITE] (1 read
+    it, 0 write it)
+- address: 0x200071b8
+  name: wui_struct_200071b8
+  kind: global
+  class: global
+  module: WUI
+  size: 64
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x200071bc
+  name: wui_word_200071bc
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    1 write it)
+- address: 0x200071c4
+  name: wui_word_200071c4
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x200071c8
+  name: wui_word_200071c8
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (3 read it,
+    2 write it)
+- address: 0x200071cc
+  name: wui_word_200071cc
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x200071d0
+  name: wui_word_200071d0
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    2 write it)
+- address: 0x200071d4
+  name: wui_word_200071d4
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x200071d8
+  name: wui_word_200071d8
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    2 write it)
+- address: 0x200071dc
+  name: wui_word_200071dc
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x200071e0
+  name: wui_word_200071e0
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    2 write it)
+- address: 0x200071e4
+  name: wui_word_200071e4
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    0 write it)
+- address: 0x200071e8
+  name: wui_word_200071e8
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    2 write it)
+- address: 0x200071ec
+  name: wui_word_200071ec
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (2 read it,
+    3 write it)
+- address: 0x200071f4
+  name: wui_word_200071f4
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x20007200
+  name: wpps_word_20007200
+  kind: global
+  class: global
+  module: WPPS
+  size: 4
+  evidence: every function that loads or stores it logs under [WPPS] (2 read it,
+    0 write it)
+- address: 0x20007204
+  name: wpps_word_20007204
+  kind: global
+  class: global
+  module: WPPS
+  size: 4
+  evidence: every function that loads or stores it logs under [WPPS] (23 read it,
+    0 write it)
+- address: 0x20007228
+  name: temperature_struct_20007228
+  kind: global
+  class: global
+  module: TEMPERATURE
+  size: 12
+  evidence: every function that loads or stores it logs under [TEMPERATURE] (2 read
+    it, 1 write it)
+- address: 0x2000722c
+  name: temperature_byte_2000722c
+  kind: global
+  class: global
+  module: TEMPERATURE
+  size: 1
+  evidence: every function that loads or stores it logs under [TEMPERATURE] (1 read
+    it, 1 write it)
+- address: 0x20007230
+  name: temperature_word_20007230
+  kind: global
+  class: global
+  module: TEMPERATURE
+  size: 4
+  evidence: every function that loads or stores it logs under [TEMPERATURE] (1 read
+    it, 1 write it)
+- address: 0x20007242
+  name: ui_hands_feature_enabled
+  kind: global
+  class: global
+  module: UI
+  size: 2
+  evidence: stored in the same straight line as wlog('[UI] hands feature ENABLED  for
+    this model') at 0x7fb8c; the line names the role
+- address: 0x20007243
+  name: move_hands
+  kind: global
+  class: global
+  module: UI
+  size: 1
+  evidence: 'the cache word of move_hands: dblib id 0x156, persisted by 0x6d038,
+    0x7fcac with dblib_set(0x156, &0x20007243, 1)'
+- address: 0x2000741c
+  name: max8617x_flag_2000741c
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+    it, 1 write it)
+- address: 0x200076e8
+  name: max8617x_struct_200076e8
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 7
+  evidence: every function that loads or stores it logs under [MAX8617X] (2 read
+    it, 2 write it)
+- address: 0x200076ea
+  name: trig_byte_200076ea
+  kind: global
+  class: global
+  module: TRIG
+  size: 1
+  evidence: every function that loads or stores it logs under [TRIG] (1 read it,
+    1 write it)
+- address: 0x200076eb
+  name: trig_flag_200076eb
+  kind: global
+  class: global
+  module: TRIG
+  size: 1
+  evidence: every function that loads or stores it logs under [TRIG] (0 read it,
+    2 write it)
+- address: 0x200076ee
+  name: trig_byte_200076ee
+  kind: global
+  class: global
+  module: TRIG
+  size: 1
+  evidence: every function that loads or stores it logs under [TRIG] (0 read it,
+    1 write it)
+- address: 0x200076f0
+  name: rre_fonts_struct_200076f0
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 8
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (2 read
+    it, 1 write it)
+- address: 0x200076f2
+  name: rre_fonts_half_200076f2
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 2
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (1 read
+    it, 1 write it)
+- address: 0x200076f4
+  name: rre_fonts_half_200076f4
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 2
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (2 read
+    it, 1 write it)
+- address: 0x200076f6
+  name: rre_fonts_half_200076f6
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 2
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (1 read
+    it, 1 write it)
+- address: 0x200076fa
+  name: pairing_struct_200076fa
+  kind: global
+  class: global
+  module: PAIRING
+  size: 128
+  evidence: every function that loads or stores it logs under [PAIRING] (4 read
+    it, 1 write it)
+- address: 0x200076fb
+  name: pairing_word_200076fb
+  kind: global
+  class: global
+  module: PAIRING
+  size: 4
+  evidence: every function that loads or stores it logs under [PAIRING] (0 read
+    it, 1 write it)
+- address: 0x200076ff
+  name: pairing_half_200076ff
+  kind: global
+  class: global
+  module: PAIRING
+  size: 2
+  evidence: every function that loads or stores it logs under [PAIRING] (0 read
+    it, 1 write it)
+- address: 0x20007701
+  name: pairing_byte_20007701
+  kind: global
+  class: global
+  module: PAIRING
+  size: 1
+  evidence: every function that loads or stores it logs under [PAIRING] (0 read
+    it, 1 write it)
+- address: 0x20007702
+  name: pairing_byte_20007702
+  kind: global
+  class: global
+  module: PAIRING
+  size: 1
+  evidence: stored in the same straight line as wlog('[PAIRING] new peer') at 0x4130a
+- address: 0x2000770b
+  name: rre_fonts_flag_2000770b
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 1
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (0 read
+    it, 1 write it)
+- address: 0x2000775c
+  name: rre_fonts_word_2000775c
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 4
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (1 read
+    it, 0 write it)
+- address: 0x2000777a
+  name: wftl_table_2000777a
+  kind: global
+  class: global
+  module: WFTL
+  size: 8
+  evidence: every function that loads or stores it logs under [WFTL] (1 read it,
+    0 write it)
+- address: 0x20007949
+  name: bat_byte_20007949
+  kind: global
+  class: global
+  module: BAT
+  size: 1
+  evidence: every function that loads or stores it logs under [BAT] (3 read it,
+    1 write it)
+- address: 0x2000794a
+  name: bat_byte_2000794a
+  kind: global
+  class: global
+  module: BAT
+  size: 1
+  evidence: stored in the same straight line as wlog('[BAT] Should notify when battery
+    full = %d (%d%%)\n') at 0x2fe40
+- address: 0x2000794d
+  name: adv_byte_2000794d
+  kind: global
+  class: global
+  module: ADV
+  size: 1
+  evidence: every function that loads or stores it logs under [ADV] (3 read it,
+    0 write it)
+- address: 0x2000794e
+  name: wpps_flag_2000794e
+  kind: global
+  class: global
+  module: WPPS
+  size: 1
+  evidence: every function that loads or stores it logs under [WPPS] (1 read it,
+    2 write it)
+- address: 0x2000794f
+  name: bat_byte_2000794f
+  kind: global
+  class: global
+  module: BAT
+  size: 1
+  evidence: every function that loads or stores it logs under [BAT] (1 read it,
+    1 write it)
+- address: 0x20007952
+  name: factory_state_cache
+  kind: global
+  class: global
+  module: FACTORY_STATE
+  size: 1
+  evidence: 'the cache word of factory_state: dblib id 0xa2, persisted by 0x4bcb0,
+    0x4bd18 with dblib_set(0xa2, &0x20007952, 1)'
+- address: 0x20007954
+  name: wlog_display_level
+  kind: global
+  class: global
+  size: 2
+  evidence: 'the cache word of wlog_display_level: dblib id 0xeb, persisted by 0x50abc
+    with dblib_set(0xeb, &0x20007954, 2)'
+- address: 0x20007967
+  name: sensors_sync_byte_20007967
+  kind: global
+  class: global
+  module: SENSORS_SYNC
+  size: 1
+  evidence: every function that loads or stores it logs under [SENSORS_SYNC] (1
+    read it, 1 write it)
+- address: 0x2000796d
+  name: light_sensor_byte_2000796d
+  kind: global
+  class: global
+  module: LIGHT_SENSOR
+  size: 1
+  evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (1
+    read it, 1 write it)
+- address: 0x20007972
+  name: tracker_inactivity_byte_20007972
+  kind: global
+  class: global
+  module: TRACKER_INACTIVITY
+  size: 1
+  evidence: stored in the same straight line as wlog('[TRACKER INACTIVITY] Current
+    time %d:%d => Notify %s message (index %d)\n') at 0x88c68
 - address: 0x2000f480
   name: hr_algo_result_block
   kind: global
@@ -17556,11 +18962,355 @@ symbols:
   module: hr
   evidence: reached only as the HR algorithm object's +0x2c84, never by its own
     literal
+- address: 0x200114a4
+  name: light_sensor_word_200114a4
+  kind: global
+  class: global
+  module: LIGHT_SENSOR
+  size: 4
+  evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (3
+    read it, 2 write it)
+- address: 0x200114b0
+  name: light_sensor_word_200114b0
+  kind: global
+  class: global
+  module: LIGHT_SENSOR
+  size: 4
+  evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (1
+    read it, 1 write it)
+- address: 0x20011518
+  name: stopwatch_table_20011518
+  kind: global
+  class: global
+  module: STOPWATCH
+  size: 403
+  evidence: every function that loads or stores it logs under [STOPWATCH] (5 read
+    it, 3 write it)
+- address: 0x20011528
+  name: stopwatch_word_20011528
+  kind: global
+  class: global
+  module: STOPWATCH
+  size: 4
+  evidence: every function that loads or stores it logs under [STOPWATCH] (2 read
+    it, 2 write it)
+- address: 0x2001152c
+  name: stopwatch_flag_2001152c
+  kind: global
+  class: global
+  module: STOPWATCH
+  size: 4
+  evidence: every function that loads or stores it logs under [STOPWATCH] (0 read
+    it, 2 write it)
 - address: 0x20011668
   name: ecg_session
   kind: global
   class: hand
   module: ecg
+- address: 0x20011669
+  name: ecg_byte_20011669
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (9 read it,
+    3 write it)
+- address: 0x2001166a
+  name: ecg_byte_2001166a
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (0 read it,
+    3 write it)
+- address: 0x2001166c
+  name: ecg_flag_2001166c
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    2 write it)
+- address: 0x20011670
+  name: ecg_word_20011670
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x20011674
+  name: ecg_word_20011674
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    4 write it)
+- address: 0x20011678
+  name: ecg_flag_20011678
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    2 write it)
+- address: 0x2001167c
+  name: ecg_word_2001167c
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x20011680
+  name: ecg_word_20011680
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (3 read it,
+    1 write it)
+- address: 0x20011684
+  name: ecg_word_20011684
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (0 read it,
+    1 write it)
+- address: 0x20011688
+  name: ecg_word_20011688
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (0 read it,
+    1 write it)
+- address: 0x20012330
+  name: ecg_word_20012330
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    0 write it)
+- address: 0x20012370
+  name: ecg_word_20012370
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    0 write it)
+- address: 0x20013c00
+  name: ecg_half_20013c00
+  kind: global
+  class: global
+  module: ECG
+  size: 2
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    2 write it)
+- address: 0x20013c02
+  name: ecg_byte_20013c02
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    1 write it)
+- address: 0x20014734
+  name: ecg_word_20014734
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    2 write it)
+- address: 0x20014738
+  name: ecg_byte_20014738
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    2 write it)
+- address: 0x20014774
+  name: ecg_ptr_20014774
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (5 read it,
+    0 write it)
+- address: 0x20014778
+  name: ecg_word_20014778
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    1 write it)
+- address: 0x2001477c
+  name: ecg_struct_2001477c
+  kind: global
+  class: global
+  module: ECG
+  size: 20
+  evidence: every function that loads or stores it logs under [ECG] (0 read it,
+    1 write it)
+- address: 0x20014780
+  name: ecg_word_20014780
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    0 write it)
+- address: 0x20014784
+  name: ecg_byte_20014784
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (3 read it,
+    0 write it)
+- address: 0x20014785
+  name: ecg_byte_20014785
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (3 read it,
+    0 write it)
+- address: 0x20014786
+  name: ecg_byte_20014786
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    0 write it)
+- address: 0x20014787
+  name: ecg_byte_20014787
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    0 write it)
+- address: 0x20014788
+  name: ecg_byte_20014788
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    0 write it)
+- address: 0x2001478c
+  name: ecg_word_2001478c
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    0 write it)
+- address: 0x20014818
+  name: max8617x_struct_20014818
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 8
+  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+    it, 0 write it)
+- address: 0x20014828
+  name: max8617x_table_20014828
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 403
+  evidence: stored in the same straight line as wlog('[max8617x][state] released')
+    at 0x5293e
+- address: 0x20014829
+  name: max8617x_byte_20014829
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX8617X] (2 read
+    it, 2 write it)
+- address: 0x2001487c
+  name: max8617x_flag_2001487c
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX8617X] (0 read
+    it, 1 write it)
+- address: 0x20014888
+  name: max8617x_word_20014888
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX8617X] (0 read
+    it, 1 write it)
+- address: 0x2001488c
+  name: max8617x_word_2001488c
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX8617X] (0 read
+    it, 1 write it)
+- address: 0x20014890
+  name: max8617x_byte_20014890
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 1
+  evidence: stored in the same straight line as wlog('[max8617x][error] invalid
+    tags per period\n') at 0x52ac2
+- address: 0x20014894
+  name: max8617x_word_20014894
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX8617X] (2 read
+    it, 1 write it)
+- address: 0x20014899
+  name: max8617x_byte_20014899
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+    it, 1 write it)
+- address: 0x200148a0
+  name: max8617x_word_200148a0
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+    it, 1 write it)
+- address: 0x200148a8
+  name: max8617x_word_200148a8
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+    it, 0 write it)
+- address: 0x20014b44
+  name: tracker_inactivity_word_20014b44
+  kind: global
+  class: global
+  module: TRACKER_INACTIVITY
+  size: 4
+  evidence: every function that loads or stores it logs under [TRACKER_INACTIVITY]
+    (0 read it, 1 write it)
 - address: 0x20014d40
   name: main_task_tcb
   kind: global
@@ -17589,6 +19339,150 @@ symbols:
   module: null
   evidence: the stack buffer the call was handed; the name string 'BLE' and the
     entry pointer 0x34069 that xTaskCreateStatic at 0x2e24e was given
+- address: 0x20016f70
+  name: acc_calib_word_20016f70
+  kind: global
+  class: global
+  module: ACC_CALIB
+  size: 4
+  evidence: every function that loads or stores it logs under [ACC_CALIB] (1 read
+    it, 0 write it)
+- address: 0x20016f78
+  name: acc_calib_word_20016f78
+  kind: global
+  class: global
+  module: ACC_CALIB
+  size: 4
+  evidence: every function that loads or stores it logs under [ACC_CALIB] (1 read
+    it, 0 write it)
+- address: 0x20016f80
+  name: acc_calib_word_20016f80
+  kind: global
+  class: global
+  module: ACC_CALIB
+  size: 4
+  evidence: every function that loads or stores it logs under [ACC_CALIB] (1 read
+    it, 0 write it)
+- address: 0x20016f88
+  name: acc_calib_word_20016f88
+  kind: global
+  class: global
+  module: ACC_CALIB
+  size: 4
+  evidence: every function that loads or stores it logs under [ACC_CALIB] (1 read
+    it, 0 write it)
+- address: 0x2001706c
+  name: shell_word_2001706c
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    0 write it)
+- address: 0x20017070
+  name: shell_word_20017070
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    0 write it)
+- address: 0x20017074
+  name: shell_word_20017074
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    0 write it)
+- address: 0x20017078
+  name: shell_word_20017078
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    0 write it)
+- address: 0x2001707c
+  name: shell_word_2001707c
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    0 write it)
+- address: 0x20017080
+  name: shell_word_20017080
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    0 write it)
+- address: 0x20017084
+  name: shell_word_20017084
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    0 write it)
+- address: 0x20017088
+  name: shell_word_20017088
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    0 write it)
+- address: 0x2001708c
+  name: acc_calib_word_2001708c
+  kind: global
+  class: global
+  module: ACC_CALIB
+  size: 4
+  evidence: every function that loads or stores it logs under [ACC_CALIB] (1 read
+    it, 0 write it)
+- address: 0x20017148
+  name: algo_manager_ptr_20017148
+  kind: global
+  class: global
+  module: ALGO_MANAGER
+  size: 4
+  evidence: every function that loads or stores it logs under [ALGO_MANAGER] (2
+    read it, 0 write it)
+- address: 0x2001714c
+  name: ecg_word_2001714c
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    2 write it)
+- address: 0x20017150
+  name: alti_word_20017150
+  kind: global
+  class: global
+  module: ALTI
+  size: 4
+  evidence: every function that loads or stores it logs under [ALTI] (0 read it,
+    1 write it)
+- address: 0x20017154
+  name: alti_word_20017154
+  kind: global
+  class: global
+  module: ALTI
+  size: 4
+  evidence: every function that loads or stores it logs under [ALTI] (1 read it,
+    0 write it)
+- address: 0x20017158
+  name: ppg_afib_store_flag_20017158
+  kind: global
+  class: global
+  module: PPG_AFIB_STORE
+  size: 4
+  evidence: every function that loads or stores it logs under [PPG_AFIB_STORE] (1
+    read it, 2 write it)
 - address: 0x2001715c
   name: contrast_sem_static
   kind: global
@@ -17618,6 +19512,94 @@ symbols:
   module: contrast
   evidence: 'the handle word: xQueueGenericCreateStatic at 0x303ba with queue type
     3; the name''s module is the creating function is the contrast_task body'
+- address: 0x20017540
+  name: raw_data_save_struct_20017540
+  kind: global
+  class: global
+  module: RAW_DATA_SAVE
+  size: 12
+  evidence: every function that loads or stores it logs under [RAW_DATA_SAVE] (1
+    read it, 1 write it)
+- address: 0x20017544
+  name: raw_data_save_table_20017544
+  kind: global
+  class: global
+  module: RAW_DATA_SAVE
+  size: 403
+  evidence: every function that loads or stores it logs under [RAW_DATA_SAVE] (1
+    read it, 1 write it)
+- address: 0x20017548
+  name: raw_data_save_word_20017548
+  kind: global
+  class: global
+  module: RAW_DATA_SAVE
+  size: 4
+  evidence: every function that loads or stores it logs under [RAW_DATA_SAVE] (1
+    read it, 1 write it)
+- address: 0x20017598
+  name: timer_table_20017598
+  kind: global
+  class: global
+  module: TIMER
+  size: 403
+  evidence: 'stored in the same straight line as wlog(''[TIMER] normal reload :
+    timer is %s (%d) and ends in %lds\n'') at 0x31c46'
+- address: 0x2001759c
+  name: timer_word_2001759c
+  kind: global
+  class: global
+  module: TIMER
+  size: 4
+  evidence: 'stored in the same straight line as wlog(''[TIMER] normal reload :
+    timer is %s (%d) and ends in %lds\n'') at 0x31c46'
+- address: 0x200175a4
+  name: screen_timer_word_200175a4
+  kind: global
+  class: global
+  module: SCREEN_TIMER
+  size: 4
+  evidence: every function that loads or stores it logs under [SCREEN_TIMER] (1
+    read it, 1 write it)
+- address: 0x200175b0
+  name: trig_word_200175b0
+  kind: global
+  class: global
+  module: TRIG
+  size: 4
+  evidence: every function that loads or stores it logs under [TRIG] (0 read it,
+    2 write it)
+- address: 0x200175be
+  name: trig_byte_200175be
+  kind: global
+  class: global
+  module: TRIG
+  size: 1
+  evidence: every function that loads or stores it logs under [TRIG] (0 read it,
+    1 write it)
+- address: 0x20017668
+  name: trig_word_20017668
+  kind: global
+  class: global
+  module: TRIG
+  size: 4
+  evidence: every function that loads or stores it logs under [TRIG] (0 read it,
+    2 write it)
+- address: 0x20017720
+  name: trig_flag_20017720
+  kind: global
+  class: global
+  module: TRIG
+  size: 1
+  evidence: every function that loads or stores it logs under [TRIG] (3 read it,
+    4 write it)
+- address: 0x20017744
+  name: guin_byte_20017744
+  kind: global
+  class: global
+  module: GUIN
+  size: 1
+  evidence: every function that loads or stores it logs under [GUIN] (1 read it,
+    0 write it)
 - address: 0x200178c4
   name: button_task_tcb
   kind: global
@@ -17632,6 +19614,70 @@ symbols:
   module: null
   evidence: the stack buffer the call was handed; the name string 'BUTTON' and the
     entry pointer 0x3320d that xTaskCreateStatic at 0x33348 was given
+- address: 0x20017c58
+  name: rre_fonts_ptr_20017c58
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 4
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (1 read
+    it, 0 write it)
+- address: 0x20017c5c
+  name: rre_fonts_struct_20017c5c
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 28
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (5 read
+    it, 1 write it)
+- address: 0x20017c60
+  name: rre_fonts_ptr_20017c60
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 4
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (5 read
+    it, 1 write it)
+- address: 0x20017c64
+  name: rre_fonts_word_20017c64
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 4
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (3 read
+    it, 1 write it)
+- address: 0x20017c6c
+  name: rre_fonts_half_20017c6c
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 2
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (1 read
+    it, 1 write it)
+- address: 0x20017c6e
+  name: rre_fonts_half_20017c6e
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 2
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (1 read
+    it, 1 write it)
+- address: 0x20017c74
+  name: rre_fonts_word_20017c74
+  kind: global
+  class: global
+  module: RRE_FONTS
+  size: 4
+  evidence: every function that loads or stores it logs under [RRE_FONTS] (2 read
+    it, 2 write it)
+- address: 0x20017c80
+  name: wpps_word_20017c80
+  kind: global
+  class: global
+  module: WPPS
+  size: 4
+  evidence: every function that loads or stores it logs under [WPPS] (1 read it,
+    1 write it)
 - address: 0x20017c84
   name: nrf_nvic_state
   kind: global
@@ -17642,16 +19688,490 @@ symbols:
   kind: global
   class: hand
   module: ble
+- address: 0x20017dcc
+  name: wpp_struct_20017dcc
+  kind: global
+  class: global
+  module: WPP
+  size: 24
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    1 write it)
+- address: 0x20017dcd
+  name: wpp_byte_20017dcd
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    2 write it)
+- address: 0x20017dce
+  name: wpp_flag_20017dce
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    1 write it)
+- address: 0x20017de0
+  name: pairing_word_20017de0
+  kind: global
+  class: global
+  module: PAIRING
+  size: 4
+  evidence: every function that loads or stores it logs under [PAIRING] (1 read
+    it, 1 write it)
+- address: 0x20017de4
+  name: gap_struct_20017de4
+  kind: global
+  class: global
+  module: GAP
+  size: 28
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    1 write it)
+- address: 0x20017df4
+  name: gap_word_20017df4
+  kind: global
+  class: global
+  module: GAP
+  size: 4
+  evidence: every function that loads or stores it logs under [GAP] (0 read it,
+    1 write it)
+- address: 0x20017df8
+  name: gap_ptr_20017df8
+  kind: global
+  class: global
+  module: GAP
+  size: 4
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    1 write it)
+- address: 0x20017dfc
+  name: gap_flag_20017dfc
+  kind: global
+  class: global
+  module: GAP
+  size: 4
+  evidence: every function that loads or stores it logs under [GAP] (0 read it,
+    1 write it)
+- address: 0x20017e04
+  name: adv_table_20017e04
+  kind: global
+  class: global
+  module: ADV
+  size: 403
+  evidence: every function that loads or stores it logs under [ADV] (0 read it,
+    1 write it)
+- address: 0x20017e0c
+  name: adv_word_20017e0c
+  kind: global
+  class: global
+  module: ADV
+  size: 4
+  evidence: every function that loads or stores it logs under [ADV] (0 read it,
+    1 write it)
+- address: 0x20017e10
+  name: adv_half_20017e10
+  kind: global
+  class: global
+  module: ADV
+  size: 2
+  evidence: every function that loads or stores it logs under [ADV] (0 read it,
+    1 write it)
+- address: 0x20017e1b
+  name: adv_byte_20017e1b
+  kind: global
+  class: global
+  module: ADV
+  size: 1
+  evidence: every function that loads or stores it logs under [ADV] (0 read it,
+    1 write it)
+- address: 0x20017e3c
+  name: adv_word_20017e3c
+  kind: global
+  class: global
+  module: ADV
+  size: 4
+  evidence: every function that loads or stores it logs under [ADV] (1 read it,
+    1 write it)
+- address: 0x20017e40
+  name: gap_word_20017e40
+  kind: global
+  class: global
+  module: GAP
+  size: 4
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    1 write it)
+- address: 0x20017e44
+  name: gap_struct_20017e44
+  kind: global
+  class: global
+  module: GAP
+  size: 15
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    2 write it)
+- address: 0x20017e48
+  name: gap_word_20017e48
+  kind: global
+  class: global
+  module: GAP
+  size: 4
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    2 write it)
+- address: 0x20017e4c
+  name: gap_half_20017e4c
+  kind: global
+  class: global
+  module: GAP
+  size: 2
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    2 write it)
+- address: 0x20017e4e
+  name: gap_half_20017e4e
+  kind: global
+  class: global
+  module: GAP
+  size: 2
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    2 write it)
+- address: 0x20017e50
+  name: gap_half_20017e50
+  kind: global
+  class: global
+  module: GAP
+  size: 2
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    2 write it)
+- address: 0x20017e52
+  name: gap_byte_20017e52
+  kind: global
+  class: global
+  module: GAP
+  size: 1
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    3 write it)
+- address: 0x20017e54
+  name: gattc_table_20017e54
+  kind: global
+  class: global
+  module: GATTC
+  size: 41
+  evidence: every function that loads or stores it logs under [GATTC] (1 read it,
+    0 write it)
+- address: 0x20017e58
+  name: gattc_half_20017e58
+  kind: global
+  class: global
+  module: GATTC
+  size: 2
+  evidence: every function that loads or stores it logs under [GATTC] (1 read it,
+    0 write it)
+- address: 0x20017e7c
+  name: gattc_byte_20017e7c
+  kind: global
+  class: global
+  module: GATTC
+  size: 1
+  evidence: stored in the same straight line as wlog('[GATTC] Unregistered handle
+    0x%04x (previous_id=%u | count=%u | max_count=%u)\n') at 0x383e4, wlog('[GATTC]
+    Registered cb for handle 0x%04x (index=%u | count=%u | max_count=%u | cb = %p)\n')
+    at 0x38480
+- address: 0x20017e82
+  name: gap_half_20017e82
+  kind: global
+  class: global
+  module: GAP
+  size: 2
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    0 write it)
+- address: 0x20017ea4
+  name: gap_word_20017ea4
+  kind: global
+  class: global
+  module: GAP
+  size: 4
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    1 write it)
+- address: 0x20017ea8
+  name: gap_word_20017ea8
+  kind: global
+  class: global
+  module: GAP
+  size: 4
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    0 write it)
+- address: 0x20017eae
+  name: gap_half_20017eae
+  kind: global
+  class: global
+  module: GAP
+  size: 2
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    0 write it)
+- address: 0x20017f14
+  name: gap_word_20017f14
+  kind: global
+  class: global
+  module: GAP
+  size: 4
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    1 write it)
+- address: 0x20017f18
+  name: gap_word_20017f18
+  kind: global
+  class: global
+  module: GAP
+  size: 4
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    0 write it)
+- address: 0x20017f1c
+  name: gap_struct_20017f1c
+  kind: global
+  class: global
+  module: GAP
+  size: 8
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    0 write it)
+- address: 0x20017f1e
+  name: gap_byte_20017f1e
+  kind: global
+  class: global
+  module: GAP
+  size: 1
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    0 write it)
+- address: 0x20017f20
+  name: gap_word_20017f20
+  kind: global
+  class: global
+  module: GAP
+  size: 4
+  evidence: every function that loads or stores it logs under [GAP] (1 read it,
+    0 write it)
+- address: 0x20017f24
+  name: sd_flag_20017f24
+  kind: global
+  class: global
+  module: SD
+  size: 4
+  evidence: stored in the same straight line as wlog('[SD][GATTS] Save sys attr
+    config\n') at 0x38706
 - address: 0x20017f28
   name: wpp_service_ctx
   kind: global
   class: hand
   module: wpp
+- address: 0x20017f2a
+  name: ble_wpp_byte_20017f2a
+  kind: global
+  class: global
+  module: BLE_WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [BLE_WPP] (4 read
+    it, 0 write it)
+- address: 0x20017f2c
+  name: wpp_v2_half_20017f2c
+  kind: global
+  class: global
+  module: WPP_V2
+  size: 2
+  evidence: every function that loads or stores it logs under [WPP_V2] (1 read it,
+    0 write it)
+- address: 0x20017f30
+  name: wpp_v2_half_20017f30
+  kind: global
+  class: global
+  module: WPP_V2
+  size: 2
+  evidence: every function that loads or stores it logs under [WPP_V2] (1 read it,
+    0 write it)
+- address: 0x20017f34
+  name: wpp_v3_half_20017f34
+  kind: global
+  class: global
+  module: WPP_V3
+  size: 2
+  evidence: every function that loads or stores it logs under [WPP_V3] (1 read it,
+    0 write it)
+- address: 0x20017f38
+  name: wpp_v3_half_20017f38
+  kind: global
+  class: global
+  module: WPP_V3
+  size: 2
+  evidence: every function that loads or stores it logs under [WPP_V3] (1 read it,
+    0 write it)
+- address: 0x20017f66
+  name: ble_wpp_half_20017f66
+  kind: global
+  class: global
+  module: BLE_WPP
+  size: 2
+  evidence: every function that loads or stores it logs under [BLE_WPP] (1 read
+    it, 0 write it)
+- address: 0x20017f6c
+  name: ble_wpp_word_20017f6c
+  kind: global
+  class: global
+  module: BLE_WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [BLE_WPP] (1 read
+    it, 0 write it)
+- address: 0x20017f75
+  name: wpp_lite_byte_20017f75
+  kind: global
+  class: global
+  module: WPP_LITE
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP_LITE] (4 read
+    it, 0 write it)
+- address: 0x20018048
+  name: wpps_word_20018048
+  kind: global
+  class: global
+  module: WPPS
+  size: 4
+  evidence: every function that loads or stores it logs under [WPPS] (0 read it,
+    1 write it)
+- address: 0x2001804c
+  name: wpps_word_2001804c
+  kind: global
+  class: global
+  module: WPPS
+  size: 4
+  evidence: every function that loads or stores it logs under [WPPS] (0 read it,
+    1 write it)
+- address: 0x20018050
+  name: wpps_word_20018050
+  kind: global
+  class: global
+  module: WPPS
+  size: 4
+  evidence: every function that loads or stores it logs under [WPPS] (0 read it,
+    1 write it)
+- address: 0x20018054
+  name: wpps_word_20018054
+  kind: global
+  class: global
+  module: WPPS
+  size: 4
+  evidence: every function that loads or stores it logs under [WPPS] (0 read it,
+    1 write it)
+- address: 0x2001809c
+  name: wpps_ptr_2001809c
+  kind: global
+  class: global
+  module: WPPS
+  size: 4
+  evidence: every function that loads or stores it logs under [WPPS] (4 read it,
+    1 write it)
+- address: 0x200180a0
+  name: wpps_byte_200180a0
+  kind: global
+  class: global
+  module: WPPS
+  size: 1
+  evidence: every function that loads or stores it logs under [WPPS] (1 read it,
+    1 write it)
+- address: 0x200180c0
+  name: ble_wpps_word_200180c0
+  kind: global
+  class: global
+  module: BLE_WPPS
+  size: 4
+  evidence: every function that loads or stores it logs under [BLE_WPPS] (0 read
+    it, 1 write it)
+- address: 0x200180c4
+  name: wpps_word_200180c4
+  kind: global
+  class: global
+  module: WPPS
+  size: 4
+  evidence: every function that loads or stores it logs under [WPPS] (0 read it,
+    1 write it)
+- address: 0x200180c8
+  name: wpps_word_200180c8
+  kind: global
+  class: global
+  module: WPPS
+  size: 4
+  evidence: every function that loads or stores it logs under [WPPS] (0 read it,
+    1 write it)
+- address: 0x2001810c
+  name: bluetooth_word_2001810c
+  kind: global
+  class: global
+  module: BLUETOOTH
+  size: 4
+  evidence: every function that loads or stores it logs under [BLUETOOTH] (1 read
+    it, 1 write it)
+- address: 0x20018180
+  name: mcuflash_ptr_20018180
+  kind: global
+  class: global
+  module: MCUFLASH
+  size: 4
+  evidence: every function that loads or stores it logs under [MCUFLASH] (3 read
+    it, 1 write it)
+- address: 0x20018184
+  name: mcuflash_ptr_20018184
+  kind: global
+  class: global
+  module: MCUFLASH
+  size: 4
+  evidence: every function that loads or stores it logs under [MCUFLASH] (3 read
+    it, 1 write it)
 - address: 0x20018258
   name: rtc1_overflow_count
   kind: global
   class: hand
   module: misc
+- address: 0x2001828c
+  name: ecg_word_2001828c
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x200182e4
+  name: acq_word_200182e4
+  kind: global
+  class: global
+  module: ACQ
+  size: 4
+  evidence: every function that loads or stores it logs under [ACQ] (1 read it,
+    2 write it)
+- address: 0x200182e8
+  name: acq_word_200182e8
+  kind: global
+  class: global
+  module: ACQ
+  size: 4
+  evidence: every function that loads or stores it logs under [ACQ] (1 read it,
+    2 write it)
+- address: 0x200182ec
+  name: acq_ptr_200182ec
+  kind: global
+  class: global
+  module: ACQ
+  size: 4
+  evidence: every function that loads or stores it logs under [ACQ] (2 read it,
+    1 write it)
+- address: 0x200182f0
+  name: acq_ptr_200182f0
+  kind: global
+  class: global
+  module: ACQ
+  size: 4
+  evidence: every function that loads or stores it logs under [ACQ] (4 read it,
+    1 write it)
+- address: 0x200182f4
+  name: acq_ptr_200182f4
+  kind: global
+  class: global
+  module: ACQ
+  size: 4
+  evidence: every function that loads or stores it logs under [ACQ] (3 read it,
+    2 write it)
 - address: 0x2001833c
   name: adxl367_mutex_static
   kind: global
@@ -17667,6 +20187,253 @@ symbols:
   module: adxl367
   evidence: 'the handle word: xQueueCreateMutexStatic at 0x3bdda with queue type
     1; the name''s module is the module of the functions that read the handle word'
+- address: 0x20018394
+  name: adxl367_byte_20018394
+  kind: global
+  class: global
+  module: ADXL367
+  size: 1
+  evidence: every function that loads or stores it logs under [ADXL367] (6 read
+    it, 2 write it)
+- address: 0x2001848c
+  name: alarmclock
+  kind: global
+  class: global
+  size: 80
+  evidence: 'the cache word of alarmclock: dblib id 0x75, persisted by 0x3d65c,
+    0x944e2 with dblib_set(0x75, &0x2001848c, 80)'
+- address: 0x200184f4
+  name: am_table_200184f4
+  kind: global
+  class: global
+  module: AM
+  size: 403
+  evidence: every function that loads or stores it logs under [AM] (8 read it, 1
+    write it)
+- address: 0x200184fc
+  name: am_byte_200184fc
+  kind: global
+  class: global
+  module: AM
+  size: 1
+  evidence: every function that loads or stores it logs under [AM] (3 read it, 0
+    write it)
+- address: 0x20018500
+  name: am_word_20018500
+  kind: global
+  class: global
+  module: AM
+  size: 4
+  evidence: every function that loads or stores it logs under [AM] (3 read it, 0
+    write it)
+- address: 0x2001862a
+  name: ancs_half_2001862a
+  kind: global
+  class: global
+  module: ANCS
+  size: 2
+  evidence: every function that loads or stores it logs under [ANCS] (1 read it,
+    0 write it)
+- address: 0x20018630
+  name: alti_word_20018630
+  kind: global
+  class: global
+  module: ALTI
+  size: 4
+  evidence: every function that loads or stores it logs under [ALTI] (0 read it,
+    2 write it)
+- address: 0x20018634
+  name: alti_half_20018634
+  kind: global
+  class: global
+  module: ALTI
+  size: 2
+  evidence: every function that loads or stores it logs under [ALTI] (0 read it,
+    2 write it)
+- address: 0x20018640
+  name: alti_struct_20018640
+  kind: global
+  class: global
+  module: ALTI
+  size: 10
+  evidence: every function that loads or stores it logs under [ALTI] (0 read it,
+    2 write it)
+- address: 0x20018644
+  name: alti_word_20018644
+  kind: global
+  class: global
+  module: ALTI
+  size: 4
+  evidence: every function that loads or stores it logs under [ALTI] (0 read it,
+    2 write it)
+- address: 0x20018658
+  name: alti_half_20018658
+  kind: global
+  class: global
+  module: ALTI
+  size: 2
+  evidence: every function that loads or stores it logs under [ALTI] (0 read it,
+    1 write it)
+- address: 0x20018860
+  name: ancs_byte_20018860
+  kind: global
+  class: global
+  module: ANCS
+  size: 1
+  evidence: every function that loads or stores it logs under [ANCS] (2 read it,
+    2 write it)
+- address: 0x20018898
+  name: ancs_half_20018898
+  kind: global
+  class: global
+  module: ANCS
+  size: 2
+  evidence: every function that loads or stores it logs under [ANCS] (1 read it,
+    0 write it)
+- address: 0x200188a3
+  name: ancs_byte_200188a3
+  kind: global
+  class: global
+  module: ANCS
+  size: 1
+  evidence: stored in the same straight line as wlog('[ANCS] TRY DISC ANDROID\n')
+    at 0x3ecca
+- address: 0x200188e8
+  name: alti_word_200188e8
+  kind: global
+  class: global
+  module: ALTI
+  size: 4
+  evidence: every function that loads or stores it logs under [ALTI] (1 read it,
+    0 write it)
+- address: 0x200188ec
+  name: ancs_struct_200188ec
+  kind: global
+  class: global
+  module: ANCS
+  size: 606
+  evidence: stored in the same straight line as wlog('[ANCS] Request app id for
+    notif %u\n') at 0x3f724
+- address: 0x200188f0
+  name: ancs_word_200188f0
+  kind: global
+  class: global
+  module: ANCS
+  size: 4
+  evidence: stored in the same straight line as wlog('[ANCS] Request app id for
+    notif %u\n') at 0x3f724
+- address: 0x200188f4
+  name: ancs_byte_200188f4
+  kind: global
+  class: global
+  module: ANCS
+  size: 1
+  evidence: stored in the same straight line as wlog('[ANCS] Request app id for
+    notif %u\n') at 0x3f724
+- address: 0x200188f5
+  name: ancs_half_200188f5
+  kind: global
+  class: global
+  module: ANCS
+  size: 2
+  evidence: every function that loads or stores it logs under [ANCS] (2 read it,
+    3 write it)
+- address: 0x200188f6
+  name: ancs_byte_200188f6
+  kind: global
+  class: global
+  module: ANCS
+  size: 1
+  evidence: every function that loads or stores it logs under [ANCS] (1 read it,
+    1 write it)
+- address: 0x20018934
+  name: ancs_half_20018934
+  kind: global
+  class: global
+  module: ANCS
+  size: 2
+  evidence: every function that loads or stores it logs under [ANCS] (0 read it,
+    1 write it)
+- address: 0x20018935
+  name: ancs_byte_20018935
+  kind: global
+  class: global
+  module: ANCS
+  size: 1
+  evidence: every function that loads or stores it logs under [ANCS] (3 read it,
+    0 write it)
+- address: 0x20018973
+  name: ancs_byte_20018973
+  kind: global
+  class: global
+  module: ANCS
+  size: 1
+  evidence: every function that loads or stores it logs under [ANCS] (1 read it,
+    2 write it)
+- address: 0x20018974
+  name: ancs_byte_20018974
+  kind: global
+  class: global
+  module: ANCS
+  size: 1
+  evidence: stored in the same straight line as wlog('[ANCS] Request app id for
+    notif %u\n') at 0x3f724
+- address: 0x200189b2
+  name: ancs_half_200189b2
+  kind: global
+  class: global
+  module: ANCS
+  size: 2
+  evidence: every function that loads or stores it logs under [ANCS] (0 read it,
+    1 write it)
+- address: 0x20018a7d
+  name: ancs_byte_20018a7d
+  kind: global
+  class: global
+  module: ANCS
+  size: 1
+  evidence: stored in the same straight line as wlog('[ANCS] Request app id for
+    notif %u\n') at 0x3f724
+- address: 0x20018a7e
+  name: ancs_byte_20018a7e
+  kind: global
+  class: global
+  module: ANCS
+  size: 1
+  evidence: every function that loads or stores it logs under [ANCS] (0 read it,
+    1 write it)
+- address: 0x20018b48
+  name: ancs_half_20018b48
+  kind: global
+  class: global
+  module: ANCS
+  size: 2
+  evidence: stored in the same straight line as wlog('[ANCS] Request app id for
+    notif %u\n') at 0x3f724
+- address: 0x20018b4c
+  name: sync_struct_20018b4c
+  kind: global
+  class: global
+  module: SYNC
+  size: 8
+  evidence: every function that loads or stores it logs under [SYNC] (1 read it,
+    1 write it)
+- address: 0x20018b50
+  name: sync_word_20018b50
+  kind: global
+  class: global
+  module: SYNC
+  size: 4
+  evidence: every function that loads or stores it logs under [SYNC] (1 read it,
+    1 write it)
+- address: 0x20018b54
+  name: sync_word_20018b54
+  kind: global
+  class: global
+  module: SYNC
+  size: 4
+  evidence: stored in the same straight line as wlog('[SYNC] bg_request type=%d
+    time=%d\n') at 0x3fe42
 - address: 0x20018b58
   name: battery_state
   kind: global
@@ -17676,6 +20443,381 @@ symbols:
     word is 0x40348 and the `ldrh r3, [r5, #8]` at 0x40284 is the gate that decides
     whether the cached reading is usable or a fresh conversion is needed. Only that
     field is identified.'
+- address: 0x20018b5c
+  name: bat_word_20018b5c
+  kind: global
+  class: global
+  module: BAT
+  size: 4
+  evidence: every function that loads or stores it logs under [BAT] (0 read it,
+    1 write it)
+- address: 0x20018b60
+  name: bat_half_20018b60
+  kind: global
+  class: global
+  module: BAT
+  size: 2
+  evidence: every function that loads or stores it logs under [BAT] (1 read it,
+    0 write it)
+- address: 0x20018b68
+  name: battery_table_20018b68
+  kind: global
+  class: global
+  module: BATTERY
+  size: 224
+  evidence: 'stored in the same straight line as wlog(''[BATTERY] Previous charge
+    session loaded, current index: %d\n'') at 0x404f4'
+- address: 0x20018b6c
+  name: battery_word_20018b6c
+  kind: global
+  class: global
+  module: BATTERY
+  size: 4
+  evidence: every function that loads or stores it logs under [BATTERY] (1 read
+    it, 0 write it)
+- address: 0x20018b90
+  name: bat_word_20018b90
+  kind: global
+  class: global
+  module: BAT
+  size: 4
+  evidence: every function that loads or stores it logs under [BAT] (2 read it,
+    2 write it)
+- address: 0x20018b9a
+  name: bt_byte_20018b9a
+  kind: global
+  class: global
+  module: BT
+  size: 1
+  evidence: every function that loads or stores it logs under [BT] (3 read it, 3
+    write it)
+- address: 0x20018ba0
+  name: conn_param_struct_20018ba0
+  kind: global
+  class: global
+  module: CONN_PARAM
+  size: 12
+  evidence: every function that loads or stores it logs under [CONN_PARAM] (3 read
+    it, 2 write it)
+- address: 0x20018ba4
+  name: conn_param_updated_to_state
+  kind: global
+  class: global
+  module: CONN_PARAM
+  size: 4
+  evidence: stored in the same straight line as wlog('[CONN PARAM] Updated to state
+    %i !\n') at 0x40d84; the line names the role
+- address: 0x20018ba8
+  name: conn_param_word_20018ba8
+  kind: global
+  class: global
+  module: CONN_PARAM
+  size: 4
+  evidence: stored in the same straight line as wlog('[CONN PARAM] Updated to state
+    %i !\n') at 0x40d84
+- address: 0x20018ba9
+  name: conn_param_byte_20018ba9
+  kind: global
+  class: global
+  module: CONN_PARAM
+  size: 1
+  evidence: stored in the same straight line as wlog('[CONN PARAM] Updated to state
+    %i !\n') at 0x40d84
+- address: 0x20018e2c
+  name: bt_word_20018e2c
+  kind: global
+  class: global
+  module: BT
+  size: 4
+  evidence: every function that loads or stores it logs under [BT] (2 read it, 2
+    write it)
+- address: 0x20018e34
+  name: bt_word_20018e34
+  kind: global
+  class: global
+  module: BT
+  size: 4
+  evidence: every function that loads or stores it logs under [BT] (0 read it, 2
+    write it)
+- address: 0x20018e38
+  name: service_changed_struct_20018e38
+  kind: global
+  class: global
+  module: SERVICE_CHANGED
+  size: 25
+  evidence: every function that loads or stores it logs under [SERVICE_CHANGED]
+    (1 read it, 1 write it)
+- address: 0x20018e3a
+  name: service_changed_half_20018e3a
+  kind: global
+  class: global
+  module: SERVICE_CHANGED
+  size: 2
+  evidence: every function that loads or stores it logs under [SERVICE_CHANGED]
+    (1 read it, 0 write it)
+- address: 0x20018e3c
+  name: service_changed_struct_20018e3c
+  kind: global
+  class: global
+  module: SERVICE_CHANGED
+  size: 10
+  evidence: every function that loads or stores it logs under [SERVICE_CHANGED]
+    (0 read it, 3 write it)
+- address: 0x20018e40
+  name: service_changed_half_20018e40
+  kind: global
+  class: global
+  module: SERVICE_CHANGED
+  size: 2
+  evidence: every function that loads or stores it logs under [SERVICE_CHANGED]
+    (1 read it, 2 write it)
+- address: 0x20018e46
+  name: service_changed_half_20018e46
+  kind: global
+  class: global
+  module: SERVICE_CHANGED
+  size: 2
+  evidence: every function that loads or stores it logs under [SERVICE_CHANGED]
+    (1 read it, 3 write it)
+- address: 0x20018e50
+  name: service_changed_byte_20018e50
+  kind: global
+  class: global
+  module: SERVICE_CHANGED
+  size: 1
+  evidence: stored in the same straight line as wlog('[SERVICE_CHANGED] ') at 0x41a8e
+- address: 0x20018e54
+  name: ble_wpp_c_struct_20018e54
+  kind: global
+  class: global
+  module: BLE_WPP_C
+  size: 17
+  evidence: every function that loads or stores it logs under [BLE_WPP_C] (2 read
+    it, 0 write it)
+- address: 0x20018e56
+  name: ble_wpp_c_half_20018e56
+  kind: global
+  class: global
+  module: BLE_WPP_C
+  size: 2
+  evidence: every function that loads or stores it logs under [BLE_WPP_C] (1 read
+    it, 0 write it)
+- address: 0x20018e58
+  name: ble_wpp_c_byte_20018e58
+  kind: global
+  class: global
+  module: BLE_WPP_C
+  size: 1
+  evidence: stored in the same straight line as wlog('[BLE_WPP_C] Service Discover
+    (attempts = %d)\n') at 0x41bbe
+- address: 0x20018e5c
+  name: wuapp_word_20018e5c
+  kind: global
+  class: global
+  module: WUAPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WUAPP] (1 read it,
+    1 write it)
+- address: 0x20018e60
+  name: ble_wpp_c_word_20018e60
+  kind: global
+  class: global
+  module: BLE_WPP_C
+  size: 4
+  evidence: every function that loads or stores it logs under [BLE_WPP_C] (1 read
+    it, 1 write it)
+- address: 0x20018e64
+  name: ble_wpp_c_byte_20018e64
+  kind: global
+  class: global
+  module: BLE_WPP_C
+  size: 1
+  evidence: stored in the same straight line as wlog('[BLE_WPP_C] Service Discover
+    (attempts = %d)\n') at 0x41bbe
+- address: 0x20018e68
+  name: body_temp_struct_20018e68
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 80
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 1 write it)
+- address: 0x20018e6c
+  name: body_temp_word_20018e6c
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 0 write it)
+- address: 0x20018e70
+  name: body_temp_byte_20018e70
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (3 read
+    it, 0 write it)
+- address: 0x20018e71
+  name: body_temp_byte_20018e71
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 0 write it)
+- address: 0x20018e74
+  name: body_temp_byte_20018e74
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (2 read
+    it, 1 write it)
+- address: 0x20018e78
+  name: body_temp_word_20018e78
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 0 write it)
+- address: 0x20018e7c
+  name: body_temp_word_20018e7c
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 0 write it)
+- address: 0x20018e80
+  name: body_temp_word_20018e80
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 1 write it)
+- address: 0x20018e84
+  name: body_temp_word_20018e84
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 0 write it)
+- address: 0x20018e88
+  name: body_temp_byte_20018e88
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (3 read
+    it, 0 write it)
+- address: 0x20018e89
+  name: body_temp_byte_20018e89
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 0 write it)
+- address: 0x20018e8c
+  name: body_temp_byte_20018e8c
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 1 write it)
+- address: 0x20018e8d
+  name: body_temp_byte_20018e8d
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 1 write it)
+- address: 0x20018e8e
+  name: body_temp_byte_20018e8e
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 1 write it)
+- address: 0x20018e8f
+  name: body_temp_byte_20018e8f
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (6 read
+    it, 3 write it)
+- address: 0x20018e90
+  name: body_temp_flag_20018e90
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 1 write it)
+- address: 0x20018e98
+  name: body_temp_word_20018e98
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (2 read
+    it, 1 write it)
+- address: 0x20018e9c
+  name: body_temp_word_20018e9c
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (2 read
+    it, 1 write it)
+- address: 0x20018ea0
+  name: body_temp_word_20018ea0
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 1 write it)
+- address: 0x20018ea4
+  name: body_temp_byte_20018ea4
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (2 read
+    it, 2 write it)
+- address: 0x20018ea5
+  name: body_temp_byte_20018ea5
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (5 read
+    it, 2 write it)
+- address: 0x20018ea6
+  name: body_temp_byte_20018ea6
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 1
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 2 write it)
+- address: 0x20018eac
+  name: body_temp_word_20018eac
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 2 write it)
 - address: 0x20018eb0
   name: body_temp_task_handle
   kind: global
@@ -17683,6 +20825,22 @@ symbols:
   module: body_temp
   evidence: the word the created task's handle is stored in; the name string 'body_temp_task'
     and the entry pointer 0x42b7d that xTaskCreate at 0x42b20 was given
+- address: 0x20018eb4
+  name: body_temp_word_20018eb4
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (3 read
+    it, 1 write it)
+- address: 0x20018eb8
+  name: body_temp_ptr_20018eb8
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (1 read
+    it, 0 write it)
 - address: 0x20018ebc
   name: body_temp_mutex_static
   kind: global
@@ -17698,6 +20856,40 @@ symbols:
   module: body_temp
   evidence: 'the handle word: xQueueCreateMutexStatic at 0x43398 with queue type
     1; the name''s module is the module of the functions that read the handle word'
+- address: 0x20018f14
+  name: body_temp_word_20018f14
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: 'stored in the same straight line as wlog(''[BODY_TEMP][info] update
+    baseline: %u (prev=%u, dayavg=%u)\n'') at 0x4334c, wlog(''[BODY_TEMP][warn]
+    [RECOVER] No baseline for today, store a new one\n'') at 0x43440, wlog(''[BODY_TEMP][info]
+    [RECOVER] not enough data, default baseline\n'') at 0x43492'
+- address: 0x20018f18
+  name: body_temp_word_20018f18
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (2 read
+    it, 1 write it)
+- address: 0x20018f1c
+  name: body_temp_word_20018f1c
+  kind: global
+  class: global
+  module: BODY_TEMP
+  size: 4
+  evidence: every function that loads or stores it logs under [BODY_TEMP] (3 read
+    it, 1 write it)
+- address: 0x20018f20
+  name: bq25180_ptr_20018f20
+  kind: global
+  class: global
+  module: BQ25180
+  size: 4
+  evidence: every function that loads or stores it logs under [BQ25180] (3 read
+    it, 1 write it)
 - address: 0x20018f24
   name: bq25180_task_handle
   kind: global
@@ -17705,6 +20897,118 @@ symbols:
   module: bq25180
   evidence: the word the created task's handle is stored in; the name string 'BQ25180'
     and the entry pointer 0x43e05 that xTaskCreate at 0x43bfa was given
+- address: 0x20018f48
+  name: wpp_half_20018f48
+  kind: global
+  class: global
+  module: WPP
+  size: 2
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    1 write it)
+- address: 0x20018f50
+  name: wpp_struct_20018f50
+  kind: global
+  class: global
+  module: WPP
+  size: 12
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    0 write it)
+- address: 0x20019220
+  name: initdblib_ptr_20019220
+  kind: global
+  class: global
+  module: INITDBLIB
+  size: 4
+  evidence: 'stored in the same straight line as wlog(''[INITDBLIB] Bank courante:
+    %d, address: 0x%x, size 0x%x\n'') at 0x47a2c'
+- address: 0x20019224
+  name: initdblib_ptr_20019224
+  kind: global
+  class: global
+  module: INITDBLIB
+  size: 4
+  evidence: 'stored in the same straight line as wlog(''[INITDBLIB] Bank courante:
+    %d, address: 0x%x, size 0x%x\n'') at 0x47a2c'
+- address: 0x20019228
+  name: initdblib_ptr_20019228
+  kind: global
+  class: global
+  module: INITDBLIB
+  size: 4
+  evidence: every function that loads or stores it logs under [INITDBLIB] (3 read
+    it, 1 write it)
+- address: 0x2001922c
+  name: debug_dump_struct_2001922c
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 8
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (1 read
+    it, 2 write it)
+- address: 0x20019230
+  name: debug_dump_ptr_20019230
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (1 read
+    it, 2 write it)
+- address: 0x20019232
+  name: debug_dump_half_20019232
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 2
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (1 read
+    it, 1 write it)
+- address: 0x20019234
+  name: debug_mask
+  kind: global
+  class: global
+  module: DBG_MASK
+  size: 4
+  evidence: 'the cache word of debug_mask: dblib id 0x5b, persisted by 0x48f68 with
+    dblib_set(0x5b, &0x20019234, 4)'
+- address: 0x20019238
+  name: digital_crown_ptr_20019238
+  kind: global
+  class: global
+  module: DIGITAL_CROWN
+  size: 4
+  evidence: every function that loads or stores it logs under [DIGITAL_CROWN] (6
+    read it, 1 write it)
+- address: 0x2001923c
+  name: digital_crown_struct_2001923c
+  kind: global
+  class: global
+  module: DIGITAL_CROWN
+  size: 14
+  evidence: every function that loads or stores it logs under [DIGITAL_CROWN] (10
+    read it, 3 write it)
+- address: 0x20019240
+  name: digital_crown_ptr_20019240
+  kind: global
+  class: global
+  module: DIGITAL_CROWN
+  size: 4
+  evidence: every function that loads or stores it logs under [DIGITAL_CROWN] (2
+    read it, 2 write it)
+- address: 0x20019244
+  name: digital_crown_ptr_20019244
+  kind: global
+  class: global
+  module: DIGITAL_CROWN
+  size: 4
+  evidence: every function that loads or stores it logs under [DIGITAL_CROWN] (1
+    read it, 1 write it)
+- address: 0x20019246
+  name: digital_crown_half_20019246
+  kind: global
+  class: global
+  module: DIGITAL_CROWN
+  size: 2
+  evidence: every function that loads or stores it logs under [DIGITAL_CROWN] (1
+    read it, 1 write it)
 - address: 0x2001924c
   name: ecg_mutex_static
   kind: global
@@ -17728,6 +21032,278 @@ symbols:
   evidence: 'the handle word: xQueueGenericCreateStatic at 0x4a726 with queue type
     the block does not establish; the name''s module is the module of the functions
     that read the handle word'
+- address: 0x200192f8
+  name: ecg_ptr_200192f8
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    2 write it)
+- address: 0x200192fc
+  name: ecg_ptr_200192fc
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    2 write it)
+- address: 0x20019300
+  name: ecg_ptr_20019300
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    1 write it)
+- address: 0x20019304
+  name: ecg_ptr_20019304
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (3 read it,
+    1 write it)
+- address: 0x20019308
+  name: ecg_struct_20019308
+  kind: global
+  class: global
+  module: ECG
+  size: 16
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    0 write it)
+- address: 0x20019360
+  name: dbt_ptr_20019360
+  kind: global
+  class: global
+  module: DBT
+  size: 4
+  evidence: every function that loads or stores it logs under [DBT] (2 read it,
+    1 write it)
+- address: 0x20019364
+  name: dbt_ptr_20019364
+  kind: global
+  class: global
+  module: DBT
+  size: 4
+  evidence: every function that loads or stores it logs under [DBT] (1 read it,
+    1 write it)
+- address: 0x20019368
+  name: dbt_ptr_20019368
+  kind: global
+  class: global
+  module: DBT
+  size: 4
+  evidence: every function that loads or stores it logs under [DBT] (0 read it,
+    4 write it)
+- address: 0x2001936c
+  name: dbt_ptr_2001936c
+  kind: global
+  class: global
+  module: DBT
+  size: 4
+  evidence: every function that loads or stores it logs under [DBT] (1 read it,
+    1 write it)
+- address: 0x20019370
+  name: dbt_ptr_20019370
+  kind: global
+  class: global
+  module: DBT
+  size: 4
+  evidence: every function that loads or stores it logs under [DBT] (1 read it,
+    1 write it)
+- address: 0x20019384
+  name: dbt_ptr_20019384
+  kind: global
+  class: global
+  module: DBT
+  size: 4
+  evidence: every function that loads or stores it logs under [DBT] (1 read it,
+    1 write it)
+- address: 0x20019388
+  name: dbt_ptr_20019388
+  kind: global
+  class: global
+  module: DBT
+  size: 4
+  evidence: every function that loads or stores it logs under [DBT] (0 read it,
+    1 write it)
+- address: 0x2001938c
+  name: dbt_ptr_2001938c
+  kind: global
+  class: global
+  module: DBT
+  size: 4
+  evidence: every function that loads or stores it logs under [DBT] (1 read it,
+    0 write it)
+- address: 0x20019391
+  name: dbt_byte_20019391
+  kind: global
+  class: global
+  module: DBT
+  size: 1
+  evidence: every function that loads or stores it logs under [DBT] (3 read it,
+    0 write it)
+- address: 0x20019392
+  name: dbt_byte_20019392
+  kind: global
+  class: global
+  module: DBT
+  size: 1
+  evidence: every function that loads or stores it logs under [DBT] (1 read it,
+    0 write it)
+- address: 0x20019393
+  name: dbt_byte_20019393
+  kind: global
+  class: global
+  module: DBT
+  size: 1
+  evidence: every function that loads or stores it logs under [DBT] (1 read it,
+    0 write it)
+- address: 0x20019394
+  name: dbt_ptr_20019394
+  kind: global
+  class: global
+  module: DBT
+  size: 4
+  evidence: every function that loads or stores it logs under [DBT] (1 read it,
+    0 write it)
+- address: 0x2001a264
+  name: dbt_flag_2001a264
+  kind: global
+  class: global
+  module: DBT
+  size: 1
+  evidence: stored in the same straight line as wlog('[DBT] algo version %d\n')
+    at 0x4bbbe
+- address: 0x2001a268
+  name: wpp_word_2001a268
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    2 write it)
+- address: 0x2001a3ac
+  name: flash_cache
+  kind: global
+  class: global
+  module: FLASH_CACHE
+  size: 4
+  evidence: 'the cache word of flash_cache: dblib id 0x107, persisted by 0x4c300,
+    0x4c360 with dblib_set(0x107, &0x2001a3ac, 4)'
+- address: 0x2001a3b0
+  name: flash_cache_test_word_2001a3b0
+  kind: global
+  class: global
+  module: FLASH_CACHE_TEST
+  size: 4
+  evidence: every function that loads or stores it logs under [FLASH_CACHE_TEST]
+    (1 read it, 1 write it)
+- address: 0x2001a3b6
+  name: flash_cache_test_half_2001a3b6
+  kind: global
+  class: global
+  module: FLASH_CACHE_TEST
+  size: 2
+  evidence: every function that loads or stores it logs under [FLASH_CACHE_TEST]
+    (1 read it, 0 write it)
+- address: 0x2001a594
+  name: greenteg_struct_2001a594
+  kind: global
+  class: global
+  module: GREENTEG
+  size: 16
+  evidence: every function that loads or stores it logs under [GREENTEG] (1 read
+    it, 0 write it)
+- address: 0x2001a5a4
+  name: greenteg_struct_2001a5a4
+  kind: global
+  class: global
+  module: GREENTEG
+  size: 16
+  evidence: every function that loads or stores it logs under [GREENTEG] (0 read
+    it, 1 write it)
+- address: 0x2001a5b4
+  name: gss_cache
+  kind: global
+  class: global
+  module: GSS
+  size: 4
+  evidence: 'the cache word of gss_cache: dblib id 0x124, persisted by 0x4ddc0,
+    0x4de24 with dblib_set(0x124, &0x2001a5b4, 4)'
+- address: 0x2001a5b9
+  name: gss_byte_2001a5b9
+  kind: global
+  class: global
+  module: GSS
+  size: 1
+  evidence: every function that loads or stores it logs under [GSS] (1 read it,
+    1 write it)
+- address: 0x2001a5ba
+  name: gss_half_2001a5ba
+  kind: global
+  class: global
+  module: GSS
+  size: 2
+  evidence: every function that loads or stores it logs under [GSS] (0 read it,
+    1 write it)
+- address: 0x2001a5f5
+  name: gss_byte_2001a5f5
+  kind: global
+  class: global
+  module: GSS
+  size: 1
+  evidence: every function that loads or stores it logs under [GSS] (1 read it,
+    1 write it)
+- address: 0x2001a5f6
+  name: gss_half_2001a5f6
+  kind: global
+  class: global
+  module: GSS
+  size: 2
+  evidence: every function that loads or stores it logs under [GSS] (0 read it,
+    1 write it)
+- address: 0x2001a634
+  name: hr_compression_word_2001a634
+  kind: global
+  class: global
+  module: HR_COMPRESSION
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_COMPRESSION] (1
+    read it, 1 write it)
+- address: 0x2001a638
+  name: hr_compression_word_2001a638
+  kind: global
+  class: global
+  module: HR_COMPRESSION
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_COMPRESSION] (2
+    read it, 2 write it)
+- address: 0x2001a63c
+  name: hr_compression_word_2001a63c
+  kind: global
+  class: global
+  module: HR_COMPRESSION
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_COMPRESSION] (2
+    read it, 1 write it)
+- address: 0x2001a640
+  name: hr_compression_table_2001a640
+  kind: global
+  class: global
+  module: HR_COMPRESSION
+  size: 468
+  evidence: every function that loads or stores it logs under [HR_COMPRESSION] (2
+    read it, 0 write it)
+- address: 0x2001a828
+  name: light_sensor_word_2001a828
+  kind: global
+  class: global
+  module: LIGHT_SENSOR
+  size: 4
+  evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (4
+    read it, 2 write it)
 - address: 0x2001a830
   name: wlog_task_tcb
   kind: global
@@ -17772,6 +21348,38 @@ symbols:
   module: debug_dump
   evidence: 'the handle word: xQueueCreateMutexStatic at 0x50ec6 with queue type
     1; the name''s module is the module of the functions that read the handle word'
+- address: 0x2001ad90
+  name: debug_dump_ptr_2001ad90
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (3 read
+    it, 1 write it)
+- address: 0x2001ad98
+  name: wlog_word_2001ad98
+  kind: global
+  class: global
+  module: WLOG
+  size: 4
+  evidence: every function that loads or stores it logs under [WLOG] (2 read it,
+    1 write it)
+- address: 0x2001ada4
+  name: locale
+  kind: global
+  class: global
+  module: LOC
+  size: 6
+  evidence: 'the cache word of locale: dblib id 0x7, persisted by 0x510f4 with dblib_set(0x7,
+    &0x2001ada4, 6)'
+- address: 0x2001ada8
+  name: local_event_notify_word_2001ada8
+  kind: global
+  class: global
+  module: LOCAL_EVENT_NOTIFY
+  size: 4
+  evidence: every function that loads or stores it logs under [LOCAL_EVENT_NOTIFY]
+    (2 read it, 2 write it)
 - address: 0x2001adac
   name: local_notifications_mutex_static
   kind: global
@@ -17787,6 +21395,38 @@ symbols:
   module: local_notifications
   evidence: 'the handle word: xQueueCreateMutexStatic at 0x516e0 with queue type
     1; the name''s module is the module of the functions that read the handle word'
+- address: 0x2001ae08
+  name: debug_dump_ptr_2001ae08
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (2 read
+    it, 1 write it)
+- address: 0x2001ae0c
+  name: debug_dump_ptr_2001ae0c
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (3 read
+    it, 2 write it)
+- address: 0x2001afa0
+  name: max8617x_word_2001afa0
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX8617X] (5 read
+    it, 0 write it)
+- address: 0x2001b55c
+  name: max8617x_struct_2001b55c
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 20
+  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+    it, 0 write it)
 - address: 0x2001bd5c
   name: max8617x_queue_static
   kind: global
@@ -17825,6 +21465,248 @@ symbols:
   module: max8617x
   evidence: 'the handle word: xQueueGenericCreateStatic at 0x52716 with queue type
     3; the name''s module is the module of the functions that read the handle word'
+- address: 0x2001be14
+  name: max8617x_ptr_2001be14
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 4
+  evidence: every function that loads or stores it logs under [MAX8617X] (3 read
+    it, 2 write it)
+- address: 0x2001be18
+  name: max86173_table_2001be18
+  kind: global
+  class: global
+  module: MAX86173
+  size: 8
+  evidence: every function that loads or stores it logs under [MAX86173] (2 read
+    it, 2 write it)
+- address: 0x2001bf74
+  name: ms5849_word_2001bf74
+  kind: global
+  class: global
+  module: MS5849
+  size: 4
+  evidence: every function that loads or stores it logs under [MS5849] (1 read it,
+    1 write it)
+- address: 0x2001bf78
+  name: ms5849_word_2001bf78
+  kind: global
+  class: global
+  module: MS5849
+  size: 4
+  evidence: every function that loads or stores it logs under [MS5849] (1 read it,
+    1 write it)
+- address: 0x2001bf7c
+  name: ms5849_word_2001bf7c
+  kind: global
+  class: global
+  module: MS5849
+  size: 4
+  evidence: every function that loads or stores it logs under [MS5849] (1 read it,
+    1 write it)
+- address: 0x2001bf84
+  name: ms5849_word_2001bf84
+  kind: global
+  class: global
+  module: MS5849
+  size: 4
+  evidence: every function that loads or stores it logs under [MS5849] (1 read it,
+    1 write it)
+- address: 0x2001bf88
+  name: ms5849_flag_2001bf88
+  kind: global
+  class: global
+  module: MS5849
+  size: 4
+  evidence: every function that loads or stores it logs under [MS5849] (1 read it,
+    1 write it)
+- address: 0x2001bf90
+  name: ancs_ptr_2001bf90
+  kind: global
+  class: global
+  module: ANCS
+  size: 4
+  evidence: every function that loads or stores it logs under [ANCS] (3 read it,
+    1 write it)
+- address: 0x2001bfb0
+  name: notification_cache_half_2001bfb0
+  kind: global
+  class: global
+  module: NOTIFICATION_CACHE
+  size: 2
+  evidence: every function that loads or stores it logs under [NOTIFICATION_CACHE]
+    (1 read it, 0 write it)
+- address: 0x2001bff0
+  name: wpp_flag_2001bff0
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: stored in the same straight line as wlog('[WPP][NOTIF_APP_ENABLED_SET]
+    Erase current notif cache') at 0x55ba4
+- address: 0x2001bff4
+  name: wpp_byte_2001bff4
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: stored in the same straight line as wlog('[WPP][NOTIF_APP_ENABLED_SET]
+    Erase current notif cache') at 0x55ba4
+- address: 0x2001bff8
+  name: wpp_word_2001bff8
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: stored in the same straight line as wlog('[WPP][NOTIF_APP_ENABLED_SET]
+    Erase current notif cache') at 0x55ba4, wlog('[WPP][NOTIF_APP_ENABLED_SET] New
+    bundle id = %.*s (crc = %lu)\n') at 0x55c52
+- address: 0x2001bffc
+  name: wpp_word_2001bffc
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    0 write it)
+- address: 0x2001c000
+  name: wpp_struct_2001c000
+  kind: global
+  class: global
+  module: WPP
+  size: 184
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    3 write it)
+- address: 0x2001c004
+  name: wpp_byte_2001c004
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    3 write it)
+- address: 0x2001c0b2
+  name: wpp_half_2001c0b2
+  kind: global
+  class: global
+  module: WPP
+  size: 2
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    3 write it)
+- address: 0x2001c0b4
+  name: notif_err_half_2001c0b4
+  kind: global
+  class: global
+  module: NOTIF_ERR
+  size: 2
+  evidence: stored in the same straight line as wlog('[NOTIF_ERR][WPP][NOTIFICATION_GET]
+    cmd timeout (status = %d)\n') at 0x55dc6, wlog('[NOTIF_ERR][WPP][GLYPH GET]
+    cmd timeout (status = %d)\n') at 0x5610e
+- address: 0x2001c0b6
+  name: wpp_half_2001c0b6
+  kind: global
+  class: global
+  module: WPP
+  size: 2
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    3 write it)
+- address: 0x2001c0b7
+  name: wpp_byte_2001c0b7
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    2 write it)
+- address: 0x2001c0c0
+  name: ppg_background_raw_data_struct_2001c0c0
+  kind: global
+  class: global
+  module: PPG_BACKGROUND_RAW_DATA
+  size: 9
+  evidence: every function that loads or stores it logs under [PPG_BACKGROUND_RAW_DATA]
+    (1 read it, 1 write it)
+- address: 0x2001c0c4
+  name: ppg_background_raw_data_word_2001c0c4
+  kind: global
+  class: global
+  module: PPG_BACKGROUND_RAW_DATA
+  size: 4
+  evidence: every function that loads or stores it logs under [PPG_BACKGROUND_RAW_DATA]
+    (0 read it, 1 write it)
+- address: 0x2001c0c8
+  name: ppg_background_raw_data_byte_2001c0c8
+  kind: global
+  class: global
+  module: PPG_BACKGROUND_RAW_DATA
+  size: 1
+  evidence: every function that loads or stores it logs under [PPG_BACKGROUND_RAW_DATA]
+    (1 read it, 1 write it)
+- address: 0x2001c0cc
+  name: pb_ptr_2001c0cc
+  kind: global
+  class: global
+  module: PB
+  size: 4
+  evidence: every function that loads or stores it logs under [PB] (1 read it, 2
+    write it)
+- address: 0x2001c0d0
+  name: pb_ptr_2001c0d0
+  kind: global
+  class: global
+  module: PB
+  size: 4
+  evidence: every function that loads or stores it logs under [PB] (6 read it, 3
+    write it)
+- address: 0x2001c0d8
+  name: pb_word_2001c0d8
+  kind: global
+  class: global
+  module: PB
+  size: 4
+  evidence: every function that loads or stores it logs under [PB] (7 read it, 2
+    write it)
+- address: 0x2001c0e0
+  name: pb_word_2001c0e0
+  kind: global
+  class: global
+  module: PB
+  size: 4
+  evidence: every function that loads or stores it logs under [PB] (1 read it, 0
+    write it)
+- address: 0x2001c1b5
+  name: raw_flag_2001c1b5
+  kind: global
+  class: global
+  module: RAW
+  size: 1
+  evidence: every function that loads or stores it logs under [RAW] (2 read it,
+    1 write it)
+- address: 0x2001c1b6
+  name: raw_flag_2001c1b6
+  kind: global
+  class: global
+  module: RAW
+  size: 1
+  evidence: every function that loads or stores it logs under [RAW] (2 read it,
+    1 write it)
+- address: 0x2001c1c8
+  name: raw_word_2001c1c8
+  kind: global
+  class: global
+  module: RAW
+  size: 4
+  evidence: every function that loads or stores it logs under [RAW] (4 read it,
+    1 write it)
+- address: 0x2001c1d4
+  name: raw_word_2001c1d4
+  kind: global
+  class: global
+  module: RAW
+  size: 4
+  evidence: every function that loads or stores it logs under [RAW] (4 read it,
+    1 write it)
 - address: 0x2001d280
   name: sensors_sync_mutex_static
   kind: global
@@ -17874,6 +21756,659 @@ symbols:
     (0x598ba) and bit 1 by the push''s overrun path (0x59776). The consumer hands
     a non-zero value to 0x31410 and zeroes it (0x59646..0x59650), which is the "[TRACKER_ALGO]
     Exception detected (0x2)" line.'
+- address: 0x2001f8e4
+  name: crtvfy_ptr_2001f8e4
+  kind: global
+  class: global
+  module: CRTVFY
+  size: 4
+  evidence: every function that loads or stores it logs under [CRTVFY] (7 read it,
+    1 write it)
+- address: 0x2001fad4
+  name: lapping_word_2001fad4
+  kind: global
+  class: global
+  module: LAPPING
+  size: 4
+  evidence: every function that loads or stores it logs under [LAPPING] (5 read
+    it, 4 write it)
+- address: 0x2001fad8
+  name: screen_calibration_flag_2001fad8
+  kind: global
+  class: global
+  module: SCREEN_CALIBRATION
+  size: 4
+  evidence: every function that loads or stores it logs under [SCREEN_CALIBRATION]
+    (0 read it, 2 write it)
+- address: 0x2001fae0
+  name: steps_word_2001fae0
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001faf4
+  name: user_struct_2001faf4
+  kind: global
+  class: global
+  module: USER
+  size: 5
+  evidence: every function that loads or stores it logs under [USER] (1 read it,
+    1 write it)
+- address: 0x2001faf8
+  name: user_byte_2001faf8
+  kind: global
+  class: global
+  module: USER
+  size: 1
+  evidence: every function that loads or stores it logs under [USER] (1 read it,
+    1 write it)
+- address: 0x2001fafc
+  name: steps_struct_2001fafc
+  kind: global
+  class: global
+  module: STEPS
+  size: 176
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb00
+  name: steps_word_2001fb00
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (0 read it,
+    1 write it)
+- address: 0x2001fb04
+  name: steps_word_2001fb04
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb08
+  name: steps_word_2001fb08
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    0 write it)
+- address: 0x2001fb0c
+  name: steps_word_2001fb0c
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (0 read it,
+    1 write it)
+- address: 0x2001fb10
+  name: steps_word_2001fb10
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (0 read it,
+    1 write it)
+- address: 0x2001fb14
+  name: steps_word_2001fb14
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb18
+  name: steps_word_2001fb18
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb1c
+  name: steps_word_2001fb1c
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb20
+  name: steps_table_2001fb20
+  kind: global
+  class: global
+  module: STEPS
+  size: 403
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    0 write it)
+- address: 0x2001fb34
+  name: steps_word_2001fb34
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (0 read it,
+    1 write it)
+- address: 0x2001fb38
+  name: steps_word_2001fb38
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb3c
+  name: steps_word_2001fb3c
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    0 write it)
+- address: 0x2001fb40
+  name: steps_flag_2001fb40
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (0 read it,
+    1 write it)
+- address: 0x2001fb44
+  name: steps_half_2001fb44
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb46
+  name: steps_half_2001fb46
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb48
+  name: steps_half_2001fb48
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb4a
+  name: steps_half_2001fb4a
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb4c
+  name: steps_half_2001fb4c
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (0 read it,
+    1 write it)
+- address: 0x2001fb54
+  name: steps_word_2001fb54
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (0 read it,
+    1 write it)
+- address: 0x2001fb58
+  name: steps_word_2001fb58
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    2 write it)
+- address: 0x2001fb5c
+  name: steps_word_2001fb5c
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    2 write it)
+- address: 0x2001fb6c
+  name: steps_word_2001fb6c
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb74
+  name: steps_word_2001fb74
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb7c
+  name: steps_word_2001fb7c
+  kind: global
+  class: global
+  module: STEPS
+  size: 4
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb84
+  name: steps_half_2001fb84
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb86
+  name: steps_half_2001fb86
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb88
+  name: steps_half_2001fb88
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x2001fb94
+  name: steps_half_2001fb94
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (0 read it,
+    1 write it)
+- address: 0x2001fbac
+  name: swdog_table_2001fbac
+  kind: global
+  class: global
+  module: SWDOG
+  size: 8
+  evidence: every function that loads or stores it logs under [SWDOG] (1 read it,
+    0 write it)
+- address: 0x2001fbb0
+  name: swdog_word_2001fbb0
+  kind: global
+  class: global
+  module: SWDOG
+  size: 4
+  evidence: every function that loads or stores it logs under [SWDOG] (1 read it,
+    0 write it)
+- address: 0x2001fbfc
+  name: time_delta
+  kind: global
+  class: global
+  module: TIME
+  size: 4
+  evidence: 'the cache word of time_delta: dblib id 0xf, persisted by 0x5e024, 0x5e18c
+    with dblib_set(0xf, &0x2001fbfc, 4)'
+- address: 0x2001fc00
+  name: hr_event_ptr_2001fc00
+  kind: global
+  class: global
+  module: HR_EVENT
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_EVENT] (3 read
+    it, 3 write it)
+- address: 0x2001fc08
+  name: hr_event_half_2001fc08
+  kind: global
+  class: global
+  module: HR_EVENT
+  size: 2
+  evidence: every function that loads or stores it logs under [HR_EVENT] (2 read
+    it, 0 write it)
+- address: 0x2001fc10
+  name: hr_event_half_2001fc10
+  kind: global
+  class: global
+  module: HR_EVENT
+  size: 2
+  evidence: every function that loads or stores it logs under [HR_EVENT] (2 read
+    it, 0 write it)
+- address: 0x2001fc38
+  name: inactivity_struct_2001fc38
+  kind: global
+  class: global
+  module: INACTIVITY
+  size: 36
+  evidence: every function that loads or stores it logs under [INACTIVITY] (1 read
+    it, 1 write it)
+- address: 0x2001fc3a
+  name: inactivity_half_2001fc3a
+  kind: global
+  class: global
+  module: INACTIVITY
+  size: 2
+  evidence: every function that loads or stores it logs under [INACTIVITY] (1 read
+    it, 0 write it)
+- address: 0x2001fc3c
+  name: inactivity_half_2001fc3c
+  kind: global
+  class: global
+  module: INACTIVITY
+  size: 2
+  evidence: every function that loads or stores it logs under [INACTIVITY] (1 read
+    it, 1 write it)
+- address: 0x2001fc40
+  name: inactivity_word_2001fc40
+  kind: global
+  class: global
+  module: INACTIVITY
+  size: 4
+  evidence: every function that loads or stores it logs under [INACTIVITY] (2 read
+    it, 2 write it)
+- address: 0x2001fc44
+  name: inactivity_word_2001fc44
+  kind: global
+  class: global
+  module: INACTIVITY
+  size: 4
+  evidence: every function that loads or stores it logs under [INACTIVITY] (1 read
+    it, 1 write it)
+- address: 0x2001fc48
+  name: inactivity_word_2001fc48
+  kind: global
+  class: global
+  module: INACTIVITY
+  size: 4
+  evidence: every function that loads or stores it logs under [INACTIVITY] (1 read
+    it, 2 write it)
+- address: 0x2001fc4c
+  name: inactivity_word_2001fc4c
+  kind: global
+  class: global
+  module: INACTIVITY
+  size: 4
+  evidence: every function that loads or stores it logs under [INACTIVITY] (0 read
+    it, 1 write it)
+- address: 0x2001fc54
+  name: inactivity_word_2001fc54
+  kind: global
+  class: global
+  module: INACTIVITY
+  size: 4
+  evidence: every function that loads or stores it logs under [INACTIVITY] (1 read
+    it, 1 write it)
+- address: 0x2001fc58
+  name: inactivity_flag_2001fc58
+  kind: global
+  class: global
+  module: INACTIVITY
+  size: 4
+  evidence: every function that loads or stores it logs under [INACTIVITY] (1 read
+    it, 2 write it)
+- address: 0x2001fc5c
+  name: inactivity_word_2001fc5c
+  kind: global
+  class: global
+  module: INACTIVITY
+  size: 4
+  evidence: every function that loads or stores it logs under [INACTIVITY] (1 read
+    it, 0 write it)
+- address: 0x2001fc60
+  name: inactivity_word_2001fc60
+  kind: global
+  class: global
+  module: INACTIVITY
+  size: 4
+  evidence: every function that loads or stores it logs under [INACTIVITY] (1 read
+    it, 1 write it)
+- address: 0x2001fc68
+  name: inactivity_config_ptr_2001fc68
+  kind: global
+  class: global
+  module: INACTIVITY_CONFIG
+  size: 4
+  evidence: every function that loads or stores it logs under [INACTIVITY_CONFIG]
+    (2 read it, 1 write it)
+- address: 0x2001fc6c
+  name: inactivity_config_struct_2001fc6c
+  kind: global
+  class: global
+  module: INACTIVITY_CONFIG
+  size: 6
+  evidence: every function that loads or stores it logs under [INACTIVITY_CONFIG]
+    (1 read it, 2 write it)
+- address: 0x2001fc70
+  name: inactivity_config_byte_2001fc70
+  kind: global
+  class: global
+  module: INACTIVITY_CONFIG
+  size: 1
+  evidence: every function that loads or stores it logs under [INACTIVITY_CONFIG]
+    (1 read it, 2 write it)
+- address: 0x2001fca8
+  name: tracker_live_struct_2001fca8
+  kind: global
+  class: global
+  module: TRACKER_LIVE
+  size: 8
+  evidence: every function that loads or stores it logs under [TRACKER_LIVE] (4
+    read it, 0 write it)
+- address: 0x2001fcb8
+  name: tracker_live_word_2001fcb8
+  kind: global
+  class: global
+  module: TRACKER_LIVE
+  size: 4
+  evidence: every function that loads or stores it logs under [TRACKER_LIVE] (3
+    read it, 0 write it)
+- address: 0x2001fcbc
+  name: alti_struct_2001fcbc
+  kind: global
+  class: global
+  module: ALTI
+  size: 36
+  evidence: every function that loads or stores it logs under [ALTI] (4 read it,
+    0 write it)
+- address: 0x2001fcc0
+  name: tracker_live_word_2001fcc0
+  kind: global
+  class: global
+  module: TRACKER_LIVE
+  size: 4
+  evidence: every function that loads or stores it logs under [TRACKER_LIVE] (5
+    read it, 0 write it)
+- address: 0x2001fce0
+  name: tracker_struct_2001fce0
+  kind: global
+  class: global
+  module: TRACKER
+  size: 56
+  evidence: every function that loads or stores it logs under [TRACKER] (3 read
+    it, 2 write it)
+- address: 0x2001fce4
+  name: tracker_word_2001fce4
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: every function that loads or stores it logs under [TRACKER] (3 read
+    it, 2 write it)
+- address: 0x2001fce8
+  name: tracker_live_word_2001fce8
+  kind: global
+  class: global
+  module: TRACKER_LIVE
+  size: 4
+  evidence: stored in the same straight line as wlog('[TRACKER_LIVE][STEPS] confirmed:%d,
+    unknown:%d, min:%d, delta:%d, total:%d\n') at 0x5f3ea
+- address: 0x2001fcf4
+  name: tracker_live_word_2001fcf4
+  kind: global
+  class: global
+  module: TRACKER_LIVE
+  size: 4
+  evidence: every function that loads or stores it logs under [TRACKER_LIVE] (2
+    read it, 1 write it)
+- address: 0x2001fd04
+  name: tracker_live_word_2001fd04
+  kind: global
+  class: global
+  module: TRACKER_LIVE
+  size: 4
+  evidence: stored in the same straight line as wlog('[TRACKER_LIVE][CCALO] current:%d,
+    min:%d, certain:%d, unknown:%d, delta:%d, total:%d\n') at 0x5f4b0
+- address: 0x2001fd10
+  name: tracker_word_2001fd10
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: every function that loads or stores it logs under [TRACKER] (3 read
+    it, 2 write it)
+- address: 0x2001fd14
+  name: tracker_live_word_2001fd14
+  kind: global
+  class: global
+  module: TRACKER_LIVE
+  size: 4
+  evidence: stored in the same straight line as wlog('[TRACKER_LIVE][STAIRS] confirmed:%d,
+    min:%d, delta:%d, total:%d\n') at 0x5f72c
+- address: 0x2001fd18
+  name: tracker_word_2001fd18
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: every function that loads or stores it logs under [TRACKER] (4 read
+    it, 4 write it)
+- address: 0x2001fd1c
+  name: tracker_struct_2001fd1c
+  kind: global
+  class: global
+  module: TRACKER
+  size: 8
+  evidence: every function that loads or stores it logs under [TRACKER] (2 read
+    it, 1 write it)
+- address: 0x2001fd20
+  name: tracker_word_2001fd20
+  kind: global
+  class: global
+  module: TRACKER
+  size: 4
+  evidence: every function that loads or stores it logs under [TRACKER] (4 read
+    it, 1 write it)
+- address: 0x2001fd24
+  name: tracker_struct_2001fd24
+  kind: global
+  class: global
+  module: TRACKER
+  size: 8
+  evidence: every function that loads or stores it logs under [TRACKER] (2 read
+    it, 0 write it)
+- address: 0x2001fd3c
+  name: user_word_2001fd3c
+  kind: global
+  class: global
+  module: USER
+  size: 4
+  evidence: every function that loads or stores it logs under [USER] (1 read it,
+    1 write it)
+- address: 0x2001fd40
+  name: user_table_2001fd40
+  kind: global
+  class: global
+  module: USER
+  size: 403
+  evidence: every function that loads or stores it logs under [USER] (3 read it,
+    1 write it)
+- address: 0x2001fd44
+  name: user_word_2001fd44
+  kind: global
+  class: global
+  module: USER
+  size: 4
+  evidence: every function that loads or stores it logs under [USER] (2 read it,
+    0 write it)
+- address: 0x2001fd48
+  name: user_word_2001fd48
+  kind: global
+  class: global
+  module: USER
+  size: 4
+  evidence: stored in the same straight line as wlog('[USER] New used:') at 0x604ac
+- address: 0x2001fd4c
+  name: user_byte_2001fd4c
+  kind: global
+  class: global
+  module: USER
+  size: 1
+  evidence: every function that loads or stores it logs under [USER] (4 read it,
+    1 write it)
+- address: 0x2001fd50
+  name: user_word_2001fd50
+  kind: global
+  class: global
+  module: USER
+  size: 4
+  evidence: every function that loads or stores it logs under [USER] (4 read it,
+    1 write it)
+- address: 0x2001fd98
+  name: step_goal
+  kind: global
+  class: global
+  size: 4
+  evidence: 'the cache word of step_goal: dblib id 0x6f, persisted by 0x607e4 with
+    dblib_set(0x6f, &0x2001fd98, 4)'
+- address: 0x2001fd9c
+  name: sleep_goal
+  kind: global
+  class: global
+  size: 4
+  evidence: 'the cache word of sleep_goal: dblib id 0x70, persisted by 0x60824 with
+    dblib_set(0x70, &0x2001fd9c, 4)'
+- address: 0x2001fda0
+  name: background_sync_struct_2001fda0
+  kind: global
+  class: global
+  module: BACKGROUND_SYNC
+  size: 13
+  evidence: every function that loads or stores it logs under [BACKGROUND_SYNC]
+    (1 read it, 1 write it)
+- address: 0x2001fda4
+  name: background_sync_word_2001fda4
+  kind: global
+  class: global
+  module: BACKGROUND_SYNC
+  size: 4
+  evidence: every function that loads or stores it logs under [BACKGROUND_SYNC]
+    (1 read it, 0 write it)
+- address: 0x2001fda8
+  name: background_sync_word_2001fda8
+  kind: global
+  class: global
+  module: BACKGROUND_SYNC
+  size: 4
+  evidence: every function that loads or stores it logs under [BACKGROUND_SYNC]
+    (1 read it, 1 write it)
+- address: 0x2001fdac
+  name: background_sync_flag_2001fdac
+  kind: global
+  class: global
+  module: BACKGROUND_SYNC
+  size: 1
+  evidence: every function that loads or stores it logs under [BACKGROUND_SYNC]
+    (0 read it, 2 write it)
 - address: 0x2001fe34
   name: spo2_mutex_static
   kind: global
@@ -17889,6 +22424,70 @@ symbols:
   module: spo2
   evidence: 'the handle word: xQueueCreateMutexStatic at 0x61982 with queue type
     1; the name''s module is the module of the functions that read the handle word'
+- address: 0x2001fe97
+  name: spo2_byte_2001fe97
+  kind: global
+  class: global
+  module: SPO2
+  size: 1
+  evidence: every function that loads or stores it logs under [SPO2] (0 read it,
+    2 write it)
+- address: 0x2001fe9a
+  name: shell_byte_2001fe9a
+  kind: global
+  class: global
+  module: SHELL
+  size: 1
+  evidence: every function that loads or stores it logs under [SHELL] (1 read it,
+    0 write it)
+- address: 0x2001ff28
+  name: shell_ptr_2001ff28
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (2 read it,
+    2 write it)
+- address: 0x2001ff2c
+  name: shell_word_2001ff2c
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (2 read it,
+    0 write it)
+- address: 0x2001ff30
+  name: spo2_struct_2001ff30
+  kind: global
+  class: global
+  module: SPO2
+  size: 16
+  evidence: every function that loads or stores it logs under [SPO2] (5 read it,
+    2 write it)
+- address: 0x2001ff34
+  name: spo2_word_2001ff34
+  kind: global
+  class: global
+  module: SPO2
+  size: 4
+  evidence: every function that loads or stores it logs under [SPO2] (2 read it,
+    1 write it)
+- address: 0x2001ff39
+  name: auto_burst_flag_2001ff39
+  kind: global
+  class: global
+  module: AUTO_BURST
+  size: 1
+  evidence: every function that loads or stores it logs under [AUTO_BURST] (2 read
+    it, 1 write it)
+- address: 0x2001ff3c
+  name: shell_word_2001ff3c
+  kind: global
+  class: global
+  module: SHELL
+  size: 4
+  evidence: every function that loads or stores it logs under [SHELL] (3 read it,
+    1 write it)
 - address: 0x2001ff40
   name: hr_event_mutex_static
   kind: global
@@ -17916,11 +22515,163 @@ symbols:
   kind: global
   class: hand
   module: hr
+- address: 0x2001fff5
+  name: hr_measure_byte_2001fff5
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (0 read
+    it, 1 write it)
+- address: 0x2001fff8
+  name: hr_measure_word_2001fff8
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (0 read
+    it, 1 write it)
+- address: 0x2001fffd
+  name: hr_measure_byte_2001fffd
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (0 read
+    it, 1 write it)
+- address: 0x20020000
+  name: hr_measure_word_20020000
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (0 read
+    it, 1 write it)
 - address: 0x20020004
   name: hr_measure_ctx
   kind: global
   class: hand
   module: hr
+- address: 0x20020005
+  name: hr_measure_byte_20020005
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (2 read
+    it, 0 write it)
+- address: 0x20020006
+  name: hr_measure_byte_20020006
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (2 read
+    it, 0 write it)
+- address: 0x20020007
+  name: hr_measure_byte_20020007
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (1 read
+    it, 0 write it)
+- address: 0x20020008
+  name: hr_measure_byte_20020008
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (1 read
+    it, 0 write it)
+- address: 0x20020009
+  name: hr_measure_byte_20020009
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (0 read
+    it, 1 write it)
+- address: 0x2002000c
+  name: hr_measure_word_2002000c
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (1 read
+    it, 1 write it)
+- address: 0x20020010
+  name: hr_measure_flag_20020010
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (0 read
+    it, 1 write it)
+- address: 0x20020014
+  name: hr_measure_byte_20020014
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (0 read
+    it, 1 write it)
+- address: 0x20020018
+  name: hr_measure_word_20020018
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (1 read
+    it, 1 write it)
+- address: 0x2002001c
+  name: hr_measure_word_2002001c
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (1 read
+    it, 1 write it)
+- address: 0x20020020
+  name: hr_measure_byte_20020020
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (1 read
+    it, 1 write it)
+- address: 0x20020028
+  name: hr_measure_word_20020028
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (1 read
+    it, 0 write it)
+- address: 0x2002002c
+  name: hr_measure_byte_2002002c
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 1
+  evidence: 'stored in the same straight line as wlog(''[HR_MEASURE][RR] Result
+    %dbpm | %ds | rr: %ld | is_censored: %s\n'') at 0x628e6'
+- address: 0x20020030
+  name: hr_measure_word_20020030
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (0 read
+    it, 1 write it)
+- address: 0x20020034
+  name: hr_measure_byte_20020034
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (1 read
+    it, 2 write it)
 - address: 0x20020038
   name: hr_event_mutex
   kind: global
@@ -17928,6 +22679,142 @@ symbols:
   module: hr_event
   evidence: 'the handle word: xQueueCreateMutexStatic at 0x6239c with queue type
     1; the name''s module is the module the creating function logs under'
+- address: 0x2002003c
+  name: hr_event_struct_2002003c
+  kind: global
+  class: global
+  module: HR_EVENT
+  size: 29
+  evidence: every function that loads or stores it logs under [HR_EVENT] (1 read
+    it, 1 write it)
+- address: 0x20020040
+  name: hr_event_byte_20020040
+  kind: global
+  class: global
+  module: HR_EVENT
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_EVENT] (1 read
+    it, 1 write it)
+- address: 0x20020041
+  name: hr_event_byte_20020041
+  kind: global
+  class: global
+  module: HR_EVENT
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_EVENT] (1 read
+    it, 1 write it)
+- address: 0x20020044
+  name: hr_event_byte_20020044
+  kind: global
+  class: global
+  module: HR_EVENT
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_EVENT] (2 read
+    it, 0 write it)
+- address: 0x20020048
+  name: hr_event_word_20020048
+  kind: global
+  class: global
+  module: HR_EVENT
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_EVENT] (1 read
+    it, 0 write it)
+- address: 0x2002004c
+  name: hr_event_struct_2002004c
+  kind: global
+  class: global
+  module: HR_EVENT
+  size: 5
+  evidence: every function that loads or stores it logs under [HR_EVENT] (1 read
+    it, 0 write it)
+- address: 0x20020050
+  name: hr_event_byte_20020050
+  kind: global
+  class: global
+  module: HR_EVENT
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_EVENT] (1 read
+    it, 0 write it)
+- address: 0x20020054
+  name: hr_event_word_20020054
+  kind: global
+  class: global
+  module: HR_EVENT
+  size: 4
+  evidence: every function that loads or stores it logs under [HR_EVENT] (1 read
+    it, 0 write it)
+- address: 0x20020058
+  name: hr_event_byte_20020058
+  kind: global
+  class: global
+  module: HR_EVENT
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_EVENT] (1 read
+    it, 0 write it)
+- address: 0x2002005c
+  name: ppg_afib_word_2002005c
+  kind: global
+  class: global
+  module: PPG_AFIB
+  size: 4
+  evidence: every function that loads or stores it logs under [PPG_AFIB] (1 read
+    it, 1 write it)
+- address: 0x200200bc
+  name: ppg_afib_struct_200200bc
+  kind: global
+  class: global
+  module: PPG_AFIB
+  size: 12
+  evidence: every function that loads or stores it logs under [PPG_AFIB] (3 read
+    it, 3 write it)
+- address: 0x200200c1
+  name: auto_burst_flag_200200c1
+  kind: global
+  class: global
+  module: AUTO_BURST
+  size: 1
+  evidence: every function that loads or stores it logs under [AUTO_BURST] (2 read
+    it, 1 write it)
+- address: 0x200200c4
+  name: ppg_afib_word_200200c4
+  kind: global
+  class: global
+  module: PPG_AFIB
+  size: 4
+  evidence: every function that loads or stores it logs under [PPG_AFIB] (2 read
+    it, 1 write it)
+- address: 0x200200c8
+  name: ppg_afib_struct_200200c8
+  kind: global
+  class: global
+  module: PPG_AFIB
+  size: 13
+  evidence: every function that loads or stores it logs under [PPG_AFIB] (1 read
+    it, 0 write it)
+- address: 0x200200d0
+  name: ppg_afib_word_200200d0
+  kind: global
+  class: global
+  module: PPG_AFIB
+  size: 4
+  evidence: every function that loads or stores it logs under [PPG_AFIB] (0 read
+    it, 1 write it)
+- address: 0x200200d4
+  name: ppg_afib_byte_200200d4
+  kind: global
+  class: global
+  module: PPG_AFIB
+  size: 1
+  evidence: every function that loads or stores it logs under [PPG_AFIB] (1 read
+    it, 1 write it)
+- address: 0x20020114
+  name: ppg_afib_flag_20020114
+  kind: global
+  class: global
+  module: PPG_AFIB
+  size: 1
+  evidence: every function that loads or stores it logs under [PPG_AFIB] (2 read
+    it, 1 write it)
 - address: 0x20020118
   name: ppg_dbt_mutex_static
   kind: global
@@ -17943,6 +22830,126 @@ symbols:
   module: ppg_dbt
   evidence: 'the handle word: xQueueCreateMutexStatic at 0x638fa with queue type
     1; the name''s module is the module of the functions that read the handle word'
+- address: 0x20020170
+  name: ppg_dbt_flag_20020170
+  kind: global
+  class: global
+  module: PPG_DBT
+  size: 1
+  evidence: every function that loads or stores it logs under [PPG_DBT] (4 read
+    it, 2 write it)
+- address: 0x20020174
+  name: ppg_dbt_word_20020174
+  kind: global
+  class: global
+  module: PPG_DBT
+  size: 4
+  evidence: every function that loads or stores it logs under [PPG_DBT] (2 read
+    it, 0 write it)
+- address: 0x20020178
+  name: ppg_dbt_word_20020178
+  kind: global
+  class: global
+  module: PPG_DBT
+  size: 4
+  evidence: every function that loads or stores it logs under [PPG_DBT] (2 read
+    it, 0 write it)
+- address: 0x2002017c
+  name: ppg_dbt_half_2002017c
+  kind: global
+  class: global
+  module: PPG_DBT
+  size: 2
+  evidence: every function that loads or stores it logs under [PPG_DBT] (1 read
+    it, 0 write it)
+- address: 0x200201d4
+  name: algo_manager_struct_200201d4
+  kind: global
+  class: global
+  module: ALGO_MANAGER
+  size: 8
+  evidence: 'stored in the same straight line as wlog(''[ALGO_MANAGER] %s request
+    ( pause count: %d -> %d )\n'') at 0x63c28'
+- address: 0x20020234
+  name: wpp_struct_20020234
+  kind: global
+  class: global
+  module: WPP
+  size: 8
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    1 write it)
+- address: 0x20020238
+  name: wpp_word_20020238
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    1 write it)
+- address: 0x20020248
+  name: vas_struct_20020248
+  kind: global
+  class: global
+  module: VAS
+  size: 346
+  evidence: every function that loads or stores it logs under [VAS] (0 read it,
+    1 write it)
+- address: 0x2002024c
+  name: vas_word_2002024c
+  kind: global
+  class: global
+  module: VAS
+  size: 4
+  evidence: every function that loads or stores it logs under [VAS] (1 read it,
+    1 write it)
+- address: 0x20020250
+  name: vas_flag_20020250
+  kind: global
+  class: global
+  module: VAS
+  size: 1
+  evidence: every function that loads or stores it logs under [VAS] (5 read it,
+    1 write it)
+- address: 0x200203a0
+  name: vas_cache
+  kind: global
+  class: global
+  module: VAS
+  size: 4
+  evidence: 'the cache word of vas_cache: dblib id 0x103, persisted by 0x658bc,
+    0x6593c with dblib_set(0x103, &0x200203a0, 4)'
+- address: 0x20020400
+  name: vib_struct_20020400
+  kind: global
+  class: global
+  module: VIB
+  size: 8
+  evidence: every function that loads or stores it logs under [VIB] (3 read it,
+    1 write it)
+- address: 0x20020405
+  name: vib_flag_20020405
+  kind: global
+  class: global
+  module: VIB
+  size: 1
+  evidence: every function that loads or stores it logs under [VIB] (1 read it,
+    2 write it)
+- address: 0x20020406
+  name: vib_byte_20020406
+  kind: global
+  class: global
+  module: VIB
+  size: 1
+  evidence: every function that loads or stores it logs under [VIB] (1 read it,
+    2 write it)
+- address: 0x20020407
+  name: vib_flag_20020407
+  kind: global
+  class: global
+  module: VIB
+  size: 1
+  evidence: every function that loads or stores it logs under [VIB] (2 read it,
+    2 write it)
 - address: 0x20020838
   name: ppg_afib_store_mutex_static
   kind: global
@@ -17950,6 +22957,94 @@ symbols:
   module: ppg_afib_store
   evidence: the handle 0x20020838 that xQueueCreateMutexStatic at 0x67aec produced
     is taken and given only in ppg_afib_store
+- address: 0x20020898
+  name: wftl_ptr_20020898
+  kind: global
+  class: global
+  module: WFTL
+  size: 4
+  evidence: every function that loads or stores it logs under [WFTL] (7 read it,
+    1 write it)
+- address: 0x200208b8
+  name: workout_byte_200208b8
+  kind: global
+  class: global
+  module: WORKOUT
+  size: 1
+  evidence: every function that loads or stores it logs under [WORKOUT] (1 read
+    it, 1 write it)
+- address: 0x2002091c
+  name: wpp_word_2002091c
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (0 read it,
+    4 write it)
+- address: 0x20020921
+  name: wpp_lite_byte_20020921
+  kind: global
+  class: global
+  module: WPP_LITE
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP_LITE] (2 read
+    it, 2 write it)
+- address: 0x20020924
+  name: wpp_word_20020924
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (0 read it,
+    1 write it)
+- address: 0x20020944
+  name: wpp_struct_20020944
+  kind: global
+  class: global
+  module: WPP
+  size: 8
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    2 write it)
+- address: 0x20020945
+  name: wpp_byte_20020945
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    1 write it)
+- address: 0x20020948
+  name: wpp_word_20020948
+  kind: global
+  class: global
+  module: WPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    1 write it)
+- address: 0x2002094c
+  name: wpp_half_2002094c
+  kind: global
+  class: global
+  module: WPP
+  size: 2
+  evidence: every function that loads or stores it logs under [WPP] (0 read it,
+    1 write it)
+- address: 0x2002094f
+  name: wpp_flag_2002094f
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    1 write it)
+- address: 0x20020958
+  name: wpp_lite_word_20020958
+  kind: global
+  class: global
+  module: WPP_LITE
+  size: 4
+  evidence: every function that loads or stores it logs under [WPP_LITE] (1 read
+    it, 0 write it)
 - address: 0x20020aa0
   name: wpp_rx_frame_buffer
   kind: global
@@ -17958,6 +23053,223 @@ symbols:
   evidence: the 200-byte reassembly buffer installed at 0x6c16c together with the
     capacity 200 at ctx+64; FIRMWARE.md's frame-length section is the evidence,
     including that the next global begins exactly 200 bytes later
+- address: 0x20020b70
+  name: debug_dump_word_20020b70
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: stored in the same straight line as wlog('[DEBUG_DUMP] DbLib RAM [%d
+    / %d] (+%d)\n') at 0x6dee8
+- address: 0x20020b74
+  name: debug_dump_word_20020b74
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: stored in the same straight line as wlog('[DEBUG_DUMP] DbLib [%d / %d]
+    (+%d)\n') at 0x6ddee
+- address: 0x20020b78
+  name: debug_dump_struct_20020b78
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 84
+  evidence: stored in the same straight line as wlog('[DEBUG_DUMP] Send DbLib RAM
+    (%ld B)\n') at 0x6d8aa, wlog('[DEBUG_DUMP] set process_continue -> process_cmd_send_anchor')
+    at 0x6dcfa
+- address: 0x20020b80
+  name: debug_dump_word_20020b80
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (2 read
+    it, 2 write it)
+- address: 0x20020b84
+  name: debug_dump_word_20020b84
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (0 read
+    it, 1 write it)
+- address: 0x20020b88
+  name: debug_dump_word_20020b88
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (2 read
+    it, 2 write it)
+- address: 0x20020b8c
+  name: debug_dump_word_20020b8c
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (1 read
+    it, 1 write it)
+- address: 0x20020b90
+  name: debug_dump_ptr_20020b90
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: stored in the same straight line as wlog('[DEBUG_DUMP] set process_continue
+    -> process_cmd_continue_raw_data_dump') at 0x6daaa
+- address: 0x20020b94
+  name: debug_dump_word_20020b94
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (1 read
+    it, 1 write it)
+- address: 0x20020b98
+  name: debug_dump_half_20020b98
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 2
+  evidence: stored in the same straight line as wlog('[DEBUG_DUMP] rom=%dB, cur=%dB,
+    dump=%dB (dump_mask = %x)\n') at 0x6d7f8
+- address: 0x20020b9c
+  name: debug_dump_word_20020b9c
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (1 read
+    it, 1 write it)
+- address: 0x20020ba0
+  name: debug_dump_word_20020ba0
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (1 read
+    it, 0 write it)
+- address: 0x20020ba4
+  name: debug_dump_word_20020ba4
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (1 read
+    it, 0 write it)
+- address: 0x20020ba8
+  name: debug_dump_word_20020ba8
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (1 read
+    it, 0 write it)
+- address: 0x20020bac
+  name: debug_dump_half_20020bac
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 2
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (4 read
+    it, 1 write it)
+- address: 0x20020bb0
+  name: debug_dump_word_20020bb0
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: stored in the same straight line as wlog('[DEBUG_DUMP] Send dblib')
+    at 0x6d7dc
+- address: 0x20020bb4
+  name: debug_dump_word_20020bb4
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (1 read
+    it, 2 write it)
+- address: 0x20020bb8
+  name: debug_dump_half_20020bb8
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 2
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (2 read
+    it, 2 write it)
+- address: 0x20020bbc
+  name: debug_dump_word_20020bbc
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: stored in the same straight line as wlog('[DEBUG_DUMP] SENDING ANCHOR
+    %lu\n') at 0x6d6c8
+- address: 0x20020bc0
+  name: debug_dump_ptr_20020bc0
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (2 read
+    it, 2 write it)
+- address: 0x20020bc4
+  name: debug_dump_byte_20020bc4
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 1
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (5 read
+    it, 1 write it)
+- address: 0x20020bc8
+  name: debug_dump_word_20020bc8
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: every function that loads or stores it logs under [DEBUG_DUMP] (2 read
+    it, 2 write it)
+- address: 0x20020bcc
+  name: debug_dump_word_20020bcc
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 4
+  evidence: stored in the same straight line as wlog('[DEBUG_DUMP] set process_continue
+    -> process_cmd_send_anchor') at 0x6dcfa
+- address: 0x20020bd8
+  name: up_ptr_20020bd8
+  kind: global
+  class: global
+  module: UP
+  size: 4
+  evidence: stored in the same straight line as wlog('[UP] %d / %d (left:%d)\n')
+    at 0x6e748
+- address: 0x20020bdc
+  name: up_word_20020bdc
+  kind: global
+  class: global
+  module: UP
+  size: 4
+  evidence: stored in the same straight line as wlog('[UP] %d / %d (left:%d)\n')
+    at 0x6e748
+- address: 0x20020be0
+  name: up_word_20020be0
+  kind: global
+  class: global
+  module: UP
+  size: 4
+  evidence: every function that loads or stores it logs under [UP] (1 read it, 1
+    write it)
+- address: 0x20020be4
+  name: up_word_20020be4
+  kind: global
+  class: global
+  module: UP
+  size: 4
+  evidence: every function that loads or stores it logs under [UP] (1 read it, 1
+    write it)
 - address: 0x20020bec
   name: wui_task_tcb
   kind: global
@@ -17995,6 +23307,22 @@ symbols:
   module: null
   evidence: the word the created task's handle is stored in; the name string 'WUI'
     and the entry pointer 0x6ed35 that xTaskCreateStatic at 0x6f106 was given
+- address: 0x200218f8
+  name: wpps_flag_200218f8
+  kind: global
+  class: global
+  module: WPPS
+  size: 4
+  evidence: every function that loads or stores it logs under [WPPS] (1 read it,
+    3 write it)
+- address: 0x200218fc
+  name: am_word_200218fc
+  kind: global
+  class: global
+  module: AM
+  size: 4
+  evidence: every function that loads or stores it logs under [AM] (8 read it, 3
+    write it)
 - address: 0x20021900
   name: idle_task_handle
   kind: global
@@ -18002,11 +23330,43 @@ symbols:
   module: null
   evidence: the word the created task's handle is stored in; the name string 'IDLE'
     and the entry pointer 0x27da1 that xTaskCreateStatic at 0x73032 was given
+- address: 0x20021918
+  name: am_flag_20021918
+  kind: global
+  class: global
+  module: AM
+  size: 4
+  evidence: every function that loads or stores it logs under [AM] (3 read it, 1
+    write it)
 - address: 0x20021920
   name: xTickCount
   kind: global
   class: hand
   module: freertos
+- address: 0x20021a23
+  name: adc_byte_20021a23
+  kind: global
+  class: global
+  module: ADC
+  size: 1
+  evidence: every function that loads or stores it logs under [ADC] (1 read it,
+    1 write it)
+- address: 0x20021a28
+  name: acq_byte_20021a28
+  kind: global
+  class: global
+  module: ACQ
+  size: 1
+  evidence: every function that loads or stores it logs under [ACQ] (1 read it,
+    1 write it)
+- address: 0x20021a29
+  name: acq_flag_20021a29
+  kind: global
+  class: global
+  module: ACQ
+  size: 1
+  evidence: every function that loads or stores it logs under [ACQ] (0 read it,
+    1 write it)
 - address: 0x20021a2c
   name: adc_mutex_static
   kind: global
@@ -18014,6 +23374,30 @@ symbols:
   module: adc
   evidence: the static object handed to xQueueCreateMutexStatic at 0x7e30c with
     queue type 1; the name's module is the module the creating function logs under
+- address: 0x20021a80
+  name: acq_word_20021a80
+  kind: global
+  class: global
+  module: ACQ
+  size: 4
+  evidence: every function that loads or stores it logs under [ACQ] (2 read it,
+    2 write it)
+- address: 0x20021b50
+  name: adc_word_20021b50
+  kind: global
+  class: global
+  module: ADC
+  size: 4
+  evidence: every function that loads or stores it logs under [ADC] (1 read it,
+    2 write it)
+- address: 0x20021b54
+  name: adc_ptr_20021b54
+  kind: global
+  class: global
+  module: ADC
+  size: 4
+  evidence: every function that loads or stores it logs under [ADC] (2 read it,
+    1 write it)
 - address: 0x20021b5c
   name: step_motor_pending
   kind: global
@@ -18022,12 +23406,851 @@ symbols:
   evidence: a bit per motor that step_motor_play_step sets and step_motor_pwm_handler
     clears, which is what step_motor_step_blocking spins on, followed by the blocking
     caller's flag and its move at +4
+- address: 0x20021b70
+  name: vib_word_20021b70
+  kind: global
+  class: global
+  module: VIB
+  size: 4
+  evidence: every function that loads or stores it logs under [VIB] (0 read it,
+    2 write it)
+- address: 0x20021b7c
+  name: temperature_struct_20021b7c
+  kind: global
+  class: global
+  module: TEMPERATURE
+  size: 8
+  evidence: every function that loads or stores it logs under [TEMPERATURE] (0 read
+    it, 1 write it)
+- address: 0x20021b7e
+  name: temperature_half_20021b7e
+  kind: global
+  class: global
+  module: TEMPERATURE
+  size: 2
+  evidence: every function that loads or stores it logs under [TEMPERATURE] (0 read
+    it, 1 write it)
+- address: 0x20021b80
+  name: temperature_word_20021b80
+  kind: global
+  class: global
+  module: TEMPERATURE
+  size: 4
+  evidence: every function that loads or stores it logs under [TEMPERATURE] (0 read
+    it, 1 write it)
+- address: 0x20021b84
+  name: screen_timer_ptr_20021b84
+  kind: global
+  class: global
+  module: SCREEN_TIMER
+  size: 4
+  evidence: every function that loads or stores it logs under [SCREEN_TIMER] (3
+    read it, 1 write it)
+- address: 0x20024734
+  name: factory_word_20024734
+  kind: global
+  class: global
+  module: FACTORY
+  size: 4
+  evidence: every function that loads or stores it logs under [FACTORY] (0 read
+    it, 1 write it)
+- address: 0x20024738
+  name: factory_word_20024738
+  kind: global
+  class: global
+  module: FACTORY
+  size: 4
+  evidence: every function that loads or stores it logs under [FACTORY] (1 read
+    it, 1 write it)
+- address: 0x2002473c
+  name: factory_half_2002473c
+  kind: global
+  class: global
+  module: FACTORY
+  size: 2
+  evidence: every function that loads or stores it logs under [FACTORY] (1 read
+    it, 0 write it)
+- address: 0x2002473e
+  name: factory_half_2002473e
+  kind: global
+  class: global
+  module: FACTORY
+  size: 2
+  evidence: every function that loads or stores it logs under [FACTORY] (1 read
+    it, 0 write it)
+- address: 0x20024740
+  name: factory_word_20024740
+  kind: global
+  class: global
+  module: FACTORY
+  size: 4
+  evidence: every function that loads or stores it logs under [FACTORY] (1 read
+    it, 0 write it)
+- address: 0x20024744
+  name: factory_struct_20024744
+  kind: global
+  class: global
+  module: FACTORY
+  size: 24
+  evidence: every function that loads or stores it logs under [FACTORY] (0 read
+    it, 2 write it)
+- address: 0x2002474c
+  name: factory_word_2002474c
+  kind: global
+  class: global
+  module: FACTORY
+  size: 4
+  evidence: every function that loads or stores it logs under [FACTORY] (1 read
+    it, 0 write it)
+- address: 0x20024750
+  name: factory_word_20024750
+  kind: global
+  class: global
+  module: FACTORY
+  size: 4
+  evidence: every function that loads or stores it logs under [FACTORY] (2 read
+    it, 1 write it)
+- address: 0x20024754
+  name: factory_byte_20024754
+  kind: global
+  class: global
+  module: FACTORY
+  size: 1
+  evidence: every function that loads or stores it logs under [FACTORY] (2 read
+    it, 3 write it)
+- address: 0x20024758
+  name: factory_word_20024758
+  kind: global
+  class: global
+  module: FACTORY
+  size: 4
+  evidence: every function that loads or stores it logs under [FACTORY] (0 read
+    it, 1 write it)
+- address: 0x2002475c
+  name: factory_ptr_2002475c
+  kind: global
+  class: global
+  module: FACTORY
+  size: 4
+  evidence: stored in the same straight line as wlog('[FACTORY] Factory_test type
+    %d, status %d\n') at 0x83a1e
+- address: 0x20024761
+  name: lapping_byte_20024761
+  kind: global
+  class: global
+  module: LAPPING
+  size: 1
+  evidence: every function that loads or stores it logs under [LAPPING] (2 read
+    it, 0 write it)
+- address: 0x20024762
+  name: lapping_half_20024762
+  kind: global
+  class: global
+  module: LAPPING
+  size: 2
+  evidence: every function that loads or stores it logs under [LAPPING] (2 read
+    it, 0 write it)
+- address: 0x20024763
+  name: lapping_byte_20024763
+  kind: global
+  class: global
+  module: LAPPING
+  size: 1
+  evidence: every function that loads or stores it logs under [LAPPING] (2 read
+    it, 0 write it)
+- address: 0x20024765
+  name: lapping_byte_20024765
+  kind: global
+  class: global
+  module: LAPPING
+  size: 1
+  evidence: every function that loads or stores it logs under [LAPPING] (2 read
+    it, 0 write it)
+- address: 0x20024766
+  name: lapping_byte_20024766
+  kind: global
+  class: global
+  module: LAPPING
+  size: 1
+  evidence: every function that loads or stores it logs under [LAPPING] (3 read
+    it, 2 write it)
+- address: 0x2002478c
+  name: wui_word_2002478c
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    2 write it)
+- address: 0x200247ac
+  name: wui_word_200247ac
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    2 write it)
+- address: 0x200247d8
+  name: wui_ptr_200247d8
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x200247e8
+  name: ecg_struct_200247e8
+  kind: global
+  class: global
+  module: ECG
+  size: 5
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x200247ec
+  name: ecg_byte_200247ec
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x200247fc
+  name: ecg_struct_200247fc
+  kind: global
+  class: global
+  module: ECG
+  size: 172
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    2 write it)
+- address: 0x20024800
+  name: ecg_word_20024800
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (3 read it,
+    2 write it)
+- address: 0x20024804
+  name: ecg_word_20024804
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    2 write it)
+- address: 0x20024808
+  name: ecg_half_20024808
+  kind: global
+  class: global
+  module: ECG
+  size: 2
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x2002480c
+  name: ecg_half_2002480c
+  kind: global
+  class: global
+  module: ECG
+  size: 2
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x20024812
+  name: ecg_half_20024812
+  kind: global
+  class: global
+  module: ECG
+  size: 2
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x20024814
+  name: ecg_half_20024814
+  kind: global
+  class: global
+  module: ECG
+  size: 2
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    2 write it)
+- address: 0x20024818
+  name: ecg_word_20024818
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x2002481c
+  name: ecg_struct_2002481c
+  kind: global
+  class: global
+  module: ECG
+  size: 12
+  evidence: every function that loads or stores it logs under [ECG] (1 read it,
+    1 write it)
+- address: 0x20024829
+  name: ecg_flag_20024829
+  kind: global
+  class: global
+  module: ECG
+  size: 1
+  evidence: every function that loads or stores it logs under [ECG] (2 read it,
+    1 write it)
+- address: 0x200248a8
+  name: ecg_word_200248a8
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: stored in the same straight line as wlog('[ECG] %d/%d measures | nb_days_since_last_meas=%lu/%d
+    -> Display tuto\n') at 0x8639a
+- address: 0x200248ac
+  name: ecg_word_200248ac
+  kind: global
+  class: global
+  module: ECG
+  size: 4
+  evidence: stored in the same straight line as wlog('[ECG] %d/%d measures | nb_days_since_last_meas=%lu/%d
+    -> Display tuto\n') at 0x8639a
+- address: 0x200248dc
+  name: spo2_word_200248dc
+  kind: global
+  class: global
+  module: SPO2
+  size: 4
+  evidence: stored in the same straight line as wlog('[SPO2] %d/%d measures | nb_days_since_last_meas=%lu/%d
+    -> Display tuto\n') at 0x86b72
+- address: 0x200248e0
+  name: spo2_word_200248e0
+  kind: global
+  class: global
+  module: SPO2
+  size: 4
+  evidence: stored in the same straight line as wlog('[SPO2] %d/%d measures | nb_days_since_last_meas=%lu/%d
+    -> Display tuto\n') at 0x86b72
+- address: 0x20024928
+  name: tracker_inactivity_ptr_20024928
+  kind: global
+  class: global
+  module: TRACKER_INACTIVITY
+  size: 4
+  evidence: stored in the same straight line as wlog('[TRACKER INACTIVITY] Current
+    time %d:%d => Notify %s message (index %d)\n') at 0x88c68
+- address: 0x2002492c
+  name: tracker_inactivity_word_2002492c
+  kind: global
+  class: global
+  module: TRACKER_INACTIVITY
+  size: 4
+  evidence: stored in the same straight line as wlog('[TRACKER INACTIVITY] Current
+    time %d:%d => Notify %s message (index %d)\n') at 0x88c68
+- address: 0x20024930
+  name: tracker_inactivity_word_20024930
+  kind: global
+  class: global
+  module: TRACKER_INACTIVITY
+  size: 4
+  evidence: every function that loads or stores it logs under [TRACKER_INACTIVITY]
+    (0 read it, 1 write it)
+- address: 0x20024934
+  name: tracker_inactivity_word_20024934
+  kind: global
+  class: global
+  module: TRACKER_INACTIVITY
+  size: 4
+  evidence: stored in the same straight line as wlog('[TRACKER INACTIVITY] Current
+    time %d:%d => Notify %s message (index %d)\n') at 0x88c68
+- address: 0x2002499c
+  name: wui_ptr_2002499c
+  kind: global
+  class: global
+  module: WUI
+  size: 4
+  evidence: every function that loads or stores it logs under [WUI] (7 read it,
+    1 write it)
+- address: 0x20024d1c
+  name: bat_half_20024d1c
+  kind: global
+  class: global
+  module: BAT
+  size: 2
+  evidence: every function that loads or stores it logs under [BAT] (2 read it,
+    1 write it)
+- address: 0x20024d1e
+  name: bat_half_20024d1e
+  kind: global
+  class: global
+  module: BAT
+  size: 2
+  evidence: every function that loads or stores it logs under [BAT] (2 read it,
+    1 write it)
+- address: 0x20024d20
+  name: bat_half_20024d20
+  kind: global
+  class: global
+  module: BAT
+  size: 2
+  evidence: every function that loads or stores it logs under [BAT] (4 read it,
+    2 write it)
+- address: 0x20024d22
+  name: activity_vasistas_migration_base
+  kind: global
+  class: global
+  size: 24
+  evidence: 'the cache word of activity_vasistas_migration_base: dblib id 0xc0,
+    persisted by 0x3119c, 0x9259c with dblib_set(0xc0, &0x20024d22, 24)'
+- address: 0x20024d5e
+  name: ancs_half_20024d5e
+  kind: global
+  class: global
+  module: ANCS
+  size: 2
+  evidence: every function that loads or stores it logs under [ANCS] (1 read it,
+    1 write it)
+- address: 0x20024d60
+  name: ancs_byte_20024d60
+  kind: global
+  class: global
+  module: ANCS
+  size: 1
+  evidence: every function that loads or stores it logs under [ANCS] (1 read it,
+    0 write it)
+- address: 0x20024d62
+  name: ancs_half_20024d62
+  kind: global
+  class: global
+  module: ANCS
+  size: 2
+  evidence: every function that loads or stores it logs under [ANCS] (1 read it,
+    1 write it)
+- address: 0x20024d64
+  name: ancs_byte_20024d64
+  kind: global
+  class: global
+  module: ANCS
+  size: 1
+  evidence: every function that loads or stores it logs under [ANCS] (1 read it,
+    0 write it)
+- address: 0x20024d66
+  name: ancs_half_20024d66
+  kind: global
+  class: global
+  module: ANCS
+  size: 2
+  evidence: every function that loads or stores it logs under [ANCS] (1 read it,
+    1 write it)
+- address: 0x20024d68
+  name: ancs_byte_20024d68
+  kind: global
+  class: global
+  module: ANCS
+  size: 1
+  evidence: every function that loads or stores it logs under [ANCS] (1 read it,
+    0 write it)
+- address: 0x20024d6a
+  name: ancs_word_20024d6a
+  kind: global
+  class: global
+  module: ANCS
+  size: 4
+  evidence: every function that loads or stores it logs under [ANCS] (1 read it,
+    1 write it)
+- address: 0x20024d6e
+  name: sync_half_20024d6e
+  kind: global
+  class: global
+  module: SYNC
+  size: 2
+  evidence: every function that loads or stores it logs under [SYNC] (2 read it,
+    2 write it)
+- address: 0x20024d72
+  name: wuapp_struct_20024d72
+  kind: global
+  class: global
+  module: WUAPP
+  size: 20
+  evidence: every function that loads or stores it logs under [WUAPP] (0 read it,
+    1 write it)
+- address: 0x20024d76
+  name: wuapp_word_20024d76
+  kind: global
+  class: global
+  module: WUAPP
+  size: 4
+  evidence: every function that loads or stores it logs under [WUAPP] (0 read it,
+    1 write it)
+- address: 0x20024d7a
+  name: wuapp_half_20024d7a
+  kind: global
+  class: global
+  module: WUAPP
+  size: 2
+  evidence: every function that loads or stores it logs under [WUAPP] (1 read it,
+    1 write it)
+- address: 0x20024d7c
+  name: wuapp_half_20024d7c
+  kind: global
+  class: global
+  module: WUAPP
+  size: 2
+  evidence: every function that loads or stores it logs under [WUAPP] (2 read it,
+    1 write it)
+- address: 0x20024d80
+  name: wuapp_half_20024d80
+  kind: global
+  class: global
+  module: WUAPP
+  size: 2
+  evidence: every function that loads or stores it logs under [WUAPP] (1 read it,
+    0 write it)
+- address: 0x20024d82
+  name: wuapp_byte_20024d82
+  kind: global
+  class: global
+  module: WUAPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WUAPP] (1 read it,
+    0 write it)
+- address: 0x20024d86
+  name: dblib_ram_item_0x13a_half_20024d86
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 2
+  evidence: only debug_dump_ram_items row 2 (id 0x13a, 16 bytes) reaches it, through
+    its fetch 0x44eb0 and count 0x44b48
+- address: 0x20024d88
+  name: dblib_half_20024d88
+  kind: global
+  class: global
+  module: DBLIB
+  size: 2
+  evidence: every function that loads or stores it logs under [DBLIB] (0 read it,
+    1 write it)
+- address: 0x20024d8a
+  name: dblib_half_20024d8a
+  kind: global
+  class: global
+  module: DBLIB
+  size: 2
+  evidence: every function that loads or stores it logs under [DBLIB] (0 read it,
+    1 write it)
+- address: 0x20024d8c
+  name: dblib_half_20024d8c
+  kind: global
+  class: global
+  module: DBLIB
+  size: 2
+  evidence: every function that loads or stores it logs under [DBLIB] (1 read it,
+    1 write it)
+- address: 0x20024d8e
+  name: dblib_byte_20024d8e
+  kind: global
+  class: global
+  module: DBLIB
+  size: 1
+  evidence: every function that loads or stores it logs under [DBLIB] (1 read it,
+    1 write it)
+- address: 0x20024d90
+  name: initdblib_half_20024d90
+  kind: global
+  class: global
+  module: INITDBLIB
+  size: 2
+  evidence: every function that loads or stores it logs under [INITDBLIB] (4 read
+    it, 5 write it)
+- address: 0x20024dac
+  name: sn19020x6_half_20024dac
+  kind: global
+  class: global
+  module: SN19020X6
+  size: 2
+  evidence: every function that loads or stores it logs under [SN19020X6] (5 read
+    it, 4 write it)
+- address: 0x20024dae
+  name: sport_half_20024dae
+  kind: global
+  class: global
+  module: SPORT
+  size: 2
+  evidence: 'stored in the same straight line as wlog(''[SPORT] SCORE: %d\n'') at
+    0x5c752'
+- address: 0x20024db0
+  name: steps_struct_20024db0
+  kind: global
+  class: global
+  module: STEPS
+  size: 6
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    0 write it)
+- address: 0x20024db2
+  name: steps_half_20024db2
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    0 write it)
+- address: 0x20024db4
+  name: steps_half_20024db4
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    0 write it)
+- address: 0x20024db8
+  name: ppg_afib_half_20024db8
+  kind: global
+  class: global
+  module: PPG_AFIB
+  size: 2
+  evidence: every function that loads or stores it logs under [PPG_AFIB] (1 read
+    it, 1 write it)
+- address: 0x20024dba
+  name: symptoms_tracking_struct_20024dba
+  kind: global
+  class: global
+  module: SYMPTOMS_TRACKING
+  size: 5
+  evidence: every function that loads or stores it logs under [SYMPTOMS_TRACKING]
+    (1 read it, 1 write it)
+- address: 0x20024dbc
+  name: symptoms_tracking_half_20024dbc
+  kind: global
+  class: global
+  module: SYMPTOMS_TRACKING
+  size: 2
+  evidence: every function that loads or stores it logs under [SYMPTOMS_TRACKING]
+    (1 read it, 1 write it)
+- address: 0x20024dbe
+  name: symptoms_tracking_byte_20024dbe
+  kind: global
+  class: global
+  module: SYMPTOMS_TRACKING
+  size: 1
+  evidence: every function that loads or stores it logs under [SYMPTOMS_TRACKING]
+    (1 read it, 1 write it)
+- address: 0x20024dd4
+  name: wftl_half_20024dd4
+  kind: global
+  class: global
+  module: WFTL
+  size: 2
+  evidence: every function that loads or stores it logs under [WFTL] (1 read it,
+    2 write it)
+- address: 0x20024dd5
+  name: wftl_byte_20024dd5
+  kind: global
+  class: global
+  module: WFTL
+  size: 1
+  evidence: every function that loads or stores it logs under [WFTL] (2 read it,
+    0 write it)
+- address: 0x20024dd6
+  name: wftl_flag_20024dd6
+  kind: global
+  class: global
+  module: WFTL
+  size: 1
+  evidence: every function that loads or stores it logs under [WFTL] (0 read it,
+    1 write it)
+- address: 0x20024eaa
+  name: light_sensor_half_20024eaa
+  kind: global
+  class: global
+  module: LIGHT_SENSOR
+  size: 2
+  evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (1
+    read it, 0 write it)
+- address: 0x20024eac
+  name: light_sensor_half_20024eac
+  kind: global
+  class: global
+  module: LIGHT_SENSOR
+  size: 2
+  evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (1
+    read it, 0 write it)
+- address: 0x20024f3d
+  name: auto_burst_flag_20024f3d
+  kind: global
+  class: global
+  module: AUTO_BURST
+  size: 1
+  evidence: every function that loads or stores it logs under [AUTO_BURST] (4 read
+    it, 2 write it)
+- address: 0x20024f3e
+  name: bat_byte_20024f3e
+  kind: global
+  class: global
+  module: BAT
+  size: 1
+  evidence: every function that loads or stores it logs under [BAT] (3 read it,
+    1 write it)
+- address: 0x20024f3f
+  name: battery_flag_20024f3f
+  kind: global
+  class: global
+  module: BATTERY
+  size: 1
+  evidence: every function that loads or stores it logs under [BATTERY] (1 read
+    it, 2 write it)
+- address: 0x2002506e
+  name: raw_data_mode_flag_2002506e
+  kind: global
+  class: global
+  module: RAW_DATA_MODE
+  size: 1
+  evidence: stored in the same straight line as wlog('[RAW_DATA_MODE] Set %s\n')
+    at 0x30bae, wlog('[RAW_DATA_MODE] Set %s\n') at 0x30c4e
+- address: 0x2002506f
+  name: raw_data_mode_flag_2002506f
+  kind: global
+  class: global
+  module: RAW_DATA_MODE
+  size: 1
+  evidence: every function that loads or stores it logs under [RAW_DATA_MODE] (2
+    read it, 2 write it)
+- address: 0x20025070
+  name: raw_data_mode_flag_20025070
+  kind: global
+  class: global
+  module: RAW_DATA_MODE
+  size: 1
+  evidence: stored in the same straight line as wlog('[RAW_DATA_MODE] Set %s\n')
+    at 0x30c4e
+- address: 0x20025072
+  name: raw_data_mode_struct_20025072
+  kind: global
+  class: global
+  module: RAW_DATA_MODE
+  size: 6
+  evidence: every function that loads or stores it logs under [RAW_DATA_MODE] (2
+    read it, 0 write it)
+- address: 0x20025073
+  name: raw_data_mode_byte_20025073
+  kind: global
+  class: global
+  module: RAW_DATA_MODE
+  size: 1
+  evidence: every function that loads or stores it logs under [RAW_DATA_MODE] (2
+    read it, 1 write it)
+- address: 0x200250ae
+  name: bt_byte_200250ae
+  kind: global
+  class: global
+  module: BT
+  size: 1
+  evidence: every function that loads or stores it logs under [BT] (0 read it, 1
+    write it)
+- address: 0x200250b0
+  name: bt_flag_200250b0
+  kind: global
+  class: global
+  module: BT
+  size: 1
+  evidence: every function that loads or stores it logs under [BT] (0 read it, 1
+    write it)
+- address: 0x200250b1
+  name: bt_byte_200250b1
+  kind: global
+  class: global
+  module: BT
+  size: 1
+  evidence: every function that loads or stores it logs under [BT] (1 read it, 2
+    write it)
+- address: 0x20025183
+  name: bluetooth_half_20025183
+  kind: global
+  class: global
+  module: BLUETOOTH
+  size: 2
+  evidence: every function that loads or stores it logs under [BLUETOOTH] (1 read
+    it, 0 write it)
+- address: 0x20025185
+  name: bluetooth_byte_20025185
+  kind: global
+  class: global
+  module: BLUETOOTH
+  size: 1
+  evidence: every function that loads or stores it logs under [BLUETOOTH] (2 read
+    it, 1 write it)
+- address: 0x20025186
+  name: bluetooth_byte_20025186
+  kind: global
+  class: global
+  module: BLUETOOTH
+  size: 1
+  evidence: every function that loads or stores it logs under [BLUETOOTH] (0 read
+    it, 1 write it)
 - address: 0x2002527e
   name: oled_rx_buf
   kind: label
   class: prose
   evidence: RAM; 1-byte SPI response buffer for the OLED poll
+- address: 0x20025280
+  name: adxl367_flag_20025280
+  kind: global
+  class: global
+  module: ADXL367
+  size: 1
+  evidence: every function that loads or stores it logs under [ADXL367] (1 read
+    it, 1 write it)
+- address: 0x20025284
+  name: ms5837_flag_20025284
+  kind: global
+  class: global
+  module: MS5837
+  size: 1
+  evidence: every function that loads or stores it logs under [MS5837] (1 read it,
+    1 write it)
+- address: 0x20025286
+  name: wpp_lite_struct_20025286
+  kind: global
+  class: global
+  module: WPP_LITE
+  size: 7
+  evidence: every function that loads or stores it logs under [WPP_LITE] (2 read
+    it, 1 write it)
+- address: 0x2002528d
+  name: bat_flag_2002528d
+  kind: global
+  class: global
+  module: BAT
+  size: 1
+  evidence: every function that loads or stores it logs under [BAT] (2 read it,
+    1 write it)
+- address: 0x2002528e
+  name: dblib_setting_0x178
+  kind: global
+  class: global
+  module: CFS
+  size: 4
+  evidence: 'the cache word of dblib_setting_0x178: dblib id 0x178, persisted by
+    0x4414c, 0x441ac with dblib_set(0x178, &0x2002528e, 4)'
+- address: 0x20025290
+  name: screen_calibration_flag_20025290
+  kind: global
+  class: global
+  module: SCREEN_CALIBRATION
+  size: 1
+  evidence: every function that loads or stores it logs under [SCREEN_CALIBRATION]
+    (7 read it, 1 write it)
+- address: 0x200252d5
+  name: dbg_mask_flag_200252d5
+  kind: global
+  class: global
+  module: DBG_MASK
+  size: 1
+  evidence: every function that loads or stores it logs under [DBG_MASK] (4 read
+    it, 1 write it)
 - address: 0x200252d6
+  name: digital_crown_byte_200252d6
+  kind: global
+  class: global
+  module: DIGITAL_CROWN
+  size: 1
+  evidence: every function that loads or stores it logs under [DIGITAL_CROWN] (2
+    read it, 2 write it)
+- address: 0x200252d7
   name: ecg_queue_storage
   kind: global
   class: kernel
@@ -18035,6 +24258,44 @@ symbols:
   evidence: the static object handed to xQueueGenericCreateStatic at 0x4a726 with
     queue type the block does not establish; the name's module is the module of
     the functions that read the handle word
+- address: 0x200254cb
+  name: wpp_flag_200254cb
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (1 read it,
+    2 write it)
+- address: 0x200254cc
+  name: feature_tags_flag_200254cc
+  kind: global
+  class: global
+  module: FEATURE_TAGS
+  size: 1
+  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (1
+    read it, 1 write it)
+- address: 0x200254cd
+  name: fmode_get_byte_200254cd
+  kind: global
+  class: global
+  module: FMODE_GET
+  size: 1
+  evidence: stored in the same straight line as wlog('[fmode_get] mode=0x%x\n')
+    at 0x4c92a
+- address: 0x200254ce
+  name: adxl367_mode
+  kind: global
+  class: global
+  size: 1
+  evidence: 'the cache word of adxl367_mode: dblib id 0x104, persisted by 0x4ce0c
+    with dblib_set(0x104, &0x200254ce, 1)'
+- address: 0x200254cf
+  name: dblib_setting_0xe2
+  kind: global
+  class: global
+  size: 1
+  evidence: 'the cache word of dblib_setting_0xe2: dblib id 0xe2, persisted by 0x4eac0
+    with dblib_set(0xe2, &0x200254cf, 1)'
 - address: 0x200254d0
   name: wlog_queue_storage
   kind: global
@@ -18043,6 +24304,46 @@ symbols:
   evidence: the static object handed to xQueueGenericCreateStatic at 0x50efa with
     queue type the block does not establish; the name's module is the name of the
     creating function, wlog_init
+- address: 0x20026bcc
+  name: max8617x_byte_20026bcc
+  kind: global
+  class: global
+  module: MAX8617X
+  size: 1
+  evidence: every function that loads or stores it logs under [MAX8617X] (1 read
+    it, 2 write it)
+- address: 0x20026bce
+  name: wpp_lite_byte_20026bce
+  kind: global
+  class: global
+  module: WPP_LITE
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP_LITE] (1 read
+    it, 2 write it)
+- address: 0x20026bcf
+  name: dblib_ram_item_0x13c_byte_20026bcf
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 1
+  evidence: only debug_dump_ram_items row 4 (id 0x13c, 4 bytes) reaches it, through
+    its fetch 0x55800 and count 0x5585c
+- address: 0x20026bd0
+  name: dblib_ram_item_0x13c_byte_20026bd0
+  kind: global
+  class: global
+  module: DEBUG_DUMP
+  size: 1
+  evidence: only debug_dump_ram_items row 4 (id 0x13c, 4 bytes) reaches it, through
+    its fetch 0x55800 and count 0x5585c
+- address: 0x20026bd1
+  name: sport_byte_20026bd1
+  kind: global
+  class: global
+  module: SPORT
+  size: 1
+  evidence: every function that loads or stores it logs under [SPORT] (1 read it,
+    2 write it)
 - address: 0x20026bd2
   name: step_motor_lock_depth
   kind: global
@@ -18050,6 +24351,174 @@ symbols:
   module: hands
   evidence: the step_motor_lock nesting counter; the position save waits for it
     to reach zero
+- address: 0x20026bd3
+  name: steps_byte_20026bd3
+  kind: global
+  class: global
+  module: STEPS
+  size: 1
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    0 write it)
+- address: 0x20026bd5
+  name: steps_flag_20026bd5
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x20026bd6
+  name: steps_byte_20026bd6
+  kind: global
+  class: global
+  module: STEPS
+  size: 1
+  evidence: every function that loads or stores it logs under [STEPS] (0 read it,
+    1 write it)
+- address: 0x20026bd7
+  name: steps_half_20026bd7
+  kind: global
+  class: global
+  module: STEPS
+  size: 2
+  evidence: every function that loads or stores it logs under [STEPS] (1 read it,
+    1 write it)
+- address: 0x20026bd8
+  name: steps_byte_20026bd8
+  kind: global
+  class: global
+  module: STEPS
+  size: 1
+  evidence: every function that loads or stores it logs under [STEPS] (0 read it,
+    1 write it)
+- address: 0x20026bd9
+  name: time_flag_20026bd9
+  kind: global
+  class: global
+  module: TIME
+  size: 1
+  evidence: 'stored in the same straight line as wlog(''[TIME] load time delta:
+    %u\n'') at 0x5e00c, wlog(''[TIME] save time delta: %u\n'') at 0x5e070'
+- address: 0x20026bdb
+  name: cons_log_byte_20026bdb
+  kind: global
+  class: global
+  module: CONS_LOG
+  size: 1
+  evidence: every function that loads or stores it logs under [CONS_LOG] (1 read
+    it, 1 write it)
+- address: 0x20026bdc
+  name: cons_log_byte_20026bdc
+  kind: global
+  class: global
+  module: CONS_LOG
+  size: 1
+  evidence: every function that loads or stores it logs under [CONS_LOG] (1 read
+    it, 1 write it)
+- address: 0x20026bdd
+  name: cons_log_byte_20026bdd
+  kind: global
+  class: global
+  module: CONS_LOG
+  size: 1
+  evidence: every function that loads or stores it logs under [CONS_LOG] (1 read
+    it, 1 write it)
+- address: 0x20026bde
+  name: cons_log_byte_20026bde
+  kind: global
+  class: global
+  module: CONS_LOG
+  size: 1
+  evidence: every function that loads or stores it logs under [CONS_LOG] (1 read
+    it, 1 write it)
+- address: 0x20026bdf
+  name: cons_log_byte_20026bdf
+  kind: global
+  class: global
+  module: CONS_LOG
+  size: 1
+  evidence: every function that loads or stores it logs under [CONS_LOG] (1 read
+    it, 1 write it)
+- address: 0x20026be0
+  name: cons_log_byte_20026be0
+  kind: global
+  class: global
+  module: CONS_LOG
+  size: 1
+  evidence: every function that loads or stores it logs under [CONS_LOG] (1 read
+    it, 1 write it)
+- address: 0x20026be4
+  name: unit_byte_20026be4
+  kind: global
+  class: global
+  module: UNIT
+  size: 1
+  evidence: every function that loads or stores it logs under [UNIT] (4 read it,
+    2 write it)
+- address: 0x20026be5
+  name: unit_byte_20026be5
+  kind: global
+  class: global
+  module: UNIT
+  size: 1
+  evidence: every function that loads or stores it logs under [UNIT] (4 read it,
+    2 write it)
+- address: 0x20026be6
+  name: unit_byte_20026be6
+  kind: global
+  class: global
+  module: UNIT
+  size: 1
+  evidence: every function that loads or stores it logs under [UNIT] (5 read it,
+    2 write it)
+- address: 0x20026be7
+  name: unit_byte_20026be7
+  kind: global
+  class: global
+  module: UNIT
+  size: 1
+  evidence: every function that loads or stores it logs under [UNIT] (4 read it,
+    2 write it)
+- address: 0x20026be8
+  name: hr_measure_flag_20026be8
+  kind: global
+  class: global
+  module: HR_MEASURE
+  size: 1
+  evidence: every function that loads or stores it logs under [HR_MEASURE] (1 read
+    it, 1 write it)
+- address: 0x20026bfc
+  name: sensors_sync_byte_20026bfc
+  kind: global
+  class: global
+  module: SENSORS_SYNC
+  size: 1
+  evidence: every function that loads or stores it logs under [SENSORS_SYNC] (1
+    read it, 1 write it)
+- address: 0x20026c12
+  name: wpp_flag_20026c12
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP] (2 read it,
+    1 write it)
+- address: 0x20026c13
+  name: workout_screen_always_on
+  kind: global
+  class: global
+  module: WPP
+  size: 1
+  evidence: 'the cache word of workout_screen_always_on: dblib id 0x148, persisted
+    by 0x6ae38 with dblib_set(0x148, &0x20026c13, 1)'
+- address: 0x20026c15
+  name: wpp_lite_byte_20026c15
+  kind: global
+  class: global
+  module: WPP_LITE
+  size: 1
+  evidence: every function that loads or stores it logs under [WPP_LITE] (3 read
+    it, 2 write it)
 - address: 0x200270bc
   name: wui_queue_storage
   kind: global
@@ -18058,3 +24527,75 @@ symbols:
   evidence: the static object handed to xQueueGenericCreateStatic at 0x6f0d2 with
     queue type the block does not establish; the name's module is the only task
     the creating function creates is wui_task
+- address: 0x20027192
+  name: light_sensor_byte_20027192
+  kind: global
+  class: global
+  module: LIGHT_SENSOR
+  size: 1
+  evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (2
+    read it, 1 write it)
+- address: 0x20027193
+  name: light_sensor_byte_20027193
+  kind: global
+  class: global
+  module: LIGHT_SENSOR
+  size: 1
+  evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (2
+    read it, 3 write it)
+- address: 0x20027194
+  name: light_sensor_flag_20027194
+  kind: global
+  class: global
+  module: LIGHT_SENSOR
+  size: 1
+  evidence: every function that loads or stores it logs under [LIGHT_SENSOR] (3
+    read it, 1 write it)
+- address: 0x20027195
+  name: factory_byte_20027195
+  kind: global
+  class: global
+  module: FACTORY
+  size: 1
+  evidence: every function that loads or stores it logs under [FACTORY] (2 read
+    it, 2 write it)
+- address: 0x20027198
+  name: wui_struct_20027198
+  kind: global
+  class: global
+  module: WUI
+  size: 6
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x200271d6
+  name: tracker_inactivity_byte_200271d6
+  kind: global
+  class: global
+  module: TRACKER_INACTIVITY
+  size: 1
+  evidence: stored in the same straight line as wlog('[TRACKER INACTIVITY] Current
+    time %d:%d => Notify %s message (index %d)\n') at 0x88c68
+- address: 0x2002723b
+  name: screen_calibration_byte_2002723b
+  kind: global
+  class: global
+  module: SCREEN_CALIBRATION
+  size: 1
+  evidence: every function that loads or stores it logs under [SCREEN_CALIBRATION]
+    (3 read it, 4 write it)
+- address: 0x20027241
+  name: wui_byte_20027241
+  kind: global
+  class: global
+  module: WUI
+  size: 1
+  evidence: every function that loads or stores it logs under [WUI] (1 read it,
+    1 write it)
+- address: 0x2002fad4
+  name: stackdump_table_2002fad4
+  kind: global
+  class: global
+  module: STACKDUMP
+  size: 403
+  evidence: every function that loads or stores it logs under [STACKDUMP] (1 read
+    it, 0 write it)
