@@ -25,12 +25,19 @@ renode-sim/calltrace.py --module SENSORS_SYNC --count emits: a 700 s run with
 count is evidence about rate -- once per sample, once per window -- and never
 about role, so a `rate` line says the ratio and stops.
 
-Neither run started MOTION_DETECTION: its entry point is hooked in both and
-counted zero, and the motion run's transitions land after the burst
-measurement has ended, when the algorithm manager has stopped every algorithm
-and only the ring push and drain are still running. So the three motion names
-below rest on their bodies alone and carry no rate, and what would settle them
-is a run that starts that algorithm rather than a longer one.
+Neither of those two runs started MOTION_DETECTION: its entry point was hooked
+in both and counted zero, because the motion run's transitions land after the
+burst measurement has ended, when the algorithm manager has stopped every
+algorithm. The run that starts it is abi/algos.py's `schedule` -- twenty
+minutes of watch time, worn, with the wrist shaken and nobody talking to the
+watch, which is long enough for the ten-minute passive burst to fire by itself.
+Its counts are in the three motion rows below, and they say two different
+things: the per-sample half runs from the first minute at the rate of every
+other algorithm that consumes accelerometer samples, while the window half runs
+nineteen times and only at the end, so the window half is the algorithm and the
+per-sample half is the shared chain it reads from. The ratio the body claims --
+one window per 25 samples -- is not what the counts show, and it cannot be, so
+it stays a reading of the body and not a measurement.
 """
 
 import json
@@ -247,6 +254,9 @@ ROWS = [
 
     # --- motion detection, whose two rates the motion run separates ---------
     dict(address=0x9EC72, name="ewma_fixed_step", kind="function",
+         rate="82596 calls in the 1200 s schedule run against 27532 of"
+              " motion_energy_step, exactly three per sample, which is one"
+              " filter per accelerometer axis",
          evidence="the fixed-point sibling of ewma_step, which sits directly"
                   " after it at 0x9ecae: the 64-bit coefficient in r2:r3 is"
                   " negated into its own complement at 0x9ec74..0x9ec7a, and"
@@ -256,6 +266,10 @@ ROWS = [
                   " sample"),
     dict(address=0xA073A, name="motion_energy_step", kind="function",
          calls=[0x9EC72, 0x9EDC8],
+         rate="27532 calls in the 1200 s schedule run, first entered in its"
+              " first minute and long before MOTION_DETECTION starts: it runs"
+              " for whatever consumes accelerometer samples and not for this"
+              " algorithm alone",
          evidence="the per-sample half of motion detection. Each axis is"
                   " smoothed by its own ewma_fixed_step at +4, +8 and +0xc"
                   " (0xa0762, 0xa0770, 0xa077e), and the distance between the"
@@ -267,6 +281,10 @@ ROWS = [
                   " filters with the first sample instead of smoothing it"),
     dict(address=0xA071C, name="motion_window_decide", kind="function",
          calls=[0x9EDE8],
+         rate="19 calls in the 1200 s schedule run and none in any of the"
+              " other eight, all of them after the passive burst had started"
+              " -- the first at hook 170692 against motion_energy_step's 7032."
+              " Nineteen windows is the whole of what MOTION_DETECTION ran",
          evidence="the window half, and the only writer of the moving flag:"
                   " accum_i64_mean_reset drains the accumulator"
                   " motion_energy_step filled, the mean goes to +0x28 and +0x2c"
