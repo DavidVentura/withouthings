@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {accessor: 21, bleevt: 28, extlib: 0, helper: 728, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1788, modules: 184, prototypes_derived: 25, shared: 13, shell: 156, shell_table_rows: 79, slot: 134, string: 20, svc: 79, syscall: 9, vector: 0, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {accessor: 21, bleevt: 28, bymodule: 472, bymodule_contested: 53, extlib: 0, helper: 728, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1788, modules: 184, prototypes_derived: 28, role: 4, shared: 13, shell: 156, shell_table_rows: 79, slot: 134, string: 20, svc: 79, syscall: 9, vector: 0, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114, wrapper: 44}
   known_addresses: {agree: 194, disagree: 0}
 
 functions:
@@ -27,6 +27,11 @@ functions:
     class: logline
     evidence: "the only line 0x27f60 logs, wlog('[UI][GAUGE] Error, angle %f is not valid as to is lower than %f') at 0x27f9a"
     module: UI
+  - name: sn19020x6__by_callees_1
+    address: 0x28cb8
+    class: bymodule
+    evidence: "0x28cb8 reaches only sn19020x6_half_20024dac"
+    module: SN19020X6
   - name: hr_measure_on_algo_result__2__1
     address: 0x299c0
     class: helper
@@ -155,11 +160,31 @@ functions:
     evidence: "newlib-nano-ll libc.a, 2884 bytes of the built body reproduced at 0x2d668 with the 440 bytes a relocation owns masked"
     header: arm-none-eabi/include/stdlib.h
     proto: "char * _dtoa_r (struct _reent *, double, int, int, int *, int*, char**);"
+  - name: boot__by_callees_1
+    address: 0x2e982
+    class: bymodule
+    evidence: "0x2e982 reaches only rambkp_block"
+    module: BOOT
   - name: vTaskStartScheduler__1
     address: 0x2eca8
     class: helper
     evidence: "only 0x7300c (vTaskStartScheduler) calls 0x2eca8; 14 bytes"
     module: M
+  - name: algo_manager__by_callees_1
+    address: 0x2ed64
+    class: bymodule
+    evidence: "0x2ed64 reaches only algo_manager_word_20006e70, algo_manager_word_20006e74"
+    module: ALGO_MANAGER
+  - name: algo_manager__by_callees_2
+    address: 0x2ee48
+    class: bymodule
+    evidence: "0x2ee48 every caller is a body this rule placed in ALGO_MANAGER: 0x4ec0c"
+    module: ALGO_MANAGER
+  - name: algo_manager__by_callees_3
+    address: 0x2ef4c
+    class: bymodule
+    evidence: "0x2ef4c reaches only algo_manager_ptr_20017148"
+    module: ALGO_MANAGER
   - name: crown_ctx_get
     address: 0x2f040
     class: accessor
@@ -179,6 +204,16 @@ functions:
     class: logline
     evidence: "the only line 0x2f24c logs, wlog('[TIMEOUT] activity timeout triggered') at 0x2f254"
     module: TIMEOUT
+  - name: adxl367__by_callees_1
+    address: 0x2f2bc
+    class: bymodule
+    evidence: "0x2f2bc every caller is a body this rule placed in ADXL367: 0x3beac"
+    module: ADXL367
+  - name: ecg__by_callees_1
+    address: 0x2f3f8
+    class: bymodule
+    evidence: "0x2f3f8 reaches only ecg_word_2001714c"
+    module: ECG
   - name: ecg_err_no_sample_queue__1
     address: 0x2f408
     class: helper
@@ -208,6 +243,16 @@ functions:
     class: logline
     evidence: "the only line 0x2f7b0 logs, wlog('[ALTI] Failed to take pressure measure') at 0x2f7dc"
     module: ALTI
+  - name: auto_burst__by_callees_1
+    address: 0x2f930
+    class: bymodule
+    evidence: "0x2f930 reaches only auto_burst_flag_20024f3d"
+    module: AUTO_BURST
+  - name: auto_burst__by_callees_2
+    address: 0x2f96c
+    class: bymodule
+    evidence: "0x2f96c reaches only auto_burst_flag_20024f3d"
+    module: AUTO_BURST
   - name: periodic_task_sweep__1
     address: 0x2f9ac
     class: helper
@@ -222,6 +267,21 @@ functions:
     class: helper
     evidence: "only 0x2fd88 (bat_battery_management_start__1) calls 0x2fa40; 32 bytes"
     module: BAT
+  - name: bat__by_callees_1
+    address: 0x2fa68
+    class: bymodule
+    evidence: "0x2fa68 reaches only bat_half_20024d20"
+    module: BAT
+  - name: bat__by_callees_2
+    address: 0x2fa7c
+    class: bymodule
+    evidence: "0x2fa7c reaches only bat_half_20024d1c, bat_half_20024d1e, bat_half_20024d20"
+    module: BAT
+  - name: bat__by_callees_3
+    address: 0x2fac4
+    class: bymodule
+    evidence: "0x2fac4 reaches only bat_byte_20007949"
+    module: BAT
   - name: bat_charge_enable
     address: 0x2fad8
     class: logline
@@ -231,6 +291,11 @@ functions:
     address: 0x2faec
     class: logline
     evidence: "the only line 0x2faec logs, wlog('[BAT] Charge disable') at 0x2faf0"
+    module: BAT
+  - name: bat__by_callees_4
+    address: 0x2fb00
+    class: bymodule
+    evidence: "0x2fb00 reaches only bat_half_20024d1c, bat_half_20024d1e, bat_half_20024d20"
     module: BAT
   - name: charger_debounce_timer_irq_handler
     address: 0x2fba4
@@ -248,11 +313,21 @@ functions:
     class: logline
     evidence: "the only line 0x2fc28 logs, wlog('[BAT] ==== battery_management_start ====') at 0x2fc2e"
     module: BAT
+  - name: battery__by_callees_1
+    address: 0x2fce0
+    class: bymodule
+    evidence: "0x2fce0 reaches only battery_flag_20024f3f"
+    module: BATTERY
   - name: battery_adc_value_gain_adaptation__1
     address: 0x2fd1c
     class: helper
     evidence: "only 0x400b4 (battery_adc_value_gain_adaptation) calls 0x2fd1c; 16 bytes"
     module: BATTERY
+  - name: bat__by_callees_5
+    address: 0x2fd30
+    class: bymodule
+    evidence: "0x2fd30 reaches only bat_byte_2000794a, bat_byte_20024f3e"
+    module: BAT
   - name: bat_battery_management_start__1
     address: 0x2fd88
     class: helper
@@ -268,6 +343,11 @@ functions:
     class: helper
     evidence: "only 0x2fbdc (main_task__2) calls 0x2fed0; 10 bytes"
     module: INIT
+  - name: dbg_mask__by_callees_1
+    address: 0x2fee0
+    class: bymodule
+    evidence: "0x2fee0 every caller is a body this rule placed in DBG_MASK: 0x48fb4"
+    module: DBG_MASK
   - name: ppg_afib_store_flag_20017158_get
     address: 0x3023c
     class: accessor
@@ -290,6 +370,16 @@ functions:
     command: 2483
     evidence: "wpp_cmd_table row 0x274c0: key 2483, label 'FACTORY_TEST', CMD_FACTORY_TEST in wpp/src/commands.rs"
     module: WPP
+  - name: wpp__by_callees_1
+    address: 0x3033c
+    class: bymodule
+    evidence: "0x3033c reaches only wpp_struct_20006e78"
+    module: WPP
+  - name: wpp__by_callees_2
+    address: 0x30344
+    class: bymodule
+    evidence: "0x30344 reaches only wpp_struct_20006e78"
+    module: WPP
   - name: light_sensor_light_value__1
     address: 0x30620
     class: helper
@@ -309,6 +399,21 @@ functions:
     address: 0x307b8
     class: logline
     evidence: "the only line 0x307b8 logs, wlog('go_to_system_off') at 0x307c6"
+  - name: raw_data_mode__by_callees_1
+    address: 0x30af8
+    class: bymodule
+    evidence: "0x30af8 reaches only raw_data_mode_flag_2002506e, raw_data_mode_struct_20025072"
+    module: RAW_DATA_MODE
+  - name: raw_data_mode__by_callees_2
+    address: 0x30c08
+    class: bymodule
+    evidence: "0x30c08 reaches only raw_data_mode_flag_2002506e, raw_data_mode_struct_20025072"
+    module: RAW_DATA_MODE
+  - name: raw_data_mode__by_callees_3
+    address: 0x30d10
+    class: bymodule
+    evidence: "0x30d10 reaches only raw_data_mode_flag_2002506e"
+    module: RAW_DATA_MODE
   - name: raw_data_mode_flag_2002506e_get
     address: 0x30d2c
     class: accessor
@@ -318,6 +423,16 @@ functions:
     class: helper
     evidence: "only 0x6da00 (WPP_CMD_DEBUG_DUMP__3) calls 0x30d38; 6 bytes"
     module: DEBUG_DUMP
+  - name: debug_dump__by_callees_1
+    address: 0x30d44
+    class: bymodule
+    evidence: "0x30d44 every caller is a body this rule placed in DEBUG_DUMP: 0x6d744"
+    module: DEBUG_DUMP
+  - name: raw_data_mode__by_callees_4
+    address: 0x30d54
+    class: bymodule
+    evidence: "0x30d54 reaches only raw_data_mode_flag_2002506e"
+    module: RAW_DATA_MODE
   - name: catcp_unrecognized_channel_could_not_reconstruct
     address: 0x30e0c
     class: logline
@@ -333,6 +448,26 @@ functions:
     class: logline
     evidence: "the only line 0x30ea0 logs, wlog('[RAW_DATA_SAVE] Out of memory, drop %u samples') at 0x30f30"
     module: RAW_DATA_SAVE
+  - name: boot__by_callees_2
+    address: 0x3110c
+    class: bymodule
+    evidence: "0x3110c reaches only rambkp_block"
+    module: BOOT
+  - name: boot__by_callees_3
+    address: 0x3111c
+    class: bymodule
+    evidence: "0x3111c reaches only rambkp_block"
+    module: BOOT
+  - name: boot__by_callees_4
+    address: 0x3119c
+    class: bymodule
+    evidence: "0x3119c reaches only rambkp_block"
+    module: BOOT
+  - name: boot__by_callees_5
+    address: 0x313f4
+    class: bymodule
+    evidence: "0x313f4 reaches only rambkp_block"
+    module: BOOT
   - name: tracker_algo_exception_detected_0x
     address: 0x31410
     class: logline
@@ -390,6 +525,11 @@ functions:
     class: helper
     evidence: "only 0x8233c (on_enter_stopwatch) calls 0x31854; 8 bytes"
     module: SCREEN_STOPWATCH
+  - name: stopwatch__by_callees_1
+    address: 0x31860
+    class: bymodule
+    evidence: "0x31860 reaches only stopwatch_table_20011518"
+    module: STOPWATCH
   - name: on_exit_stopwatch__1
     address: 0x3186c
     class: helper
@@ -398,6 +538,11 @@ functions:
     address: 0x31884
     class: string
     evidence: "wlog('[STOPWATCH] %s', 'stopwatch_helper_reset') at 0x3188a"
+    module: STOPWATCH
+  - name: stopwatch__by_callees_2
+    address: 0x318b4
+    class: bymodule
+    evidence: "0x318b4 reaches only stopwatch_table_20011518"
     module: STOPWATCH
   - name: stopwatch_helper_start
     address: 0x318f0
@@ -414,19 +559,49 @@ functions:
     class: string
     evidence: "wlog('[STOPWATCH] %s', 'stopwatch_helper_reload') at 0x31992"
     module: STOPWATCH
+  - name: timer__by_callees_1
+    address: 0x319c8
+    class: bymodule
+    evidence: "0x319c8 reaches only timer_table_20017598"
+    module: TIMER
+  - name: boot__by_callees_6
+    address: 0x31a20
+    class: bymodule
+    evidence: "0x31a20 reaches only rambkp_block"
+    module: BOOT
+  - name: boot__by_callees_7
+    address: 0x31a3c
+    class: bymodule
+    evidence: "0x31a3c reaches only rambkp_block"
+    module: BOOT
   - name: timer_table_20017598_get
     address: 0x31a64
     class: accessor
     evidence: "the body is one ldr through timer_table_20017598 (pool word 0x31a6c = 0x20017598) and a return"
+  - name: timer__by_callees_2
+    address: 0x31a7c
+    class: bymodule
+    evidence: "0x31a7c reaches only timer_table_20017598"
+    module: TIMER
   - name: timer_update_new_timer_last_duration
     address: 0x31a88
     class: logline
     evidence: "the only line 0x31a88 logs, wlog('[TIMER] Update new timer last duration value: %ds') at 0x31aa2"
     module: TIMER
+  - name: timer__by_callees_3
+    address: 0x31af8
+    class: bymodule
+    evidence: "0x31af8 reaches only timer_table_20017598"
+    module: TIMER
   - name: refresh_timer__1
     address: 0x31b04
     class: helper
     evidence: "only 0x81c54 (refresh_timer) calls 0x31b04; 6 bytes"
+    module: TIMER
+  - name: timer__by_callees_4
+    address: 0x31b10
+    class: bymodule
+    evidence: "0x31b10 reaches only timer_table_20017598"
     module: TIMER
   - name: on_event_timer__1
     address: 0x31b38
@@ -447,6 +622,31 @@ functions:
     address: 0x31cfc
     class: shell
     evidence: "shell_cmd_table row 0x27454: command 'trig', --help slot (+8)"
+  - name: max8617x__by_callees_1
+    address: 0x31eb4
+    class: bymodule
+    evidence: "0x31eb4 reaches only max8617x_struct_200076e8"
+    module: MAX8617X
+  - name: max8617x__by_callees_2
+    address: 0x31ed0
+    class: bymodule
+    evidence: "0x31ed0 reaches only max8617x_struct_200076e8"
+    module: MAX8617X
+  - name: max8617x__by_callees_3
+    address: 0x31eec
+    class: bymodule
+    evidence: "0x31eec reaches only max8617x_struct_200076e8"
+    module: MAX8617X
+  - name: max8617x__by_callees_4
+    address: 0x31f10
+    class: bymodule
+    evidence: "0x31f10 reaches only max8617x_struct_200076e8"
+    module: MAX8617X
+  - name: max8617x__by_callees_5
+    address: 0x31f34
+    class: bymodule
+    evidence: "0x31f34 reaches only max8617x_struct_200076e8"
+    module: MAX8617X
   - name: trig_start_clock_in_mode
     address: 0x31f44
     class: logline
@@ -488,6 +688,11 @@ functions:
     address: 0x3256c
     class: helper
     evidence: "only 0x82c4c (refresh_alarm) calls 0x3256c; 92 bytes"
+  - name: wui__by_callees_1
+    address: 0x325d8
+    class: bymodule
+    evidence: "0x325d8 reaches only font_table"
+    module: WUI
   - name: shell_cmd_hwa10__2
     address: 0x32960
     class: helper
@@ -498,6 +703,16 @@ functions:
     class: helper
     evidence: "only 0x6a28c (wftl_post_update_cleanup) calls 0x32d38; 82 bytes"
     module: WFTL_UP
+  - name: wui__by_callees_2
+    address: 0x32df8
+    class: bymodule
+    evidence: "0x32df8 reaches only rre_asset_table"
+    module: WUI
+  - name: button_task_create
+    address: 0x33300
+    class: role
+    evidence: "0x33300 hands xTaskCreateStatic the entry button_task and the name 'BUTTON'"
+    module: M
   - name: WPP_CMD_WAM_VASISTAS_GET__2__1
     address: 0x334bc
     class: helper
@@ -524,10 +739,35 @@ functions:
     class: wppcmd
     command: 2371
     evidence: "wpp_cmd_table row 0x274d8: key 2371, label 'WPP_CMD_GET_SPORT_MODE', CMD_GET_SPORT_MODE in wpp/src/commands.rs"
+  - name: boot__by_callees_8
+    address: 0x33f0c
+    class: bymodule
+    evidence: "0x33f0c reaches only rambkp_block"
+    module: BOOT
+  - name: boot__by_callees_9
+    address: 0x33f28
+    class: bymodule
+    evidence: "0x33f28 reaches only rambkp_block"
+    module: BOOT
   - name: chronometer_stop
     address: 0x33f34
     class: logline
     evidence: "the only line 0x33f34 logs, wlog('chronometer_stop') at 0x33f3c"
+  - name: boot__by_callees_10
+    address: 0x33f64
+    class: bymodule
+    evidence: "0x33f64 reaches only rambkp_block"
+    module: BOOT
+  - name: boot__by_callees_11
+    address: 0x33f78
+    class: bymodule
+    evidence: "0x33f78 every caller is a body this rule placed in BOOT: 0x33fc8"
+    module: BOOT
+  - name: boot__by_callees_12
+    address: 0x33fc8
+    class: bymodule
+    evidence: "0x33fc8 reaches only rambkp_block"
+    module: BOOT
   - name: chronometer_start
     address: 0x33fe4
     class: logline
@@ -595,6 +835,56 @@ functions:
     address: 0x34764
     class: shell
     evidence: "shell_cmd_table row 0x274a8: command 'xtal32m', run slot (+4)"
+  - name: rre_fonts__by_callees_1
+    address: 0x349ec
+    class: bymodule
+    evidence: "0x349ec reaches only rre_fonts_struct_20017c5c"
+    module: RRE_FONTS
+  - name: rre_fonts__by_callees_2
+    address: 0x34a10
+    class: bymodule
+    evidence: "0x34a10 reaches only rre_fonts_struct_200076f0"
+    module: RRE_FONTS
+  - name: rre_fonts__by_callees_3
+    address: 0x34a24
+    class: bymodule
+    evidence: "0x34a24 reaches only rre_fonts_struct_20017c5c"
+    module: RRE_FONTS
+  - name: rre_fonts__by_callees_4
+    address: 0x34a50
+    class: bymodule
+    evidence: "0x34a50 reaches only rre_fonts_struct_20017c5c"
+    module: RRE_FONTS
+  - name: rre_fonts__by_callees_5
+    address: 0x34a5c
+    class: bymodule
+    evidence: "0x34a5c reaches only rre_fonts_struct_20017c5c"
+    module: RRE_FONTS
+  - name: rre_fonts__by_callees_6
+    address: 0x34a68
+    class: bymodule
+    evidence: "0x34a68 reaches only rre_fonts_struct_20017c5c"
+    module: RRE_FONTS
+  - name: rre_fonts__by_callees_7
+    address: 0x34a74
+    class: bymodule
+    evidence: "0x34a74 reaches only rre_fonts_struct_20017c5c"
+    module: RRE_FONTS
+  - name: rre_fonts__by_callees_8
+    address: 0x367f4
+    class: bymodule
+    evidence: "0x367f4 reaches only rre_fonts_struct_20017c5c"
+    module: RRE_FONTS
+  - name: rre_fonts__by_callees_9
+    address: 0x36898
+    class: bymodule
+    evidence: "0x36898 reaches only rre_fonts_struct_200076f0"
+    module: RRE_FONTS
+  - name: rre_fonts__by_callees_10
+    address: 0x369cc
+    class: bymodule
+    evidence: "0x369cc every caller is a body this rule placed in RRE_FONTS: 0x367f4, 0x6842c"
+    module: RRE_FONTS
   - name: invalid_irq
     address: 0x36a04
     class: logline
@@ -660,6 +950,11 @@ functions:
     address: 0x36ff8
     class: accessor
     evidence: "the body is one str through wpps_word_20017c80 (pool word 0x37000 = 0x20017c80) and a return"
+  - name: wpp__by_callees_3
+    address: 0x37004
+    class: bymodule
+    evidence: "0x37004 reaches only wup_device"
+    module: WPP
   - name: on_enter_alarm_ringing__1
     address: 0x370f8
     class: helper
@@ -672,6 +967,11 @@ functions:
     address: 0x37140
     class: helper
     evidence: "only 0x89724 (on_event_hands_calibration_settings) calls 0x37140; 4 bytes"
+  - name: invalid_mfgid_wrap_1
+    address: 0x37148
+    class: wrapper
+    evidence: "0x37148 is 9 instructions with one call, to invalid_mfgid, and returns"
+    module: LRA
   - name: main_task__3
     address: 0x37248
     class: helper
@@ -723,6 +1023,10 @@ functions:
     evidence: "ble_evt_dispatch (0x37594) jump table at 0x375ac, case 1 (BLE_EVT_USER_MEM_REQUEST), block 0x37670 calls it"
     module: GAP
     also_named: [err_ble_user_mem_reply (logline)]
+  - name: dblib_get_first_wrap_1
+    address: 0x378f4
+    class: wrapper
+    evidence: "0x378f4 is 12 instructions with one call, to dblib_get_first, and returns"
   - name: ble_gap_evt_timeout_handler
     address: 0x3798c
     class: bleevt
@@ -769,10 +1073,20 @@ functions:
     class: bleevt
     evidence: "ble_evt_dispatch (0x37594) jump table at 0x375ac, case 20 (BLE_GAP_EVT_SEC_INFO_REQUEST), block 0x37690 calls it"
     module: GAP
+  - name: bt__by_callees_1
+    address: 0x37d30
+    class: bymodule
+    evidence: "0x37d30 reaches only bt_byte_200250ae"
+    module: BT
   - name: bluetooth_le_gattc_action_err__5__1
     address: 0x37d48
     class: helper
     evidence: "only 0x3864c (bluetooth_le_gattc_action_err__5) calls 0x37d48; 18 bytes"
+  - name: bt__by_callees_2
+    address: 0x37d60
+    class: bymodule
+    evidence: "0x37d60 reaches only bt_byte_200250ae"
+    module: BT
   - name: ble_task__5__1
     address: 0x37d78
     class: helper
@@ -808,6 +1122,11 @@ functions:
     class: helper
     evidence: "only 0x40a94 (ble_start_adv_mode_timeout) calls 0x3801c; 144 bytes"
     module: ADV
+  - name: adv__by_callees_1
+    address: 0x380d0
+    class: bymodule
+    evidence: "0x380d0 reaches only adv_byte_2000794d"
+    module: ADV
   - name: ble_gattc_evt_write_rsp_handler__1
     address: 0x38118
     class: helper
@@ -840,6 +1159,16 @@ functions:
     class: bleevt
     evidence: "ble_evt_dispatch (0x37594) jump table at 0x375ac, case 51 (BLE_GATTC_EVT_DESC_DISC_RSP), block 0x37850 calls it"
     module: GAP
+  - name: gattc__by_callees_1
+    address: 0x3837c
+    class: bymodule
+    evidence: "0x3837c reaches only gattc_table_20017e54"
+    module: GATTC
+  - name: gattc__by_callees_2
+    address: 0x38408
+    class: bymodule
+    evidence: "0x38408 reaches only gattc_table_20017e54"
+    module: GATTC
   - name: ble_gattc_evt_hvx_handler
     address: 0x384a4
     class: bleevt
@@ -883,6 +1212,11 @@ functions:
     class: helper
     evidence: "only 0x379a8 (bt_e_bt_disconnect_evt_0x) calls 0x386f4; 88 bytes"
     module: SD
+  - name: sd__by_callees_1
+    address: 0x38768
+    class: bymodule
+    evidence: "0x38768 reaches only sd_flag_20017f24"
+    module: SD
   - name: ble_gatts_evt_sys_attr_missing_handler
     address: 0x38830
     class: bleevt
@@ -900,20 +1234,65 @@ functions:
     class: logline
     evidence: "the only line 0x38870 logs, wlog('[SOFTDEVICE][GATTS] Service changed err %04x') at 0x3888c"
     module: SOFTDEVICE
+  - name: wpp__by_callees_4
+    address: 0x3889c
+    class: bymodule
+    evidence: "0x3889c reaches only wpp_service_ctx"
+    module: WPP
+  - name: wpp__by_callees_5
+    address: 0x388b4
+    class: bymodule
+    evidence: "0x388b4 reaches only wpp_service_ctx"
+    module: WPP
   - name: ble_task__5__2
     address: 0x3892c
     class: helper
     evidence: "only 0x6bf04 (ble_task__5) calls 0x3892c; 186 bytes"
     module: BLE_WPPS
+  - name: wpp__by_callees_6
+    address: 0x38a08
+    class: bymodule
+    evidence: "0x38a08 reaches only wpp_service_ctx"
+    module: WPP
+  - name: wpp__by_callees_7
+    address: 0x38d28
+    class: bymodule
+    evidence: "0x38d28 reaches only wpp_service_ctx"
+    module: WPP
   - name: WPP_CMD_BOOTSTRAP_REDIRECT__1
     address: 0x39138
     class: helper
     evidence: "only 0x554c8 (WPP_CMD_BOOTSTRAP_REDIRECT) calls 0x39138; 14 bytes"
+  - name: wpp__by_callees_8
+    address: 0x3914c
+    class: bymodule
+    evidence: "0x3914c reaches only wpp_service_ctx"
+    module: WPP
+  - name: wpp__by_callees_9
+    address: 0x39194
+    class: bymodule
+    evidence: "0x39194 reaches only wpp_service_ctx"
+    module: WPP
+  - name: wpp__by_callees_10
+    address: 0x391b0
+    class: bymodule
+    evidence: "0x391b0 reaches only wpp_service_ctx"
+    module: WPP
   - name: ble_wpp_add_wpp_service
     address: 0x3957c
     class: logline
     evidence: "the only line 0x3957c logs, wlog('[BLE WPP] Add WPP service') at 0x3959a"
     module: BLE_WPP
+  - name: bluetooth__by_callees_1
+    address: 0x395dc
+    class: bymodule
+    evidence: "0x395dc reaches only bluetooth_byte_20025185, bluetooth_byte_20025186, bluetooth_half_20025183, bluetooth_word_2001810c"
+    module: BLUETOOTH
+  - name: bluetooth__by_callees_2
+    address: 0x397b4
+    class: bymodule
+    evidence: "0x397b4 reaches only bluetooth_byte_20025185, bluetooth_byte_20025186"
+    module: BLUETOOTH
   - name: ble_gatts_evt_write_handler__1
     address: 0x397c8
     class: helper
@@ -959,10 +1338,55 @@ functions:
     class: logline
     evidence: "the only line 0x39c60 logs, wlog('Add WPPS chars.') at 0x39c6e"
     module: BLE_WPP
+  - name: mcuflash__by_callees_1
+    address: 0x3a148
+    class: bymodule
+    evidence: "0x3a148 reaches only mcuflash_ptr_20018180"
+    module: MCUFLASH
+  - name: mcuflash__by_callees_2
+    address: 0x3a15c
+    class: bymodule
+    evidence: "0x3a15c reaches only mcuflash_ptr_20006f7c, mcuflash_ptr_20018180, mcuflash_ptr_20018184"
+    module: MCUFLASH
+  - name: mcuflash__by_callees_3
+    address: 0x3a214
+    class: bymodule
+    evidence: "0x3a214 reaches only mcuflash_ptr_20018180, mcuflash_ptr_20018184"
+    module: MCUFLASH
+  - name: mcuflash__by_callees_4
+    address: 0x3a238
+    class: bymodule
+    evidence: "0x3a238 reaches only mcuflash_ptr_20006f7c, mcuflash_ptr_20018184"
+    module: MCUFLASH
+  - name: mcuflash__by_callees_5
+    address: 0x3a274
+    class: bymodule
+    evidence: "0x3a274 reaches only mcuflash_ptr_20006f7c, mcuflash_ptr_20018180, mcuflash_ptr_20018184"
+    module: MCUFLASH
   - name: step_motor_step_toward__1
     address: 0x3a664
     class: helper
     evidence: "only 0x7e820 (step_motor_step_toward) calls 0x3a664; 154 bytes"
+  - name: misc__by_callees_1
+    address: 0x3a7f0
+    class: bymodule
+    evidence: "0x3a7f0 reaches only rtc1_overflow_count"
+    module: MISC
+  - name: misc__by_callees_2
+    address: 0x3a828
+    class: bymodule
+    evidence: "0x3a828 reaches only rtc1_overflow_count"
+    module: MISC
+  - name: misc__by_callees_3
+    address: 0x3a844
+    class: bymodule
+    evidence: "0x3a844 reaches only rtc1_overflow_count"
+    module: MISC
+  - name: misc__by_callees_4
+    address: 0x3a8a8
+    class: bymodule
+    evidence: "0x3a8a8 reaches only rtc1_overflow_count"
+    module: MISC
   - name: button_task__2
     address: 0x3a8f0
     class: helper
@@ -979,6 +1403,11 @@ functions:
     address: 0x3ac5c
     class: logline
     evidence: "the only line 0x3ac5c logs, wlog('[SPIM] Failed to malloc temporary buffer(s)') at 0x3ad9a"
+    module: SPIM
+  - name: spim__by_callees_1
+    address: 0x3af44
+    class: bymodule
+    evidence: "0x3af44 calls only spim_failed_to_malloc_temporary_buffer"
     module: SPIM
   - name: acquistion_task__2__1
     address: 0x3b010
@@ -1015,10 +1444,20 @@ functions:
     class: logline
     evidence: "the only line 0x3b80c logs, wlog('[ACQ][  WARN] Buffer queue is full, dropped first item, @%p') at 0x3b83c"
     module: ACQ
+  - name: acquistion_task_create
+    address: 0x3b898
+    class: role
+    evidence: "0x3b898 hands xTaskCreate the entry acquistion_task and the name 'acquistion_task'"
+    module: ACQ
   - name: acq_info_stop_acquisition_task
     address: 0x3b930
     class: logline
     evidence: "the only line 0x3b930 logs, wlog('[ACQ][  INFO] Stop acquisition task') at 0x3b936"
+    module: ACQ
+  - name: acq__by_callees_1
+    address: 0x3b990
+    class: bymodule
+    evidence: "0x3b990 reaches only acq_ptr_200182f0"
     module: ACQ
   - name: sensors_sync_push_accel__3__2
     address: 0x3ba0c
@@ -1044,6 +1483,10 @@ functions:
     class: helper
     evidence: "only 0x3c2f4 (adxl367_set_mode) calls 0x3bc9c; 102 bytes"
     module: ADXL367
+  - name: xQueueCreateMutexStatic_and_store_adxl367_mutex
+    address: 0x3bdd4
+    class: wrapper
+    evidence: "0x3bdd4 is 7 instructions with one call, to xQueueCreateMutexStatic, and keeps the result in adxl367_mutex"
   - name: hdl_adxl367_get_delay_last__1
     address: 0x3bdec
     class: helper
@@ -1053,6 +1496,26 @@ functions:
     class: logline
     evidence: "the only line 0x3be24 logs, wlog('[ADXL] ===== NORMAL_MODE =====') at 0x3be2a"
     module: ADXL
+  - name: adxl367__by_callees_2
+    address: 0x3beac
+    class: bymodule
+    evidence: "0x3beac reaches only adxl367_mutex"
+    module: ADXL367
+  - name: adxl367__by_callees_3
+    address: 0x3bee4
+    class: bymodule
+    evidence: "0x3bee4 reaches only adxl367_mutex"
+    module: ADXL367
+  - name: adxl367__by_callees_4
+    address: 0x3c100
+    class: bymodule
+    evidence: "0x3c100 reaches only adxl367_mutex"
+    module: ADXL367
+  - name: adxl367__by_callees_5
+    address: 0x3c128
+    class: bymodule
+    evidence: "0x3c128 reaches only adxl367_mutex"
+    module: ADXL367
   - name: adxl367_continuous_measure_mode__1__1
     address: 0x3c1b4
     class: helper
@@ -1077,6 +1540,21 @@ functions:
     address: 0x3c39c
     class: logline
     evidence: "the only line 0x3c39c logs, wlog('hdl_adxl367_get_delay_last_fifo=%lu > 3 status=0x%x, adxl367_state=%d') at 0x3c3e0"
+  - name: hw__by_callees_1
+    address: 0x3c3f4
+    class: bymodule
+    evidence: "0x3c3f4 reaches only spi_device_table"
+    module: HW
+  - name: hw__by_callees_2
+    address: 0x3c44c
+    class: bymodule
+    evidence: "0x3c44c reaches only spi_device_table"
+    module: HW
+  - name: hw__by_callees_3
+    address: 0x3c464
+    class: bymodule
+    evidence: "0x3c464 reaches only spi_device_table"
+    module: HW
   - name: sensors_sync_push_accel__1__1
     address: 0x3c47c
     class: helper
@@ -1167,11 +1645,56 @@ functions:
     address: 0x3d808
     class: shell
     evidence: "shell_cmd_table row 0x27118: command 'alarmclock', run slot (+4)"
+  - name: am__by_callees_1
+    address: 0x3d92c
+    class: bymodule
+    evidence: "0x3d92c reaches only am_table_200184f4"
+    module: AM
+  - name: am__by_callees_2
+    address: 0x3d958
+    class: bymodule
+    evidence: "0x3d958 reaches only am_table_200184f4"
+    module: AM
+  - name: am__by_callees_3
+    address: 0x3d9c8
+    class: bymodule
+    evidence: "0x3d9c8 reaches only am_table_200184f4"
+    module: AM
+  - name: am__by_callees_4
+    address: 0x3da38
+    class: bymodule
+    evidence: "0x3da38 reaches only am_table_200184f4"
+    module: AM
+  - name: am__by_callees_5
+    address: 0x3da88
+    class: bymodule
+    evidence: "0x3da88 reaches only am_table_200184f4"
+    module: AM
+  - name: am__by_callees_6
+    address: 0x3daf0
+    class: bymodule
+    evidence: "0x3daf0 reaches only am_table_200184f4"
+    module: AM
+  - name: am__by_callees_7
+    address: 0x3db3c
+    class: bymodule
+    evidence: "0x3db3c reaches only am_table_200184f4"
+    module: AM
+  - name: am__by_callees_8
+    address: 0x3db70
+    class: bymodule
+    evidence: "0x3db70 reaches only am_table_200184f4"
+    module: AM
+  - name: am__by_callees_9
+    address: 0x3dc48
+    class: bymodule
+    evidence: "0x3dc48 reaches only am_table_200184f4"
+    module: AM
   - name: alti__shared_1
     address: 0x3dd58
     class: shared
     evidence: "every caller of 0x3dd58 is in ALTI: WPP_CMD_GET_PRESSURE_TEMPERATURE, alti_failed_to_take_pressure_measure, shell_cmd_altimeter"
-    module: MS5837
+    module: ALTI
   - name: alti__shared_2
     address: 0x3dd88
     class: shared
@@ -1218,6 +1741,11 @@ functions:
     evidence: "wlog('[ANCS] ancs_service_disc_cb err_code=%d (start_handle = 0x%04x | end_handle = 0x%04x)') at 0x3e17c, leading identifier is a callback name"
     module: ANCS
     also_named: [ancs_service_disc_cb_err (logline)]
+  - name: wpp_lite__by_callees_1
+    address: 0x3e808
+    class: bymodule
+    evidence: "0x3e808 reaches only wpp_lite_struct_20025286"
+    module: WPP_LITE
   - name: WPP_CMD_REMOTE_NOTIFICATIONS_CONFIG_SET__1
     address: 0x3e8c0
     class: helper
@@ -1248,6 +1776,11 @@ functions:
     class: helper
     evidence: "only 0x3f328 (ancs_app_bundle_id) calls 0x3f284; 138 bytes"
     module: ANCS
+  - name: ancs__by_callees_1
+    address: 0x3f628
+    class: bymodule
+    evidence: "0x3f628 reaches only ancs_struct_200188ec"
+    module: ANCS
   - name: ancs_data_source_complete__1__2
     address: 0x3f75c
     class: helper
@@ -1263,6 +1796,11 @@ functions:
     class: logline
     evidence: "the only line 0x3f9b0 logs, wlog('[ANCS] Request display info to app for %s (%s)') at 0x3fa12"
     module: ANCS
+  - name: ancs__by_callees_2
+    address: 0x3fad0
+    class: bymodule
+    evidence: "0x3fad0 reaches only ancs_struct_200188ec"
+    module: ANCS
   - name: shell_cmd_ancs
     address: 0x3fb48
     class: shell
@@ -1272,6 +1810,16 @@ functions:
     address: 0x3fbac
     class: shell
     evidence: "shell_cmd_table row 0x27130: command 'ancs', --help slot (+8)"
+  - name: misc__by_callees_5
+    address: 0x3fbbc
+    class: bymodule
+    evidence: "0x3fbbc reaches only periodic_task_table"
+    module: MISC
+  - name: auto_burst__by_callees_3
+    address: 0x3fc70
+    class: bymodule
+    evidence: "0x3fc70 every caller is a body this rule placed in AUTO_BURST: 0x2f930"
+    module: AUTO_BURST
   - name: sync_bg_request_type_time
     address: 0x3fe10
     class: logline
@@ -1289,6 +1837,11 @@ functions:
     evidence: "wpp_cmd_table row 0x27ba4: key 321, label 'WPP_CMD_SYNC_REQUEST', CMD_SYNC_REQUEST in wpp/src/commands.rs"
     module: SYNC
     also_named: [sync_bg_response_time (logline)]
+  - name: boot__by_callees_13
+    address: 0x3ff48
+    class: bymodule
+    evidence: "0x3ff48 every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
   - name: shell_help_background_sync
     address: 0x3ffa4
     class: shell
@@ -1297,15 +1850,60 @@ functions:
     address: 0x3ffb4
     class: shell
     evidence: "shell_cmd_table row 0x2713c: command 'background_sync', run slot (+4)"
+  - name: bat__by_callees_6
+    address: 0x40014
+    class: bymodule
+    evidence: "0x40014 reaches only battery_state"
+    module: BAT
   - name: main_task__2__2
     address: 0x40060
     class: helper
     evidence: "only 0x2fbdc (main_task__2) calls 0x40060; 22 bytes"
     module: INIT
+  - name: bat__by_callees_7
+    address: 0x40080
+    class: bymodule
+    evidence: "0x40080 reaches only battery_curve_bounds, battery_state"
+    module: BAT
   - name: battery_adc_value_gain_adaptation
     address: 0x400b4
     class: string
     evidence: "wlog('[%s] adapt adc value %d with gain %d -> ', 'battery_adc_value_gain_adaptation') at 0x400cc"
+    module: BATTERY
+  - name: bat__by_callees_8
+    address: 0x40184
+    class: bymodule
+    evidence: "0x40184 reaches only battery_state"
+    module: BAT
+  - name: bat__by_callees_9
+    address: 0x401a8
+    class: bymodule
+    evidence: "0x401a8 reaches only bat_byte_2000794f, battery_curve_bounds"
+    module: BAT
+  - name: bat__by_callees_10
+    address: 0x40210
+    class: bymodule
+    evidence: "0x40210 reaches only battery_state"
+    module: BAT
+  - name: bat__by_callees_11
+    address: 0x40240
+    class: bymodule
+    evidence: "0x40240 reaches only battery_curve_bounds"
+    module: BAT
+  - name: bat__by_callees_12
+    address: 0x40274
+    class: bymodule
+    evidence: "0x40274 reaches only battery_curve_bounds, battery_state"
+    module: BAT
+  - name: boot__by_callees_14
+    address: 0x40398
+    class: bymodule
+    evidence: "0x40398 every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
+  - name: battery__by_callees_2
+    address: 0x40414
+    class: bymodule
+    evidence: "0x40414 reaches only battery_table_20018b68"
     module: BATTERY
   - name: bat_battery_management_start__3
     address: 0x404b8
@@ -1322,10 +1920,20 @@ functions:
     class: helper
     evidence: "only 0x2fd88 (bat_battery_management_start__1) calls 0x4056c; 170 bytes"
     module: BATTERY
+  - name: bat__by_callees_13
+    address: 0x4066c
+    class: bymodule
+    evidence: "0x4066c reaches only bat_flag_2002528d, bat_word_20018b90"
+    module: BAT
   - name: shell_cmd_get_battery__1
     address: 0x40698
     class: helper
     evidence: "only 0x40734 (shell_cmd_get_battery) calls 0x40698; 12 bytes"
+  - name: bat__by_callees_14
+    address: 0x406ac
+    class: bymodule
+    evidence: "0x406ac reaches only bat_flag_2002528d, bat_word_20018b90"
+    module: BAT
   - name: shell_help_get_battery
     address: 0x40714
     class: shell
@@ -1385,6 +1993,16 @@ functions:
     class: logline
     evidence: "the only line 0x40bec logs, wlog('[BLE] current ADV state %s') at 0x40c08"
     module: BLE
+  - name: conn_param__by_callees_1
+    address: 0x40d18
+    class: bymodule
+    evidence: "0x40d18 reaches only conn_param_struct_20018ba0"
+    module: CONN_PARAM
+  - name: conn_param__by_callees_2
+    address: 0x40d30
+    class: bymodule
+    evidence: "0x40d30 reaches only conn_param_struct_20018ba0"
+    module: CONN_PARAM
   - name: ble_gap_evt_conn_param_update_handler__1
     address: 0x40d48
     class: helper
@@ -1405,6 +2023,11 @@ functions:
     class: logline
     evidence: "the only line 0x40eb4 logs, wlog('default type') at 0x40f7e"
     module: PAIRING
+  - name: pairing__by_callees_1
+    address: 0x41018
+    class: bymodule
+    evidence: "0x41018 every caller is a body this rule placed in PAIRING: 0x412b8"
+    module: PAIRING
   - name: pairing_get_pairing_info_index
     address: 0x41088
     class: logline
@@ -1415,6 +2038,36 @@ functions:
     class: helper
     evidence: "only 0x40da4 (ble_gap_evt_conn_sec_update_handler__1) calls 0x410c8; 8 bytes"
     module: GAP
+  - name: pairing__by_callees_2
+    address: 0x41190
+    class: bymodule
+    evidence: "0x41190 reaches only pairing_struct_200076fa"
+    module: PAIRING
+  - name: pairing__by_callees_3
+    address: 0x411c4
+    class: bymodule
+    evidence: "0x411c4 reaches only pairing_struct_200076fa"
+    module: PAIRING
+  - name: pairing__by_callees_4
+    address: 0x41260
+    class: bymodule
+    evidence: "0x41260 reaches only pairing_struct_200076fa"
+    module: PAIRING
+  - name: pairing__by_callees_5
+    address: 0x4128c
+    class: bymodule
+    evidence: "0x4128c reaches only pairing_struct_200076fa"
+    module: PAIRING
+  - name: pairing__by_callees_6
+    address: 0x412b8
+    class: bymodule
+    evidence: "0x412b8 reaches only pairing_struct_200076fa"
+    module: PAIRING
+  - name: pairing__by_callees_7
+    address: 0x41348
+    class: bymodule
+    evidence: "0x41348 reaches only pairing_struct_200076fa"
+    module: PAIRING
   - name: ble_gap_evt_passkey_display_handler__1__1
     address: 0x4137c
     class: helper
@@ -1428,6 +2081,51 @@ functions:
     address: 0x41684
     class: logline
     evidence: "the only line 0x41684 logs, wlog('bluetooth_le_gattc_action err_code=%d') at 0x414ea"
+  - name: service_changed__by_callees_1
+    address: 0x416e8
+    class: bymodule
+    evidence: "0x416e8 reaches only service_changed_struct_20018e38"
+    module: SERVICE_CHANGED
+  - name: service_changed__by_callees_2
+    address: 0x416f4
+    class: bymodule
+    evidence: "0x416f4 reaches only service_changed_struct_20018e38"
+    module: SERVICE_CHANGED
+  - name: service_changed__by_callees_3
+    address: 0x41710
+    class: bymodule
+    evidence: "0x41710 reaches only service_changed_struct_20018e38"
+    module: SERVICE_CHANGED
+  - name: service_changed__by_callees_4
+    address: 0x417d8
+    class: bymodule
+    evidence: "0x417d8 every caller is a body this rule placed in SERVICE_CHANGED: 0x41854"
+    module: SERVICE_CHANGED
+  - name: service_changed__by_callees_5
+    address: 0x41800
+    class: bymodule
+    evidence: "0x41800 reaches only service_changed_struct_20018e38"
+    module: SERVICE_CHANGED
+  - name: service_changed__by_callees_6
+    address: 0x41854
+    class: bymodule
+    evidence: "0x41854 reaches only service_changed_struct_20018e38"
+    module: SERVICE_CHANGED
+  - name: service_changed__by_callees_7
+    address: 0x418bc
+    class: bymodule
+    evidence: "0x418bc reaches only service_changed_struct_20018e38, service_changed_struct_20018e3c"
+    module: SERVICE_CHANGED
+  - name: service_changed__by_callees_8
+    address: 0x41994
+    class: bymodule
+    evidence: "0x41994 reaches only service_changed_struct_20018e38"
+    module: SERVICE_CHANGED
+  - name: service_changed__by_callees_9
+    address: 0x419bc
+    class: bymodule
+    evidence: "0x419bc reaches only service_changed_struct_20018e38"
+    module: SERVICE_CHANGED
   - name: ble_task__3
     address: 0x419fc
     class: helper
@@ -1438,14 +2136,64 @@ functions:
     class: logline
     evidence: "the only line 0x41b9c logs, wlog('[BLE_WPP_C] Service Discover (attempts = %d)') at 0x41bbe"
     module: BLE_WPP_C
+  - name: ble_wpp_c__by_callees_1
+    address: 0x41bdc
+    class: bymodule
+    evidence: "0x41bdc reaches only ble_wpp_c_struct_20018e54"
+    module: BLE_WPP_C
+  - name: ble_wpp_c__by_callees_2
+    address: 0x41c00
+    class: bymodule
+    evidence: "0x41c00 reaches only ble_wpp_c_struct_20018e54"
+    module: BLE_WPP_C
   - name: ble_task__4__1
     address: 0x41c70
     class: helper
     evidence: "only 0x41d60 (ble_task__4) calls 0x41c70; 10 bytes"
+  - name: boot__by_callees_15
+    address: 0x41c80
+    class: bymodule
+    evidence: "0x41c80 every caller is a body this rule placed in BOOT: 0x2e982"
+    module: BOOT
+  - name: ble_wpp_c__by_callees_3
+    address: 0x41d00
+    class: bymodule
+    evidence: "0x41d00 reaches only ble_wpp_c_struct_20018e54"
+    module: BLE_WPP_C
   - name: ble_task__4
     address: 0x41d60
     class: helper
     evidence: "only 0x34068 (ble_task) calls 0x41d60; 328 bytes"
+  - name: wuapp__by_callees_1
+    address: 0x41dd8
+    class: bymodule
+    evidence: "0x41dd8 reaches only wuapp_struct_20024d72"
+    module: WUAPP
+  - name: wuapp__by_callees_2
+    address: 0x41f94
+    class: bymodule
+    evidence: "0x41f94 reaches only wuapp_struct_20024d72"
+    module: WUAPP
+  - name: wuapp__by_callees_3
+    address: 0x42028
+    class: bymodule
+    evidence: "0x42028 reaches only wuapp_struct_20024d72"
+    module: WUAPP
+  - name: wuapp__by_callees_4
+    address: 0x42134
+    class: bymodule
+    evidence: "0x42134 reaches only wuapp_struct_20024d72"
+    module: WUAPP
+  - name: wuapp__by_callees_5
+    address: 0x42210
+    class: bymodule
+    evidence: "0x42210 reaches only wuapp_struct_20024d72"
+    module: WUAPP
+  - name: ble_wpp_c__by_callees_4
+    address: 0x422a4
+    class: bymodule
+    evidence: "0x422a4 every caller is a body this rule placed in BLE_WPP_C: 0x41d00"
+    module: BLE_WPP_C
   - name: ble_task__5__3
     address: 0x422e0
     class: helper
@@ -1464,25 +2212,59 @@ functions:
     address: 0x424f4
     class: shell
     evidence: "shell_cmd_table row 0x27148: command 'ble', run slot (+4)"
+  - name: body_temp__by_callees_1
+    address: 0x42558
+    class: bymodule
+    evidence: "0x42558 reaches only body_temp_ptr_20018eb8, body_temp_struct_20018e68"
+    module: BODY_TEMP
   - name: body_temp_task__1
     address: 0x42764
     class: helper
     evidence: "only 0x42b7c (body_temp_task) calls 0x42764; 46 bytes"
     module: BODY_TEMP
+  - name: xQueueGenericSend_wrap_1
+    address: 0x42798
+    class: wrapper
+    evidence: "0x42798 is 11 instructions with one call, to xQueueGenericSend, and returns"
   - name: shell_cmd_body_temperature__1__1
     address: 0x427bc
     class: helper
     evidence: "only 0x42d2c (shell_cmd_body_temperature__1) calls 0x427bc; 182 bytes"
+    module: BODY_TEMP
+  - name: body_temp__by_callees_2
+    address: 0x42888
+    class: bymodule
+    evidence: "0x42888 reaches only body_temp_struct_20018e68"
+    module: BODY_TEMP
+  - name: body_temp__by_callees_3
+    address: 0x42974
+    class: bymodule
+    evidence: "0x42974 reaches only body_temp_struct_20018e68"
     module: BODY_TEMP
   - name: body_temp_info_stop
     address: 0x42a0c
     class: logline
     evidence: "the only line 0x42a0c logs, wlog('[BODY_TEMP][info] Stop') at 0x42a14"
     module: BODY_TEMP
+  - name: body_temp__by_callees_4
+    address: 0x42a64
+    class: bymodule
+    evidence: "0x42a64 reaches only body_temp_struct_20018e68"
+    module: BODY_TEMP
   - name: sensors_sync_push_accel__2
     address: 0x42ab0
     class: helper
     evidence: "only 0x3bd10 (sensors_sync_push_accel) calls 0x42ab0; 10 bytes"
+  - name: body_temp__by_callees_5
+    address: 0x42ac0
+    class: bymodule
+    evidence: "0x42ac0 reaches only body_temp_struct_20018e68"
+    module: BODY_TEMP
+  - name: body_temp_task_create
+    address: 0x42ae8
+    class: role
+    evidence: "0x42ae8 hands xTaskCreate the entry body_temp_task and the name 'body_temp_task'"
+    module: BODY_TEMP
   - name: shell_cmd_body_temperature__1
     address: 0x42d2c
     class: helper
@@ -1492,10 +2274,40 @@ functions:
     address: 0x42ed0
     class: helper
     evidence: "only 0x86930 (refresh_body_temperature) calls 0x42ed0; 14 bytes"
+  - name: body_temp__by_callees_6
+    address: 0x42ee4
+    class: bymodule
+    evidence: "0x42ee4 reaches only body_temp_struct_20018e68"
+    module: BODY_TEMP
+  - name: body_temp__by_callees_7
+    address: 0x42f00
+    class: bymodule
+    evidence: "0x42f00 reaches only body_temp_struct_20018e68"
+    module: BODY_TEMP
+  - name: body_temp__by_callees_8
+    address: 0x42f40
+    class: bymodule
+    evidence: "0x42f40 reaches only body_temp_struct_20018e68"
+    module: BODY_TEMP
+  - name: body_temp__by_callees_9
+    address: 0x42f50
+    class: bymodule
+    evidence: "0x42f50 reaches only body_temp_struct_20018e68"
+    module: BODY_TEMP
   - name: algo_manager_publish_results__1
     address: 0x42f60
     class: helper
     evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x42f60; 72 bytes"
+  - name: body_temp__by_callees_10
+    address: 0x42fb0
+    class: bymodule
+    evidence: "0x42fb0 reaches only body_temp_struct_20018e68"
+    module: BODY_TEMP
+  - name: body_temp__by_callees_11
+    address: 0x43080
+    class: bymodule
+    evidence: "0x43080 reaches only body_temp_mutex"
+    module: BODY_TEMP
   - name: body_temp_info_baseline_store_new_baseline
     address: 0x43094
     class: logline
@@ -1506,6 +2318,11 @@ functions:
     class: logline
     evidence: "the only line 0x430dc logs, wlog('[BODY_TEMP][warn] temperature %d out of range (algo #%u)') at 0x430f6"
     module: BODY_TEMP
+  - name: body_temp__by_callees_12
+    address: 0x43110
+    class: bymodule
+    evidence: "0x43110 reaches only body_temp_mutex"
+    module: BODY_TEMP
   - name: body_temp_time_algo_attrib_temp
     address: 0x431e4
     class: logline
@@ -1515,6 +2332,16 @@ functions:
     address: 0x43210
     class: logline
     evidence: "the only line 0x43210 logs, wlog('[BODY_TEMP][info] Workout activity %d not supported') at 0x43240"
+    module: BODY_TEMP
+  - name: body_temp__by_callees_13
+    address: 0x43318
+    class: bymodule
+    evidence: "0x43318 reaches only body_temp_mutex"
+    module: BODY_TEMP
+  - name: body_temp__by_callees_14
+    address: 0x4338c
+    class: bymodule
+    evidence: "0x4338c reaches only body_temp_mutex, body_temp_mutex_static"
     module: BODY_TEMP
   - name: shell_help_body_temperature
     address: 0x434cc
@@ -1534,6 +2361,16 @@ functions:
     class: helper
     evidence: "only 0x43a80 (shell_cmd_bq25180) calls 0x4377c; 8 bytes"
     module: BQ25180
+  - name: hw__by_callees_4
+    address: 0x43788
+    class: bymodule
+    evidence: "0x43788 reaches only i2c_device_table"
+    module: HW
+  - name: hw__by_callees_5
+    address: 0x43794
+    class: bymodule
+    evidence: "0x43794 reaches only i2c_device_table"
+    module: HW
   - name: shell_help_bq25180
     address: 0x43a70
     class: shell
@@ -1542,6 +2379,11 @@ functions:
     address: 0x43a80
     class: shell
     evidence: "shell_cmd_table row 0x27160: command 'bq25180', run slot (+4)"
+    module: BQ25180
+  - name: bq25180__by_callees_1
+    address: 0x43f20
+    class: bymodule
+    evidence: "0x43f20 reaches only bq25180_ptr_20018f20"
     module: BQ25180
   - name: shell_help_calibration
     address: 0x43fcc
@@ -1552,6 +2394,21 @@ functions:
     class: shell
     evidence: "shell_cmd_table row 0x27178: command 'calibration', run slot (+4)"
     also_named: [type_id_ref_val (logline)]
+  - name: screen_calibration__by_callees_1
+    address: 0x44588
+    class: bymodule
+    evidence: "0x44588 reaches only screen_calibration_flag_20025290"
+    module: SCREEN_CALIBRATION
+  - name: screen_calibration__by_callees_2
+    address: 0x445bc
+    class: bymodule
+    evidence: "0x445bc reaches only screen_calibration_flag_20025290"
+    module: SCREEN_CALIBRATION
+  - name: screen_calibration__by_callees_3
+    address: 0x445e4
+    class: bymodule
+    evidence: "0x445e4 reaches only screen_calibration_flag_20025290"
+    module: SCREEN_CALIBRATION
   - name: friction_long_test_continue__1
     address: 0x44650
     class: helper
@@ -1568,6 +2425,16 @@ functions:
     address: 0x446e8
     class: helper
     evidence: "only 0x4bdd0 (factory_reset_perform) calls 0x446e8; 38 bytes"
+  - name: screen_calibration__by_callees_4
+    address: 0x44718
+    class: bymodule
+    evidence: "0x44718 reaches only screen_calibration_flag_20025290"
+    module: SCREEN_CALIBRATION
+  - name: step_motor__by_callees_1
+    address: 0x44768
+    class: bymodule
+    evidence: "0x44768 calls only step_motor_save_cal_ph"
+    module: STEP_MOTOR
   - name: screen_calibration_no_motor_id_availabe__1
     address: 0x44784
     class: helper
@@ -1644,6 +2511,56 @@ functions:
     class: logline
     evidence: "the only line 0x4506c logs, wlog('[CONS_LOG] Invalid ppg_afib_stats diagnosis value = %d') at 0x450d8"
     module: CONS_LOG
+  - name: wpps__by_callees_1
+    address: 0x45e94
+    class: bymodule
+    evidence: "0x45e94 every caller is a body this rule placed in WPPS: 0x4672c, 0x467e0"
+    module: WPPS
+  - name: wpps__by_callees_2
+    address: 0x46484
+    class: bymodule
+    evidence: "0x46484 reaches only wpps_word_20007204"
+    module: WPPS
+  - name: wpps__by_callees_3
+    address: 0x46490
+    class: bymodule
+    evidence: "0x46490 reaches only wpps_word_20007204"
+    module: WPPS
+  - name: wpps__by_callees_4
+    address: 0x464c8
+    class: bymodule
+    evidence: "0x464c8 reaches only wpps_word_20007204"
+    module: WPPS
+  - name: wpps__by_callees_5
+    address: 0x465ac
+    class: bymodule
+    evidence: "0x465ac every caller is a body this rule placed in WPPS: 0x465f8, 0x466a0"
+    module: WPPS
+  - name: wpps__by_callees_6
+    address: 0x465f8
+    class: bymodule
+    evidence: "0x465f8 reaches only wpps_word_20007204"
+    module: WPPS
+  - name: wpps__by_callees_7
+    address: 0x46614
+    class: bymodule
+    evidence: "0x46614 reaches only wpps_word_20007204"
+    module: WPPS
+  - name: wpps__by_callees_8
+    address: 0x466a0
+    class: bymodule
+    evidence: "0x466a0 reaches only wpps_word_20007204"
+    module: WPPS
+  - name: wpps__by_callees_9
+    address: 0x4672c
+    class: bymodule
+    evidence: "0x4672c reaches only wpps_word_20007204"
+    module: WPPS
+  - name: wpps__by_callees_10
+    address: 0x467e0
+    class: bymodule
+    evidence: "0x467e0 reaches only wpps_word_20007204"
+    module: WPPS
   - name: verify_cert__1
     address: 0x468b8
     class: helper
@@ -1699,24 +2616,119 @@ functions:
     class: logline
     evidence: "the only line 0x473b8 logs, wlog('[DBLIB] Element size mismatch id : %d') at 0x473ee"
     module: DBLIB
+  - name: initdblib__by_callees_1
+    address: 0x47400
+    class: bymodule
+    evidence: "0x47400 every caller is a body this rule placed in INITDBLIB: 0x47470"
+    module: INITDBLIB
+  - name: debug_dump__by_callees_2
+    address: 0x47410
+    class: bymodule
+    evidence: "0x47410 every caller is a body this rule placed in DEBUG_DUMP: 0x6d744"
+    module: DEBUG_DUMP
+  - name: initdblib__by_callees_2
+    address: 0x47434
+    class: bymodule
+    evidence: "0x47434 reaches only initdblib_ptr_20019220, initdblib_ptr_20019224"
+    module: INITDBLIB
+  - name: initdblib__by_callees_3
+    address: 0x4744c
+    class: bymodule
+    evidence: "0x4744c reaches only initdblib_half_20024d90"
+    module: INITDBLIB
+  - name: initdblib__by_callees_4
+    address: 0x47470
+    class: bymodule
+    evidence: "0x47470 reaches only initdblib_half_20024d90"
+    module: INITDBLIB
+  - name: initdblib__by_callees_5
+    address: 0x474b8
+    class: bymodule
+    evidence: "0x474b8 reaches only initdblib_half_20024d90"
+    module: INITDBLIB
+  - name: dblib__by_callees_1
+    address: 0x47668
+    class: bymodule
+    evidence: "0x47668 calls only dblib_bank_erase"
+    module: DBLIB
+  - name: initdblib__by_callees_6
+    address: 0x47690
+    class: bymodule
+    evidence: "0x47690 reaches only initdblib_half_20024d90"
+    module: INITDBLIB
+  - name: initdblib__by_callees_7
+    address: 0x47790
+    class: bymodule
+    evidence: "0x47790 every caller is a body this rule placed in INITDBLIB: 0x47894"
+    module: INITDBLIB
+  - name: initdblib__by_callees_8
+    address: 0x4785c
+    class: bymodule
+    evidence: "0x4785c reaches only initdblib_ptr_20019220, initdblib_ptr_20019224"
+    module: INITDBLIB
+  - name: initdblib__by_callees_9
+    address: 0x47894
+    class: bymodule
+    evidence: "0x47894 reaches only initdblib_half_20024d90, initdblib_ptr_20019220, initdblib_ptr_20019224, initdblib_struct_20007010"
+    module: INITDBLIB
   - name: ws_events_event_with_time_deleted__1
     address: 0x47b3c
     class: helper
     evidence: "only 0x6ea20 (ws_events_event_with_time_deleted) calls 0x47b3c; 36 bytes"
     module: WS_EVENTS
+  - name: initdblib__by_callees_10
+    address: 0x47ca0
+    class: bymodule
+    evidence: "0x47ca0 reaches only initdblib_ptr_20019220, initdblib_ptr_20019224"
+    module: INITDBLIB
   - name: shell_cmd_dblib__1
     address: 0x47ce8
     class: helper
     evidence: "only 0x48c20 (shell_cmd_dblib) calls 0x47ce8; 74 bytes"
+  - name: initdblib__by_callees_11
+    address: 0x47d40
+    class: bymodule
+    evidence: "0x47d40 reaches only initdblib_ptr_20019220, initdblib_ptr_20019224"
+    module: INITDBLIB
+  - name: initdblib__by_callees_12
+    address: 0x47d9c
+    class: bymodule
+    evidence: "0x47d9c reaches only initdblib_ptr_20019220, initdblib_ptr_20019224"
+    module: INITDBLIB
   - name: dblib_del_all
     address: 0x47f58
     class: logline
     evidence: "the only line 0x47f58 logs, wlog('[DBLIB][DEL ALL] %d %d') at 0x47f9a"
     module: DBLIB
+  - name: initdblib__by_callees_13
+    address: 0x48080
+    class: bymodule
+    evidence: "0x48080 reaches only initdblib_ptr_20019220"
+    module: INITDBLIB
+  - name: initdblib__by_callees_14
+    address: 0x480f0
+    class: bymodule
+    evidence: "0x480f0 reaches only initdblib_ptr_20019220"
+    module: INITDBLIB
+  - name: initdblib__by_callees_15
+    address: 0x4814c
+    class: bymodule
+    evidence: "0x4814c reaches only initdblib_ptr_20019220"
+    module: INITDBLIB
   - name: shell_cmd_perso__1
     address: 0x481a8
     class: helper
     evidence: "only 0x5b024 (shell_cmd_perso) calls 0x481a8; 76 bytes"
+  - name: initdblib__by_callees_16
+    address: 0x48200
+    class: bymodule
+    evidence: "0x48200 reaches only initdblib_ptr_20019220"
+    module: INITDBLIB
+  - name: initdblib__by_callees_17
+    address: 0x4838c
+    class: bymodule
+    evidence: "0x4838c reaches only initdblib_struct_20007010"
+    module: INITDBLIB
   - name: shell_cmd_perso__2
     address: 0x483d0
     class: helper
@@ -1725,6 +2737,11 @@ functions:
     address: 0x483f8
     class: helper
     evidence: "only 0x5b024 (shell_cmd_perso) calls 0x483f8; 26 bytes"
+  - name: initdblib__by_callees_18
+    address: 0x4841c
+    class: bymodule
+    evidence: "0x4841c reaches only initdblib_ptr_20019224"
+    module: INITDBLIB
   - name: dblib_dump_corrupted
     address: 0x484d4
     class: logline
@@ -1735,6 +2752,26 @@ functions:
     class: helper
     evidence: "only 0x48ae8 (dblib_flash_usage_rom_user) calls 0x485f0; 58 bytes"
     module: DBLIB
+  - name: initdblib__by_callees_19
+    address: 0x48a84
+    class: bymodule
+    evidence: "0x48a84 every caller is a body this rule placed in INITDBLIB: 0x47894"
+    module: INITDBLIB
+  - name: initdblib__by_callees_20
+    address: 0x48aac
+    class: bymodule
+    evidence: "0x48aac reaches only initdblib_ptr_20019228"
+    module: INITDBLIB
+  - name: initdblib__by_callees_21
+    address: 0x48ac4
+    class: bymodule
+    evidence: "0x48ac4 reaches only initdblib_ptr_20019228"
+    module: INITDBLIB
+  - name: initdblib__by_callees_22
+    address: 0x48ad4
+    class: bymodule
+    evidence: "0x48ad4 reaches only initdblib_ptr_20019228"
+    module: INITDBLIB
   - name: dblib_flash_usage_rom_user
     address: 0x48ae8
     class: logline
@@ -1750,6 +2787,16 @@ functions:
     class: helper
     evidence: "only 0x6de70 (debug_dump_dblib_ram) calls 0x48b34; 144 bytes"
     module: DEBUG_DUMP
+  - name: debug_dump__by_callees_3
+    address: 0x48bd0
+    class: bymodule
+    evidence: "0x48bd0 every caller is a body this rule placed in DEBUG_DUMP: 0x6d744"
+    module: DEBUG_DUMP
+  - name: debug_dump__by_callees_4
+    address: 0x48c04
+    class: bymodule
+    evidence: "0x48c04 every caller is a body this rule placed in DEBUG_DUMP: 0x6d744"
+    module: DEBUG_DUMP
   - name: shell_cmd_dblib
     address: 0x48c20
     class: shell
@@ -1763,10 +2810,20 @@ functions:
     class: helper
     evidence: "only 0x2e1d8 (main_task) calls 0x48f30; 24 bytes"
     module: INIT
+  - name: dbg_mask__by_callees_2
+    address: 0x48f50
+    class: bymodule
+    evidence: "0x48f50 reaches only dbg_mask_flag_200252d5, debug_mask"
+    module: DBG_MASK
   - name: dbg_mask_change_ie_debug_mask
     address: 0x48f68
     class: logline
     evidence: "the only line 0x48f68 logs, wlog('[DBG_MASK] Change IE_DEBUG_MASK to %x') at 0x48f96"
+    module: DBG_MASK
+  - name: dbg_mask__by_callees_3
+    address: 0x48fb4
+    class: bymodule
+    evidence: "0x48fb4 reaches only dbg_mask_flag_200252d5, debug_mask"
     module: DBG_MASK
   - name: shell_help_debug_mask
     address: 0x48fd4
@@ -1777,6 +2834,25 @@ functions:
     class: shell
     evidence: "shell_cmd_table row 0x271cc: command 'debug_mask', run slot (+4)"
     also_named: [debug_mask (logline)]
+  - name: digital_crown__by_callees_1
+    address: 0x49040
+    class: bymodule
+    evidence: "0x49040 reaches only digital_crown_struct_2001923c"
+    module: DIGITAL_CROWN
+  - name: xTaskGenericNotifyFromISR_wrap
+    address: 0x49058
+    class: wrapper
+    evidence: "0x49058 is 11 instructions with one call, to xTaskGenericNotifyFromISR, and returns"
+  - name: digital_crown__by_callees_2
+    address: 0x490f8
+    class: bymodule
+    evidence: "0x490f8 reaches only digital_crown_struct_2001923c"
+    module: DIGITAL_CROWN
+  - name: digital_crown__by_callees_3
+    address: 0x49128
+    class: bymodule
+    evidence: "0x49128 reaches only digital_crown_ptr_20019238, digital_crown_struct_2001923c"
+    module: DIGITAL_CROWN
   - name: WPP_CMD_DIGITAL_CROWN_CALIB__1
     address: 0x49158
     class: helper
@@ -1801,6 +2877,35 @@ functions:
     class: logline
     evidence: "the only line 0x492d0 logs, wlog('[DIGITAL CROWN] Starting calib') at 0x492e0"
     module: DIGITAL_CROWN
+  - name: digital_crown__by_callees_4
+    address: 0x4938c
+    class: bymodule
+    evidence: "0x4938c reaches only digital_crown_struct_2001923c"
+    module: DIGITAL_CROWN
+  - name: digital_crown__by_callees_5
+    address: 0x493d8
+    class: bymodule
+    evidence: "0x493d8 reaches only digital_crown_struct_2001923c"
+    module: DIGITAL_CROWN
+  - name: digital_crown__by_callees_6
+    address: 0x493f8
+    class: bymodule
+    evidence: "0x493f8 reaches only digital_crown_struct_2001923c"
+    module: DIGITAL_CROWN
+  - name: pwr_negative_counter_wrap
+    address: 0x4940c
+    class: wrapper
+    evidence: "0x4940c is 5 instructions with one call, to pwr_negative_counter, and returns"
+  - name: digital_crown__by_callees_7
+    address: 0x4941c
+    class: bymodule
+    evidence: "0x4941c reaches only digital_crown_struct_2001923c"
+    module: DIGITAL_CROWN
+  - name: digital_crown__by_callees_8
+    address: 0x495cc
+    class: bymodule
+    evidence: "0x495cc reaches only digital_crown_struct_2001923c"
+    module: DIGITAL_CROWN
   - name: WPP_CMD_DIGITAL_CROWN_CALIB__2
     address: 0x4960c
     class: helper
@@ -1809,6 +2914,16 @@ functions:
     address: 0x4966c
     class: helper
     evidence: "only 0x49a50 (WPP_CMD_DIGITAL_CROWN_CALIB) calls 0x4966c; 46 bytes"
+  - name: digital_crown__by_callees_9
+    address: 0x496b0
+    class: bymodule
+    evidence: "0x496b0 reaches only digital_crown_struct_2001923c"
+    module: DIGITAL_CROWN
+  - name: digital_crown__by_callees_10
+    address: 0x496c0
+    class: bymodule
+    evidence: "0x496c0 reaches only digital_crown_byte_200252d6"
+    module: DIGITAL_CROWN
   - name: shell_help_digital_crown
     address: 0x496d4
     class: shell
@@ -1881,6 +2996,11 @@ functions:
     class: logline
     evidence: "the only line 0x4aaf4 logs, wlog('[ECG] Could not store samples (%d)') at 0x4ab20"
     module: ECG
+  - name: ecg__by_callees_2
+    address: 0x4ac84
+    class: bymodule
+    evidence: "0x4ac84 reaches only ecg_ptr_20007048"
+    module: ECG
   - name: ecg_bad_diag_algo_version
     address: 0x4ac90
     class: logline
@@ -1912,6 +3032,11 @@ functions:
     module: ECG
     proto: "uint32_t ecg_err_no_sample_queue__2(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: ecg__by_callees_3
+    address: 0x4b0d4
+    class: bymodule
+    evidence: "0x4b0d4 reaches only ecg_ptr_200192fc, ecg_ptr_20019300"
+    module: ECG
   - name: shell_help_ecg
     address: 0x4b0ec
     class: shell
@@ -1920,6 +3045,11 @@ functions:
     address: 0x4b0fc
     class: logline
     evidence: "the only line 0x4b0fc logs, wlog('Failed to create task') at 0x4b11c"
+    module: ECG
+  - name: ecg__by_callees_4
+    address: 0x4b13c
+    class: bymodule
+    evidence: "0x4b13c reaches only ecg_ptr_20019304"
     module: ECG
   - name: shell_cmd_ecg__4
     address: 0x4b154
@@ -1949,6 +3079,11 @@ functions:
     evidence: "only 0x87154 (on_event_dbt_meas) calls 0x4b7ac; 32 bytes"
     proto: "uint32_t on_event_dbt_meas__1(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: algo_manager__by_callees_4
+    address: 0x4b7d0
+    class: bymodule
+    evidence: "0x4b7d0 every caller is a body this rule placed in ALGO_MANAGER: 0x4ec0c"
+    module: ALGO_MANAGER
   - name: on_event_dbt_meas__2__1
     address: 0x4bab8
     class: helper
@@ -1979,6 +3114,11 @@ functions:
     evidence: "wlog('[factory_state] factory_state=%d') at 0x4bcd4, tag is a C identifier"
     module: FACTORY_STATE
     also_named: [factory_state_factory_state (logline)]
+  - name: factory_state__by_callees_1
+    address: 0x4bd18
+    class: bymodule
+    evidence: "0x4bd18 reaches only factory_state_cache"
+    module: FACTORY_STATE
   - name: shell_cmd_factory_state
     address: 0x4bd40
     class: shell
@@ -1992,6 +3132,11 @@ functions:
     class: wppcmd
     command: 291
     evidence: "wpp_cmd_table row 0x27694: key 291, label 'WPP_CMD_FACTORY_RESET', CMD_FACTORY_RESET in wpp/src/commands.rs"
+  - name: wpp__by_callees_11
+    address: 0x4be68
+    class: bymodule
+    evidence: "0x4be68 reaches only wpp_flag_200254cb, wpp_word_2001a268"
+    module: WPP
   - name: wpp_feature_mask_0x__1
     address: 0x4be9c
     class: helper
@@ -2005,6 +3150,11 @@ functions:
     address: 0x4bef8
     class: logline
     evidence: "the only line 0x4bef8 logs, wlog('[FEATURE_TAGS] Nothings stored') at 0x4bf12"
+    module: FEATURE_TAGS
+  - name: feature_tags__by_callees_1
+    address: 0x4bf28
+    class: bymodule
+    evidence: "0x4bf28 calls only feature_tags_nothings_stored"
     module: FEATURE_TAGS
   - name: shell_cmd_feature_tags
     address: 0x4bfcc
@@ -2077,6 +3227,16 @@ functions:
     class: logline
     evidence: "the only line 0x4ca64 logs, wlog('[FWBLK] unsupported ext. table ver=%d') at 0x4ca6e"
     module: FWBLK
+  - name: boot__by_callees_16
+    address: 0x4cd94
+    class: bymodule
+    evidence: "0x4cd94 every caller is a body this rule placed in BOOT: 0x2e982"
+    module: BOOT
+  - name: boot__by_callees_17
+    address: 0x4cdd4
+    class: bymodule
+    evidence: "0x4cdd4 every caller is a body this rule placed in BOOT: 0x2e982"
+    module: BOOT
   - name: sensors_sync_push_accel__3__3
     address: 0x4d214
     class: helper
@@ -2109,6 +3269,11 @@ functions:
     address: 0x4d5d8
     class: helper
     evidence: "only 0x4dc8c (shell_cmd_greenteg) calls 0x4d5d8; 288 bytes"
+  - name: greenteg__by_callees_1
+    address: 0x4d720
+    class: bymodule
+    evidence: "0x4d720 reaches only greenteg_struct_2001a5a4"
+    module: GREENTEG
   - name: greenteg_error_sensitivity_bin_not_found
     address: 0x4d728
     class: logline
@@ -2145,6 +3310,11 @@ functions:
     address: 0x4dabc
     class: helper
     evidence: "only 0x98220 (GREENTEG_INTEGRATION_FACTOR_DEL) calls 0x4dabc; 46 bytes"
+    module: GREENTEG
+  - name: greenteg__by_callees_2
+    address: 0x4dafc
+    class: bymodule
+    evidence: "0x4dafc reaches only greenteg_struct_2001a594, greenteg_struct_2001a5a4"
     module: GREENTEG
   - name: shell_help_greenteg
     address: 0x4dc7c
@@ -2202,11 +3372,31 @@ functions:
     class: helper
     evidence: "only 0x2e1d8 (main_task) calls 0x4e998; 14 bytes"
     module: INIT
+  - name: algo_manager__by_callees_5
+    address: 0x4e9ac
+    class: bymodule
+    evidence: "0x4e9ac every caller is a body this rule placed in ALGO_MANAGER: 0x4ec0c"
+    module: ALGO_MANAGER
   - name: hr_compression_store_bpm
     address: 0x4e9d4
     class: logline
     evidence: "the only line 0x4e9d4 logs, wlog('[HR_COMPRESSION] Store %lu, %ubpm, %us') at 0x4ea4e"
     module: HR_COMPRESSION
+  - name: boot__by_callees_18
+    address: 0x4ea68
+    class: bymodule
+    evidence: "0x4ea68 every caller is a body this rule placed in BOOT: 0x2e982"
+    module: BOOT
+  - name: sport__by_callees_1
+    address: 0x4eaa0
+    class: bymodule
+    evidence: "0x4eaa0 every caller is a body this rule placed in SPORT: 0x5c714"
+    module: SPORT
+  - name: sport__by_callees_2
+    address: 0x4eab0
+    class: bymodule
+    evidence: "0x4eab0 every caller is a body this rule placed in SPORT: 0x5c714"
+    module: SPORT
   - name: WPP_CMD_HR_AUTO_ALGORITHM_GET__1
     address: 0x4eae8
     class: helper
@@ -2226,6 +3416,11 @@ functions:
     class: logline
     evidence: "the only line 0x4eb78 logs, wlog('[i2c] Device on address 0x%0x has not been requested') at 0x4eb88"
     module: I2C
+  - name: algo_manager__by_callees_6
+    address: 0x4ec0c
+    class: bymodule
+    evidence: "0x4ec0c reaches only algo_manager_struct_200201d4"
+    module: ALGO_MANAGER
   - name: WPP_CMD_STORED_MEASURE_SIGNAL_GET__1
     address: 0x4ede8
     class: helper
@@ -2450,6 +3645,11 @@ functions:
     address: 0x50abc
     class: shell
     evidence: "shell_cmd_table row 0x27490: command 'wlog', run slot (+4)"
+  - name: debug_dump__by_callees_5
+    address: 0x50c9c
+    class: bymodule
+    evidence: "0x50c9c reaches only debug_dump_mutex"
+    module: DEBUG_DUMP
   - name: wlog_init
     address: 0x50ebc
     class: logline
@@ -2468,6 +3668,16 @@ functions:
     class: logline
     evidence: "the only line 0x50fd4 logs, wlog('[wlog] log store failed queue full') at 0x51020"
     module: WLOG
+  - name: debug_dump__by_callees_6
+    address: 0x51034
+    class: bymodule
+    evidence: "0x51034 reaches only debug_dump_mutex"
+    module: DEBUG_DUMP
+  - name: debug_dump__by_callees_7
+    address: 0x51044
+    class: bymodule
+    evidence: "0x51044 reaches only debug_dump_mutex"
+    module: DEBUG_DUMP
   - name: dropped_log
     address: 0x51084
     class: logline
@@ -2485,6 +3695,11 @@ functions:
     address: 0x511d4
     class: helper
     evidence: "only 0x899bc (refresh_install_go) calls 0x511d4; 22 bytes"
+  - name: loc__by_callees_1
+    address: 0x511f0
+    class: bymodule
+    evidence: "0x511f0 reaches only locale"
+    module: LOC
   - name: en
     address: 0x5120c
     class: logline
@@ -2509,16 +3724,31 @@ functions:
     address: 0x512ec
     class: shell
     evidence: "shell_cmd_table row 0x272b0: command 'locale', run slot (+4)"
+  - name: local_event_notify__by_callees_1
+    address: 0x51344
+    class: bymodule
+    evidence: "0x51344 reaches only local_event_notify_word_2001ada8"
+    module: LOCAL_EVENT_NOTIFY
   - name: WPP_CMD_LOCAL_EVENT_NOTIFY
     address: 0x513f0
     class: wppcmd
     command: 2459
     evidence: "wpp_cmd_table row 0x27bb0: key 2459, label 'WPP_CMD_LOCAL_EVENT_NOTIFY', CMD_LOCAL_EVENT_NOTIFY in wpp/src/commands.rs"
     module: LOCAL_EVENT_NOTIFY
+  - name: local_notifications__by_callees_1
+    address: 0x51460
+    class: bymodule
+    evidence: "0x51460 reaches only local_notifications_mutex"
+    module: LOCAL_NOTIFICATIONS
   - name: shell_help_local_notif
     address: 0x51474
     class: shell
     evidence: "shell_cmd_table row 0x272a4: command 'local_notif', --help slot (+8)"
+  - name: local_notifications__by_callees_2
+    address: 0x51504
+    class: bymodule
+    evidence: "0x51504 reaches only local_notifications_mutex"
+    module: LOCAL_NOTIFICATIONS
   - name: WPP_CMD_LOCAL_NOTIFICATIONS_CONFIG_GET
     address: 0x51514
     class: wppcmd
@@ -2534,6 +3764,11 @@ functions:
     address: 0x516d8
     class: logline
     evidence: "the only line 0x516d8 logs, wlog('[LOCAL_NOTIFICATIONS] Failed to load config') at 0x51704"
+    module: LOCAL_NOTIFICATIONS
+  - name: local_notifications__by_callees_3
+    address: 0x51778
+    class: bymodule
+    evidence: "0x51778 reaches only local_notifications_table_200070d4"
     module: LOCAL_NOTIFICATIONS
   - name: shell_cmd_local_notif
     address: 0x517a8
@@ -2557,20 +3792,80 @@ functions:
     address: 0x51bf4
     class: helper
     evidence: "only 0x523cc (sensors_sync_push_ppg) calls 0x51bf4; 36 bytes"
+  - name: max8617x__by_callees_6
+    address: 0x51d58
+    class: bymodule
+    evidence: "0x51d58 every caller is a body this rule placed in MAX8617X: 0x524b0"
+    module: MAX8617X
+  - name: max8617x__by_callees_7
+    address: 0x51e0c
+    class: bymodule
+    evidence: "0x51e0c every caller is a body this rule placed in MAX8617X: 0x524b0"
+    module: MAX8617X
+  - name: max8617x__by_callees_8
+    address: 0x520c8
+    class: bymodule
+    evidence: "0x520c8 every caller is a body this rule placed in MAX8617X: 0x53014"
+    module: MAX8617X
+  - name: max8617x__by_callees_9
+    address: 0x520f0
+    class: bymodule
+    evidence: "0x520f0 reaches only max8617x_table_20014828, max_led_config_task_handle"
+    module: MAX8617X
+  - name: max8617x__by_callees_10
+    address: 0x5216c
+    class: bymodule
+    evidence: "0x5216c reaches only max8617x_table_20014828"
+    module: MAX8617X
   - name: max8617x_0x_0x_0x
     address: 0x52224
     class: logline
     evidence: "the only line 0x52224 logs, wlog('[max8617x] (0x%06x) [0x%03x] 0x%05x') at 0x5228c"
+    module: MAX8617X
+  - name: max8617x__by_callees_11
+    address: 0x522ac
+    class: bymodule
+    evidence: "0x522ac every caller is a body this rule placed in MAX8617X: 0x524b0"
+    module: MAX8617X
+  - name: max8617x__by_callees_12
+    address: 0x524b0
+    class: bymodule
+    evidence: "0x524b0 reaches only max8617x_struct_2001b55c, max8617x_table_20014828"
     module: MAX8617X
   - name: max86173_kill_max86173_interrupt_task
     address: 0x52580
     class: logline
     evidence: "the only line 0x52580 logs, wlog('[max86173] Kill max86173 interrupt task') at 0x525a4"
     module: MAX86173
+  - name: max8617x__by_callees_13
+    address: 0x52610
+    class: bymodule
+    evidence: "0x52610 reaches only max8617x_table_20014828"
+    module: MAX8617X
+  - name: max8617x__by_callees_14
+    address: 0x526d8
+    class: bymodule
+    evidence: "0x526d8 reaches only max8617x_queue, max8617x_queue_static, max8617x_sem, max8617x_sem_static, max8617x_struct_20014818, max8617x_table_20014828, max_led_config_task_handle"
+    module: MAX8617X
+  - name: max8617x__by_callees_15
+    address: 0x5284c
+    class: bymodule
+    evidence: "0x5284c reaches only max8617x_queue, max8617x_sem, max8617x_table_20014828, max_led_config_task_handle"
+    module: MAX8617X
+  - name: max8617x__by_callees_16
+    address: 0x52914
+    class: bymodule
+    evidence: "0x52914 reaches only max8617x_table_20014828"
+    module: MAX8617X
   - name: shell_cmd_max8617x__1
     address: 0x52958
     class: helper
     evidence: "only 0x5345c (shell_cmd_max8617x) calls 0x52958; 48 bytes"
+    module: MAX8617X
+  - name: max8617x__by_callees_17
+    address: 0x52a04
+    class: bymodule
+    evidence: "0x52a04 reaches only max8617x_table_20014828"
     module: MAX8617X
   - name: shell_cmd_max8617x__2
     address: 0x52c3c
@@ -2581,10 +3876,30 @@ functions:
     class: logline
     evidence: "the only line 0x52e78 logs, wlog('[max8617x][factory][debug] %s,%d,%ld,%d,%d,%d') at 0x52f4e"
     module: MAX8617X
+  - name: max8617x__by_callees_18
+    address: 0x52f68
+    class: bymodule
+    evidence: "0x52f68 reaches only max8617x_ptr_2001be14"
+    module: MAX8617X
+  - name: max8617x__by_callees_19
+    address: 0x53014
+    class: bymodule
+    evidence: "0x53014 reaches only max8617x_ptr_2001be14"
+    module: MAX8617X
+  - name: max86173__by_callees_1
+    address: 0x531c8
+    class: bymodule
+    evidence: "0x531c8 reaches only max86173_table_2001be18"
+    module: MAX86173
   - name: max86173_tag_0x_vs_expected_0x
     address: 0x531e4
     class: logline
     evidence: "the only line 0x531e4 logs, wlog('[max86173] Tag: 0x%01x VS expected:0x%01x, last AFE conf: %dus, sample id: %d') at 0x53244"
+    module: MAX86173
+  - name: max86173__by_callees_2
+    address: 0x53260
+    class: bymodule
+    evidence: "0x53260 reaches only max86173_table_2001be18"
     module: MAX86173
   - name: max86173_spi_could_not_allocate_buf
     address: 0x53284
@@ -2595,12 +3910,22 @@ functions:
     address: 0x53300
     class: helper
     evidence: "only 0x52b1c (max_led_config_task) calls 0x53300; 4 bytes"
+  - name: memcpy_wrap_1
+    address: 0x53308
+    class: wrapper
+    evidence: "0x53308 is 9 instructions with one call, to memcpy, and returns"
+    module: MAX8617X
   - name: max8617x_byte_20026bcc_get
     address: 0x53324
     class: accessor
     evidence: "the body is one ldrb through max8617x_byte_20026bcc (pool word 0x5332c = 0x20026bcc) and a return"
     proto: "uint32_t max8617x_byte_20026bcc_get(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: max8617x__by_callees_20
+    address: 0x53330
+    class: bymodule
+    evidence: "0x53330 reaches only max8617x_byte_20026bcc"
+    module: MAX8617X
   - name: max_led_config_task__2
     address: 0x53370
     class: helper
@@ -2674,6 +3999,16 @@ functions:
     class: logline
     evidence: "the only line 0x54028 logs, wlog('[MEASURE_LIVE] Unknown measure subcat %d') at 0x5403a"
     module: MEASURE_LIVE
+  - name: spo2__by_callees_1
+    address: 0x540ec
+    class: bymodule
+    evidence: "0x540ec every caller is a body this rule placed in SPO2: 0x619b0"
+    module: SPO2
+  - name: spo2__by_callees_2
+    address: 0x54154
+    class: bymodule
+    evidence: "0x54154 every caller is a body this rule placed in SPO2: 0x61804"
+    module: SPO2
   - name: measure_live__shared_1
     address: 0x54188
     class: shared
@@ -2767,6 +4102,21 @@ functions:
     class: helper
     evidence: "only 0x55d80 (WPP_CMD_NOTIFICATION_GET) calls 0x55680; 14 bytes"
     module: WPP
+  - name: ancs__by_callees_3
+    address: 0x55694
+    class: bymodule
+    evidence: "0x55694 reaches only ancs_ptr_2001bf90"
+    module: ANCS
+  - name: ancs__by_callees_4
+    address: 0x556cc
+    class: bymodule
+    evidence: "0x556cc reaches only ancs_ptr_2001bf90"
+    module: ANCS
+  - name: wpp_lite__by_callees_2
+    address: 0x55704
+    class: bymodule
+    evidence: "0x55704 reaches only wpp_lite_byte_20026bce"
+    module: WPP_LITE
   - name: WPP_CMD_REMOTE_NOTIFICATIONS_CONFIG_SET__2
     address: 0x55788
     class: helper
@@ -2789,6 +4139,16 @@ functions:
     address: 0x55908
     class: logline
     evidence: "the only line 0x55908 logs, wlog(\"[NOTIFICATION_CACHE] Couldn't insert in cache %u (rc = %d)\") at 0x55946"
+    module: NOTIFICATION_CACHE
+  - name: flash_cache__by_callees_1
+    address: 0x55960
+    class: bymodule
+    evidence: "0x55960 calls only flash_cache_read"
+    module: FLASH_CACHE
+  - name: notification_cache__by_callees_1
+    address: 0x55998
+    class: bymodule
+    evidence: "0x55998 reaches only notification_cache_half_2001bfb0"
     module: NOTIFICATION_CACHE
   - name: NOTIFICATION_APP_ENABLED_GET__1
     address: 0x55a00
@@ -2848,6 +4208,11 @@ functions:
     class: logline
     evidence: "the only line 0x56558 logs, wlog('[WAM_GUI_RESOURCE] Data size mismatch') at 0x56584"
     module: WAM_GUI_RESOURCE
+  - name: wpp__by_callees_12
+    address: 0x565a4
+    class: bymodule
+    evidence: "0x565a4 reaches only wpp_word_2001bffc"
+    module: WPP
   - name: wam_gui_resource_glyph_received_cb
     address: 0x56774
     class: logline
@@ -2900,6 +4265,11 @@ functions:
     class: helper
     evidence: "only 0x3fc14 (periodic_task_sweep) calls 0x56bd4; 140 bytes"
     module: PPG_BACKGROUND_RAW_DATA
+  - name: ppg_background_raw_data__by_callees_1
+    address: 0x56c74
+    class: bymodule
+    evidence: "0x56c74 reaches only ppg_background_raw_data_struct_2001c0c0"
+    module: PPG_BACKGROUND_RAW_DATA
   - name: pwr_negative_counter
     address: 0x56d24
     class: logline
@@ -2915,6 +4285,16 @@ functions:
     address: 0x56d8c
     class: shell
     evidence: "shell_cmd_table row 0x27334: command 'power', run slot (+4)"
+  - name: pb__by_callees_1
+    address: 0x570e0
+    class: bymodule
+    evidence: "0x570e0 every caller is a body this rule placed in PB: 0x571e8"
+    module: PB
+  - name: pb__by_callees_2
+    address: 0x570f4
+    class: bymodule
+    evidence: "0x570f4 reaches only pb_ptr_2001c0d0, pb_word_2001c0d8"
+    module: PB
   - name: shell_cmd_push_button__1
     address: 0x57158
     class: helper
@@ -2923,6 +4303,26 @@ functions:
     address: 0x57198
     class: helper
     evidence: "only 0x57468 (shell_cmd_push_button) calls 0x57198; 68 bytes"
+    module: PB
+  - name: pb__by_callees_3
+    address: 0x571e8
+    class: bymodule
+    evidence: "0x571e8 reaches only pb_ptr_2001c0d0, pb_word_2001c0d8"
+    module: PB
+  - name: pb__by_callees_4
+    address: 0x5729c
+    class: bymodule
+    evidence: "0x5729c reaches only pb_word_2001c0d8"
+    module: PB
+  - name: pb__by_callees_5
+    address: 0x572fc
+    class: bymodule
+    evidence: "0x572fc reaches only pb_ptr_2001c0d0, pb_word_2001c0d8"
+    module: PB
+  - name: pb__by_callees_6
+    address: 0x57394
+    class: bymodule
+    evidence: "0x57394 reaches only pb_ptr_2001c0cc, pb_ptr_2001c0d0"
     module: PB
   - name: shell_cmd_push_button__3
     address: 0x573ec
@@ -2952,6 +4352,11 @@ functions:
     address: 0x575fc
     class: shell
     evidence: "shell_cmd_table row 0x27364: command 'rand', run slot (+4)"
+  - name: boot__by_callees_19
+    address: 0x5765c
+    class: bymodule
+    evidence: "0x5765c reaches only rambkp_block"
+    module: BOOT
   - name: post_update_hooks_4_mark
     address: 0x576d4
     class: slot
@@ -2962,6 +4367,11 @@ functions:
     class: helper
     evidence: "only 0x57ba8 (main_task__9) calls 0x5771c; 62 bytes"
     module: INIT
+  - name: boot__by_callees_20
+    address: 0x57764
+    class: bymodule
+    evidence: "0x57764 reaches only rambkp_block"
+    module: BOOT
   - name: post_update_hooks_4_check
     address: 0x57800
     class: slot
@@ -2984,6 +4394,11 @@ functions:
     class: helper
     evidence: "only 0x2e1d8 (main_task) calls 0x57ba8; 636 bytes"
     module: INIT
+  - name: debug_dump__by_callees_8
+    address: 0x57f00
+    class: bymodule
+    evidence: "0x57f00 every caller is a body this rule placed in DEBUG_DUMP: 0x6dc08"
+    module: DEBUG_DUMP
   - name: shell_cmd_raw_data__1
     address: 0x57f8c
     class: helper
@@ -3026,6 +4441,26 @@ functions:
     class: logline
     evidence: "the only line 0x58c6c logs, wlog('[RESPIRATORY_SCAN] End of scan alarm triggered') at 0x58c76"
     module: RESPIRATORY_SCAN
+  - name: respiratory_scan__by_callees_1
+    address: 0x58ca0
+    class: bymodule
+    evidence: "0x58ca0 reaches only respiratory_scan_struct_20007100"
+    module: RESPIRATORY_SCAN
+  - name: respiratory_scan__by_callees_2
+    address: 0x58cb0
+    class: bymodule
+    evidence: "0x58cb0 reaches only respiratory_scan_struct_20007100"
+    module: RESPIRATORY_SCAN
+  - name: xQueueCreateMutexStatic_wrap
+    address: 0x58d70
+    class: wrapper
+    evidence: "0x58d70 is 7 instructions with one call, to xQueueCreateMutexStatic, and returns"
+    module: M
+  - name: boot__by_callees_21
+    address: 0x58d88
+    class: bymodule
+    evidence: "0x58d88 every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
   - name: respiratory_scan_allow_measure
     address: 0x58f74
     class: logline
@@ -3046,6 +4481,16 @@ functions:
     class: helper
     evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x59008; 72 bytes"
     module: RESPIRATORY_SCAN
+  - name: respiratory_scan__by_callees_3
+    address: 0x59064
+    class: bymodule
+    evidence: "0x59064 reaches only respiratory_scan_struct_20007100"
+    module: RESPIRATORY_SCAN
+  - name: boot__by_callees_22
+    address: 0x59080
+    class: bymodule
+    evidence: "0x59080 reaches only rambkp_block"
+    module: BOOT
   - name: shell_help_reset_ctx
     address: 0x590b4
     class: shell
@@ -3085,10 +4530,24 @@ functions:
     address: 0x59c24
     class: shell
     evidence: "shell_cmd_table row 0x273b8: command 'shell', run slot (+4)"
+  - name: xQueueGenericSend_wrap_2
+    address: 0x59c74
+    class: wrapper
+    evidence: "0x59c74 is 12 instructions with one call, to xQueueGenericSend, and returns"
   - name: shell_cmd_table_32_run__1
     address: 0x59c9c
     class: helper
     evidence: "only 0x9b9e6 (shell_cmd_table_32_run) calls 0x59c9c; 26 bytes"
+  - name: crtvfy__by_callees_1
+    address: 0x59f84
+    class: bymodule
+    evidence: "0x59f84 reaches only crtvfy_ptr_2001f8e4"
+    module: CRTVFY
+  - name: crtvfy__by_callees_2
+    address: 0x59fb0
+    class: bymodule
+    evidence: "0x59fb0 reaches only crtvfy_ptr_2001f8e4"
+    module: CRTVFY
   - name: shell_help_mem
     address: 0x5a27c
     class: shell
@@ -3162,6 +4621,11 @@ functions:
     address: 0x5b024
     class: shell
     evidence: "shell_cmd_table row 0x2731c: command 'perso', run slot (+4)"
+  - name: sn19020x6__by_callees_2
+    address: 0x5b234
+    class: bymodule
+    evidence: "0x5b234 every caller is a body this rule placed in SN19020X6: 0x28cb8, 0x5b320"
+    module: SN19020X6
   - name: shell_cmd_sn19020x6__1
     address: 0x5b2b8
     class: helper
@@ -3171,6 +4635,11 @@ functions:
     address: 0x5b2d0
     class: logline
     evidence: "the only line 0x5b2d0 logs, wlog('[SN19020X6] Set sampling frequency: %dsps (0x%0x)') at 0x5b302"
+    module: SN19020X6
+  - name: sn19020x6__by_callees_3
+    address: 0x5b320
+    class: bymodule
+    evidence: "0x5b320 reaches only sn19020x6_half_20024dac"
     module: SN19020X6
   - name: i2c_device_table_1_acquire
     address: 0x5b400
@@ -3225,6 +4694,21 @@ functions:
     class: logline
     evidence: "the only line 0x5c5cc logs, wlog('[SPI] device < %s > not requested') at 0x5c5ec"
     module: SPI
+  - name: sport__by_callees_3
+    address: 0x5c6b4
+    class: bymodule
+    evidence: "0x5c6b4 reaches only sport_byte_20026bd1"
+    module: SPORT
+  - name: sport__by_callees_4
+    address: 0x5c6e4
+    class: bymodule
+    evidence: "0x5c6e4 reaches only sport_byte_20026bd1"
+    module: SPORT
+  - name: sport__by_callees_5
+    address: 0x5c714
+    class: bymodule
+    evidence: "0x5c714 reaches only sport_byte_20026bd1, sport_half_20024dae"
+    module: SPORT
   - name: main_task__10
     address: 0x5c978
     class: helper
@@ -3257,6 +4741,11 @@ functions:
     class: string
     evidence: "wlog('[LAPPING] %s', 'friction_test_natural_time_with_params') at 0x5d1b2"
     module: LAPPING
+  - name: screen_calibration__by_callees_5
+    address: 0x5d324
+    class: bymodule
+    evidence: "0x5d324 reaches only screen_calibration_flag_2001fad8"
+    module: SCREEN_CALIBRATION
   - name: screen_calibration_no_motor_id_availabe__1__1
     address: 0x5d330
     class: helper
@@ -3272,6 +4761,16 @@ functions:
     class: helper
     evidence: "only 0x5d884 (steps_new_steps) calls 0x5d570; 44 bytes"
     module: STEPS
+  - name: steps__by_callees_1
+    address: 0x5d5a0
+    class: bymodule
+    evidence: "0x5d5a0 reaches only steps_byte_20026bd3"
+    module: STEPS
+  - name: user__by_callees_1
+    address: 0x5d604
+    class: bymodule
+    evidence: "0x5d604 reaches only user_struct_2001faf4"
+    module: USER
   - name: WPP_CMD_RUN_PARAMETERS_SET__1
     address: 0x5d69c
     class: helper
@@ -3280,6 +4779,16 @@ functions:
     address: 0x5d6e8
     class: helper
     evidence: "only 0x606cc (WPP_CMD_WALK_PARAMETERS_SET) calls 0x5d6e8; 66 bytes"
+  - name: steps__by_callees_2
+    address: 0x5d7ec
+    class: bymodule
+    evidence: "0x5d7ec reaches only steps_table_2001fb20"
+    module: STEPS
+  - name: steps__by_callees_3
+    address: 0x5d878
+    class: bymodule
+    evidence: "0x5d878 reaches only steps_struct_2001fafc"
+    module: STEPS
   - name: steps_new_steps
     address: 0x5d884
     class: logline
@@ -3287,6 +4796,16 @@ functions:
     module: STEPS
     proto: "uint32_t steps_new_steps(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: swdog__by_callees_1
+    address: 0x5df44
+    class: bymodule
+    evidence: "0x5df44 reaches only swdog_table_2001fbac"
+    module: SWDOG
+  - name: max8617x__by_callees_21
+    address: 0x5df78
+    class: bymodule
+    evidence: "0x5df78 every caller is a body this rule placed in MAX8617X: 0x5284c"
+    module: MAX8617X
   - name: swdog_id_timeout
     address: 0x5dfac
     class: logline
@@ -3297,6 +4816,16 @@ functions:
     class: logline
     evidence: "the only line 0x5dfe4 logs, wlog('[TIME] load time delta: %u') at 0x5e00c"
     module: TIME
+  - name: time__by_callees_1
+    address: 0x5e024
+    class: bymodule
+    evidence: "0x5e024 reaches only time_delta, time_flag_20026bd9"
+    module: TIME
+  - name: boot__by_callees_23
+    address: 0x5e174
+    class: bymodule
+    evidence: "0x5e174 every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
   - name: shell_cmd_time
     address: 0x5e18c
     class: shell
@@ -3431,6 +4960,11 @@ functions:
     class: helper
     evidence: "only 0x32218 (time_new_timezone_rebuild_aggregates) calls 0x5ee48; 28 bytes"
     module: INACTIVITY
+  - name: inactivity_config__by_callees_1
+    address: 0x5ee94
+    class: bymodule
+    evidence: "0x5ee94 reaches only inactivity_config_struct_2001fc6c"
+    module: INACTIVITY_CONFIG
   - name: WPP_CMD_INACTIVITY_CFG_SET__2
     address: 0x5eef4
     class: helper
@@ -3450,15 +4984,35 @@ functions:
     evidence: "wpp_cmd_table row 0x27898: key 2458, label 'WPP_CMD_INACTIVITY_CFG_GET', CMD_INACTIVITY_CFG_GET in wpp/src/commands.rs"
     module: INACTIVITY_CONFIG
     also_named: [process_cmd_inactivity_cfg_get (string)]
+  - name: tracker__by_callees_1
+    address: 0x5f044
+    class: bymodule
+    evidence: "0x5f044 reaches only tracker_struct_2001fce0"
+    module: TRACKER
   - name: day_goal_reached_times__1
     address: 0x5f054
     class: helper
     evidence: "only 0x92ba4 (day_goal_reached_times) calls 0x5f054; 4 bytes"
     module: DAY
+  - name: boot__by_callees_24
+    address: 0x5f05c
+    class: bymodule
+    evidence: "0x5f05c reaches only rambkp_block"
+    module: BOOT
+  - name: tracker__by_callees_2
+    address: 0x5f398
+    class: bymodule
+    evidence: "0x5f398 reaches only tracker_struct_2001fce0"
+    module: TRACKER
   - name: tracker_struct_2001fce0_get
     address: 0x5f3a4
     class: accessor
     evidence: "the body is one ldr through tracker_struct_2001fce0 (pool word 0x5f3ac = 0x2001fce0) and a return"
+  - name: alti__by_callees_1
+    address: 0x5f3b0
+    class: bymodule
+    evidence: "0x5f3b0 reaches only alti_struct_2001fcbc"
+    module: ALTI
   - name: WPP_CMD_DISPLAYED_INFO_GET__1
     address: 0x5f3bc
     class: helper
@@ -3473,6 +5027,26 @@ functions:
     address: 0x5f408
     class: helper
     evidence: "only 0x843dc (on_enter_goal) calls 0x5f408; 6 bytes"
+  - name: alti__by_callees_2
+    address: 0x5f414
+    class: bymodule
+    evidence: "0x5f414 reaches only alti_struct_2001fcbc"
+    module: ALTI
+  - name: alti__by_callees_3
+    address: 0x5f420
+    class: bymodule
+    evidence: "0x5f420 reaches only alti_struct_2001fcbc"
+    module: ALTI
+  - name: tracker__by_callees_3
+    address: 0x5f42c
+    class: bymodule
+    evidence: "0x5f42c reaches only tracker_struct_2001fce0"
+    module: TRACKER
+  - name: tracker__by_callees_4
+    address: 0x5f44c
+    class: bymodule
+    evidence: "0x5f44c reaches only tracker_struct_2001fce0"
+    module: TRACKER
   - name: WPP_CMD_DISPLAYED_INFO_GET__2
     address: 0x5f458
     class: helper
@@ -3498,11 +5072,21 @@ functions:
     class: helper
     evidence: "only 0x6cd40 (WPP_CMD_DISPLAYED_INFO_GET) calls 0x5f514; 6 bytes"
     module: WPP
+  - name: alti__by_callees_4
+    address: 0x5f520
+    class: bymodule
+    evidence: "0x5f520 reaches only alti_struct_2001fcbc"
+    module: ALTI
   - name: tracker_live_dist_current_min_unknown_delta
     address: 0x5f52c
     class: logline
     evidence: "the only line 0x5f52c logs, wlog('[TRACKER_LIVE][DIST] current:%d, min:%d, unknown:%d, delta:%d, total:%d') at 0x5f568"
     module: TRACKER_LIVE
+  - name: adxl367__by_callees_6
+    address: 0x5f584
+    class: bymodule
+    evidence: "0x5f584 every caller is a body this rule placed in ADXL367: 0x3bee4"
+    module: ADXL367
   - name: sensors_sync_push_accel__3__4
     address: 0x5f590
     class: helper
@@ -3511,6 +5095,11 @@ functions:
     address: 0x5f5c8
     class: helper
     evidence: "only 0x3bd10 (sensors_sync_push_accel) calls 0x5f5c8; 240 bytes"
+  - name: tracker__by_callees_5
+    address: 0x5f6ec
+    class: bymodule
+    evidence: "0x5f6ec reaches only tracker_struct_2001fce0"
+    module: TRACKER
   - name: WPP_CMD_DISPLAYED_INFO_GET__6
     address: 0x5f6f8
     class: helper
@@ -3530,14 +5119,64 @@ functions:
     class: helper
     evidence: "only 0x2f7b0 (alti_failed_to_take_pressure_measure) calls 0x5f748; 26 bytes"
     module: ALTI
+  - name: alti__by_callees_5
+    address: 0x5f7a4
+    class: bymodule
+    evidence: "0x5f7a4 reaches only alti_struct_2001fcbc"
+    module: ALTI
+  - name: boot__by_callees_25
+    address: 0x5f7cc
+    class: bymodule
+    evidence: "0x5f7cc every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
+  - name: tracker__by_callees_6
+    address: 0x5f970
+    class: bymodule
+    evidence: "0x5f970 reaches only tracker_struct_2001fce0"
+    module: TRACKER
   - name: on_enter_goal__2
     address: 0x5fb00
     class: helper
     evidence: "only 0x843dc (on_enter_goal) calls 0x5fb00; 8 bytes"
+  - name: cons_log__by_callees_1
+    address: 0x5fb44
+    class: bymodule
+    evidence: "0x5fb44 reaches only cons_log_byte_20026bdb, cons_log_byte_20026bdc, cons_log_byte_20026bdd, cons_log_byte_20026bde, cons_log_byte_20026bdf, cons_log_byte_20026be0"
+    module: CONS_LOG
+  - name: tracker__by_callees_7
+    address: 0x5fc58
+    class: bymodule
+    evidence: "0x5fc58 every caller is a body this rule placed in TRACKER: 0x5fcc0, 0x5fce8"
+    module: TRACKER
+  - name: tracker__by_callees_8
+    address: 0x5fc90
+    class: bymodule
+    evidence: "0x5fc90 reaches only tracker_struct_2001fd1c, tracker_struct_2001fd24, tracker_word_2001fd18"
+    module: TRACKER
+  - name: tracker__by_callees_9
+    address: 0x5fcc0
+    class: bymodule
+    evidence: "0x5fcc0 reaches only tracker_struct_2001fd1c"
+    module: TRACKER
+  - name: tracker__by_callees_10
+    address: 0x5fce8
+    class: bymodule
+    evidence: "0x5fce8 reaches only tracker_struct_2001fd1c, tracker_struct_2001fd24, tracker_word_2001fd18"
+    module: TRACKER
+  - name: tracker__by_callees_11
+    address: 0x5fda8
+    class: bymodule
+    evidence: "0x5fda8 reaches only tracker_word_2001fd18"
+    module: TRACKER
   - name: refresh_sleep_duration__1
     address: 0x5fe70
     class: helper
     evidence: "only 0x85850 (refresh_sleep_duration) calls 0x5fe70; 32 bytes"
+  - name: tracker__by_callees_12
+    address: 0x5fe9c
+    class: bymodule
+    evidence: "0x5fe9c reaches only tracker_struct_2001fd1c"
+    module: TRACKER
   - name: shell_cmd_tracker_live__1
     address: 0x5fec4
     class: helper
@@ -3546,11 +5185,26 @@ functions:
     address: 0x5fed0
     class: accessor
     evidence: "the body is one ldr through tracker_word_2001fd18 (pool word 0x5fed8 = 0x2001fd18) and a return"
+  - name: tracker__by_callees_13
+    address: 0x5fedc
+    class: bymodule
+    evidence: "0x5fedc every caller is a body this rule placed in TRACKER: 0x5fce8"
+    module: TRACKER
   - name: wpp_lite_err_duration_unpack__1
     address: 0x5fee8
     class: helper
     evidence: "only 0x5ff70 (wpp_lite_err_duration_unpack) calls 0x5fee8; 8 bytes"
     module: WPP_LITE
+  - name: tracker__by_callees_14
+    address: 0x5fef4
+    class: bymodule
+    evidence: "0x5fef4 every caller is a body this rule placed in TRACKER: 0x5fc90, 0x5fcc0"
+    module: TRACKER
+  - name: tracker__by_callees_15
+    address: 0x5ff04
+    class: bymodule
+    evidence: "0x5ff04 every caller is a body this rule placed in TRACKER: 0x5fcc0"
+    module: TRACKER
   - name: WPP_CMD_TRACKER_SLEEP_SET
     address: 0x5ff70
     class: wppcmd
@@ -3566,6 +5220,16 @@ functions:
     address: 0x60238
     class: shell
     evidence: "shell_cmd_table row 0x2743c: command 'tracker_live', --help slot (+8)"
+  - name: user__by_callees_2
+    address: 0x602bc
+    class: bymodule
+    evidence: "0x602bc every caller is a body this rule placed in USER: 0x602e0, 0x60350"
+    module: USER
+  - name: user__by_callees_3
+    address: 0x602e0
+    class: bymodule
+    evidence: "0x602e0 reaches only user_table_2001fd40"
+    module: USER
   - name: refresh_sport_heart_rate__1
     address: 0x60324
     class: helper
@@ -3578,6 +5242,21 @@ functions:
     address: 0x6033c
     class: accessor
     evidence: "the body is one ldr through user_table_2001fd40 (pool word 0x60344 = 0x2001fd40) and a return"
+  - name: user__by_callees_4
+    address: 0x60350
+    class: bymodule
+    evidence: "0x60350 reaches only user_table_2001fd40"
+    module: USER
+  - name: user__by_callees_5
+    address: 0x6037c
+    class: bymodule
+    evidence: "0x6037c reaches only user_table_2001fd40, user_word_2001fd3c"
+    module: USER
+  - name: user__by_callees_6
+    address: 0x603d8
+    class: bymodule
+    evidence: "0x603d8 reaches only user_table_2001fd40, user_word_2001fd3c"
+    module: USER
   - name: WPP_CMD_TRACKER_USER_SET
     address: 0x60528
     class: wppcmd
@@ -3622,10 +5301,25 @@ functions:
     address: 0x6092c
     class: helper
     evidence: "only 0x9d5dc (WPP_CMD_SYNC_OK) calls 0x6092c; 16 bytes"
+  - name: background_sync__by_callees_1
+    address: 0x60940
+    class: bymodule
+    evidence: "0x60940 reaches only background_sync_struct_2001fda0"
+    module: BACKGROUND_SYNC
+  - name: background_sync__by_callees_2
+    address: 0x60950
+    class: bymodule
+    evidence: "0x60950 reaches only background_sync_struct_2001fda0"
+    module: BACKGROUND_SYNC
   - name: unit_get_units_from_dblib__1
     address: 0x609d0
     class: helper
     evidence: "only 0x60a88 (unit_get_units_from_dblib) calls 0x609d0; 92 bytes"
+    module: UNIT
+  - name: unit__by_callees_1
+    address: 0x60a54
+    class: bymodule
+    evidence: "0x60a54 reaches only unit_byte_20026be4"
     module: UNIT
   - name: unit_get_units_from_dblib
     address: 0x60a88
@@ -3636,6 +5330,11 @@ functions:
     address: 0x60ad8
     class: helper
     evidence: "only 0x84b98 (on_event_demo_menu) calls 0x60ad8; 24 bytes"
+  - name: unit__by_callees_2
+    address: 0x60af4
+    class: bymodule
+    evidence: "0x60af4 reaches only unit_byte_20026be4"
+    module: UNIT
   - name: WPP_CMD_USER_UNIT__2
     address: 0x60b10
     class: helper
@@ -3648,14 +5347,29 @@ functions:
     address: 0x60b48
     class: accessor
     evidence: "the body is one ldrb through unit_byte_20026be4 (pool word 0x60b50 = 0x20026be4) and a return"
+  - name: unit__by_callees_3
+    address: 0x60b54
+    class: bymodule
+    evidence: "0x60b54 reaches only unit_byte_20026be4"
+    module: UNIT
   - name: WPP_CMD_USER_UNIT__4
     address: 0x60b60
     class: helper
     evidence: "only 0x60c68 (WPP_CMD_USER_UNIT) calls 0x60b60; 6 bytes"
+  - name: unit__by_callees_4
+    address: 0x60b6c
+    class: bymodule
+    evidence: "0x60b6c reaches only unit_byte_20026be4"
+    module: UNIT
   - name: wui_vtable_elevation_slot_8__1
     address: 0x60b78
     class: helper
     evidence: "only 0xa6154 (wui_vtable_elevation_slot_8) calls 0x60b78; 34 bytes"
+  - name: unit__by_callees_5
+    address: 0x60bf0
+    class: bymodule
+    evidence: "0x60bf0 reaches only unit_byte_20026be4"
+    module: UNIT
   - name: WPP_CMD_USER_UNIT
     address: 0x60c68
     class: wppcmd
@@ -3690,10 +5404,24 @@ functions:
     class: shell
     evidence: "shell_cmd_table row 0x2716c: command 'calib_test', run slot (+4)"
     module: SHELL
+  - name: spo2__by_callees_3
+    address: 0x616f0
+    class: bymodule
+    evidence: "0x616f0 reaches only spo2_struct_2001ff30"
+    module: SPO2
+  - name: xQueueSemaphoreTake_wrap
+    address: 0x61700
+    class: wrapper
+    evidence: "0x61700 is 9 instructions with one call, to xQueueSemaphoreTake, and returns"
   - name: spo2_failed_to_update_screen_data__1
     address: 0x6171c
     class: helper
     evidence: "only 0x61be8 (spo2_failed_to_update_screen_data) calls 0x6171c; 14 bytes"
+    module: SPO2
+  - name: spo2__by_callees_4
+    address: 0x61730
+    class: bymodule
+    evidence: "0x61730 reaches only spo2_struct_2001ff30"
     module: SPO2
   - name: spo2_show_result_status_value
     address: 0x61744
@@ -3705,15 +5433,30 @@ functions:
     class: logline
     evidence: "the only line 0x617d4 logs, wlog('[SPO2] Unexpected status = %d') at 0x617f2"
     module: SPO2
+  - name: spo2__by_callees_5
+    address: 0x61804
+    class: bymodule
+    evidence: "0x61804 reaches only spo2_struct_2001ff30"
+    module: SPO2
   - name: wui_vtable_spo2_meas_2_slot_12__1
     address: 0x61968
     class: helper
     evidence: "only 0xa63b2 (wui_vtable_spo2_meas_2_slot_12) calls 0x61968; 16 bytes"
+  - name: spo2__by_callees_6
+    address: 0x619b0
+    class: bymodule
+    evidence: "0x619b0 reaches only spo2_struct_2001ff30"
+    module: SPO2
   - name: periodic_task_sweep__3
     address: 0x61ac0
     class: helper
     evidence: "only 0x3fc14 (periodic_task_sweep) calls 0x61ac0; 144 bytes"
     module: AUTO_BURST
+  - name: spo2__by_callees_7
+    address: 0x61b68
+    class: bymodule
+    evidence: "0x61b68 reaches only spo2_struct_2001ff30"
+    module: SPO2
   - name: wui_vtable_spo2_meas_slot_13__1
     address: 0x61b98
     class: helper
@@ -3737,6 +5480,11 @@ functions:
     address: 0x61d28
     class: logline
     evidence: "the only line 0x61d28 logs, wlog('[SPO2] Could not open file (%d)') at 0x61d4c"
+    module: SPO2
+  - name: spo2__by_callees_8
+    address: 0x61d70
+    class: bymodule
+    evidence: "0x61d70 reaches only spo2_word_20007158"
     module: SPO2
   - name: hr_measure_cannot_call_hr_measure_release__1
     address: 0x6202c
@@ -3787,6 +5535,16 @@ functions:
     address: 0x62f24
     class: helper
     evidence: "only 0x8658c (wui_vtable_high_hr_popup_on_enter) calls 0x62f24; 6 bytes"
+  - name: ppg_afib__by_callees_1
+    address: 0x62fe0
+    class: bymodule
+    evidence: "0x62fe0 reaches only ppg_afib_word_2002005c"
+    module: PPG_AFIB
+  - name: ppg_afib__by_callees_2
+    address: 0x63074
+    class: bymodule
+    evidence: "0x63074 reaches only ppg_afib_struct_200200bc"
+    module: PPG_AFIB
   - name: periodic_task_table_3_run__1__1
     address: 0x63084
     class: helper
@@ -3824,12 +5582,27 @@ functions:
     address: 0x6370c
     class: helper
     evidence: "only 0x6e21c (WPP_CMD_STORED_MEASURE_SIGNAL_GET) calls 0x6370c; 224 bytes"
+  - name: ppg_dbt__by_callees_1
+    address: 0x63894
+    class: bymodule
+    evidence: "0x63894 reaches only ppg_dbt_mutex"
+    module: PPG_DBT
+  - name: ppg_dbt__by_callees_2
+    address: 0x638a4
+    class: bymodule
+    evidence: "0x638a4 reaches only ppg_dbt_mutex"
+    module: PPG_DBT
   - name: on_event_dbt_meas__3
     address: 0x638c4
     class: helper
     evidence: "only 0x87154 (on_event_dbt_meas) calls 0x638c4; 42 bytes"
     proto: "uint32_t on_event_dbt_meas__3(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: xQueueCreateMutexStatic_and_store_ppg_dbt_mutex
+    address: 0x638f4
+    class: wrapper
+    evidence: "0x638f4 is 7 instructions with one call, to xQueueCreateMutexStatic, and keeps the result in ppg_dbt_mutex"
+    module: M
   - name: on_event_dbt_meas__4
     address: 0x6390c
     class: helper
@@ -3859,6 +5632,16 @@ functions:
     address: 0x63b3c
     class: helper
     evidence: "only 0x63ddc (algo_manager_publish_results) calls 0x63b3c; 42 bytes"
+  - name: algo_manager__by_callees_7
+    address: 0x63bcc
+    class: bymodule
+    evidence: "0x63bcc reaches only algo_manager_struct_200201d4"
+    module: ALGO_MANAGER
+  - name: algo_manager__by_callees_8
+    address: 0x63be0
+    class: bymodule
+    evidence: "0x63be0 reaches only algo_manager_struct_200201d4"
+    module: ALGO_MANAGER
   - name: main_task__11
     address: 0x63bf0
     class: helper
@@ -3907,6 +5690,11 @@ functions:
     class: logline
     evidence: "the only line 0x642d4 logs, wlog('[TSM] Tried to release mode %s (%d) while not requested') at 0x64314"
     module: TSM
+  - name: algo_manager__by_callees_9
+    address: 0x64328
+    class: bymodule
+    evidence: "0x64328 every caller is a body this rule placed in ALGO_MANAGER: 0x4ec0c"
+    module: ALGO_MANAGER
   - name: update_stats_post_update
     address: 0x64568
     class: string
@@ -3962,6 +5750,11 @@ functions:
     class: helper
     evidence: "only 0x650e8 (FW_AVAILABLE) calls 0x64cf8; 216 bytes"
     module: CHUNKED_UPDATE
+  - name: flash__by_callees_1
+    address: 0x64f4c
+    class: bymodule
+    evidence: "0x64f4c reaches only spi_flash_handle"
+    module: FLASH
   - name: process_continue_fw_available
     address: 0x65078
     class: string
@@ -4040,6 +5833,16 @@ functions:
     address: 0x65b84
     class: helper
     evidence: "only 0x65d28 (shell_cmd_vasistas) calls 0x65b84; 58 bytes"
+  - name: vas__by_callees_1
+    address: 0x65bc4
+    class: bymodule
+    evidence: "0x65bc4 reaches only vas_flag_20020250"
+    module: VAS
+  - name: vas__by_callees_2
+    address: 0x65c04
+    class: bymodule
+    evidence: "0x65c04 reaches only vas_struct_20020248"
+    module: VAS
   - name: vas_store_bkp
     address: 0x65c48
     class: logtag
@@ -4062,15 +5865,30 @@ functions:
     address: 0x66aa0
     class: helper
     evidence: "only 0x66b98 (vasistas_bank_for_record) calls 0x66aa0; 242 bytes"
+  - name: vib__by_callees_1
+    address: 0x66d74
+    class: bymodule
+    evidence: "0x66d74 reaches only vib_struct_20020400"
+    module: VIB
   - name: vib_ignore_vib_request_current_vib__1
     address: 0x66d84
     class: helper
     evidence: "only 0x66e04 (vib_ignore_vib_request_current_vib) calls 0x66d84; 14 bytes"
     module: VIB
+  - name: vib__by_callees_2
+    address: 0x66dc4
+    class: bymodule
+    evidence: "0x66dc4 reaches only vib_struct_20020400"
+    module: VIB
   - name: vib_ignore_vib_request_current_vib
     address: 0x66e04
     class: logline
     evidence: "the only line 0x66e04 logs, wlog('[VIB] Ignore vib request - current vib has higher prio (%d / %d)') at 0x66e26"
+    module: VIB
+  - name: vib__by_callees_3
+    address: 0x66e80
+    class: bymodule
+    evidence: "0x66e80 reaches only vib_struct_20020400"
     module: VIB
   - name: on_event_factory_check__1
     address: 0x66ebc
@@ -4147,10 +5965,20 @@ functions:
     class: logline
     evidence: "the only line 0x67ab0 logs, wlog('[WAM_SCREEN] %s padding x=%d, y=%d') at 0x67ac2"
     module: WAM_SCREEN
+  - name: ppg_afib_store__by_callees_1
+    address: 0x67ae0
+    class: bymodule
+    evidence: "0x67ae0 reaches only ppg_afib_store_mutex_static"
+    module: PPG_AFIB_STORE
   - name: shell_cmd_oled__1
     address: 0x67bc4
     class: helper
     evidence: "only 0x68508 (shell_cmd_oled) calls 0x67bc4; 34 bytes"
+  - name: rre_fonts__by_callees_11
+    address: 0x6842c
+    class: bymodule
+    evidence: "0x6842c reaches only rre_fonts_struct_200076f0, rre_fonts_struct_20017c5c"
+    module: RRE_FONTS
   - name: shell_help_oled
     address: 0x684f8
     class: shell
@@ -4195,6 +6023,11 @@ functions:
     class: logline
     evidence: "the only line 0x69464 logs, wlog('[WFTL] Post Update') at 0x69474"
     module: WFTL
+  - name: wftl__by_callees_1
+    address: 0x69744
+    class: bymodule
+    evidence: "0x69744 reaches only wftl_ptr_20020898"
+    module: WFTL
   - name: shell_cmd_wftl__1
     address: 0x6a130
     class: helper
@@ -4218,6 +6051,11 @@ functions:
     address: 0x6a4b8
     class: helper
     evidence: "only 0x6a7a8 (WPP_CMD_WORKOUT_LIVE_DATA) calls 0x6a4b8; 6 bytes"
+  - name: wui__by_callees_3
+    address: 0x6a50c
+    class: bymodule
+    evidence: "0x6a50c every caller is a body this rule placed in WUI: 0x813dc"
+    module: WUI
   - name: refresh_sport_gps_pace__1
     address: 0x6a538
     class: helper
@@ -4304,6 +6142,16 @@ functions:
     class: logline
     evidence: "the only line 0x6adc0 logs, wlog('[WPP] Notify WPP_CMD_WORKOUT_LIVE_DATA') at 0x6addc"
     module: WPP
+  - name: wpp__by_callees_13
+    address: 0x6adfc
+    class: bymodule
+    evidence: "0x6adfc reaches only wpp_flag_20026c12"
+    module: WPP
+  - name: wpp__by_callees_14
+    address: 0x6ae24
+    class: bymodule
+    evidence: "0x6ae24 reaches only wpp_flag_20026c12"
+    module: WPP
   - name: WPP_CMD_WORKOUT_SCREEN_LIST_GET
     address: 0x6b0e4
     class: wppcmd
@@ -4352,6 +6200,11 @@ functions:
     class: logtag
     evidence: "wlog('[custo_screen] Not enough memory') at 0x6b5e2, tag is a C identifier"
     module: CUSTO_SCREEN
+  - name: flash_cache_read_wrap
+    address: 0x6b650
+    class: wrapper
+    evidence: "0x6b650 is 10 instructions with one call, to flash_cache_read, and returns"
+    module: CUSTO_SCREEN
   - name: WPP_CMD_CUSTO_SCREEN_SET__6
     address: 0x6b67c
     class: helper
@@ -4399,6 +6252,16 @@ functions:
     class: helper
     evidence: "only 0x6c84c (WPP_CMD_PROBE) calls 0x6bc20; 6 bytes"
     module: WPP
+  - name: wpp__by_callees_15
+    address: 0x6bc6c
+    class: bymodule
+    evidence: "0x6bc6c every caller is a body this rule placed in WPP: 0x3914c"
+    module: WPP
+  - name: wpp__by_callees_16
+    address: 0x6bc8c
+    class: bymodule
+    evidence: "0x6bc8c every caller is a body this rule placed in WPP: 0x391b0"
+    module: WPP
   - name: wpp_lite_state_disc_or_not_slave
     address: 0x6bd0c
     class: logline
@@ -4408,6 +6271,11 @@ functions:
     address: 0x6bf04
     class: helper
     evidence: "only 0x34068 (ble_task) calls 0x6bf04; 678 bytes"
+    module: WPP_LITE
+  - name: wpp_lite__by_callees_3
+    address: 0x6bf6c
+    class: bymodule
+    evidence: "0x6bf6c every caller is a body this rule placed in WPP_LITE: 0x6c300"
     module: WPP_LITE
   - name: wpp_cancel_func
     address: 0x6bf78
@@ -4419,10 +6287,40 @@ functions:
     class: logline
     evidence: "the only line 0x6c184 logs, wlog('[WPP_LITE] tx complete (process_continue = %p | nb slots = %d)') at 0x6c196"
     module: WPP_LITE
+  - name: wpp_lite__by_callees_4
+    address: 0x6c300
+    class: bymodule
+    evidence: "0x6c300 reaches only wpp_lite_byte_20026c15"
+    module: WPP_LITE
+  - name: wpp_lite__by_callees_5
+    address: 0x6c37c
+    class: bymodule
+    evidence: "0x6c37c reaches only wpp_lite_byte_20026c15"
+    module: WPP_LITE
   - name: push_cannot_insert_item_limit
     address: 0x6c38c
     class: logline
     evidence: "the only line 0x6c38c logs, wlog('[Channel %d] Push - Cannot insert item, limit reached (nb = %d/%d | size = %d)') at 0x6c3f8"
+    module: WPP_LITE
+  - name: wpp_lite__by_callees_6
+    address: 0x6c460
+    class: bymodule
+    evidence: "0x6c460 reaches only wpp_lite_byte_20026c15, wpp_lite_struct_200071a0, wpp_lite_struct_200071ac"
+    module: WPP_LITE
+  - name: wpp_lite__by_callees_7
+    address: 0x6c4f4
+    class: bymodule
+    evidence: "0x6c4f4 reaches only wpp_lite_struct_200071a0, wpp_lite_struct_200071ac"
+    module: WPP_LITE
+  - name: wpp_lite__by_callees_8
+    address: 0x6c534
+    class: bymodule
+    evidence: "0x6c534 reaches only wpp_lite_struct_200071ac"
+    module: WPP_LITE
+  - name: wpp_lite__by_callees_9
+    address: 0x6c540
+    class: bymodule
+    evidence: "0x6c540 reaches only wpp_lite_struct_200071a0, wpp_lite_struct_200071ac"
     module: WPP_LITE
   - name: ble_task__5__4
     address: 0x6c578
@@ -4444,6 +6342,10 @@ functions:
     class: logline
     evidence: "the only line 0x6c6ac logs, wlog('auth failed') at 0x6c6c6"
     module: WPP
+  - name: wpp_send_object_alias_wrap
+    address: 0x6c7c4
+    class: wrapper
+    evidence: "0x6c7c4 is 10 instructions with one call, to wpp_send_object_alias, and returns"
   - name: WPP_CMD_PROBE
     address: 0x6c84c
     class: wppcmd
@@ -4591,14 +6493,49 @@ functions:
     class: wppcmd
     command: 279
     evidence: "wpp_cmd_table row 0x27b44: key 279, label 'WPP_CMD_DEBUG_SET', CMD_DEBUG_SET in wpp/src/commands.rs"
+  - name: debug_dump__by_callees_9
+    address: 0x6d684
+    class: bymodule
+    evidence: "0x6d684 reaches only debug_dump_struct_20020b78"
+    module: DEBUG_DUMP
+  - name: debug_dump__by_callees_10
+    address: 0x6d6a0
+    class: bymodule
+    evidence: "0x6d6a0 reaches only debug_dump_struct_20020b78"
+    module: DEBUG_DUMP
   - name: wlog_process_cmd_cancel_wlog
     address: 0x6d724
     class: logline
     evidence: "the only line 0x6d724 logs, wlog('Wlog - process_cmd_cancel_wlog_dump') at 0x6d72a"
+  - name: debug_dump__by_callees_11
+    address: 0x6d744
+    class: bymodule
+    evidence: "0x6d744 reaches only debug_dump_struct_20020b78"
+    module: DEBUG_DUMP
   - name: WPP_CMD_DEBUG_DUMP__3
     address: 0x6da00
     class: helper
     evidence: "only 0x6dfa8 (WPP_CMD_DEBUG_DUMP) calls 0x6da00; 218 bytes"
+    module: DEBUG_DUMP
+  - name: debug_dump__by_callees_12
+    address: 0x6db18
+    class: bymodule
+    evidence: "0x6db18 reaches only debug_dump_struct_20020b78"
+    module: DEBUG_DUMP
+  - name: debug_dump__by_callees_13
+    address: 0x6dbf8
+    class: bymodule
+    evidence: "0x6dbf8 reaches only debug_dump_struct_20020b78"
+    module: DEBUG_DUMP
+  - name: debug_dump__by_callees_14
+    address: 0x6dc08
+    class: bymodule
+    evidence: "0x6dc08 reaches only debug_dump_struct_20020b78"
+    module: DEBUG_DUMP
+  - name: debug_dump__by_callees_15
+    address: 0x6dd5c
+    class: bymodule
+    evidence: "0x6dd5c reaches only debug_dump_struct_20020b78, debug_dump_word_20020b74"
     module: DEBUG_DUMP
   - name: debug_dump_dblib_ram
     address: 0x6de70
@@ -4631,6 +6568,11 @@ functions:
     class: wppcmd
     command: 328
     evidence: "wpp_cmd_table row 0x27b5c: key 328, label 'WPP_CMD_STORED_MEASURE_SIGNAL_DEL', CMD_STORED_MEASURE_SIGNAL_DEL in wpp/src/commands.rs"
+  - name: boot__by_callees_26
+    address: 0x6e4b4
+    class: bymodule
+    evidence: "0x6e4b4 reaches only rambkp_block"
+    module: BOOT
   - name: ui_update_timeout__2
     address: 0x6e4f8
     class: helper
@@ -4692,15 +6634,99 @@ functions:
     class: wppcmd
     command: 2451
     evidence: "wpp_cmd_table row 0x27b8c: key 2451, label 'WPP_CMD_EVENTS_GET_V2', CMD_EVENTS_GET_V2 in wpp/src/commands.rs"
+  - name: wui__by_callees_4
+    address: 0x6eca0
+    class: bymodule
+    evidence: "0x6eca0 reaches only wui_struct_200071b8"
+    module: WUI
+  - name: wui__by_callees_5
+    address: 0x6ecc0
+    class: bymodule
+    evidence: "0x6ecc0 reaches only wui_struct_200071b8"
+    module: WUI
+  - name: wui__by_callees_6
+    address: 0x6eec0
+    class: bymodule
+    evidence: "0x6eec0 reaches only wui_struct_200071b8"
+    module: WUI
   - name: wui_failed_to_push_event_0x
     address: 0x6eed8
     class: logline
     evidence: "the only line 0x6eed8 logs, wlog('[WUI] Failed to push event 0x%08x') at 0x6eefe"
     module: WUI
+  - name: bat__by_callees_15
+    address: 0x6ef14
+    class: bymodule
+    evidence: "0x6ef14 every caller is a body this rule placed in BAT: 0x2fb00"
+    module: BAT
+  - name: wui__by_callees_7
+    address: 0x6ef50
+    class: bymodule
+    evidence: "0x6ef50 reaches only wui_struct_200071b8"
+    module: WUI
+  - name: wui__by_callees_8
+    address: 0x6ef80
+    class: bymodule
+    evidence: "0x6ef80 reaches only wui_struct_200071b8"
+    module: WUI
+  - name: wui__by_callees_9
+    address: 0x6efb0
+    class: bymodule
+    evidence: "0x6efb0 reaches only wui_struct_200071b8"
+    module: WUI
   - name: refresh_install_go__2
     address: 0x6efe0
     class: helper
     evidence: "only 0x899bc (refresh_install_go) calls 0x6efe0; 40 bytes"
+  - name: wui__by_callees_10
+    address: 0x6f010
+    class: bymodule
+    evidence: "0x6f010 reaches only wui_struct_200071b8"
+    module: WUI
+  - name: wui__by_callees_11
+    address: 0x6f04c
+    class: bymodule
+    evidence: "0x6f04c reaches only wui_struct_200071b8"
+    module: WUI
+  - name: wui__by_callees_12
+    address: 0x6f098
+    class: bymodule
+    evidence: "0x6f098 reaches only wui_struct_200071b8"
+    module: WUI
+  - name: wui_task_create
+    address: 0x6f0bc
+    class: role
+    evidence: "0x6f0bc hands xTaskCreateStatic the entry wui_task and the name 'WUI'"
+  - name: wpps__by_callees_11
+    address: 0x7023c
+    class: bymodule
+    evidence: "0x7023c reaches only wpps_word_20007204"
+    module: WPPS
+  - name: wpps__by_callees_12
+    address: 0x70274
+    class: bymodule
+    evidence: "0x70274 reaches only wpps_word_20007204"
+    module: WPPS
+  - name: wpps__by_callees_13
+    address: 0x702d8
+    class: bymodule
+    evidence: "0x702d8 reaches only wpps_word_20007204"
+    module: WPPS
+  - name: wpps__by_callees_14
+    address: 0x70308
+    class: bymodule
+    evidence: "0x70308 reaches only wpps_word_20007204"
+    module: WPPS
+  - name: wpps__by_callees_15
+    address: 0x70490
+    class: bymodule
+    evidence: "0x70490 reaches only wpps_word_20007204"
+    module: WPPS
+  - name: wpps__by_callees_16
+    address: 0x704b4
+    class: bymodule
+    evidence: "0x704b4 reaches only wpps_flag_200218f8, wpps_word_20007204"
+    module: WPPS
   - name: ecg_nn_classify__1__1
     address: 0x7410c
     class: helper
@@ -4913,6 +6939,11 @@ functions:
     class: helper
     evidence: "only 0x7cde4 (spo2_multi_algo_step__4) calls 0x7d110; 152 bytes"
     module: SENSORS_SYNC
+  - name: algo_manager__by_callees_10
+    address: 0x7d4b4
+    class: bymodule
+    evidence: "0x7d4b4 every caller is a body this rule placed in ALGO_MANAGER: 0x4ec0c"
+    module: ALGO_MANAGER
   - name: ppg_hrv_algo_step__1
     address: 0x7d778
     class: helper
@@ -4932,6 +6963,13 @@ functions:
     address: 0x7da2c
     class: helper
     evidence: "only 0x33ea8 (WPP_CMD_WAM_VASISTAS_GET) calls 0x7da2c; 4 bytes"
+  - name: adc__by_callees_1
+    address: 0x7e2e4
+    class: bymodule
+    evidence: "0x7e2e4 reaches only adc_mutex_static"
+    module: ADC
+    proto: "uint32_t adc__by_callees_1(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: acquistion_task__1
     address: 0x7e3f0
     class: helper
@@ -4975,6 +7013,16 @@ functions:
     class: helper
     evidence: "only 0x66e04 (vib_ignore_vib_request_current_vib) calls 0x7ef38; 168 bytes"
     module: VIB
+  - name: vib__by_callees_4
+    address: 0x7eff8
+    class: bymodule
+    evidence: "0x7eff8 every caller is a body this rule placed in VIB: 0x66dc4"
+    module: VIB
+  - name: vib__by_callees_5
+    address: 0x7f06c
+    class: bymodule
+    evidence: "0x7f06c every caller is a body this rule placed in VIB: 0x66e80"
+    module: VIB
   - name: temperature_acquisition_already_ongoing
     address: 0x7fa08
     class: logline
@@ -4995,6 +7043,11 @@ functions:
     address: 0x7fb18
     class: accessor
     evidence: "the body is one ldrb through temperature_struct_20007228 (pool word 0x7fb20 = 0x20007228) and a return"
+  - name: screen_timer__by_callees_1
+    address: 0x7fc88
+    class: bymodule
+    evidence: "0x7fc88 reaches only screen_timer_ptr_20021b84"
+    module: SCREEN_TIMER
   - name: set_move_hands
     address: 0x7fcac
     class: string
@@ -5008,15 +7061,35 @@ functions:
     class: helper
     evidence: "only 0x897ac (toggle_home_face) calls 0x7fdd4; 64 bytes"
     module: HOME_FACE
+  - name: screen_timer__by_callees_2
+    address: 0x7fe20
+    class: bymodule
+    evidence: "0x7fe20 reaches only screen_timer_ptr_20021b84"
+    module: SCREEN_TIMER
   - name: adxl367_tap_handler
     address: 0x7fe44
     class: logline
     evidence: "the only line 0x7fe44 logs, wlog('[adxl367] tap handler!') at 0x7fe48"
     module: ADXL367
+  - name: wui__by_callees_13
+    address: 0x7fe80
+    class: bymodule
+    evidence: "0x7fe80 reaches only wui_view_menu_carousel"
+    module: WUI
+  - name: wui__by_callees_14
+    address: 0x7ff20
+    class: bymodule
+    evidence: "0x7ff20 reaches only wui_view_menu_carousel"
+    module: WUI
   - name: unable_to_push_handler
     address: 0x7ff80
     class: logline
     evidence: "the only line 0x7ff80 logs, wlog('Unable to push handler') at 0x7ff96"
+  - name: wui__by_callees_15
+    address: 0x80088
+    class: bymodule
+    evidence: "0x80088 reaches only wui_view_sport_2, wui_view_timer"
+    module: WUI
   - name: wui_vtable_scanwatch_slot_10
     address: 0x800d0
     class: slot
@@ -5047,6 +7120,11 @@ functions:
     class: logline
     evidence: "the only line 0x80378 logs, wlog('[WUI] Event %d resent') at 0x803c4"
     module: WUI
+  - name: wui__by_callees_16
+    address: 0x803d0
+    class: bymodule
+    evidence: "0x803d0 reaches only wui_view_alarm_ringing, wui_view_install_bt_key, wui_view_power_reserve_screen"
+    module: WUI
   - name: wui_vtable_scanwatch_demo_on_enter
     address: 0x80448
     class: slot
@@ -5060,6 +7138,21 @@ functions:
     class: logline
     evidence: "the only line 0x804c0 logs, wlog('[WUI] Postponed event %d dropped') at 0x804de"
     module: WUI
+  - name: wui__by_callees_17
+    address: 0x804fc
+    class: bymodule
+    evidence: "0x804fc reaches only wui_view_activity_reminder, wui_view_alarm_popup, wui_view_alarm_ringing, wui_view_ecg_meas, wui_view_factory_test, wui_view_goal, wui_view_hands_calibration, wui_view_hands_calibration_install, wui_view_high_hr_popup, wui_view_low_hr_popup, wui_view_notif, wui_view_ppg_afib, wui_view_shortcut, wui_view_sport_congrats, wui_view_stopwatch, wui_view_timer"
+    module: WUI
+  - name: wui__by_callees_18
+    address: 0x80694
+    class: bymodule
+    evidence: "0x80694 reaches only wui_view_menu_carousel"
+    module: WUI
+  - name: wui__by_callees_19
+    address: 0x806a0
+    class: bymodule
+    evidence: "0x806a0 reaches only wui_view_battery_charging"
+    module: WUI
   - name: wui_vtable_scanwatch_slot_13
     address: 0x80860
     class: slot
@@ -5068,6 +7161,11 @@ functions:
     address: 0x80c48
     class: logline
     evidence: "the only line 0x80c48 logs, wlog(\"Can't re-enter composer\") at 0x80c54"
+  - name: wui__by_callees_20
+    address: 0x80e3c
+    class: bymodule
+    evidence: "0x80e3c reaches only wui_view_table"
+    module: WUI
   - name: wui_vtable_menu_carousel_slot_8__1
     address: 0x80e68
     class: helper
@@ -5115,6 +7213,16 @@ functions:
     address: 0x813c4
     class: helper
     evidence: "only 0x89fc8 (wui_vtable_workout_2_slot_7) calls 0x813c4; 14 bytes"
+  - name: wui__by_callees_21
+    address: 0x813dc
+    class: bymodule
+    evidence: "0x813dc reaches only wui_view_sport_notif"
+    module: WUI
+  - name: wui__by_callees_22
+    address: 0x814e0
+    class: bymodule
+    evidence: "0x814e0 reaches only wui_view_pause_selection"
+    module: WUI
   - name: wui_vtable_sport_slot_6__1
     address: 0x81664
     class: helper
@@ -5268,6 +7376,16 @@ functions:
     address: 0x85a1c
     class: slot
     evidence: "0x85a1c is the slot_9 slot of wui_vtable_calories row 0 (word 0xbaa38); nothing calls it"
+  - name: ecg__by_callees_5
+    address: 0x85a64
+    class: bymodule
+    evidence: "0x85a64 reaches only ecg_struct_200247fc"
+    module: ECG
+  - name: ecg__by_callees_6
+    address: 0x85a84
+    class: bymodule
+    evidence: "0x85a84 reaches only ecg_struct_200247fc"
+    module: ECG
   - name: ecg_err_no_sample_queue__3
     address: 0x85e3c
     class: helper
@@ -5396,6 +7514,11 @@ functions:
     address: 0x8839c
     class: slot
     evidence: "0x8839c is the on_enter slot of wui_vtable_custo_2 row 0 (word 0xbaf00); nothing calls it"
+  - name: wui__by_callees_23
+    address: 0x883d0
+    class: bymodule
+    evidence: "0x883d0 reaches only wui_view_custo_1, wui_view_custo_2"
+    module: WUI
   - name: wui_vtable_notif_slot_10
     address: 0x88790
     class: slot
@@ -5426,10 +7549,20 @@ functions:
     address: 0x89374
     class: logline
     evidence: "the only line 0x89374 logs, wlog('TOGGLE NOTIFICATIONS') at 0x8937e"
+  - name: screen_calibration__by_callees_6
+    address: 0x8951c
+    class: bymodule
+    evidence: "0x8951c reaches only screen_calibration_byte_2002723b"
+    module: SCREEN_CALIBRATION
   - name: on_enter_hands_calibration_settings__1
     address: 0x895b4
     class: helper
     evidence: "only 0x89608 (on_enter_hands_calibration_settings) calls 0x895b4; 44 bytes"
+  - name: screen_calibration__by_callees_7
+    address: 0x89624
+    class: bymodule
+    evidence: "0x89624 reaches only screen_calibration_byte_2002723b"
+    module: SCREEN_CALIBRATION
   - name: screen_calibration_no_motor_id_availabe
     address: 0x89630
     class: logline
@@ -5491,6 +7624,38 @@ functions:
     class: logline
     evidence: "the only line 0x8ae3c logs, wlog('[WIDGET_SCROLLING_TEXT] E_INACTIVITY') at 0x8ae4e"
     module: WIDGET_SCROLLING_TEXT
+  - name: wui__by_callees_24
+    address: 0x8b7b0
+    class: bymodule
+    evidence: "0x8b7b0 reaches only wui_ptr_2002499c"
+    module: WUI
+    proto: "uint32_t wui__by_callees_24(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: wui__by_callees_25
+    address: 0x8b7ec
+    class: bymodule
+    evidence: "0x8b7ec reaches only wui_ptr_2002499c"
+    module: WUI
+  - name: wui__by_callees_26
+    address: 0x8b828
+    class: bymodule
+    evidence: "0x8b828 reaches only wui_ptr_2002499c"
+    module: WUI
+  - name: wui__by_callees_27
+    address: 0x8b85c
+    class: bymodule
+    evidence: "0x8b85c reaches only wui_ptr_2002499c"
+    module: WUI
+  - name: wui__by_callees_28
+    address: 0x8b890
+    class: bymodule
+    evidence: "0x8b890 reaches only wui_ptr_2002499c"
+    module: WUI
+  - name: wui__by_callees_29
+    address: 0x8b8b4
+    class: bymodule
+    evidence: "0x8b8b4 reaches only wui_byte_20027241"
+    module: WUI
   - name: wui_task__1
     address: 0x8b8d8
     class: helper
@@ -5637,6 +7802,26 @@ functions:
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libgcc.a, score 1.00 over 6 insns, direct"
     also_matched: [__aeabi_cfcmple]
+  - name: __aeabi_cdcmple_wrap_1
+    address: 0x8e00c
+    class: wrapper
+    evidence: "0x8e00c is 6 instructions with one call, to __aeabi_cdcmple, and returns"
+  - name: __aeabi_cdcmple_wrap_2
+    address: 0x8e020
+    class: wrapper
+    evidence: "0x8e020 is 6 instructions with one call, to __aeabi_cdcmple, and returns"
+  - name: __aeabi_cdcmple_wrap_3
+    address: 0x8e034
+    class: wrapper
+    evidence: "0x8e034 is 6 instructions with one call, to __aeabi_cdcmple, and returns"
+  - name: __aeabi_cdrcmple_wrap_1
+    address: 0x8e048
+    class: wrapper
+    evidence: "0x8e048 is 6 instructions with one call, to __aeabi_cdrcmple, and returns"
+  - name: __aeabi_cdrcmple_wrap_2
+    address: 0x8e05c
+    class: wrapper
+    evidence: "0x8e05c is 6 instructions with one call, to __aeabi_cdrcmple, and returns"
   - name: __unorddf2
     address: 0x8e070
     class: libc
@@ -5872,6 +8057,16 @@ functions:
     module: INIT
     header: s140/headers/nrf_soc.h
     proto: "uint32_t sd_clock_hfclk_release(void);"
+  - name: wui__by_callees_30
+    address: 0x91fca
+    class: bymodule
+    evidence: "0x91fca calls only wui_failed_to_push_event_0x"
+    module: WUI
+  - name: algo_manager__by_callees_11
+    address: 0x91ffa
+    class: bymodule
+    evidence: "0x91ffa reaches only algo_manager_ptr_20017148"
+    module: ALGO_MANAGER
   - name: wui_event_resent__1
     address: 0x9200e
     class: helper
@@ -5897,6 +8092,11 @@ functions:
     address: 0x9210a
     class: helper
     evidence: "only 0x9211e (battery_status_fill_state) calls 0x9210a; 20 bytes"
+  - name: adxl367__by_callees_7
+    address: 0x92144
+    class: bymodule
+    evidence: "0x92144 every caller is a body this rule placed in ADXL367: 0x3beac"
+    module: ADXL367
   - name: bt_e_bt_disconnect_evt_0x__3__1
     address: 0x92170
     class: helper
@@ -5920,11 +8120,21 @@ functions:
     class: helper
     evidence: "only 0x44798 (wpp_clock_calib_move_motor) calls 0x9227a; 4 bytes"
     module: WPP
+  - name: algo_manager__by_callees_12
+    address: 0x922b0
+    class: bymodule
+    evidence: "0x922b0 every caller is a body this rule placed in ALGO_MANAGER: 0x4ec0c"
+    module: ALGO_MANAGER
   - name: main_task__2__3
     address: 0x92324
     class: helper
     evidence: "only 0x2fbdc (main_task__2) calls 0x92324; 14 bytes"
     module: INIT
+  - name: algo_manager__by_callees_13
+    address: 0x9234e
+    class: bymodule
+    evidence: "0x9234e every caller is a body this rule placed in ALGO_MANAGER: 0x4ec0c"
+    module: ALGO_MANAGER
   - name: fmode_set_mode_0x__1
     address: 0x9238a
     class: helper
@@ -5950,6 +8160,11 @@ functions:
     address: 0x923aa
     class: helper
     evidence: "only 0x85420 (on_event_power_reserve_screen) calls 0x923aa; 6 bytes"
+  - name: raw_data_mode__by_callees_5
+    address: 0x923b0
+    class: bymodule
+    evidence: "0x923b0 every caller is a body this rule placed in RAW_DATA_MODE: 0x30af8, 0x30c08"
+    module: RAW_DATA_MODE
   - name: sd_temp_get
     address: 0x923e0
     class: svc
@@ -6025,6 +8240,21 @@ functions:
     class: logline
     evidence: "the only line 0x92ba4 logs, wlog('[DAY] Goal reached %d times') at 0x5fb30"
     module: DAY
+  - name: steps__by_callees_4
+    address: 0x92bda
+    class: bymodule
+    evidence: "0x92bda every caller is a body this rule placed in STEPS: 0x9c028"
+    module: STEPS
+  - name: boot__by_callees_27
+    address: 0x92c4c
+    class: bymodule
+    evidence: "0x92c4c every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
+  - name: boot__by_callees_28
+    address: 0x92cd0
+    class: bymodule
+    evidence: "0x92cd0 every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
   - name: wpp_lite_err_goal_unpack__1
     address: 0x92cd6
     class: helper
@@ -6034,6 +8264,16 @@ functions:
     address: 0x92cda
     class: helper
     evidence: "only 0x829bc (on_event_alarm_ringing) calls 0x92cda; 16 bytes"
+  - name: boot__by_callees_29
+    address: 0x92cea
+    class: bymodule
+    evidence: "0x92cea every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
+  - name: boot__by_callees_30
+    address: 0x92cf0
+    class: bymodule
+    evidence: "0x92cf0 every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
   - name: WPP_CMD_SWAP_VASISTAS_GET
     address: 0x92eb2
     class: wppcmd
@@ -6098,6 +8338,11 @@ functions:
     module: M
     header: s140/headers/nrf_sdm.h
     proto: "uint32_t sd_softdevice_vector_table_base_set(uint32_t address);"
+  - name: bluetooth__by_callees_3
+    address: 0x9314e
+    class: bymodule
+    evidence: "0x9314e every caller is a body this rule placed in BLUETOOTH: 0x395dc"
+    module: BLUETOOTH
   - name: shell_cmd_probe__3
     address: 0x93248
     class: helper
@@ -6111,6 +8356,10 @@ functions:
     address: 0x932d2
     class: helper
     evidence: "only 0x4bdd0 (factory_reset_perform) calls 0x932d2; 46 bytes"
+  - name: invalid_mfgid_wrap_2
+    address: 0x9330e
+    class: wrapper
+    evidence: "0x9330e is 7 instructions with one call, to invalid_mfgid, and returns"
   - name: WPP_CMD_DEBUG_DUMP__3__2
     address: 0x93358
     class: helper
@@ -6560,6 +8809,22 @@ functions:
     evidence: "svc #0x31; bx lr at 0x938c4"
     header: s140/headers/nrf_soc.h
     proto: "uint32_t sd_rand_application_vector_get(uint8_t * p_buff, uint8_t length);"
+  - name: sd_rand_application_vector_get_wrap
+    address: 0x938c8
+    class: wrapper
+    evidence: "0x938c8 is 4 instructions with one call, to sd_rand_application_vector_get, and returns"
+  - name: spim_failed_to_malloc_temporary_buffer_wrap_1
+    address: 0x939c2
+    class: wrapper
+    evidence: "0x939c2 is 8 instructions with one call, to spim_failed_to_malloc_temporary_buffer, and returns"
+  - name: spim_failed_to_malloc_temporary_buffer_wrap_2
+    address: 0x939da
+    class: wrapper
+    evidence: "0x939da is 8 instructions with one call, to spim_failed_to_malloc_temporary_buffer, and returns"
+  - name: spim_failed_to_malloc_temporary_buffer_wrap_3
+    address: 0x939f2
+    class: wrapper
+    evidence: "0x939f2 is 7 instructions with one call, to spim_failed_to_malloc_temporary_buffer, and returns"
   - name: acquistion_task__2__3
     address: 0x93a4c
     class: helper
@@ -6579,15 +8844,34 @@ functions:
     address: 0x93e34
     class: helper
     evidence: "only 0x307b8 (go_to_system_off) calls 0x93e34; 4 bytes"
+  - name: hdl_adxl367_get_delay_last_wrap
+    address: 0x93e4a
+    class: wrapper
+    evidence: "0x93e4a is 4 instructions with one call, to hdl_adxl367_get_delay_last, and returns"
+  - name: adxl367__by_callees_8
+    address: 0x93e54
+    class: bymodule
+    evidence: "0x93e54 every caller is a body this rule placed in ADXL367: 0x3bee4"
+    module: ADXL367
   - name: shell_cmd_adxl__2
     address: 0x93e76
     class: helper
     evidence: "only 0x3c6b8 (shell_cmd_adxl) calls 0x93e76; 34 bytes"
     module: ADXL367
+  - name: adxl367__by_callees_9
+    address: 0x93eba
+    class: bymodule
+    evidence: "0x93eba every caller is a body this rule placed in ADXL367: 0x3bee4"
+    module: ADXL367
   - name: shell_cmd_adxl__3
     address: 0x93edc
     class: helper
     evidence: "only 0x3c6b8 (shell_cmd_adxl) calls 0x93edc; 32 bytes"
+    module: ADXL367
+  - name: adxl367__by_callees_10
+    address: 0x93efc
+    class: bymodule
+    evidence: "0x93efc every caller is a body this rule placed in ADXL367: 0x3bee4"
     module: ADXL367
   - name: shell_cmd_adxl__4__1
     address: 0x93f26
@@ -6598,6 +8882,16 @@ functions:
     address: 0x93f64
     class: helper
     evidence: "only 0x3c6b8 (shell_cmd_adxl) calls 0x93f64; 38 bytes"
+    module: ADXL367
+  - name: adxl367__by_callees_11
+    address: 0x93fd6
+    class: bymodule
+    evidence: "0x93fd6 every caller is a body this rule placed in ADXL367: 0x3bee4"
+    module: ADXL367
+  - name: adxl367__by_callees_12
+    address: 0x93ffc
+    class: bymodule
+    evidence: "0x93ffc every caller is a body this rule placed in ADXL367: 0x3bee4"
     module: ADXL367
   - name: adxl367_continuous_measure_mode__2__1
     address: 0x94048
@@ -6614,11 +8908,20 @@ functions:
     class: helper
     evidence: "only 0x3c1e4 (adxl367_continuous_measure_mode__1) calls 0x940e8; 28 bytes"
     module: ADXL367
+  - name: adxl367__by_callees_13
+    address: 0x94126
+    class: bymodule
+    evidence: "0x94126 every caller is a body this rule placed in ADXL367: 0x3bee4"
+    module: ADXL367
   - name: adxl367_continuous_measure_mode__2
     address: 0x9433c
     class: helper
     evidence: "only 0x3c298 (adxl367_continuous_measure_mode) calls 0x9433c; 42 bytes"
     module: ADXL367
+  - name: adxl367_mode_get_wrap
+    address: 0x94366
+    class: wrapper
+    evidence: "0x94366 is 7 instructions with one call, to adxl367_mode_get, and returns"
   - name: adxl367_power_check__1
     address: 0x94376
     class: helper
@@ -6687,6 +8990,11 @@ functions:
     class: helper
     evidence: "only 0x40a94 (ble_start_adv_mode_timeout) calls 0x94770; 218 bytes"
     module: BLE
+  - name: bluetooth__by_callees_4
+    address: 0x9484a
+    class: bymodule
+    evidence: "0x9484a every caller is a body this rule placed in BLUETOOTH: 0x395dc"
+    module: BLUETOOTH
   - name: sd_ble_gatts_initial_user_handle_get
     address: 0x94870
     class: svc
@@ -6709,6 +9017,11 @@ functions:
     class: helper
     evidence: "only 0x37c98 (ble_gap_evt_sec_info_request_handler) calls 0x948e6; 4 bytes"
     module: GAP
+  - name: sd__by_callees_2
+    address: 0x948ea
+    class: bymodule
+    evidence: "0x948ea every caller is a body this rule placed in SD: 0x38768"
+    module: SD
   - name: bt_e_bt_disconnect_evt_0x__1__1
     address: 0x948ee
     class: helper
@@ -6767,6 +9080,11 @@ functions:
     evidence: "svc #0x62; bx lr at 0x94970; second copy of sd_ble_uuid_vs_add (0x935bc)"
     header: s140/headers/ble.h
     proto: "uint32_t sd_ble_uuid_vs_add(ble_uuid128_t const *p_vs_uuid, uint8_t *p_uuid_type);"
+  - name: boot__by_callees_31
+    address: 0x949ba
+    class: bymodule
+    evidence: "0x949ba every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
   - name: bat_charging_decision__1
     address: 0x94a1a
     class: helper
@@ -6786,6 +9104,10 @@ functions:
     address: 0x94c56
     class: helper
     evidence: "only 0x43fdc (type_id_ref_val) calls 0x94c56; 6 bytes"
+  - name: memset_wrap_1
+    address: 0x952d4
+    class: wrapper
+    evidence: "0x952d4 is 9 instructions with one call, to memset, and returns"
   - name: sensors_sync_push_accel__3__6
     address: 0x9541c
     class: helper
@@ -6833,15 +9155,45 @@ functions:
     address: 0x954ea
     class: slot
     evidence: "0x954ea is the fetch slot of debug_dump_ram_items row 0 (word 0x27cf0); nothing calls it"
+  - name: wpps__by_callees_17
+    address: 0x95b80
+    class: bymodule
+    evidence: "0x95b80 every caller is a body this rule placed in WPPS: 0x46614"
+    module: WPPS
+  - name: wpps__by_callees_18
+    address: 0x95cb4
+    class: bymodule
+    evidence: "0x95cb4 every caller is a body this rule placed in WPPS: 0x46614"
+    module: WPPS
   - name: wpp_bytes_received__1
     address: 0x97520
     class: helper
     evidence: "only 0x392fc (wpp_bytes_received) calls 0x97520; 16 bytes"
+  - name: dblib_port__by_callees_1
+    address: 0x975ca
+    class: bymodule
+    evidence: "0x975ca calls only dblib_bank_read"
+    module: DBLIB_PORT
+  - name: dblib_port__by_callees_2
+    address: 0x97648
+    class: bymodule
+    evidence: "0x97648 calls only dblib_bank_read"
+    module: DBLIB_PORT
   - name: dblib_defaultbank_old_doublon_ie_id
     address: 0x976d0
     class: logline
     evidence: "the only line 0x976d0 logs, wlog('[DBLIB] Defaultbank old/doublon IE id=%d, size=%d') at 0x488e8"
     module: DBLIB
+  - name: dblib_port__by_callees_3
+    address: 0x97886
+    class: bymodule
+    evidence: "0x97886 calls only dblib_bank_read"
+    module: DBLIB_PORT
+  - name: dblib_port__by_callees_4
+    address: 0x978b4
+    class: bymodule
+    evidence: "0x978b4 calls only dblib_bank_read"
+    module: DBLIB_PORT
   - name: dblib_element_size_mismatch_id__1
     address: 0x97976
     class: helper
@@ -6915,6 +9267,10 @@ functions:
     module: DBT
     header: s140/headers/nrf_soc.h
     proto: "uint32_t sd_clock_hfclk_release(void);"
+  - name: factory_state_wrap
+    address: 0x97b8a
+    class: wrapper
+    evidence: "0x97b8a is 5 instructions with one call, to factory_state, and returns"
   - name: flash_cache_init__1
     address: 0x97f22
     class: helper
@@ -6972,11 +9328,25 @@ functions:
     class: wppcmd
     command: 2506
     evidence: "wpp_cmd_table row 0x276dc: key 2506, label 'GREENTEG_INTEGRATION_FACTOR_DEL', CMD_GREENTEG_INTEGRATION_FACTOR_DEL in wpp/src/commands.rs"
+  - name: wftl__by_callees_2
+    address: 0x98288
+    class: bymodule
+    evidence: "0x98288 calls only wftl_write"
+    module: WFTL
   - name: gss_safe_erase_no_start__1
     address: 0x9831a
     class: helper
     evidence: "only 0x4e074 (gss_safe_erase_no_start) calls 0x9831a; 142 bytes"
     module: GSS
+  - name: wftl_read_wrap
+    address: 0x983a8
+    class: wrapper
+    evidence: "0x983a8 is 8 instructions with one call, to wftl_read, and returns"
+  - name: background_sync__by_callees_3
+    address: 0x98982
+    class: bymodule
+    evidence: "0x98982 every caller is a body this rule placed in BACKGROUND_SYNC: 0x60950"
+    module: BACKGROUND_SYNC
   - name: ms5849_failed_to_get_adc__1
     address: 0x98cac
     class: helper
@@ -6984,6 +9354,19 @@ functions:
     module: MS5849
     proto: "uint32_t ms5849_failed_to_get_adc__1(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: memcpy_wrap_2
+    address: 0x98e24
+    class: wrapper
+    evidence: "0x98e24 is 10 instructions with one call, to memcpy, and returns"
+    module: WPP
+  - name: memcpy_wrap_3
+    address: 0x98e68
+    class: wrapper
+    evidence: "0x98e68 is 9 instructions with one call, to memcpy, and returns"
+  - name: memcpy_wrap_4
+    address: 0x98e7e
+    class: wrapper
+    evidence: "0x98e7e is 12 instructions with one call, to memcpy, and returns"
   - name: wpp_asked_locale__2
     address: 0x98ec6
     class: helper
@@ -7058,6 +9441,11 @@ functions:
     address: 0x9a9d2
     class: slot
     evidence: "0x9a9d2 is the slot_1 slot of i2c_device_table row 3 (word 0xb2328); nothing calls it"
+  - name: max8617x__by_callees_22
+    address: 0x9aa5e
+    class: bymodule
+    evidence: "0x9aa5e every caller is a body this rule placed in MAX8617X: 0x53014"
+    module: MAX8617X
   - name: main_task__16
     address: 0x9ab8a
     class: helper
@@ -7077,6 +9465,10 @@ functions:
     evidence: "svc #0x4c; bx lr at 0x9ab96; second copy of sd_temp_get (0x923e0)"
     header: s140/headers/nrf_soc.h
     proto: "uint32_t sd_temp_get(int32_t * p_temp);"
+  - name: sd_temp_get_copy_0x9ab96_wrap
+    address: 0x9ab9a
+    class: wrapper
+    evidence: "0x9ab9a is 4 instructions with one call, to sd_temp_get_copy_0x9ab96, and returns"
   - name: shell_cmd_mcu_temp__1
     address: 0x9aba4
     class: helper
@@ -7086,6 +9478,11 @@ functions:
     class: wppcmd
     command: 2347
     evidence: "wpp_cmd_table row 0x27790: key 2347, label 'WPP_CMD_MCU_TEMP_CAL_SET', CMD_MCU_TEMP_CAL_SET in wpp/src/commands.rs"
+  - name: boot__by_callees_32
+    address: 0x9ad18
+    class: bymodule
+    evidence: "0x9ad18 every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
   - name: button_task__1__1
     address: 0x9add6
     class: helper
@@ -7122,6 +9519,11 @@ functions:
     address: 0x9b1b2
     class: helper
     evidence: "only 0x50ca8 (wlog_level) calls 0x9b1b2; 22 bytes"
+  - name: pb__by_callees_7
+    address: 0x9b1e8
+    class: bymodule
+    evidence: "0x9b1e8 every caller is a body this rule placed in PB: 0x572fc"
+    module: PB
   - name: error_no_oldest_rawdata_found__3
     address: 0x9b3f0
     class: helper
@@ -7139,6 +9541,11 @@ functions:
     address: 0x9b5f4
     class: helper
     evidence: "only 0x6dfa8 (WPP_CMD_DEBUG_DUMP) calls 0x9b5f4; 8 bytes"
+    module: DEBUG_DUMP
+  - name: debug_dump__by_callees_16
+    address: 0x9b5fc
+    class: bymodule
+    evidence: "0x9b5fc every caller is a body this rule placed in DEBUG_DUMP: 0x6dc08"
     module: DEBUG_DUMP
   - name: raw_unknown_wpp_cmd__3
     address: 0x9b604
@@ -7162,6 +9569,11 @@ functions:
     address: 0x9b8fa
     class: helper
     evidence: "only 0x3bd10 (sensors_sync_push_accel) calls 0x9b8fa; 18 bytes"
+  - name: shortcut_action__by_callees_1
+    address: 0x9b948
+    class: bymodule
+    evidence: "0x9b948 calls only shortcut_action_loaded_invalid_action_from_flash"
+    module: SHORTCUT_ACTION
   - name: sd_ble_version_get
     address: 0x9b9a6
     class: svc
@@ -7208,6 +9620,10 @@ functions:
     address: 0x9bcb6
     class: helper
     evidence: "only 0x5bec4 (shell_cmd_spiflash) calls 0x9bcb6; 24 bytes"
+  - name: spi_flash_read_config_wrap
+    address: 0x9bcce
+    class: wrapper
+    evidence: "0x9bcce is 4 instructions with one call, to spi_flash_read_config, and returns"
   - name: shell_cmd_spiflash__5
     address: 0x9bcda
     class: helper
@@ -7226,6 +9642,11 @@ functions:
     evidence: "only 0x5bec4 (shell_cmd_spiflash) calls 0x9bd38; 22 bytes"
     proto: "uint32_t shell_cmd_spiflash__7(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: spi__by_callees_1
+    address: 0x9bd86
+    class: bymodule
+    evidence: "0x9bd86 calls only spi_device_not_requested"
+    module: SPI
   - name: max86173_spi_could_not_allocate_buf__1
     address: 0x9be72
     class: helper
@@ -7242,6 +9663,14 @@ functions:
     class: helper
     evidence: "only 0x5d33c (wpp_clock_calib_move_motor__1) calls 0x9be9e; 22 bytes"
     module: WPP
+  - name: time_load_time_delta_wrap_1
+    address: 0x9bf50
+    class: wrapper
+    evidence: "0x9bf50 is 5 instructions with one call, to time_load_time_delta, and returns"
+  - name: time_load_time_delta_wrap_2
+    address: 0x9bf5c
+    class: wrapper
+    evidence: "0x9bf5c is 8 instructions with one call, to time_load_time_delta, and returns"
   - name: WPP_CMD_THRESHOLDS_SET__4
     address: 0x9bf90
     class: helper
@@ -7251,6 +9680,21 @@ functions:
     class: helper
     evidence: "only 0x5ec34 (inactivity_user_notified) calls 0x9bf9c; 136 bytes"
     module: INACTIVITY
+  - name: adxl367__by_callees_14
+    address: 0x9c024
+    class: bymodule
+    evidence: "0x9c024 every caller is a body this rule placed in ADXL367: 0x3beac"
+    module: ADXL367
+  - name: adxl367__by_callees_15
+    address: 0x9c026
+    class: bymodule
+    evidence: "0x9c026 every caller is a body this rule placed in ADXL367: 0x3beac"
+    module: ADXL367
+  - name: steps__by_callees_5
+    address: 0x9c028
+    class: bymodule
+    evidence: "0x9c028 reaches only steps_byte_20026bd3, steps_struct_20024db0"
+    module: STEPS
   - name: inactivity_user_notified__2
     address: 0x9c04a
     class: helper
@@ -7261,6 +9705,15 @@ functions:
     class: helper
     evidence: "only 0x9335c (REBOOT__1) calls 0x9c076; 50 bytes"
     module: WPP
+  - name: dblib_get_first_wrap_2
+    address: 0x9c0e6
+    class: wrapper
+    evidence: "0x9c0e6 is 10 instructions with one call, to dblib_get_first, and returns"
+  - name: boot__by_callees_33
+    address: 0x9c10c
+    class: bymodule
+    evidence: "0x9c10c every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
   - name: wui_vtable_elevation_slot_8__2
     address: 0x9c112
     class: helper
@@ -7274,6 +9727,11 @@ functions:
     class: helper
     evidence: "only 0x86b2c (spo2_measures_nb_days_since_last) calls 0x9c144; 30 bytes"
     module: SPO2
+  - name: hr_measure__by_callees_1
+    address: 0x9c194
+    class: bymodule
+    evidence: "0x9c194 calls only hr_measure_get_screen_data"
+    module: HR_MEASURE
   - name: algo_manager_publish_results__5__1
     address: 0x9c1f4
     class: helper
@@ -7328,10 +9786,23 @@ functions:
     class: helper
     evidence: "only 0x69464 (wftl_post_update) calls 0x9d23c; 166 bytes"
     module: WFTL
+  - name: memset_wrap_2
+    address: 0x9d30e
+    class: wrapper
+    evidence: "0x9d30e is 8 instructions with one call, to memset, and returns"
+  - name: wpp_replybuf_append_arg_arg_too_wrap
+    address: 0x9d330
+    class: wrapper
+    evidence: "0x9d330 is 6 instructions with one call, to wpp_replybuf_append_arg_arg_too, and returns"
   - name: debug_dump_ram_items_5_count
     address: 0x9d358
     class: slot
     evidence: "0x9d358 is the count slot of debug_dump_ram_items row 5 (word 0x27d30); nothing calls it"
+  - name: wpp_lite__by_callees_10
+    address: 0x9d48e
+    class: bymodule
+    evidence: "0x9d48e every caller is a body this rule placed in WPP_LITE: 0x6c4f4"
+    module: WPP_LITE
   - name: sd_ble_version_get_copy_0x9d5c8
     address: 0x9d5c8
     class: svc
@@ -7381,6 +9852,10 @@ functions:
     class: helper
     evidence: "only 0x6ed34 (wui_task) calls 0x9d746; 36 bytes"
     module: WUI
+  - name: memset_wrap_3
+    address: 0x9df46
+    class: wrapper
+    evidence: "0x9df46 is 5 instructions with one call, to memset, and returns"
   - name: picotls__7159c__1
     address: 0x9e24a
     class: helper
@@ -7437,6 +9912,20 @@ functions:
     class: helper
     evidence: "only 0x3c6b8 (shell_cmd_adxl) calls 0x9fdc6; 90 bytes"
     module: ADXL367
+  - name: max8617x__by_callees_23
+    address: 0x9fe20
+    class: bymodule
+    evidence: "0x9fe20 every caller is a body this rule placed in MAX8617X: 0x53014"
+    module: MAX8617X
+  - name: sport__by_callees_6
+    address: 0x9fe74
+    class: bymodule
+    evidence: "0x9fe74 every caller is a body this rule placed in SPORT: 0x5c714"
+    module: SPORT
+  - name: memset_wrap_4
+    address: 0x9ff82
+    class: wrapper
+    evidence: "0x9ff82 is 6 instructions with one call, to memset, and returns"
   - name: ppg_apnea_algo_step__5__1
     address: 0x9ff92
     class: helper
@@ -7451,6 +9940,11 @@ functions:
     address: 0xa0154
     class: helper
     evidence: "only 0xa0012 (ppg_br_algo_step) calls 0xa0154; 148 bytes"
+    module: SENSORS_SYNC
+  - name: sensors_sync__by_callees_1
+    address: 0xa020e
+    class: bymodule
+    evidence: "0xa020e calls only window_pair_push"
     module: SENSORS_SYNC
   - name: main_task__19__3
     address: 0xa0374
@@ -7502,11 +9996,20 @@ functions:
     class: helper
     evidence: "only 0xa425e (main_task__19) calls 0xa07ce; 38 bytes"
     module: INIT
+  - name: memset_wrap_5
+    address: 0xa0842
+    class: wrapper
+    evidence: "0xa0842 is 9 instructions with one call, to memset, and returns"
   - name: main_task__18
     address: 0xa0a26
     class: helper
     evidence: "only 0x2e1d8 (main_task) calls 0xa0a26; 16 bytes"
     module: INIT
+  - name: boot__by_callees_34
+    address: 0xa0a36
+    class: bymodule
+    evidence: "0xa0a36 every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
   - name: main_task__19__7
     address: 0xa0ab6
     class: helper
@@ -7544,6 +10047,15 @@ functions:
     class: helper
     evidence: "only 0xa425e (main_task__19) calls 0xa13ce; 70 bytes"
     module: INIT
+  - name: memset_wrap_6
+    address: 0xa144e
+    class: wrapper
+    evidence: "0xa144e is 9 instructions with one call, to memset, and returns"
+    module: INIT
+  - name: memset_wrap_7
+    address: 0xa1724
+    class: wrapper
+    evidence: "0xa1724 is 8 instructions with one call, to memset, and returns"
   - name: main_task__19__10
     address: 0xa2220
     class: helper
@@ -7557,11 +10069,21 @@ functions:
     address: 0xa24fa
     class: helper
     evidence: "only 0x63ddc (algo_manager_publish_results) calls 0xa24fa; 78 bytes"
+  - name: init__by_callees_1
+    address: 0xa2d96
+    class: bymodule
+    evidence: "0xa2d96 calls only spectrotrack_init"
+    module: INIT
   - name: hr_algo_process_sample__1__1
     address: 0xa2e38
     class: helper
     evidence: "only 0x7b320 (hr_algo_process_sample__1) calls 0xa2e38; 426 bytes"
     module: SENSORS_SYNC
+  - name: init__by_callees_2
+    address: 0xa3004
+    class: bymodule
+    evidence: "0xa3004 calls only spectrotrack_init"
+    module: INIT
   - name: hr_algo_process_sample__2
     address: 0xa304e
     class: helper
@@ -7629,6 +10151,11 @@ functions:
     address: 0xa446c
     class: helper
     evidence: "only 0x5f5c8 (sensors_sync_push_accel__3) calls 0xa446c; 40 bytes"
+  - name: boot__by_callees_35
+    address: 0xa44ae
+    class: bymodule
+    evidence: "0xa44ae every caller is a body this rule placed in BOOT: 0x3119c"
+    module: BOOT
   - name: main_task__19__13
     address: 0xa4580
     class: helper
@@ -7723,6 +10250,11 @@ functions:
     class: helper
     evidence: "only 0x3b6f8 (acquistion_task) calls 0xa4e8a; 58 bytes"
     module: ACQ
+  - name: boot__by_callees_36
+    address: 0xa4efc
+    class: bymodule
+    evidence: "0xa4efc every caller is a body this rule placed in BOOT: 0x2e982"
+    module: BOOT
   - name: sd_rand_application_pool_capacity_get
     address: 0xa4f34
     class: svc
@@ -7778,6 +10310,11 @@ functions:
     address: 0xa5588
     class: slot
     evidence: "0xa5588 is the on_enter slot of wui_vtable_scanwatch row 0 (word 0xb90c0); nothing calls it"
+  - name: hr_measure__by_callees_2
+    address: 0xa56a6
+    class: bymodule
+    evidence: "0xa56a6 calls only hr_measure_cannot_call_hr_measure_release"
+    module: HR_MEASURE
   - name: wui_vtable_workout_low_batt_slot_6
     address: 0xa56da
     class: slot
@@ -7958,6 +10495,11 @@ functions:
     address: 0xa677e
     class: helper
     evidence: "only 0xa67b4 (refresh_ppg_afib) calls 0xa677e; 72 bytes"
+  - name: widget_scrolling_text__by_callees_1
+    address: 0xa67ca
+    class: bymodule
+    evidence: "0xa67ca calls only widget_scrolling_text_e_inactivity"
+    module: WIDGET_SCROLLING_TEXT
   - name: wui_vtable_custo_2_slot_7
     address: 0xa67e6
     class: slot
@@ -8010,6 +10552,13 @@ functions:
     address: 0xa6ed0
     class: helper
     evidence: "only 0x8a058 (on_event_sport_notif) calls 0xa6ed0; 12 bytes"
+  - name: wui__by_callees_31
+    address: 0xa6f44
+    class: bymodule
+    evidence: "0xa6f44 every caller is a body this rule placed in WUI: 0x813dc"
+    module: WUI
+    proto: "uint32_t wui__by_callees_31(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: wui_vtable_sport_pause_slot_8
     address: 0xa6f5e
     class: slot
@@ -8049,10 +10598,25 @@ functions:
     address: 0xa7160
     class: helper
     evidence: "only 0xa5a98 (refresh_carousel_clocks_2) calls 0xa7160; 6 bytes"
+  - name: max8617x__by_callees_24
+    address: 0xa744e
+    class: bymodule
+    evidence: "0xa744e every caller is a body this rule placed in MAX8617X: 0x526d8, 0x5284c"
+    module: MAX8617X
+  - name: max8617x__by_callees_25
+    address: 0xa7480
+    class: bymodule
+    evidence: "0xa7480 every caller is a body this rule placed in MAX8617X: 0x52a04"
+    module: MAX8617X
   - name: max_led_config_task__3
     address: 0xa7496
     class: helper
     evidence: "only 0x52b1c (max_led_config_task) calls 0xa7496; 12 bytes"
+  - name: max8617x__by_callees_26
+    address: 0xa74a2
+    class: bymodule
+    evidence: "0xa74a2 every caller is a body this rule placed in MAX8617X: 0x52a04"
+    module: MAX8617X
   - name: greenteg_cbta__8c0cc__1__1
     address: 0xa76aa
     class: helper
@@ -8308,6 +10872,10 @@ functions:
     address: 0xa8a7c
     class: libc
     evidence: "arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120) libc_nano.a, score 0.97 over 129 insns, direct"
+  - name: _findenv_r_wrap
+    address: 0xa8bb2
+    class: wrapper
+    evidence: "0xa8bb2 is 5 instructions with one call, to _findenv_r, and returns"
   - name: __ascii_mbtowc
     address: 0xa8bc0
     class: libc
