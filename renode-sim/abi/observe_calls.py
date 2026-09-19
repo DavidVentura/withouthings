@@ -275,11 +275,17 @@ def prepare(runtime):
         shutil.copytree(os.path.join(SIM, name), os.path.join(runtime, name),
                         dirs_exist_ok=True)
     for name in ("flash.bin", "appl.bin", "bl.bin", "sd.bin", "hwa10.repl",
-                 "external_flash.bin", "NRF52840.svd"):
+                 "NRF52840.svd"):
         source = os.path.join(SIM, name)
         link = os.path.join(runtime, name)
         if os.path.exists(source) and not os.path.exists(link):
             os.symlink(source, link)
+    # Copied, never linked: the watch writes its stores through the SPI flash
+    # model, and a link would put a scenario's raw-data and vasistas writes
+    # into the association dump itself.
+    dump = os.path.join(runtime, "external_flash.bin")
+    if not os.path.exists(dump):
+        shutil.copyfile(os.path.join(SIM, "external_flash.bin"), dump)
     rig = os.path.join(runtime, "out", "rig")
     if not os.path.exists(rig):
         shutil.copytree(os.path.join(SIM, "out", "rig"), rig)
