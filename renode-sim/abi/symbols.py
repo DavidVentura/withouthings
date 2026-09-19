@@ -112,7 +112,8 @@ HAND = "hand"
 RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "vendor", "string",
         "wppcmd", "codec", "wppobj", "wuiview", "vasistas", "store", "sensor",
         "kernel", "global", "trace", "runtime", "shell", "logtag", "logcb",
-        "bleevt", "logline", "slot", "accessor", "shared", "helper", "prose"]
+        "bleevt", "logline", "slot", "accessor", "shared", "helper",
+        "role", "wrapper", "bymodule", "prose"]
 
 
 # The derivations that settle an address rather than read it: a byte verdict

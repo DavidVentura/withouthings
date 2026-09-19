@@ -4,7 +4,7 @@
     python3 abi/autonames.py                  # every class, writes abi/autonames.yaml
     python3 abi/autonames.py --classes svc    # one class
 
-Twelve classes, in order of certainty:
+Fifteen classes, in order of certainty:
 
   svc      a `svc #N; bx lr` body is the SoftDevice call whose SVC number is N,
            and the S140 headers give the number and the exact prototype.
@@ -41,6 +41,17 @@ Twelve classes, in order of certainty:
   helper   a function only one named function calls is that function's private
            helper and takes its name with an index. The name may come from any
            rule or from the hand map, not just from this run.
+  role     a body that hands a call a string the callee's own prototype says is
+           a name has the role that string names: the two FreeRTOS creates take
+           a task's entry point and its name together, so the body that makes
+           the call is that task's creation site.
+  wrapper  a straight-line body whose whole content is one call to a named
+           function rebinds that call's arguments or keeps its result, and has
+           no name but the callee's.
+  bymodule the partition below, read downwards: a body that calls only named
+           functions of one module, or reaches only named globals of one, is
+           that module's whatever calls it, and so is a body all of whose
+           callers this rule placed in it.
 
 The same log tags give a module partition (which file a function came from),
 which abi/out/ghidra/modules.json carries and every entry above records.
@@ -116,7 +127,7 @@ EXT_VARIANTS = []
 # Which class names an address when two reach it; earlier wins. See main().
 CLASS_RANK = ["svc", "syscall", "libc", "libm", "extlib", "wppcmd", "shell", "wppobj", "string",
               "logtag", "logcb", "bleevt", "logline", "slot", "accessor",
-              "vector", "shared", "helper"]
+              "vector", "shared", "helper", "role", "wrapper", "bymodule"]
 
 INSN = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2,4} )+)\s*\t(\S+)\s*(.*)$")
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -505,8 +516,14 @@ class Export:
             self._fn.append(r["function"])
         self.callers = collections.defaultdict(set)
         self.callees = collections.defaultdict(set)
+        # How many branches a body takes that are not calls. A wrapper is a
+        # straight line by definition, so this is what separates one from a
+        # body that happens to reach a single function down one of its paths.
+        self.branches = collections.Counter()
         for c in refs["calls"]:
             a, b = c["function"], c["to"]
+            if c["kind"] == "jump" and a is not None:
+                self.branches[a] += 1
             if c["kind"] != "call" or a == b or a not in self.fns or b not in self.fns:
                 continue
             self.callers[b].add(a)
@@ -516,6 +533,11 @@ class Export:
         except (OSError, KeyError):
             self.word_uses = []
         self.pool_reads = {p["site"]: p["target"] for p in refs["pool_reads"]}
+        # The literal-pool words a body reads, by body: a global the code
+        # touches is reached through one of them.
+        self.pool_targets = collections.defaultdict(list)
+        for p in refs["pool_reads"]:
+            self.pool_targets[p["function"]].append(p["target"])
         # Which word holds a function's Thumb address. A function nothing calls
         # is reached through one of these or not at all.
         self.holders = collections.defaultdict(list)
@@ -1565,6 +1587,300 @@ def shared_names(ex, named, modules, blocked=()):
     return out
 
 
+# ------------------------------------- classes: role, wrapper and bymodule
+
+# The classes whose names come from a reference build or a SoftDevice header
+# rather than from this image: a body that calls only these has called into a
+# library, which belongs to no module of Withings' own partition.
+LIBRARY_CLASSES = ("libc", "libm", "extlib", "svc", "syscall", "match",
+                   "kernel", "vendor")
+# The classes the three rules below write themselves. A name one of them left
+# in the map is this run's own output rather than something the image
+# established, so none of them reads one back: a rule that took its own last
+# answer as evidence would derive one more name every time the map is
+# rewritten instead of settling.
+CALLEE_SIDE_CLASSES = ("role", "wrapper", "bymodule")
+# A wrapper is a call and the instructions that set it up; past this many the
+# body is doing something of its own that the callee's name would not say.
+WRAPPER_MAX = 12
+# The longest derived name that is still a name rather than a sentence; the
+# same bound the helper nicknames are held to.
+DERIVED_MAX = HELPER_MAX
+
+
+def call_sites(img, ex):
+    """Every `bl` in the image as (enclosing body, instruction index, target)."""
+    out = collections.defaultdict(list)
+    for i, (addr, mnem, ops) in enumerate(img.insns):
+        if mnem not in ("bl", "bl.w"):
+            continue
+        fn = ex.owner(addr)
+        target = _call_target(ops)
+        if fn is None or target is None:
+            continue
+        out[fn].append((i, target))
+    return out
+
+
+def in_library(fn, library):
+    return any(lo <= fn < hi for lo, hi in library)
+
+
+# FreeRTOS's two task creates, and which argument is the entry point and which
+# the name. Both are on record from the kernel headers, which is what makes the
+# string a role rather than a datum: `abi/kernel_objects.py` reads the same two
+# calls to name the task's entry function, its stack and its control block.
+TASK_CREATE_ARGS = {"xTaskCreate": (0, 1), "xTaskCreateStatic": (0, 1)}
+
+
+def role_names(img, ex, smap, blocked=(), sites=None):
+    """A body whose role is the string it hands a call whose role is known.
+
+    A pool string that is not a log format and goes into a call is a datum
+    about the call, and where the call's own role says what the datum is for,
+    it says what the body is for: the body that hands FreeRTOS a task entry
+    point and the task's name is that task's creation site, so it is
+    `<task>_create` after the entry function the map already names.
+
+    The refusal is the whole of the discipline here. A string a call is handed
+    is a role only where the callee's prototype says the argument is a name:
+    the `snprintf` unit strings, `memchr`'s conversion sets and `setenv`'s
+    variable are data the call consumes, and none of them names its caller. A
+    body that creates two tasks names neither, because the name would have to
+    choose between them.
+    """
+    if not ex.ok:
+        return []
+    library = library_ranges()
+    named = dict((s.address, s.name) for s in smap.of_kind("function"))
+    creates = {named[a]: TASK_CREATE_ARGS[named[a]] for a in named
+               if named[a] in TASK_CREATE_ARGS}
+    sites = sites if sites is not None else call_sites(img, ex)
+    out = []
+    for fn in sorted(ex.fns):
+        if not ex.unnamed(fn) or fn in blocked or in_library(fn, library):
+            continue
+        made = []
+        for i, target in sites.get(fn, ()):
+            call = named.get(target)
+            if call not in creates:
+                continue
+            entry_arg, name_arg = creates[call]
+            frame = callargs.resolve(img, img.insns, i)
+            text = callargs.string_of(img, frame.arg(name_arg), limit=32)
+            entry = frame.arg(entry_arg)
+            if text is None or not isinstance(entry, (callargs.Imm, callargs.Pool)):
+                continue
+            made.append((call, text.decode("utf-8", "replace"),
+                         named.get(entry.value & ~1)))
+        if len(made) != 1:
+            continue
+        call, text, entry = made[0]
+        if entry is None:
+            continue
+        name = "%s_create" % entry
+        if len(name) > DERIVED_MAX:
+            continue
+        out.append({"address": fn, "name": name, "class": "role",
+                    "evidence": "0x%x hands %s the entry %s and the name '%s'"
+                                % (fn, call, entry, text)})
+    return out
+
+
+def _stored_global(img, ex, smap, body, call_at):
+    """The named global a body stores the call's result into, or None.
+
+    `str r0, [r3]` after the call with `r3` loaded from the pool is the shape:
+    the call made an object and the body is where the image keeps it.
+    """
+    globals_ = dict((s.address, s.name) for s in smap.of_kind("global", "table"))
+    bases = {}
+    for addr, mnem, ops in body:
+        if mnem == "ldr" and "[pc" in ops:
+            reg = ops.split(",")[0]
+            pool = ex.pool_reads.get(addr)
+            if pool is not None:
+                bases[reg] = img.word(pool)
+        if addr <= call_at or mnem not in STORE:
+            continue
+        m = re.match(r"^r0, \[(r\d+)\]$", ops)
+        if m and bases.get(m.group(1)) in globals_:
+            return globals_[bases[m.group(1)]]
+    return None
+
+
+def wrapper_names(img, ex, smap, blocked=(), sites=None):
+    """A body that is one call to a named function and nothing else.
+
+    A straight line with a single `bl` in it does not compute: it rebinds the
+    arguments, or it keeps the result. Its name has to come from the call,
+    because the call is all there is, and the convention this rule writes -- no
+    earlier one exists in the map, which carries two hand-written `_wrap` names
+    and no `_and_store` -- is `<callee>_wrap`, or `<callee>_and_store_<global>`
+    where the body keeps the result in a global the map names. Where several
+    bodies wrap the same function the plain name goes to the first by address
+    and the rest carry their index, since nothing in the image tells them apart.
+
+    A nickname callee is refused: `<caller>__1_wrap` says only that two bodies
+    nobody has named sit next to each other.
+    """
+    if not ex.ok:
+        return []
+    library = library_ranges()
+    named = dict((s.address, s) for s in smap.of_kind("function"))
+    sites = sites if sites is not None else call_sites(img, ex)
+    found = []
+    for fn in sorted(ex.fns):
+        if not ex.unnamed(fn) or fn in blocked or in_library(fn, library):
+            continue
+        callees = ex.callees.get(fn, set())
+        if len(callees) != 1 or ex.branches.get(fn):
+            continue
+        callee = next(iter(callees))
+        target = named.get(callee)
+        if target is None or target.klass in NICKNAMES + CALLEE_SIDE_CLASSES:
+            continue
+        body = img.body(fn, fn + ex.size(fn))
+        at = [a for a, mnem, _ in body if mnem in ("bl", "bl.w")]
+        if len(body) > WRAPPER_MAX or len(at) != 1:
+            continue
+        held = _stored_global(img, ex, smap, body, at[0])
+        found.append((fn, target.name, held, len(body)))
+    per = collections.Counter(name for _, name, held, _ in found
+                              if held is None)
+    seen = collections.Counter()
+    out = []
+    for fn, callee, held, insns in found:
+        if held is not None:
+            name = "%s_and_store_%s" % (callee, held)
+            why = "and keeps the result in %s" % held
+        else:
+            seen[callee] += 1
+            name = callee + "_wrap" if per[callee] == 1 else \
+                "%s_wrap_%d" % (callee, seen[callee])
+            why = "and returns"
+        if len(name) > DERIVED_MAX:
+            continue
+        out.append({"address": fn, "name": name, "class": "wrapper",
+                    "evidence": "0x%x is %d instructions with one call, to %s,"
+                                " %s" % (fn, insns, callee, why)})
+    return out
+
+
+def _module_of_callees(ex, modules, fn, named):
+    """The one module every non-library function a body calls belongs to."""
+    callees = sorted(ex.callees.get(fn, ()))
+    if not callees:
+        return None, None
+    own = []
+    for c in callees:
+        symbol = named.get(c)
+        if symbol is None or symbol.klass in CALLEE_SIDE_CLASSES:
+            return None, None          # an unnamed callee says nothing yet
+        if symbol.klass not in LIBRARY_CLASSES:
+            own.append(symbol)
+    if not own:
+        return None, None              # every call went into a library
+    where = {modules.get(s.address) for s in own}
+    if len(where) != 1 or None in where:
+        return None, None
+    return where.pop(), "calls only %s" % ", ".join(sorted(s.name for s in own))
+
+
+def _module_of_globals(img, ex, smap, fn):
+    """The one module every named global a body reaches belongs to."""
+    globals_ = dict((s.address, s) for s in smap.of_kind("global", "table")
+                    if s.module)
+    touched = {}
+    for target in ex.pool_targets.get(fn, ()):
+        word = img.word(target)
+        if word is None:
+            continue
+        symbol = globals_.get(word)
+        if symbol is not None:
+            touched[symbol.name] = symbol.module
+    if not touched:
+        return None, None
+    where = {m.upper() for m in touched.values()}
+    if len(where) != 1:
+        return None, None
+    return where.pop(), "reaches only %s" % ", ".join(sorted(touched))
+
+
+def bymodule_names(img, ex, smap, modules, blocked=()):
+    """A body its own callees and globals place in one module, and its helpers.
+
+    The partition abi/out/ghidra/modules.json carries reads the call graph
+    upwards: a body that logs under a tag is that module's, and so is one all
+    of whose callers are. This rule reads it downwards. A body that calls only
+    named functions of one module, or reaches only named globals of one, is
+    part of that module's implementation whatever its callers are, which is
+    what the bodies with callers in two modules have been waiting for. The
+    module is all the evidence establishes, so the name says the module and the
+    rule that found it, and numbers by address within the module.
+
+    One step of propagation follows: a body a settled body of this rule calls
+    privately is in the same module, at depth 1 only. Chaining further would be
+    deriving a nickname from a nickname, which is what the helper rule already
+    refuses to do.
+
+    Callees spanning two modules are refused, and so are callees that are all
+    library: a `memcpy` and a `xQueueSend` place a body in FreeRTOS's code, not
+    in any module of Withings'.
+    """
+    if not ex.ok:
+        return []
+    library = library_ranges()
+    named = dict((s.address, s) for s in smap.of_kind("function"))
+    settled, evidence, contested = {}, {}, []
+    for fn in sorted(ex.fns):
+        if not ex.unnamed(fn) or fn in blocked or in_library(fn, library):
+            continue
+        module, why = _module_of_callees(ex, modules, fn, named)
+        if module is None:
+            module, why = _module_of_globals(img, ex, smap, fn)
+        if module is None:
+            continue
+        module = module.upper()
+        # The partition reads the call graph the other way, so where it
+        # already places the body the two readings are about the same thing
+        # and have to agree: a body the tags put in one module whose callees
+        # and globals are another's is a boundary, and neither module names it.
+        placed = modules.get(fn)
+        if placed is not None and placed.upper() != module:
+            contested.append((fn, placed.upper(), module))
+            continue
+        settled[fn], evidence[fn] = module, why
+    direct = dict(settled)
+    for fn in sorted(ex.fns):
+        if fn in settled or not ex.unnamed(fn) or fn in blocked:
+            continue
+        if in_library(fn, library):
+            continue
+        callers = ex.callers.get(fn, set())
+        if not callers or not all(c in direct for c in callers):
+            continue
+        where = {direct[c] for c in callers}
+        if len(where) != 1:
+            continue
+        settled[fn] = where.pop()
+        evidence[fn] = ("every caller is a body this rule placed in %s: %s"
+                        % (settled[fn], ", ".join("0x%x" % c
+                                                  for c in sorted(callers))))
+    per = collections.defaultdict(list)
+    for fn, module in settled.items():
+        per[module].append(fn)
+    out = []
+    for module, fns in sorted(per.items()):
+        for n, fn in enumerate(sorted(fns), 1):
+            name = "%s__by_callees_%d" % (module.lower(), n)
+            if len(name) > DERIVED_MAX:
+                continue
+            out.append({"address": fn, "name": name, "class": "bymodule",
+                        "module": module,
+                        "evidence": "0x%x %s" % (fn, evidence[fn])})
+    return out, contested
+
 # --------------------------------------------------------------- prototypes
 
 # What abi/ghidra/word_uses.py saw done with a value, and what that makes it.
@@ -1823,6 +2139,11 @@ def map_entries(entries):
     for e in sorted(entries, key=lambda e: e["address"]):
         row = {"address": e["address"], "name": e["name"], "kind": "function",
                "class": e["class"]}
+        # The module a derivation was made in is part of what it established,
+        # and a rule that reads the callee side needs it on the callee's entry
+        # rather than in a second file beside the map.
+        if e.get("module"):
+            row["module"] = e["module"]
         if e.get("evidence"):
             row["evidence"] = " ".join(str(e["evidence"]).split())
         rows.append(row)
@@ -1889,7 +2210,7 @@ def yaml_str(s):
 # Every rule this script runs, as the class each writes into abi/symbols.yaml.
 DEFAULT_CLASSES = ("svc,syscall,libc,libm,extlib,string,logtag,logcb,wppcmd,"
                    "shell,bleevt,wppobj,logline,slot,accessor,vector,shared,"
-                   "helper")
+                   "helper,role,wrapper,bymodule")
 
 
 # The map classes a derivation owns. A function the seed carries under one of
@@ -2144,6 +2465,33 @@ def main():
                              reserved=reserved | {e["name"] for e in entries})
         stats["helper"] = len(found)
         entries += found
+        taken |= {e["address"] for e in found}
+
+    # The three rules below read the callee side: what a body calls, what it
+    # reaches and what it hands a call, rather than what calls it. They run
+    # last because each of them is weaker than every rule above, and each takes
+    # only addresses the rules above left.
+    sites = call_sites(img, ex) if ex.ok and want & {"role", "wrapper"} else {}
+    for cls, rule in (("role", role_names), ("wrapper", wrapper_names)):
+        if cls not in want:
+            continue
+        found = [e for e in rule(img, ex, smap, blocked=taken, sites=sites)
+                 if e["name"] not in reserved]
+        stats[cls] = len(found)
+        entries += found
+        taken |= {e["address"] for e in found}
+
+    if "bymodule" in want:
+        found, contested = bymodule_names(img, ex, smap, modules, blocked=taken)
+        found = [e for e in found if e["name"] not in reserved]
+        stats["bymodule"] = len(found)
+        stats["bymodule_contested"] = len(contested)
+        for pair, n in sorted(collections.Counter(
+                (placed, seen) for _, placed, seen in contested).items()):
+            print("autonames: %d bodies the tags put in %s call and read only"
+                  " %s's; neither module names them" % (n, pair[0], pair[1]),
+                  file=sys.stderr)
+        entries += found
 
     # One address, one name, and one name, one address: the manifest cannot
     # carry either kind of duplicate.
@@ -2176,7 +2524,10 @@ def main():
 
     for e in final:
         if e["address"] in modules:
-            e["module"] = modules[e["address"]]
+            # A rule that derived the module derived its name from it, so the
+            # partition fills in the entries that have none rather than
+            # replacing what a rule established.
+            e.setdefault("module", modules[e["address"]])
     stats["prototypes_derived"] = derived_prototypes(ex, final)
     agree, disagree, emit = cross_check(final)
     write_yaml(args.out, emit, agree, disagree, stats)
