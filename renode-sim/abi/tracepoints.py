@@ -11,6 +11,11 @@ the manager around them are the ruler: a callee's count divided by its
 algorithm's step count is the rate that fixes its role. The WUI slot bodies say
 which screens the scenario actually put up, which is what separates a function
 that ran because of the feature from one that ran because the watch face did.
+
+The addresses a trace has already named stay in, because the rate is the
+evidence the name rests on: naming one takes it out of the uncalled set, and a
+hook set built from that set alone would silently stop measuring the very thing
+the next run has to disagree with.
 """
 import os
 import re
@@ -32,6 +37,8 @@ def main():
     for s in smap.of_kind("function"):
         if s.klass == "wuiview":
             rows.append((s.address, "wui", s.name))
+        elif s.klass == "trace":
+            rows.append((s.address, "trace", s.name))
         elif ALGO.search(s.name) and s.klass in ("hand", "sensor"):
             rows.append((s.address, "algo", s.name))
     seen = set()
