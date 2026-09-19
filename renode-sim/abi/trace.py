@@ -282,6 +282,67 @@ ROWS = [
                   " A row of an activation table that does nothing to its"
                   " vector is the linear activation, and a layer declared with"
                   " one is a layer with no non-linearity"),
+
+    # --- the kernels that network is made of ---------------------------------
+    # The bodies below have static callers, so they are not in the uncalled
+    # set; what puts them here is the same thing that puts the activations
+    # here, which is that a rate is the only evidence tying them to the
+    # feature. They are shared kernels with no string, no log line and no
+    # object of their own, and only the body-temperature run enters them.
+    dict(address=0xA759E, name="nn_dense_accumulate", kind="function",
+         module="body_temp", calls=[0xA86C2],
+         rate="RATE_DENSE",
+         evidence="out[m][n] = bias[n] + sum over k of in[m][k] *"
+                  " w[k * n_out + n], in float32 and with `vfma.f32` so the"
+                  " product is never rounded before it is added. It memsets"
+                  " the output first (0xa75c0), walks the weight pointer in"
+                  " strides of n_out floats over the summed dimension"
+                  " (0xa7610..0xa7618) and only then adds the bias vector"
+                  " element for the output it just finished (0xa762a). A"
+                  " row-major matrix multiply with a per-output bias is a"
+                  " dense layer's accumulation and nothing else",
+         settled=True),
+    dict(address=0xA76AA, name="nn_dense_layer", kind="function",
+         module="body_temp", calls=[0xA759E],
+         rate="RATE_LAYER",
+         evidence="the dense layer around that kernel: it takes an output, an"
+                  " input, a weight and a bias descriptor of the shape"
+                  " greenteg_cbta_nn_tensors declares, reads the batch from"
+                  " the input's rank and rows, the output width from the"
+                  " weight's cols at +0xa and the summed width from its rows"
+                  " at +8, calls nn_dense_accumulate and tail-calls the"
+                  " activation its fifth argument names over batch * cols"
+                  " floats (0xa76e8)",
+         settled=True),
+    dict(address=0xA76EA, name="nn_gru_cell", kind="function",
+         module="body_temp", calls=[0xA759E],
+         rate="RATE_CELL",
+         evidence="one timestep of a gated recurrent unit. It divides its"
+                  " input weight's row count by three (0xa7702) and runs"
+                  " nn_dense_accumulate six times, three blocks against the"
+                  " input and three against the hidden state, each with its"
+                  " own bias vector out of the six the bias tensor holds; it"
+                  " sums the first two pairs and puts the logistic over them"
+                  " (0xa77c4), multiplies the second gate into the third"
+                  " recurrent projection and the ELU over that sum"
+                  " (0xa7876, 0xa7858), and closes with h = fma(z, h,"
+                  " (1 - z) * n) at 0xa78c4. Update gate, reset gate and"
+                  " candidate, in that order, with the candidate's"
+                  " non-linearity an ELU where a stock GRU has tanh",
+         settled=True),
+    dict(address=0xA78CE, name="nn_gru_run", kind="function",
+         module="body_temp", calls=[0xA76EA],
+         rate="RATE_RUN",
+         evidence="the sequence loop over that cell: it takes the hidden"
+                  " width from its recurrent weight's cols, the input width"
+                  " and the timestep count from the input tensor's cols and"
+                  " rows, and steps the cell once per timestep forwards or"
+                  " backwards depending on its fifth stack argument"
+                  " (0xa78f2), copying the hidden state into the output"
+                  " tensor after each step when the sixth says to. The CBTA"
+                  " model passes one timestep, forwards, with the states"
+                  " returned",
+         settled=True),
 ]
 
 # What ran and is still not named. Each carries the rate, because the rate is

@@ -30,6 +30,24 @@ components:
   # and the two instances the wrapper drives are named by the two lines the
   # shell's `greenteg test` prints against them, FREE_LIVING_ALGORITHM and
   # SPORT.
+  # What is inside it, which is the one component whose interiors are read
+  # rather than left as a boundary. The free-living instance is a model: a
+  # gated recurrent unit of eight units over three inputs -- heat flux, skin
+  # temperature and heart rate, each a minute-mean normalised against a fixed
+  # centre and scale -- followed by a linear layer down to one number, which
+  # 37.1392 + 0.5900 * y turns into degrees Celsius. It runs once every sixty
+  # samples and an interim blend fills the fifty-nine between. The weights are
+  # greenteg_cbta_nn_tensors, declared in abi/include/withings/vendor.h and
+  # emitted typed by abi/datagen.py; abi/greenteg.py reads them back through
+  # that declaration and runs the network, bit for bit in float32, against the
+  # pairs a scenario run captures at 0x8c1c0 and 0x8c09e.
+  #
+  # The sport instance is not the same algorithm and has no weights: 0x8c500
+  # accumulates means and squared deviations over a 300-sample window.
+  #
+  # The one interior still refused is 0x8bbc0, which the sport constructor
+  # calls four times with a coefficient table and a 14 by 11 shape. Nothing
+  # says what it builds, so it keeps the interior record.
   - name: greenteg_cbta
     what: >
       greenTEG core-body-temperature model, two instances (free-living and
