@@ -91,6 +91,168 @@ struct wui_view_vtable {
     void (*refresh)(struct wui_view *view, int offset, int zero);
 };
 
+/* The longer vtables, which are the same table with more slots on the end.
+   Every one of the 131 tables in 0xb9030..0xbc000 opens with the six slots
+   above -- the same defaults sit at the same offsets in all of them -- and 87
+   of them carry between one and twelve more handler words after `refresh`. The
+   count is the table's own: a table is entered only through a word that holds
+   its address, and the run of handler words that address opens ends where the
+   next such address begins, because the region is dense and holds nothing
+   between one table and the next. The trailing NULL words 107 of them carry
+   are left out of the declaration: a slot a table holds as NULL says nothing
+   about what the slot is.
+
+   The extra slots keep an index for a name. They are dispatched -- +0x18 from
+   0x80f7a, 0x8ae58, 0x98bec and 0xa604e, +0x1c from 0x8013c, 0x801f8, 0x80da4
+   and 0xa678e, +0x20 from 0x80ede, 0x8199c, 0x85130 and 0xa576a, +0x24 from
+   0x7ffc6, 0x8198e and 0x85154, +0x28 from 0x8084e and 0x87b04, +0x2c from
+   0x80274 and 0x886d6, +0x30 from 0x80412 and 0x88746, +0x34 from 0x807e8,
+   +0x38 from 0x807cc, +0x3c from 0x80818 and +0x44 from 0x7fff4 -- but none of
+   those sites says what it is dispatching, the way the four lifecycle slots'
+   own log lines do, and +0x40 has no dispatcher in the image at all. So the
+   slot number is the whole of what is known and the name says so. */
+
+/* 7 handler words, 17 of the tables. */
+struct wui_view_vtable_7 {
+    int (*on_event)(struct wui_view *view, int event);
+    void (*on_enter)(struct wui_view *view);
+    void (*on_exit)(struct wui_view *view);
+    void (*on_foreground)(struct wui_view *view);
+    void (*on_background)(struct wui_view *view);
+    void (*refresh)(struct wui_view *view, int offset, int zero);
+    void *slot_6;
+};
+
+/* 8 handler words, 31 of the tables. */
+struct wui_view_vtable_8 {
+    int (*on_event)(struct wui_view *view, int event);
+    void (*on_enter)(struct wui_view *view);
+    void (*on_exit)(struct wui_view *view);
+    void (*on_foreground)(struct wui_view *view);
+    void (*on_background)(struct wui_view *view);
+    void (*refresh)(struct wui_view *view, int offset, int zero);
+    void *slot_6;
+    void *slot_7;
+};
+
+/* 9 handler words, 5 of the tables. */
+struct wui_view_vtable_9 {
+    int (*on_event)(struct wui_view *view, int event);
+    void (*on_enter)(struct wui_view *view);
+    void (*on_exit)(struct wui_view *view);
+    void (*on_foreground)(struct wui_view *view);
+    void (*on_background)(struct wui_view *view);
+    void (*refresh)(struct wui_view *view, int offset, int zero);
+    void *slot_6;
+    void *slot_7;
+    void *slot_8;
+};
+
+/* 10 handler words, 19 of the tables. */
+struct wui_view_vtable_10 {
+    int (*on_event)(struct wui_view *view, int event);
+    void (*on_enter)(struct wui_view *view);
+    void (*on_exit)(struct wui_view *view);
+    void (*on_foreground)(struct wui_view *view);
+    void (*on_background)(struct wui_view *view);
+    void (*refresh)(struct wui_view *view, int offset, int zero);
+    void *slot_6;
+    void *slot_7;
+    void *slot_8;
+    void *slot_9;
+};
+
+/* 11 handler words, 8 of the tables. */
+struct wui_view_vtable_11 {
+    int (*on_event)(struct wui_view *view, int event);
+    void (*on_enter)(struct wui_view *view);
+    void (*on_exit)(struct wui_view *view);
+    void (*on_foreground)(struct wui_view *view);
+    void (*on_background)(struct wui_view *view);
+    void (*refresh)(struct wui_view *view, int offset, int zero);
+    void *slot_6;
+    void *slot_7;
+    void *slot_8;
+    void *slot_9;
+    void *slot_10;
+};
+
+/* 12 handler words, 1 of the tables. */
+struct wui_view_vtable_12 {
+    int (*on_event)(struct wui_view *view, int event);
+    void (*on_enter)(struct wui_view *view);
+    void (*on_exit)(struct wui_view *view);
+    void (*on_foreground)(struct wui_view *view);
+    void (*on_background)(struct wui_view *view);
+    void (*refresh)(struct wui_view *view, int offset, int zero);
+    void *slot_6;
+    void *slot_7;
+    void *slot_8;
+    void *slot_9;
+    void *slot_10;
+    void *slot_11;
+};
+
+/* 13 handler words, 1 of the tables. */
+struct wui_view_vtable_13 {
+    int (*on_event)(struct wui_view *view, int event);
+    void (*on_enter)(struct wui_view *view);
+    void (*on_exit)(struct wui_view *view);
+    void (*on_foreground)(struct wui_view *view);
+    void (*on_background)(struct wui_view *view);
+    void (*refresh)(struct wui_view *view, int offset, int zero);
+    void *slot_6;
+    void *slot_7;
+    void *slot_8;
+    void *slot_9;
+    void *slot_10;
+    void *slot_11;
+    void *slot_12;
+};
+
+/* 16 handler words, 2 of the tables. */
+struct wui_view_vtable_16 {
+    int (*on_event)(struct wui_view *view, int event);
+    void (*on_enter)(struct wui_view *view);
+    void (*on_exit)(struct wui_view *view);
+    void (*on_foreground)(struct wui_view *view);
+    void (*on_background)(struct wui_view *view);
+    void (*refresh)(struct wui_view *view, int offset, int zero);
+    void *slot_6;
+    void *slot_7;
+    void *slot_8;
+    void *slot_9;
+    void *slot_10;
+    void *slot_11;
+    void *slot_12;
+    void *slot_13;
+    void *slot_14;
+    void *slot_15;
+};
+
+/* 18 handler words, 3 of the tables. */
+struct wui_view_vtable_18 {
+    int (*on_event)(struct wui_view *view, int event);
+    void (*on_enter)(struct wui_view *view);
+    void (*on_exit)(struct wui_view *view);
+    void (*on_foreground)(struct wui_view *view);
+    void (*on_background)(struct wui_view *view);
+    void (*refresh)(struct wui_view *view, int offset, int zero);
+    void *slot_6;
+    void *slot_7;
+    void *slot_8;
+    void *slot_9;
+    void *slot_10;
+    void *slot_11;
+    void *slot_12;
+    void *slot_13;
+    void *slot_14;
+    void *slot_15;
+    void *slot_16;
+    void *slot_17;
+};
+
+
 /* bits points at the 1-bit-per-pixel rows in the image itself: 0xbc02c's
    word 0xecbac, which words.yaml had to declare by hand as a pointer before
    the table was known, holds 18 bytes that draw a cross for a 14 x 10 icon.
@@ -358,6 +520,137 @@ extern const struct wui_view wui_view_sport_2;
 extern const struct wui_view wui_view_setup_flow;
 extern const struct wui_view wui_view_setup_flow_2;
 extern const struct wui_view wui_view_menu_carousel;
+
+/* The vtables, one declaration per table, named by abi/wui_views.py after the
+   view descriptor that points at it. Six tables are not here and cannot be:
+   0xb9030, 0xb903c, 0xb9048 and 0xb9054 are three-slot tables only a literal
+   pool in 0x7f2xx reaches, and 0xb91ac and 0xbb668 are shared by descriptors
+   whose name word does not point at a string, so no view owns them. */
+extern struct wui_view_vtable_18 wui_vtable_scanwatch;
+extern struct wui_view_vtable_18 wui_vtable_scanwatch_factory;
+extern struct wui_view_vtable_18 wui_vtable_scanwatch_demo;
+extern struct wui_view_vtable_9 wui_vtable_menu_carousel;
+extern struct wui_view_vtable wui_vtable_menu_carousel_2;
+extern struct wui_view_vtable_7 wui_vtable_hidden_screens;
+extern struct wui_view_vtable wui_vtable_hidden_screens_2;
+extern struct wui_view_vtable_8 wui_vtable_demo_carousel;
+extern struct wui_view_vtable wui_vtable_demo_carousel_2;
+extern struct wui_view_vtable_8 wui_vtable_carousel_settings;
+extern struct wui_view_vtable wui_vtable_carousel_settings_2;
+extern struct wui_view_vtable_8 wui_vtable_carousel_clocks;
+extern struct wui_view_vtable wui_vtable_carousel_clocks_2;
+extern struct wui_view_vtable_8 wui_vtable_sport;
+extern struct wui_view_vtable wui_vtable_sport_2;
+extern struct wui_view_vtable_8 wui_vtable_sport_summary;
+extern struct wui_view_vtable wui_vtable_sport_summary_2;
+extern struct wui_view_vtable_8 wui_vtable_timer;
+extern struct wui_view_vtable_8 wui_vtable_stopwatch;
+extern struct wui_view_vtable_10 wui_vtable_clock_menu;
+extern struct wui_view_vtable_8 wui_vtable_stopwatch_menu;
+extern struct wui_view_vtable_8 wui_vtable_timer_menu;
+extern struct wui_view_vtable_8 wui_vtable_alarm;
+extern struct wui_view_vtable_8 wui_vtable_alarm_popup;
+extern struct wui_view_vtable_8 wui_vtable_alarm_ringing;
+extern struct wui_view_vtable_8 wui_vtable_cycle;
+extern struct wui_view_vtable_13 wui_vtable_cycletrackingmenu;
+extern struct wui_view_vtable_11 wui_vtable_cycletrackingsymptomsmenu;
+extern struct wui_view_vtable wui_vtable_charge_station;
+extern struct wui_view_vtable_7 wui_vtable_factory_check;
+extern struct wui_view_vtable_8 wui_vtable_factory_test;
+extern struct wui_view_vtable_8 wui_vtable_factory_test_temperature;
+extern struct wui_view_vtable_8 wui_vtable_factory_test_screen;
+extern struct wui_view_vtable_7 wui_vtable_lapping_test;
+extern struct wui_view_vtable_7 wui_vtable_factory_charging;
+extern struct wui_view_vtable_8 wui_vtable_goal;
+extern struct wui_view_vtable_7 wui_vtable_version;
+extern struct wui_view_vtable_7 wui_vtable_certif;
+extern struct wui_view_vtable_7 wui_vtable_certif_japan;
+extern struct wui_view_vtable_7 wui_vtable_info;
+extern struct wui_view_vtable_7 wui_vtable_factory_reset;
+extern struct wui_view_vtable_7 wui_vtable_factory_reset_coutdown;
+extern struct wui_view_vtable_7 wui_vtable_erase_cache;
+extern struct wui_view_vtable_7 wui_vtable_temperature_sensors;
+extern struct wui_view_vtable_7 wui_vtable_demo_menu;
+extern struct wui_view_vtable_7 wui_vtable_demo_exit;
+extern struct wui_view_vtable wui_vtable_hold_the_watch;
+extern struct wui_view_vtable_10 wui_vtable_home;
+extern struct wui_view_vtable wui_vtable_missing_medical_permissions;
+extern struct wui_view_vtable wui_vtable_power_reserve_screen;
+extern struct wui_view_vtable wui_vtable_low_battery_screen;
+extern struct wui_view_vtable_7 wui_vtable_shortcut;
+extern struct wui_view_vtable_7 wui_vtable_shortcut_pause;
+extern struct wui_view_vtable wui_vtable_tighten_the_watch;
+extern struct wui_view_vtable_8 wui_vtable_sleep_duration;
+extern struct wui_view_vtable_10 wui_vtable_calories;
+extern struct wui_view_vtable_10 wui_vtable_distance;
+extern struct wui_view_vtable_9 wui_vtable_ecg;
+extern struct wui_view_vtable wui_vtable_ecg_meas;
+extern struct wui_view_vtable wui_vtable_ecg_live_app;
+extern struct wui_view_vtable wui_vtable_ecg_fake;
+extern struct wui_view_vtable wui_vtable_ecg_result;
+extern struct wui_view_vtable wui_vtable_ecg_selection;
+extern struct wui_view_vtable_10 wui_vtable_elevation;
+extern struct wui_view_vtable_11 wui_vtable_hr;
+extern struct wui_view_vtable_8 wui_vtable_high_hr_popup;
+extern struct wui_view_vtable_11 wui_vtable_hr_demo;
+extern struct wui_view_vtable_11 wui_vtable_ecg_hr;
+extern struct wui_view_vtable_11 wui_vtable_body_temperature;
+extern struct wui_view_vtable_9 wui_vtable_spo2;
+extern struct wui_view_vtable_16 wui_vtable_spo2_meas;
+extern struct wui_view_vtable_16 wui_vtable_spo2_meas_2;
+extern struct wui_view_vtable wui_vtable_spo2_error;
+extern struct wui_view_vtable_10 wui_vtable_steps;
+extern struct wui_view_vtable_9 wui_vtable_dbt;
+extern struct wui_view_vtable_11 wui_vtable_dbt_mode;
+extern struct wui_view_vtable wui_vtable_dbt_duration;
+extern struct wui_view_vtable wui_vtable_dbt_meas;
+extern struct wui_view_vtable wui_vtable_dbt_result;
+extern struct wui_view_vtable_8 wui_vtable_back;
+extern struct wui_view_vtable wui_vtable_nok;
+extern struct wui_view_vtable_8 wui_vtable_ppg_afib;
+extern struct wui_view_vtable_8 wui_vtable_custo_2;
+extern struct wui_view_vtable_11 wui_vtable_notif;
+extern struct wui_view_vtable_12 wui_vtable_fake_notif_3;
+extern struct wui_view_vtable_8 wui_vtable_activity_reminder;
+extern struct wui_view_vtable_8 wui_vtable_battery;
+extern struct wui_view_vtable_8 wui_vtable_battery_charging;
+extern struct wui_view_vtable_8 wui_vtable_clock_mode;
+extern struct wui_view_vtable_8 wui_vtable_quick_look;
+extern struct wui_view_vtable wui_vtable_quicklook_selection;
+extern struct wui_view_vtable_8 wui_vtable_dnd_settings;
+extern struct wui_view_vtable wui_vtable_dnd_selection;
+extern struct wui_view_vtable wui_vtable_hands_calibration;
+extern struct wui_view_vtable wui_vtable_hands_calibration_tuto;
+extern struct wui_view_vtable wui_vtable_hands_calibration_settings;
+extern struct wui_view_vtable_8 wui_vtable_home_face_settings;
+extern struct wui_view_vtable_10 wui_vtable_settings;
+extern struct wui_view_vtable_8 wui_vtable_hands_calib_menu;
+extern struct wui_view_vtable wui_vtable_install_go;
+extern struct wui_view_vtable wui_vtable_install_bt_key;
+extern struct wui_view_vtable wui_vtable_install_connected;
+extern struct wui_view_vtable wui_vtable_install_ok;
+extern struct wui_view_vtable wui_vtable_install_nok;
+extern struct wui_view_vtable_7 wui_vtable_setup_flow;
+extern struct wui_view_vtable wui_vtable_setup_flow_2;
+extern struct wui_view_vtable wui_vtable_screen_update;
+extern struct wui_view_vtable_9 wui_vtable_workout;
+extern struct wui_view_vtable_11 wui_vtable_workout_2;
+extern struct wui_view_vtable wui_vtable_sport_notif;
+extern struct wui_view_vtable_8 wui_vtable_workout_low_batt;
+extern struct wui_view_vtable_10 wui_vtable_sport_time;
+extern struct wui_view_vtable_10 wui_vtable_sport_calories;
+extern struct wui_view_vtable_10 wui_vtable_sport_gps_distance;
+extern struct wui_view_vtable_10 wui_vtable_sport_gps_pace_summary;
+extern struct wui_view_vtable_10 wui_vtable_sport_elevation;
+extern struct wui_view_vtable wui_vtable_sport_congrats;
+extern struct wui_view_vtable_10 wui_vtable_sport_pause;
+extern struct wui_view_vtable_10 wui_vtable_sport_chrono;
+extern struct wui_view_vtable_10 wui_vtable_sport_chrono_summary;
+extern struct wui_view_vtable_10 wui_vtable_sport_gps_pace;
+extern struct wui_view_vtable_10 wui_vtable_sport_gps_speed;
+extern struct wui_view_vtable wui_vtable_pause_selection;
+extern struct wui_view_vtable_10 wui_vtable_sport_heart_rate;
+extern struct wui_view_vtable_10 wui_vtable_workout_temperature;
 
 /* tables */
 /* The image assets the UI draws. 70 rows of {u8 width, u8 height, u16 zero,

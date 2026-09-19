@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {accessor: 22, bleevt: 28, extlib: 0, helper: 700, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1788, modules: 184, prototypes_derived: 23, shared: 12, shell: 156, shell_table_rows: 79, slot: 28, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {accessor: 21, bleevt: 28, extlib: 0, helper: 719, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1788, modules: 184, prototypes_derived: 25, shared: 13, shell: 156, shell_table_rows: 79, slot: 132, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 194, disagree: 0}
 
 functions:
@@ -353,11 +353,19 @@ functions:
     address: 0x317a4
     class: accessor
     evidence: "the body is one ldr through stopwatch_table_20011518 (pool word 0x317ac = 0x20011518) and a return"
+  - name: wui_vtable_scanwatch_slot_13__1
+    address: 0x317b0
+    class: helper
+    evidence: "only 0x80860 (wui_vtable_scanwatch_slot_13) calls 0x317b0; 6 bytes"
   - name: on_enter_stopwatch__1
     address: 0x317bc
     class: helper
     evidence: "only 0x8233c (on_enter_stopwatch) calls 0x317bc; 6 bytes"
     module: SCREEN_STOPWATCH
+  - name: wui_vtable_scanwatch_slot_13__2
+    address: 0x317c8
+    class: helper
+    evidence: "only 0x80860 (wui_vtable_scanwatch_slot_13) calls 0x317c8; 8 bytes"
   - name: on_enter_stopwatch__2
     address: 0x317d4
     class: helper
@@ -2422,14 +2430,14 @@ functions:
     class: logline
     evidence: "the only line 0x50a38 logs, wlog('[APDS] No data available') at 0x50a7c"
     module: APDS
-  - name: i2c_device_table_3_fn0
+  - name: i2c_device_table_3_acquire
     address: 0x50a8c
     class: slot
-    evidence: "0x50a8c is the fn0 slot of i2c_device_table row 3 (word 0xb2324); nothing calls it"
-  - name: i2c_device_table_3_fn3
+    evidence: "0x50a8c is the acquire slot of i2c_device_table row 3 (word 0xb2324); nothing calls it"
+  - name: i2c_device_table_3_release
     address: 0x50a9c
     class: slot
-    evidence: "0x50a9c is the fn3 slot of i2c_device_table row 3 (word 0xb2330); nothing calls it"
+    evidence: "0x50a9c is the release slot of i2c_device_table row 3 (word 0xb2330); nothing calls it"
   - name: shell_help_wlog
     address: 0x50aac
     class: shell
@@ -3155,18 +3163,18 @@ functions:
     class: logline
     evidence: "the only line 0x5b2d0 logs, wlog('[SN19020X6] Set sampling frequency: %dsps (0x%0x)') at 0x5b302"
     module: SN19020X6
-  - name: i2c_device_table_1_fn0
+  - name: i2c_device_table_1_acquire
     address: 0x5b400
     class: slot
-    evidence: "0x5b400 is the fn0 slot of i2c_device_table row 1 (word 0xb22ec); nothing calls it"
-  - name: i2c_device_table_1_fn1
+    evidence: "0x5b400 is the acquire slot of i2c_device_table row 1 (word 0xb22ec); nothing calls it"
+  - name: i2c_device_table_1_slot_1
     address: 0x5b41c
     class: slot
-    evidence: "0x5b41c is the fn1 slot of i2c_device_table row 1 (word 0xb22f0); nothing calls it"
-  - name: i2c_device_table_1_fn3
+    evidence: "0x5b41c is the slot_1 slot of i2c_device_table row 1 (word 0xb22f0); nothing calls it"
+  - name: i2c_device_table_1_release
     address: 0x5b428
     class: slot
-    evidence: "0x5b428 is the fn3 slot of i2c_device_table row 1 (word 0xb22f8); nothing calls it"
+    evidence: "0x5b428 is the release slot of i2c_device_table row 1 (word 0xb22f8); nothing calls it"
   - name: shell_help_sn19020x6
     address: 0x5b438
     class: shell
@@ -3331,22 +3339,22 @@ functions:
     class: helper
     evidence: "only 0x5e664 (shell_cmd_tmp117) calls 0x5e58c; 128 bytes"
     module: TMP117
-  - name: i2c_device_table_2_fn0
+  - name: i2c_device_table_2_acquire
     address: 0x5e614
     class: slot
-    evidence: "0x5e614 is the fn0 slot of i2c_device_table row 2 (word 0xb2308); nothing calls it"
-  - name: i2c_device_table_2_fn1
+    evidence: "0x5e614 is the acquire slot of i2c_device_table row 2 (word 0xb2308); nothing calls it"
+  - name: i2c_device_table_2_slot_1
     address: 0x5e624
     class: slot
-    evidence: "0x5e624 is the fn1 slot of i2c_device_table row 2 (word 0xb230c); nothing calls it"
-  - name: i2c_device_table_2_fn2
+    evidence: "0x5e624 is the slot_1 slot of i2c_device_table row 2 (word 0xb230c); nothing calls it"
+  - name: i2c_device_table_2_slot_2
     address: 0x5e634
     class: slot
-    evidence: "0x5e634 is the fn2 slot of i2c_device_table row 2 (word 0xb2310); nothing calls it"
-  - name: i2c_device_table_2_fn3
+    evidence: "0x5e634 is the slot_2 slot of i2c_device_table row 2 (word 0xb2310); nothing calls it"
+  - name: i2c_device_table_2_release
     address: 0x5e644
     class: slot
-    evidence: "0x5e644 is the fn3 slot of i2c_device_table row 2 (word 0xb2314); nothing calls it"
+    evidence: "0x5e644 is the release slot of i2c_device_table row 2 (word 0xb2314); nothing calls it"
   - name: shell_help_tmp117
     address: 0x5e654
     class: shell
@@ -3635,6 +3643,10 @@ functions:
     address: 0x60b60
     class: helper
     evidence: "only 0x60c68 (WPP_CMD_USER_UNIT) calls 0x60b60; 6 bytes"
+  - name: wui_vtable_elevation_slot_8__1
+    address: 0x60b78
+    class: helper
+    evidence: "only 0xa6154 (wui_vtable_elevation_slot_8) calls 0x60b78; 34 bytes"
   - name: WPP_CMD_USER_UNIT
     address: 0x60c68
     class: wppcmd
@@ -3683,6 +3695,15 @@ functions:
     address: 0x617d4
     class: logline
     evidence: "the only line 0x617d4 logs, wlog('[SPO2] Unexpected status = %d') at 0x617f2"
+    module: SPO2
+  - name: wui_vtable_spo2_meas_2_slot_12__1
+    address: 0x61968
+    class: helper
+    evidence: "only 0xa63b2 (wui_vtable_spo2_meas_2_slot_12) calls 0x61968; 16 bytes"
+  - name: wui_vtable_spo2_meas_slot_13__1
+    address: 0x61b98
+    class: helper
+    evidence: "only 0x86a28 (wui_vtable_spo2_meas_slot_13) calls 0x61b98; 58 bytes"
     module: SPO2
   - name: spo2_failed_to_update_screen_data
     address: 0x61be8
@@ -3743,6 +3764,10 @@ functions:
     class: logline
     evidence: "the only line 0x62ea8 logs, wlog('[HR_EVENT] notification triggered, user has been notified of event type %s') at 0x62eea"
     module: HR_EVENT
+  - name: wui_vtable_high_hr_popup_on_enter__1
+    address: 0x62f24
+    class: helper
+    evidence: "only 0x8658c (wui_vtable_high_hr_popup_on_enter) calls 0x62f24; 6 bytes"
   - name: algo_manager_publish_results__5
     address: 0x631c0
     class: helper
@@ -4163,6 +4188,10 @@ functions:
     address: 0x6a538
     class: helper
     evidence: "only 0x8a790 (refresh_sport_gps_pace) calls 0x6a538; 6 bytes"
+  - name: wui_vtable_sport_summary_slot_7__1
+    address: 0x6a550
+    class: helper
+    evidence: "only 0x81aec (wui_vtable_sport_summary_slot_7) calls 0x6a550; 6 bytes"
   - name: refresh_sport_gps_speed__1
     address: 0x6a55c
     class: helper
@@ -4954,6 +4983,26 @@ functions:
     address: 0x7ff80
     class: logline
     evidence: "the only line 0x7ff80 logs, wlog('Unable to push handler') at 0x7ff96"
+  - name: wui_vtable_scanwatch_slot_10
+    address: 0x800d0
+    class: slot
+    evidence: "0x800d0 is the slot_10 slot of wui_vtable_scanwatch row 0 (word 0xb90e4); nothing calls it"
+  - name: wui_vtable_scanwatch_factory_on_enter
+    address: 0x80174
+    class: slot
+    evidence: "0x80174 is the on_enter slot of wui_vtable_scanwatch_factory row 0 (word 0xb9110); nothing calls it"
+  - name: wui_vtable_scanwatch_factory_slot_13
+    address: 0x80198
+    class: slot
+    evidence: "0x80198 is the slot_13 slot of wui_vtable_scanwatch_factory row 0 (word 0xb9140); nothing calls it"
+  - name: wui_vtable_scanwatch_factory_slot_10
+    address: 0x801c4
+    class: slot
+    evidence: "0x801c4 is the slot_10 slot of wui_vtable_scanwatch_factory row 0 (word 0xb9134); nothing calls it"
+  - name: wui_vtable_scanwatch_demo_slot_10
+    address: 0x801ec
+    class: slot
+    evidence: "0x801ec is the slot_10 slot of wui_vtable_scanwatch_demo row 0 (word 0xb9184); nothing calls it"
   - name: scanwatch_hr_measure_request_m_scanwatch
     address: 0x8034c
     class: logline
@@ -4964,26 +5013,90 @@ functions:
     class: logline
     evidence: "the only line 0x80378 logs, wlog('[WUI] Event %d resent') at 0x803c4"
     module: WUI
+  - name: wui_vtable_scanwatch_demo_on_enter
+    address: 0x80448
+    class: slot
+    evidence: "0x80448 is the on_enter slot of wui_vtable_scanwatch_demo row 0 (word 0xb9160); nothing calls it"
+  - name: wui_vtable_scanwatch_slot_13__3
+    address: 0x80474
+    class: helper
+    evidence: "only 0x80860 (wui_vtable_scanwatch_slot_13) calls 0x80474; 66 bytes"
   - name: wui_postponed_event_dropped
     address: 0x804c0
     class: logline
     evidence: "the only line 0x804c0 logs, wlog('[WUI] Postponed event %d dropped') at 0x804de"
     module: WUI
+  - name: wui_vtable_scanwatch_slot_13
+    address: 0x80860
+    class: slot
+    evidence: "0x80860 is the slot_13 slot of wui_vtable_scanwatch row 0 (word 0xb90f0); nothing calls it"
   - name: cant_re_enter_composer
     address: 0x80c48
     class: logline
     evidence: "the only line 0x80c48 logs, wlog(\"Can't re-enter composer\") at 0x80c54"
+  - name: wui_vtable_menu_carousel_slot_8__1
+    address: 0x80e68
+    class: helper
+    evidence: "only 0xa5848 (wui_vtable_menu_carousel_slot_8) calls 0x80e68; 104 bytes"
   - name: load_screen_list_lets_switch_to_preview_screen
     address: 0x80ed4
     class: logline
     evidence: "the only line 0x80ed4 logs, wlog(\"[load_screen_list] Let's switch to preview screen!\") at 0x80efe"
     module: LOAD_SCREEN_LIST
+  - name: wui_vtable_hidden_screens_slot_6
+    address: 0x80f54
+    class: slot
+    evidence: "0x80f54 is the slot_6 slot of wui_vtable_hidden_screens row 0 (word 0xba110); nothing calls it"
+  - name: wui_vtable_demo_carousel_slot_7
+    address: 0x810f4
+    class: slot
+    evidence: "0x810f4 is the slot_7 slot of wui_vtable_demo_carousel row 0 (word 0xba1b0); nothing calls it"
+  - name: wui_vtable_carousel_settings_on_foreground
+    address: 0x8120c
+    class: slot
+    evidence: "0x8120c is the on_foreground slot of wui_vtable_carousel_settings row 0 (word 0xba2a8); nothing calls it"
+  - name: wui_vtable_carousel_settings_on_background
+    address: 0x81220
+    class: slot
+    evidence: "0x81220 is the on_background slot of wui_vtable_carousel_settings row 0 (word 0xba2ac); nothing calls it"
+  - name: wui_vtable_carousel_settings_on_enter
+    address: 0x81234
+    class: slot
+    evidence: "0x81234 is the on_enter slot of wui_vtable_carousel_settings row 0 (word 0xba2a0); nothing calls it"
+  - name: wui_vtable_carousel_settings_on_exit
+    address: 0x81274
+    class: slot
+    evidence: "0x81274 is the on_exit slot of wui_vtable_carousel_settings row 0 (word 0xba2a4); nothing calls it"
   - name: carousel_sport
     address: 0x812e4
     class: logtag
     evidence: "wlog('[carousel_sport] face mode screen %d unknown') at 0x81320, tag is a C identifier"
     module: CAROUSEL_SPORT
     also_named: [carousel_sport_face_mode_screen_unknown (logline)]
+  - name: wui_vtable_sport_slot_6__1__1
+    address: 0x81358
+    class: helper
+    evidence: "only 0x81664 (wui_vtable_sport_slot_6__1) calls 0x81358; 100 bytes"
+  - name: wui_vtable_workout_2_slot_7__1
+    address: 0x813c4
+    class: helper
+    evidence: "only 0x89fc8 (wui_vtable_workout_2_slot_7) calls 0x813c4; 14 bytes"
+  - name: wui_vtable_sport_slot_6__1
+    address: 0x81664
+    class: helper
+    evidence: "only 0x81948 (wui_vtable_sport_slot_6) calls 0x81664; 60 bytes"
+  - name: wui_vtable_sport_slot_6
+    address: 0x81948
+    class: slot
+    evidence: "0x81948 is the slot_6 slot of wui_vtable_sport row 0 (word 0xba3dc); nothing calls it"
+  - name: wui_vtable_sport_slot_7
+    address: 0x81a04
+    class: slot
+    evidence: "0x81a04 is the slot_7 slot of wui_vtable_sport row 0 (word 0xba3e0); nothing calls it"
+  - name: wui_vtable_sport_summary_slot_7
+    address: 0x81aec
+    class: slot
+    evidence: "0x81aec is the slot_7 slot of wui_vtable_sport_summary row 0 (word 0xba428); nothing calls it"
   - name: on_event_timer__2
     address: 0x82008
     class: helper
@@ -5006,10 +5119,46 @@ functions:
     address: 0x82bbc
     class: helper
     evidence: "only 0x82c4c (refresh_alarm) calls 0x82bbc; 62 bytes"
+  - name: wui_vtable_cycletrackingmenu_slot_12
+    address: 0x82d80
+    class: slot
+    evidence: "0x82d80 is the slot_12 slot of wui_vtable_cycletrackingmenu row 0 (word 0xba600); nothing calls it"
+  - name: wui_vtable_cycletrackingmenu_slot_10
+    address: 0x82d9c
+    class: slot
+    evidence: "0x82d9c is the slot_10 slot of wui_vtable_cycletrackingmenu row 0 (word 0xba5f8); nothing calls it"
+  - name: wui_vtable_cycletrackingsymptomsmenu_slot_7
+    address: 0x82f9c
+    class: slot
+    evidence: "0x82f9c is the slot_7 slot of wui_vtable_cycletrackingsymptomsmenu row 0 (word 0xba628); nothing calls it"
   - name: symptoms_init
     address: 0x82fc8
     class: logline
     evidence: "the only line 0x82fc8 logs, wlog('Symptoms init: %d') at 0x82fee"
+  - name: wui_vtable_cycletrackingmenu_slot_11
+    address: 0x83018
+    class: slot
+    evidence: "0x83018 is the slot_11 slot of wui_vtable_cycletrackingmenu row 0 (word 0xba5fc); nothing calls it"
+  - name: wui_vtable_cycletrackingsymptomsmenu_slot_10
+    address: 0x83030
+    class: slot
+    evidence: "0x83030 is the slot_10 slot of wui_vtable_cycletrackingsymptomsmenu row 0 (word 0xba634); nothing calls it"
+  - name: wui_vtable_cycletrackingmenu_slot_9
+    address: 0x8305c
+    class: slot
+    evidence: "0x8305c is the slot_9 slot of wui_vtable_cycletrackingmenu row 0 (word 0xba5f4); nothing calls it"
+  - name: wui_vtable_cycletrackingsymptomsmenu_slot_9
+    address: 0x83080
+    class: slot
+    evidence: "0x83080 is the slot_9 slot of wui_vtable_cycletrackingsymptomsmenu row 0 (word 0xba630); nothing calls it"
+  - name: wui_vtable_cycletrackingmenu_slot_7
+    address: 0x830a4
+    class: slot
+    evidence: "0x830a4 is the slot_7 slot of wui_vtable_cycletrackingmenu row 0 (word 0xba5ec); nothing calls it"
+  - name: wui_vtable_cycle_slot_7
+    address: 0x83184
+    class: slot
+    evidence: "0x83184 is the slot_7 slot of wui_vtable_cycle row 0 (word 0xba5c4); nothing calls it"
   - name: light_sensor_light_value
     address: 0x833b4
     class: logline
@@ -5061,10 +5210,30 @@ functions:
     class: string
     evidence: "wlog('%s dnd_state = %d \\t alarm_found = %d \\t alarm_activated = %d', 'init_home_screen') at 0x851e6"
     also_named: [dnd_state_alarm_found_alarm (logline)]
+  - name: wui_vtable_missing_medical_permissions_refresh
+    address: 0x85390
+    class: slot
+    evidence: "0x85390 is the refresh slot of wui_vtable_missing_medical_permissions row 0 (word 0xba938); nothing calls it"
+  - name: wui_vtable_missing_medical_permissions_on_enter
+    address: 0x853b4
+    class: slot
+    evidence: "0x853b4 is the on_enter slot of wui_vtable_missing_medical_permissions row 0 (word 0xba928); nothing calls it"
   - name: refresh_low_battery_screen__1
     address: 0x854fc
     class: helper
     evidence: "only 0xa5ffe (refresh_low_battery_screen) calls 0x854fc; 100 bytes"
+  - name: wui_vtable_shortcut_pause_slot_6
+    address: 0x855f8
+    class: slot
+    evidence: "0x855f8 is the slot_6 slot of wui_vtable_shortcut_pause row 0 (word 0xba9c0); nothing calls it"
+  - name: wui_vtable_calories_slot_8
+    address: 0x859f0
+    class: slot
+    evidence: "0x859f0 is the slot_8 slot of wui_vtable_calories row 0 (word 0xbaa34); nothing calls it"
+  - name: wui_vtable_calories_slot_9
+    address: 0x85a1c
+    class: slot
+    evidence: "0x85a1c is the slot_9 slot of wui_vtable_calories row 0 (word 0xbaa38); nothing calls it"
   - name: ecg_err_no_sample_queue__3
     address: 0x85e3c
     class: helper
@@ -5085,11 +5254,31 @@ functions:
     class: logline
     evidence: "the only line 0x86354 logs, wlog('[ECG] %d/%d measures | nb_days_since_last_meas=%lu/%d -> Display tuto') at 0x8639a"
     module: ECG
+  - name: wui_vtable_elevation_slot_9
+    address: 0x863fc
+    class: slot
+    evidence: "0x863fc is the slot_9 slot of wui_vtable_elevation row 0 (word 0xbab64); nothing calls it"
+  - name: wui_vtable_high_hr_popup_slot_6
+    address: 0x864fc
+    class: slot
+    evidence: "0x864fc is the slot_6 slot of wui_vtable_high_hr_popup row 0 (word 0xbabbc); nothing calls it"
+  - name: wui_vtable_ecg_hr_on_event
+    address: 0x86524
+    class: slot
+    evidence: "0x86524 is the on_event slot of wui_vtable_ecg_hr row 0 (word 0xbac00); nothing calls it"
   - name: hr_restart_hr_measure_manually_after
     address: 0x86544
     class: logline
     evidence: "the only line 0x86544 logs, wlog('[HR] Restart HR measure manually after error') at 0x8655a"
     module: HR
+  - name: wui_vtable_high_hr_popup_on_enter
+    address: 0x8658c
+    class: slot
+    evidence: "0x8658c is the on_enter slot of wui_vtable_high_hr_popup row 0 (word 0xbaba8); nothing calls it"
+  - name: wui_vtable_hr_slot_10
+    address: 0x865a8
+    class: slot
+    evidence: "0x865a8 is the slot_10 slot of wui_vtable_hr row 0 (word 0xbab98); nothing calls it"
   - name: display_mode
     address: 0x8666c
     class: logline
@@ -5102,6 +5291,14 @@ functions:
     address: 0x86840
     class: helper
     evidence: "only 0x86930 (refresh_body_temperature) calls 0x86840; 194 bytes"
+  - name: wui_vtable_spo2_meas_slot_13
+    address: 0x86a28
+    class: slot
+    evidence: "0x86a28 is the slot_13 slot of wui_vtable_spo2_meas row 0 (word 0xbacc8); nothing calls it"
+  - name: wui_vtable_spo2_slot_8
+    address: 0x86ac0
+    class: slot
+    evidence: "0x86ac0 is the slot_8 slot of wui_vtable_spo2 row 0 (word 0xbac88); nothing calls it"
   - name: spo2_measures_nb_days_since_last
     address: 0x86b2c
     class: logline
@@ -5120,10 +5317,30 @@ functions:
     address: 0x86efc
     class: helper
     evidence: "only 0x86f28 (on_event_spo2_meas) calls 0x86efc; 38 bytes"
+  - name: wui_vtable_steps_slot_8
+    address: 0x87020
+    class: slot
+    evidence: "0x87020 is the slot_8 slot of wui_vtable_steps row 0 (word 0xbad64); nothing calls it"
+  - name: wui_vtable_steps_slot_9
+    address: 0x87048
+    class: slot
+    evidence: "0x87048 is the slot_9 slot of wui_vtable_steps row 0 (word 0xbad68); nothing calls it"
+  - name: wui_vtable_dbt_mode_slot_10
+    address: 0x8707c
+    class: slot
+    evidence: "0x8707c is the slot_10 slot of wui_vtable_dbt_mode row 0 (word 0xbadc8); nothing calls it"
+  - name: wui_vtable_dbt_mode_slot_9
+    address: 0x87288
+    class: slot
+    evidence: "0x87288 is the slot_9 slot of wui_vtable_dbt_mode row 0 (word 0xbadc4); nothing calls it"
   - name: on_event_dbt_duration__1
     address: 0x8772c
     class: helper
     evidence: "only 0x87778 (on_event_dbt_duration) calls 0x8772c; 72 bytes"
+  - name: wui_vtable_dbt_mode_slot_7
+    address: 0x877d4
+    class: slot
+    evidence: "0x877d4 is the slot_7 slot of wui_vtable_dbt_mode row 0 (word 0xbadbc); nothing calls it"
   - name: on_event_alarm__1
     address: 0x87cf4
     class: helper
@@ -5133,15 +5350,40 @@ functions:
     class: helper
     evidence: "only 0xa6754 (on_enter_workout_low_batt) calls 0x87e54; 48 bytes"
     module: TRACKER_INACTIVITY
+  - name: wui_vtable_custo_2_refresh__1
+    address: 0x881d0
+    class: helper
+    evidence: "only 0x88254 (wui_vtable_custo_2_refresh) calls 0x881d0; 128 bytes"
+  - name: wui_vtable_custo_2_refresh
+    address: 0x88254
+    class: slot
+    evidence: "0x88254 is the refresh slot of wui_vtable_custo_2 row 0 (word 0xbaf10); nothing calls it"
+  - name: wui_vtable_custo_2_on_enter
+    address: 0x8839c
+    class: slot
+    evidence: "0x8839c is the on_enter slot of wui_vtable_custo_2 row 0 (word 0xbaf00); nothing calls it"
+  - name: wui_vtable_notif_slot_10
+    address: 0x88790
+    class: slot
+    evidence: "0x88790 is the slot_10 slot of wui_vtable_notif row 0 (word 0xbaf78); nothing calls it"
   - name: gui_notif_resources_available
     address: 0x88868
     class: logline
     evidence: "the only line 0x88868 logs, wlog('[GUI] On notif resources available') at 0x8886e"
     module: GUI
-  - name: tracker_inactivity_word_20024934_get
+  - name: wui_vtable_fake_notif_3_on_event
+    address: 0x88ae0
+    class: slot
+    evidence: "0x88ae0 is the on_event slot of wui_vtable_fake_notif_3 row 0 (word 0xbaf90); nothing calls it"
+    module: GUI
+  - name: wui_vtable_activity_reminder_slot_7
     address: 0x88b64
-    class: accessor
-    evidence: "the body is one ldr through tracker_inactivity_word_20024934 (pool word 0x88b6c = 0x20024934) and a return"
+    class: slot
+    evidence: "0x88b64 is the slot_7 slot of wui_vtable_activity_reminder row 0 (word 0xbaff0); nothing calls it"
+  - name: wui_vtable_activity_reminder_slot_6
+    address: 0x88b70
+    class: slot
+    evidence: "0x88b70 is the slot_6 slot of wui_vtable_activity_reminder row 0 (word 0xbafec); nothing calls it"
   - name: on_event_battery_charging__1
     address: 0x88d24
     class: helper
@@ -5163,15 +5405,33 @@ functions:
     address: 0x897ac
     class: logline
     evidence: "the only line 0x897ac logs, wlog('TOGGLE HOME FACE') at 0x897b6"
+  - name: wui_vtable_scanwatch_slot_13__4
+    address: 0x89e00
+    class: helper
+    evidence: "only 0x80860 (wui_vtable_scanwatch_slot_13) calls 0x89e00; 8 bytes"
+    proto: "uint32_t wui_vtable_scanwatch_slot_13__4(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
   - name: ui_update_timeout
     address: 0x89e48
     class: logline
     evidence: "the only line 0x89e48 logs, wlog('UI update timeout') at 0x89eca"
+  - name: wui_vtable_workout_2_slot_7
+    address: 0x89fc8
+    class: slot
+    evidence: "0x89fc8 is the slot_7 slot of wui_vtable_workout_2 row 0 (word 0xbb388); nothing calls it"
+  - name: wui_vtable_workout_2_slot_10
+    address: 0x8a038
+    class: slot
+    evidence: "0x8a038 is the slot_10 slot of wui_vtable_workout_2 row 0 (word 0xbb394); nothing calls it"
   - name: sport_congrats_go_to_summary
     address: 0x8a460
     class: logline
     evidence: "the only line 0x8a460 logs, wlog('[SPORT CONGRATS]  => Go to summary') at 0x8a484"
     module: SPORT_CONGRATS
+  - name: wui_vtable_sport_pause_slot_7
+    address: 0x8a4a0
+    class: slot
+    evidence: "0x8a4a0 is the slot_7 slot of wui_vtable_sport_pause row 0 (word 0xbb514); nothing calls it"
   - name: refresh_pause_selection__1
     address: 0x8a530
     class: helper
@@ -5188,6 +5448,10 @@ functions:
     address: 0x8ac04
     class: logline
     evidence: "the only line 0x8ac04 logs, wlog('Clear Info') at 0x8ac0e"
+  - name: wui_vtable_workout_temperature_slot_9
+    address: 0x8adf0
+    class: slot
+    evidence: "0x8adf0 is the slot_9 slot of wui_vtable_workout_temperature row 0 (word 0xbb65c); nothing calls it"
   - name: widget_scrolling_text_e_inactivity
     address: 0x8ae3c
     class: logline
@@ -5575,18 +5839,18 @@ functions:
     class: helper
     evidence: "only 0x80378 (wui_event_resent) calls 0x9200e; 66 bytes"
     module: WUI
-  - name: i2c_device_table_4_fn0
+  - name: i2c_device_table_4_acquire
     address: 0x920a8
     class: slot
-    evidence: "0x920a8 is the fn0 slot of i2c_device_table row 4 (word 0xb2340); nothing calls it"
-  - name: i2c_device_table_4_fn1
+    evidence: "0x920a8 is the acquire slot of i2c_device_table row 4 (word 0xb2340); nothing calls it"
+  - name: i2c_device_table_4_slot_1
     address: 0x920be
     class: slot
-    evidence: "0x920be is the fn1 slot of i2c_device_table row 4 (word 0xb2344); nothing calls it"
-  - name: i2c_device_table_4_fn3
+    evidence: "0x920be is the slot_1 slot of i2c_device_table row 4 (word 0xb2344); nothing calls it"
+  - name: i2c_device_table_4_release
     address: 0x920d4
     class: slot
-    evidence: "0x920d4 is the fn3 slot of i2c_device_table row 4 (word 0xb234c); nothing calls it"
+    evidence: "0x920d4 is the release slot of i2c_device_table row 4 (word 0xb234c); nothing calls it"
   - name: factory_reset_perform__2
     address: 0x920ea
     class: helper
@@ -6752,10 +7016,10 @@ functions:
     class: helper
     evidence: "only 0x50658 (WPP_CMD_GET_LIGHT_SENSOR) calls 0x9a9c6; 12 bytes"
     module: LIGHT_SENSOR
-  - name: i2c_device_table_3_fn1
+  - name: i2c_device_table_3_slot_1
     address: 0x9a9d2
     class: slot
-    evidence: "0x9a9d2 is the fn1 slot of i2c_device_table row 3 (word 0xb2328); nothing calls it"
+    evidence: "0x9a9d2 is the slot_1 slot of i2c_device_table row 3 (word 0xb2328); nothing calls it"
   - name: main_task__16
     address: 0x9ab8a
     class: helper
@@ -6959,6 +7223,10 @@ functions:
     class: helper
     evidence: "only 0x9335c (REBOOT__1) calls 0x9c076; 50 bytes"
     module: WPP
+  - name: wui_vtable_elevation_slot_8__2
+    address: 0x9c112
+    class: helper
+    evidence: "only 0xa6154 (wui_vtable_elevation_slot_8) calls 0x9c112; 8 bytes"
   - name: refresh_spo2_meas_2__1
     address: 0x9c122
     class: helper
@@ -7443,14 +7711,80 @@ functions:
     class: helper
     evidence: "only 0xa70fc (gui_notif_resources_available__1) calls 0xa508a; 20 bytes"
     module: GUI
+  - name: wui_vtable_scanwatch_demo_slot_13
+    address: 0xa553c
+    class: slot
+    evidence: "0xa553c is the slot_13 slot of wui_vtable_scanwatch_demo row 0 (word 0xb9190); nothing calls it"
+  - name: wui_vtable_scanwatch_demo_slot_14
+    address: 0xa5540
+    class: slot
+    evidence: "0xa5540 is the slot_14 slot of wui_vtable_scanwatch_demo row 0 (word 0xb9194); nothing calls it"
+  - name: wui_vtable_scanwatch_factory_slot_14
+    address: 0xa5550
+    class: slot
+    evidence: "0xa5550 is the slot_14 slot of wui_vtable_scanwatch_factory row 0 (word 0xb9144); nothing calls it"
+  - name: wui_vtable_scanwatch_factory_slot_15
+    address: 0xa5564
+    class: slot
+    evidence: "0xa5564 is the slot_15 slot of wui_vtable_scanwatch_factory row 0 (word 0xb9148); nothing calls it"
+  - name: wui_vtable_scanwatch_demo_slot_15
+    address: 0xa5578
+    class: slot
+    evidence: "0xa5578 is the slot_15 slot of wui_vtable_scanwatch_demo row 0 (word 0xb9198); nothing calls it"
+  - name: wui_vtable_scanwatch_on_enter
+    address: 0xa5588
+    class: slot
+    evidence: "0xa5588 is the on_enter slot of wui_vtable_scanwatch row 0 (word 0xb90c0); nothing calls it"
+  - name: wui_vtable_workout_low_batt_slot_6
+    address: 0xa56da
+    class: slot
+    evidence: "0xa56da is the slot_6 slot of wui_vtable_workout_low_batt row 0 (word 0xbb3d8); nothing calls it"
   - name: refresh_sport_summary_2__1
     address: 0xa5722
     class: helper
     evidence: "only 0xa5bd8 (refresh_sport_summary_2) calls 0xa5722; 30 bytes"
+  - name: wui_vtable_scanwatch_slot_13__5
+    address: 0xa5740
+    class: helper
+    evidence: "only 0x80860 (wui_vtable_scanwatch_slot_13) calls 0xa5740; 122 bytes"
+    proto: "uint32_t wui_vtable_scanwatch_slot_13__5(void *);"
+    proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: wui_vtable_menu_carousel_slot_7
+    address: 0xa57c2
+    class: slot
+    evidence: "0xa57c2 is the slot_7 slot of wui_vtable_menu_carousel row 0 (word 0xba00c); nothing calls it"
+  - name: wui_vtable_menu_carousel_slot_8
+    address: 0xa5848
+    class: slot
+    evidence: "0xa5848 is the slot_8 slot of wui_vtable_menu_carousel row 0 (word 0xba010); nothing calls it"
+  - name: wui_vtable_scanwatch_slot_13__5__1
+    address: 0xa591c
+    class: helper
+    evidence: "only 0xa5740 (wui_vtable_scanwatch_slot_13__5) calls 0xa591c; 36 bytes"
+  - name: wui_vtable_menu_carousel_on_foreground
+    address: 0xa595e
+    class: slot
+    evidence: "0xa595e is the on_foreground slot of wui_vtable_menu_carousel row 0 (word 0xb9ffc); nothing calls it"
   - name: refresh_carousel_clocks_2__1
     address: 0xa5a18
     class: helper
     evidence: "only 0xa5a98 (refresh_carousel_clocks_2) calls 0xa5a18; 4 bytes"
+  - name: wui_vtable_carousel_settings_2_on_foreground
+    address: 0xa5b1a
+    class: slot
+    evidence: "0xa5b1a is the on_foreground slot of wui_vtable_carousel_settings_2 row 0 (word 0xba2d0); nothing calls it"
+  - name: wui_vtable_carousel_settings_2_on_background
+    address: 0xa5b22
+    class: slot
+    evidence: "0xa5b22 is the on_background slot of wui_vtable_carousel_settings_2 row 0 (word 0xba2d4); nothing calls it"
+  - name: wui_vtable_carousel_settings_2_on_enter
+    address: 0xa5b2a
+    class: slot
+    evidence: "0xa5b2a is the on_enter slot of wui_vtable_carousel_settings_2 row 0 (word 0xba2c8); nothing calls it"
+  - name: wui_vtable_carousel_settings_2_on_exit
+    address: 0xa5b32
+    class: slot
+    evidence: "0xa5b32 is the on_exit slot of wui_vtable_carousel_settings_2 row 0 (word 0xba2cc); nothing calls it"
   - name: on_event_timer__3
     address: 0xa5c14
     class: helper
@@ -7461,22 +7795,118 @@ functions:
     class: string
     evidence: "wlog('[STOPWATCH] %s', 'stopwatch_helper_pause') at 0x31942"
     module: STOPWATCH
+  - name: wui_vtable_alarm_slot_7
+    address: 0xa5d5a
+    class: slot
+    evidence: "0xa5d5a is the slot_7 slot of wui_vtable_alarm row 0 (word 0xba540); nothing calls it"
   - name: sd_ble_version_get_copy_0xa5e04
     address: 0xa5e04
     class: svc
     evidence: "svc #0x65; bx lr at 0xa5e04; second copy of sd_ble_version_get (0x9b9a6)"
     header: s140/headers/ble.h
     proto: "uint32_t sd_ble_version_get(ble_version_t *p_version);"
+  - name: wui_vtable_home_slot_8
+    address: 0xa5f34
+    class: slot
+    evidence: "0xa5f34 is the slot_8 slot of wui_vtable_home row 0 (word 0xba914); nothing calls it"
+  - name: wui_vtable_home_slot_7
+    address: 0xa5f58
+    class: slot
+    evidence: "0xa5f58 is the slot_7 slot of wui_vtable_home row 0 (word 0xba910); nothing calls it"
+  - name: wui_vtable_home_slot_9
+    address: 0xa5f78
+    class: slot
+    evidence: "0xa5f78 is the slot_9 slot of wui_vtable_home row 0 (word 0xba918); nothing calls it"
+  - name: wui_vtable_missing_medical_permissions_on_event
+    address: 0xa5fc2
+    class: slot
+    evidence: "0xa5fc2 is the on_event slot of wui_vtable_missing_medical_permissions row 0 (word 0xba924); nothing calls it"
+  - name: wui_vtable_shortcut_slot_6
+    address: 0xa6034
+    class: slot
+    evidence: "0xa6034 is the slot_6 slot of wui_vtable_shortcut row 0 (word 0xba99c); nothing calls it"
   - name: on_enter_sport__5
     address: 0xa6038
     class: helper
     evidence: "only 0x818e8 (on_enter_sport) calls 0xa6038; 40 bytes"
     proto: "uint32_t on_enter_sport__5(void *);"
     proto_derived: "abi/ghidra/word_uses.py argument uses: arg0 dereferenced; return type not derived, declared uint32_t"
+  - name: wui_vtable_workout_2_slot_7__2
+    address: 0xa6060
+    class: helper
+    evidence: "only 0x89fc8 (wui_vtable_workout_2_slot_7) calls 0xa6060; 6 bytes"
+  - name: wui_vtable_distance_slot_8
+    address: 0xa6066
+    class: slot
+    evidence: "0xa6066 is the slot_8 slot of wui_vtable_distance row 0 (word 0xbaa64); nothing calls it"
+  - name: wui_vtable_distance_slot_9
+    address: 0xa6080
+    class: slot
+    evidence: "0xa6080 is the slot_9 slot of wui_vtable_distance row 0 (word 0xbaa68); nothing calls it"
   - name: on_foreground_ecg_fake__1
     address: 0xa60aa
     class: helper
     evidence: "only 0xa60ea (on_foreground_ecg_fake) calls 0xa60aa; 22 bytes"
+  - name: wui_vtable_elevation_slot_8
+    address: 0xa6154
+    class: slot
+    evidence: "0xa6154 is the slot_8 slot of wui_vtable_elevation row 0 (word 0xbab60); nothing calls it"
+  - name: wui_vtable_ecg_hr_slot_9
+    address: 0xa617c
+    class: slot
+    evidence: "0xa617c is the slot_9 slot of wui_vtable_ecg_hr row 0 (word 0xbac24); nothing calls it"
+  - name: wui_vtable_hr_demo_slot_9
+    address: 0xa61ae
+    class: slot
+    evidence: "0xa61ae is the slot_9 slot of wui_vtable_hr_demo row 0 (word 0xbabf0); nothing calls it"
+  - name: wui_vtable_hr_slot_9
+    address: 0xa6278
+    class: slot
+    evidence: "0xa6278 is the slot_9 slot of wui_vtable_hr row 0 (word 0xbab94); nothing calls it"
+  - name: wui_vtable_spo2_meas_slot_15
+    address: 0xa6304
+    class: slot
+    evidence: "0xa6304 is the slot_15 slot of wui_vtable_spo2_meas row 0 (word 0xbacd0); nothing calls it"
+  - name: wui_vtable_spo2_meas_2_slot_14
+    address: 0xa630a
+    class: slot
+    evidence: "0xa630a is the slot_14 slot of wui_vtable_spo2_meas_2 row 0 (word 0xbad14); nothing calls it"
+  - name: wui_vtable_spo2_meas_2_slot_15
+    address: 0xa630e
+    class: slot
+    evidence: "0xa630e is the slot_15 slot of wui_vtable_spo2_meas_2 row 0 (word 0xbad18); nothing calls it"
+  - name: wui_vtable_spo2_meas_slot_12
+    address: 0xa6312
+    class: slot
+    evidence: "0xa6312 is the slot_12 slot of wui_vtable_spo2_meas row 0 (word 0xbacc4); nothing calls it"
+  - name: wui_vtable_spo2_meas_slot_14
+    address: 0xa6322
+    class: slot
+    evidence: "0xa6322 is the slot_14 slot of wui_vtable_spo2_meas row 0 (word 0xbaccc); nothing calls it"
+  - name: wui_vtable_spo2_meas_2_slot_11
+    address: 0xa6380
+    class: slot
+    evidence: "0xa6380 is the slot_11 slot of wui_vtable_spo2_meas_2 row 0 (word 0xbad08); nothing calls it"
+  - name: wui_vtable_spo2_meas_2_slot_12
+    address: 0xa63b2
+    class: slot
+    evidence: "0xa63b2 is the slot_12 slot of wui_vtable_spo2_meas_2 row 0 (word 0xbad0c); nothing calls it"
+  - name: wui_vtable_spo2_meas_2_slot_13
+    address: 0xa63e0
+    class: slot
+    evidence: "0xa63e0 is the slot_13 slot of wui_vtable_spo2_meas_2 row 0 (word 0xbad10); nothing calls it"
+  - name: wui_vtable_spo2_meas_slot_11
+    address: 0xa6400
+    class: slot
+    evidence: "0xa6400 is the slot_11 slot of wui_vtable_spo2_meas row 0 (word 0xbacc0); nothing calls it"
+  - name: wui_vtable_dbt_mode_slot_7__1
+    address: 0xa65ae
+    class: helper
+    evidence: "only 0x877d4 (wui_vtable_dbt_mode_slot_7) calls 0xa65ae; 54 bytes"
+  - name: wui_vtable_ppg_afib_slot_6
+    address: 0xa6722
+    class: slot
+    evidence: "0xa6722 is the slot_6 slot of wui_vtable_ppg_afib row 0 (word 0xbaeec); nothing calls it"
   - name: refresh_ppg_afib__1__1
     address: 0xa6738
     class: helper
@@ -7485,10 +7915,79 @@ functions:
     address: 0xa677e
     class: helper
     evidence: "only 0xa67b4 (refresh_ppg_afib) calls 0xa677e; 72 bytes"
+  - name: wui_vtable_custo_2_slot_7
+    address: 0xa67e6
+    class: slot
+    evidence: "0xa67e6 is the slot_7 slot of wui_vtable_custo_2 row 0 (word 0xbaf18); nothing calls it"
+  - name: wui_vtable_workout_2_slot_8
+    address: 0xa6840
+    class: slot
+    evidence: "0xa6840 is the slot_8 slot of wui_vtable_workout_2 row 0 (word 0xbb38c); nothing calls it"
+  - name: wui_vtable_cycletrackingmenu_slot_8
+    address: 0xa68ce
+    class: slot
+    evidence: "0xa68ce is the slot_8 slot of wui_vtable_cycletrackingmenu row 0 (word 0xba5f0); nothing calls it"
+  - name: wui_vtable_fake_notif_3_slot_10
+    address: 0xa6970
+    class: slot
+    evidence: "0xa6970 is the slot_10 slot of wui_vtable_fake_notif_3 row 0 (word 0xbafb8); nothing calls it"
+  - name: wui_vtable_notif_slot_9
+    address: 0xa697e
+    class: slot
+    evidence: "0xa697e is the slot_9 slot of wui_vtable_notif row 0 (word 0xbaf74); nothing calls it"
+  - name: wui_vtable_fake_notif_3_slot_9
+    address: 0xa698a
+    class: slot
+    evidence: "0xa698a is the slot_9 slot of wui_vtable_fake_notif_3 row 0 (word 0xbafb4); nothing calls it"
+  - name: wui_vtable_fake_notif_3_slot_11
+    address: 0xa69de
+    class: slot
+    evidence: "0xa69de is the slot_11 slot of wui_vtable_fake_notif_3 row 0 (word 0xbafbc); nothing calls it"
+  - name: wui_vtable_clock_mode_slot_7
+    address: 0xa6b7a
+    class: slot
+    evidence: "0xa6b7a is the slot_7 slot of wui_vtable_clock_mode row 0 (word 0xbb0c0); nothing calls it"
+  - name: wui_vtable_quick_look_slot_7
+    address: 0xa6bdc
+    class: slot
+    evidence: "0xa6bdc is the slot_7 slot of wui_vtable_quick_look row 0 (word 0xbb0e8); nothing calls it"
+  - name: wui_vtable_dnd_settings_slot_7
+    address: 0xa6bf0
+    class: slot
+    evidence: "0xa6bf0 is the slot_7 slot of wui_vtable_dnd_settings row 0 (word 0xbb130); nothing calls it"
+  - name: wui_vtable_home_face_settings_slot_7
+    address: 0xa6c58
+    class: slot
+    evidence: "0xa6c58 is the slot_7 slot of wui_vtable_home_face_settings row 0 (word 0xbb1d8); nothing calls it"
+  - name: wui_vtable_workout_2_slot_9
+    address: 0xa6e52
+    class: slot
+    evidence: "0xa6e52 is the slot_9 slot of wui_vtable_workout_2 row 0 (word 0xbb390); nothing calls it"
   - name: on_event_sport_notif__1
     address: 0xa6ed0
     class: helper
     evidence: "only 0x8a058 (on_event_sport_notif) calls 0xa6ed0; 12 bytes"
+  - name: wui_vtable_sport_pause_slot_8
+    address: 0xa6f5e
+    class: slot
+    evidence: "0xa6f5e is the slot_8 slot of wui_vtable_sport_pause row 0 (word 0xbb518); nothing calls it"
+  - name: wui_vtable_sport_pause_slot_9
+    address: 0xa6f62
+    class: slot
+    evidence: "0xa6f62 is the slot_9 slot of wui_vtable_sport_pause row 0 (word 0xbb51c); nothing calls it"
+  - name: wui_vtable_sport_heart_rate_slot_8
+    address: 0xa6fec
+    class: slot
+    evidence: "0xa6fec is the slot_8 slot of wui_vtable_sport_heart_rate row 0 (word 0xbb628); nothing calls it"
+  - name: wui_vtable_workout_temperature_slot_8
+    address: 0xa6ff0
+    class: slot
+    evidence: "0xa6ff0 is the slot_8 slot of wui_vtable_workout_temperature row 0 (word 0xbb658); nothing calls it"
+  - name: gui__shared_1
+    address: 0xa6ff4
+    class: shared
+    evidence: "every caller of 0xa6ff4 is in GUI: on_event_notif, wui_vtable_fake_notif_3_on_event"
+    module: GUI
   - name: on_event_notif__1
     address: 0xa70f0
     class: helper

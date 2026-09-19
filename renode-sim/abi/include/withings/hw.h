@@ -6,14 +6,28 @@
 #ifndef WITHINGS_HW_H
 #define WITHINGS_HW_H
 
+/* acquire and release are the two ends of one bracket, and three of the seven
+   drivers write them the same way: row 1's 0x5b400 (ads1115), row 2's 0x5e614
+   (tmp117) and row 3's 0x50a8c (apds9306) are `ldr r0,<resource>; bl 0x56cc0`
+   and nothing else, and their +0x18 twins 0x5b428, 0x5e644 and 0x50a9c are the
+   same call into 0x56d24. 0x56cc0 takes the resource's semaphore at +8, raises
+   the use count at +0x10 and calls the power-up hook when it becomes 1;
+   0x56d24 gives the semaphore back, drops the count and logs "[PWR] Negative
+   counter on %s." when it was already zero, which is the firmware's own word
+   for which of the two is the release. Row 4 (crown) writes the same bracket
+   through its own pair, 0x493d8 and 0x4940c.
+
+   slot_1 and slot_2 keep an index for a name because no caller fixes what they
+   are: row 2 points both at 0x5e488 with two different literals, row 1 points
+   both at the same body, and rows 3 and 4 leave slot_2 NULL. */
 struct i2c_device {
     void *bus;
     unsigned int addr;
     unsigned int unknown;
-    void *fn0;
-    void *fn1;
-    void *fn2;
-    void *fn3;
+    void *acquire;
+    void *slot_1;
+    void *slot_2;
+    void *release;
 };
 
 struct spi_device {

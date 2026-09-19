@@ -311,18 +311,133 @@ def rows(img, held=frozenset()):
     return out
 
 
+# ------------------------------------------------------- the vtables as objects
+#
+# The region every vtable a descriptor points at lives in, and which holds
+# nothing else: the tables this finds tile 0xb9030..0xbc000 with no byte of any
+# other object between one and the next.
+VTABLE_LO, VTABLE_HI = 0xB9000, 0xBC000
+
+# The struct a vtable of `n` handler words is declared as in
+# abi/include/withings/wui.h. Six is the base kind the header already had.
+SLOT_COUNT = len(SLOT_ROLE)
+
+
+def vtable_type(slots):
+    return "struct wui_view_vtable%s" % ("" if slots == SLOT_COUNT
+                                         else "_%d" % slots)
+
+
+def is_handler(value):
+    return bool(value & 1) and APP_BASE < value < APP_END
+
+
+def vtable_heads(img):
+    """Every address in the region something points at as a vtable.
+
+    A vtable is entered only through the word that holds its address, so the
+    heads are values of the image's own words and not a grid laid over the
+    region. Three handler words in a row is what tells a vtable from a pointer
+    at anything else there: the region also holds the descriptors, the RAM
+    pointers they carry and the drawing parameters between them.
+    """
+    heads = set()
+    for at in range(APP_BASE, APP_END - 3, 4):
+        value = img.word(at)
+        if (VTABLE_LO <= value < VTABLE_HI - 8 and not value % 4
+                and all(is_handler(img.word(value + 4 * i)) for i in range(3))):
+            heads.add(value)
+    return sorted(heads)
+
+
+def vtables(img):
+    """(head, slot count) for every vtable, in order.
+
+    The count is the run of handler words the head opens, stopped at the next
+    head: the region is dense, so where one table ends another begins, and the
+    trailing NULL words 107 of them carry belong to no declaration -- a slot a
+    table holds as NULL says nothing about what the slot is, and the word is
+    not what names anything.
+    """
+    heads = vtable_heads(img)
+    out = []
+    for head, nxt in zip(heads, heads[1:] + [VTABLE_HI]):
+        slots = 0
+        while head + 4 * slots < nxt and is_handler(img.word(head + 4 * slots)):
+            slots += 1
+        out.append((head, slots))
+    return out
+
+
+def vtable_owner(img, head):
+    """(descriptor address, view name) for the descriptor that points at `head`.
+
+    A descriptor carries its own name as its second word -- the string the
+    "[WUI] %s %s" line prints -- so the table is named by the view that owns
+    it. Where two descriptors of different names share a table the first by
+    address names it and the other is carried in the evidence; where no
+    descriptor names it, nothing here does.
+    """
+    for at in range(VTABLE_LO, VTABLE_HI, 4):
+        if img.word(at) != head:
+            continue
+        name = img.string(img.word(at + 4))
+        if name:
+            return at, name
+    return None, None
+
+
+def vtable_rows(img):
+    """The declared vtable instances, and the heads no descriptor names."""
+    taken, out, refused = {}, [], []
+    for head, slots in vtables(img):
+        at, name = vtable_owner(img, head)
+        if name is None:
+            refused.append((head, slots))
+            continue
+        ident = identifier(name, taken).replace("wui_view_", "wui_vtable_", 1)
+        out.append({"address": head, "name": ident,
+                    "kind": "global", "class": CLASS, "module": "wui",
+                    "type": vtable_type(slots), "slots": slots,
+                    "evidence": "the vtable of the view descriptor at 0x%x,"
+                                " whose own name string is %r; %d handler words"
+                                " before the next vtable at 0x%x"
+                                % (at, name, slots, head + 4 * slots)})
+    return out, refused
+
+
+def header_block(img):
+    """The declarations abi/include/withings/wui.h carries for the vtables."""
+    found, _ = vtable_rows(img)
+    lines = []
+    for row in sorted(found, key=lambda r: r["name"]):
+        lines.append("extern %s %s;" % (row["type"], row["name"]))
+    return "\n".join(lines)
+
+
 def main():
     img = Image(os.path.join(SIM, "appl.bin"))
+    if "--header" in sys.argv:
+        print(header_block(img))
+        return
     prior = symmap.load()
     found = rows(img, {sym.address for sym in prior.symbols
                        if sym.klass != CLASS})
+    instances, refused = vtable_rows(img)
+    for head, slots in refused:
+        print("abi/wui_views.py: 0x%x (%d slots) is a vtable no descriptor"
+              " names, so nothing declares it" % (head, slots))
+    found += [dict((k, v) for k, v in row.items() if k not in ("type", "slots"))
+              for row in instances]
     try:
         added = symmap.load().rewrite(found, {CLASS},
                                       verified=set(r["address"] for r in found))
     except symmap.Refusal as err:
         sys.exit("abi/wui_views.py: abi/symbols.yaml: %s" % err)
-    print("%d view descriptors, %d slot implementations; %d entries added"
-          % (sum(1 for r in found if r["kind"] == "global"),
+    print("%d view descriptors, %d vtables (%d refused), %d slot"
+          " implementations; %d entries added"
+          % (sum(1 for r in found if r["kind"] == "global") - len(instances),
+             len(instances), len(refused),
              sum(1 for r in found if r["kind"] == "function"), added))
 
 

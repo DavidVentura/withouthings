@@ -660,11 +660,21 @@ symbols:
   class: accessor
   evidence: the body is one ldr through stopwatch_table_20011518 (pool word 0x317ac
     = 0x20011518) and a return
+- address: 0x317b0
+  name: wui_vtable_scanwatch_slot_13__1
+  kind: function
+  class: helper
+  evidence: only 0x80860 (wui_vtable_scanwatch_slot_13) calls 0x317b0; 6 bytes
 - address: 0x317bc
   name: on_enter_stopwatch__1
   kind: function
   class: helper
   evidence: only 0x8233c (on_enter_stopwatch) calls 0x317bc; 6 bytes
+- address: 0x317c8
+  name: wui_vtable_scanwatch_slot_13__2
+  kind: function
+  class: helper
+  evidence: only 0x80860 (wui_vtable_scanwatch_slot_13) calls 0x317c8; 8 bytes
 - address: 0x317d4
   name: on_enter_stopwatch__2
   kind: function
@@ -4695,17 +4705,17 @@ symbols:
   class: logline
   evidence: the only line 0x50a38 logs, wlog('[APDS] No data available') at 0x50a7c
 - address: 0x50a8c
-  name: i2c_device_table_3_fn0
+  name: i2c_device_table_3_acquire
   kind: function
   class: slot
-  evidence: 0x50a8c is the fn0 slot of i2c_device_table row 3 (word 0xb2324); nothing
-    calls it
+  evidence: 0x50a8c is the acquire slot of i2c_device_table row 3 (word 0xb2324);
+    nothing calls it
 - address: 0x50a9c
-  name: i2c_device_table_3_fn3
+  name: i2c_device_table_3_release
   kind: function
   class: slot
-  evidence: 0x50a9c is the fn3 slot of i2c_device_table row 3 (word 0xb2330); nothing
-    calls it
+  evidence: 0x50a9c is the release slot of i2c_device_table row 3 (word 0xb2330);
+    nothing calls it
 - address: 0x50aac
   name: shell_help_wlog
   kind: function
@@ -5802,23 +5812,23 @@ symbols:
   evidence: 'the only line 0x5b2d0 logs, wlog(''[SN19020X6] Set sampling frequency:
     %dsps (0x%0x)'') at 0x5b302'
 - address: 0x5b400
-  name: i2c_device_table_1_fn0
+  name: i2c_device_table_1_acquire
   kind: function
   class: slot
-  evidence: 0x5b400 is the fn0 slot of i2c_device_table row 1 (word 0xb22ec); nothing
-    calls it
+  evidence: 0x5b400 is the acquire slot of i2c_device_table row 1 (word 0xb22ec);
+    nothing calls it
 - address: 0x5b41c
-  name: i2c_device_table_1_fn1
+  name: i2c_device_table_1_slot_1
   kind: function
   class: slot
-  evidence: 0x5b41c is the fn1 slot of i2c_device_table row 1 (word 0xb22f0); nothing
-    calls it
+  evidence: 0x5b41c is the slot_1 slot of i2c_device_table row 1 (word 0xb22f0);
+    nothing calls it
 - address: 0x5b428
-  name: i2c_device_table_1_fn3
+  name: i2c_device_table_1_release
   kind: function
   class: slot
-  evidence: 0x5b428 is the fn3 slot of i2c_device_table row 1 (word 0xb22f8); nothing
-    calls it
+  evidence: 0x5b428 is the release slot of i2c_device_table row 1 (word 0xb22f8);
+    nothing calls it
 - address: 0x5b438
   name: shell_help_sn19020x6
   kind: function
@@ -6213,29 +6223,29 @@ symbols:
   class: helper
   evidence: only 0x5e664 (shell_cmd_tmp117) calls 0x5e58c; 128 bytes
 - address: 0x5e614
-  name: i2c_device_table_2_fn0
+  name: i2c_device_table_2_acquire
   kind: function
   class: slot
-  evidence: 0x5e614 is the fn0 slot of i2c_device_table row 2 (word 0xb2308); nothing
-    calls it
+  evidence: 0x5e614 is the acquire slot of i2c_device_table row 2 (word 0xb2308);
+    nothing calls it
 - address: 0x5e624
-  name: i2c_device_table_2_fn1
+  name: i2c_device_table_2_slot_1
   kind: function
   class: slot
-  evidence: 0x5e624 is the fn1 slot of i2c_device_table row 2 (word 0xb230c); nothing
-    calls it
+  evidence: 0x5e624 is the slot_1 slot of i2c_device_table row 2 (word 0xb230c);
+    nothing calls it
 - address: 0x5e634
-  name: i2c_device_table_2_fn2
+  name: i2c_device_table_2_slot_2
   kind: function
   class: slot
-  evidence: 0x5e634 is the fn2 slot of i2c_device_table row 2 (word 0xb2310); nothing
-    calls it
+  evidence: 0x5e634 is the slot_2 slot of i2c_device_table row 2 (word 0xb2310);
+    nothing calls it
 - address: 0x5e644
-  name: i2c_device_table_2_fn3
+  name: i2c_device_table_2_release
   kind: function
   class: slot
-  evidence: 0x5e644 is the fn3 slot of i2c_device_table row 2 (word 0xb2314); nothing
-    calls it
+  evidence: 0x5e644 is the release slot of i2c_device_table row 2 (word 0xb2314);
+    nothing calls it
 - address: 0x5e654
   name: shell_help_tmp117
   kind: function
@@ -6592,6 +6602,11 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x60c68 (WPP_CMD_USER_UNIT) calls 0x60b60; 6 bytes
+- address: 0x60b78
+  name: wui_vtable_elevation_slot_8__1
+  kind: function
+  class: helper
+  evidence: only 0xa6154 (wui_vtable_elevation_slot_8) calls 0x60b78; 34 bytes
 - address: 0x60c68
   name: WPP_CMD_USER_UNIT
   kind: function
@@ -6647,6 +6662,16 @@ symbols:
   class: logline
   evidence: the only line 0x617d4 logs, wlog('[SPO2] Unexpected status = %d') at
     0x617f2
+- address: 0x61968
+  name: wui_vtable_spo2_meas_2_slot_12__1
+  kind: function
+  class: helper
+  evidence: only 0xa63b2 (wui_vtable_spo2_meas_2_slot_12) calls 0x61968; 16 bytes
+- address: 0x61b98
+  name: wui_vtable_spo2_meas_slot_13__1
+  kind: function
+  class: helper
+  evidence: only 0x86a28 (wui_vtable_spo2_meas_slot_13) calls 0x61b98; 58 bytes
 - address: 0x61be8
   name: spo2_failed_to_update_screen_data
   kind: function
@@ -6760,6 +6785,11 @@ symbols:
   class: logline
   evidence: the only line 0x62ea8 logs, wlog('[HR_EVENT] notification triggered,
     user has been notified of event type %s') at 0x62eea
+- address: 0x62f24
+  name: wui_vtable_high_hr_popup_on_enter__1
+  kind: function
+  class: helper
+  evidence: only 0x8658c (wui_vtable_high_hr_popup_on_enter) calls 0x62f24; 6 bytes
 - address: 0x631c0
   name: algo_manager_publish_results__5
   kind: function
@@ -7654,6 +7684,11 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x8a790 (refresh_sport_gps_pace) calls 0x6a538; 6 bytes
+- address: 0x6a550
+  name: wui_vtable_sport_summary_slot_7__1
+  kind: function
+  class: helper
+  evidence: only 0x81aec (wui_vtable_sport_summary_slot_7) calls 0x6a550; 6 bytes
 - address: 0x6a55c
   name: refresh_sport_gps_speed__1
   kind: function
@@ -9555,6 +9590,36 @@ symbols:
   kind: function
   class: logline
   evidence: the only line 0x7ff80 logs, wlog('Unable to push handler') at 0x7ff96
+- address: 0x800d0
+  name: wui_vtable_scanwatch_slot_10
+  kind: function
+  class: slot
+  evidence: 0x800d0 is the slot_10 slot of wui_vtable_scanwatch row 0 (word 0xb90e4);
+    nothing calls it
+- address: 0x80174
+  name: wui_vtable_scanwatch_factory_on_enter
+  kind: function
+  class: slot
+  evidence: 0x80174 is the on_enter slot of wui_vtable_scanwatch_factory row 0 (word
+    0xb9110); nothing calls it
+- address: 0x80198
+  name: wui_vtable_scanwatch_factory_slot_13
+  kind: function
+  class: slot
+  evidence: 0x80198 is the slot_13 slot of wui_vtable_scanwatch_factory row 0 (word
+    0xb9140); nothing calls it
+- address: 0x801c4
+  name: wui_vtable_scanwatch_factory_slot_10
+  kind: function
+  class: slot
+  evidence: 0x801c4 is the slot_10 slot of wui_vtable_scanwatch_factory row 0 (word
+    0xb9134); nothing calls it
+- address: 0x801ec
+  name: wui_vtable_scanwatch_demo_slot_10
+  kind: function
+  class: slot
+  evidence: 0x801ec is the slot_10 slot of wui_vtable_scanwatch_demo row 0 (word
+    0xb9184); nothing calls it
 - address: 0x8034c
   name: scanwatch_hr_measure_request_m_scanwatch
   kind: function
@@ -9566,12 +9631,29 @@ symbols:
   kind: function
   class: logline
   evidence: the only line 0x80378 logs, wlog('[WUI] Event %d resent') at 0x803c4
+- address: 0x80448
+  name: wui_vtable_scanwatch_demo_on_enter
+  kind: function
+  class: slot
+  evidence: 0x80448 is the on_enter slot of wui_vtable_scanwatch_demo row 0 (word
+    0xb9160); nothing calls it
+- address: 0x80474
+  name: wui_vtable_scanwatch_slot_13__3
+  kind: function
+  class: helper
+  evidence: only 0x80860 (wui_vtable_scanwatch_slot_13) calls 0x80474; 66 bytes
 - address: 0x804c0
   name: wui_postponed_event_dropped
   kind: function
   class: logline
   evidence: the only line 0x804c0 logs, wlog('[WUI] Postponed event %d dropped')
     at 0x804de
+- address: 0x80860
+  name: wui_vtable_scanwatch_slot_13
+  kind: function
+  class: slot
+  evidence: 0x80860 is the slot_13 slot of wui_vtable_scanwatch row 0 (word 0xb90f0);
+    nothing calls it
 - address: 0x80b68
   name: wui_view_default_on_foreground
   kind: function
@@ -9590,6 +9672,11 @@ symbols:
   kind: function
   class: logline
   evidence: the only line 0x80c48 logs, wlog("Can't re-enter composer") at 0x80c54
+- address: 0x80e68
+  name: wui_vtable_menu_carousel_slot_8__1
+  kind: function
+  class: helper
+  evidence: only 0xa5848 (wui_vtable_menu_carousel_slot_8) calls 0x80e68; 104 bytes
 - address: 0x80ed4
   name: load_screen_list_lets_switch_to_preview_screen
   kind: function
@@ -9602,6 +9689,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_hidden_screens's
+- address: 0x80f54
+  name: wui_vtable_hidden_screens_slot_6
+  kind: function
+  class: slot
+  evidence: 0x80f54 is the slot_6 slot of wui_vtable_hidden_screens row 0 (word
+    0xba110); nothing calls it
 - address: 0x80fb8
   name: on_event_hidden_screens
   kind: function
@@ -9620,6 +9713,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x08 is wui_view_hidden_screens_2's
+- address: 0x810f4
+  name: wui_vtable_demo_carousel_slot_7
+  kind: function
+  class: slot
+  evidence: 0x810f4 is the slot_7 slot of wui_vtable_demo_carousel row 0 (word 0xba1b0);
+    nothing calls it
 - address: 0x81140
   name: on_enter_demo_carousel
   kind: function
@@ -9638,6 +9737,30 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_demo_carousel's
+- address: 0x8120c
+  name: wui_vtable_carousel_settings_on_foreground
+  kind: function
+  class: slot
+  evidence: 0x8120c is the on_foreground slot of wui_vtable_carousel_settings row
+    0 (word 0xba2a8); nothing calls it
+- address: 0x81220
+  name: wui_vtable_carousel_settings_on_background
+  kind: function
+  class: slot
+  evidence: 0x81220 is the on_background slot of wui_vtable_carousel_settings row
+    0 (word 0xba2ac); nothing calls it
+- address: 0x81234
+  name: wui_vtable_carousel_settings_on_enter
+  kind: function
+  class: slot
+  evidence: 0x81234 is the on_enter slot of wui_vtable_carousel_settings row 0 (word
+    0xba2a0); nothing calls it
+- address: 0x81274
+  name: wui_vtable_carousel_settings_on_exit
+  kind: function
+  class: slot
+  evidence: 0x81274 is the on_exit slot of wui_vtable_carousel_settings row 0 (word
+    0xba2a4); nothing calls it
 - address: 0x81294
   name: on_foreground_carousel_clocks
   kind: function
@@ -9668,12 +9791,27 @@ symbols:
   class: logtag
   evidence: wlog('[carousel_sport] face mode screen %d unknown') at 0x81320, tag
     is a C identifier
+- address: 0x81358
+  name: wui_vtable_sport_slot_6__1__1
+  kind: function
+  class: helper
+  evidence: only 0x81664 (wui_vtable_sport_slot_6__1) calls 0x81358; 100 bytes
+- address: 0x813c4
+  name: wui_vtable_workout_2_slot_7__1
+  kind: function
+  class: helper
+  evidence: only 0x89fc8 (wui_vtable_workout_2_slot_7) calls 0x813c4; 14 bytes
 - address: 0x8163c
   name: on_background_sport
   kind: function
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x10 is wui_view_sport's
+- address: 0x81664
+  name: wui_vtable_sport_slot_6__1
+  kind: function
+  class: helper
+  evidence: only 0x81948 (wui_vtable_sport_slot_6) calls 0x81664; 60 bytes
 - address: 0x818e8
   name: on_enter_sport
   kind: function
@@ -9686,12 +9824,30 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x08 is wui_view_sport's
+- address: 0x81948
+  name: wui_vtable_sport_slot_6
+  kind: function
+  class: slot
+  evidence: 0x81948 is the slot_6 slot of wui_vtable_sport row 0 (word 0xba3dc);
+    nothing calls it
+- address: 0x81a04
+  name: wui_vtable_sport_slot_7
+  kind: function
+  class: slot
+  evidence: 0x81a04 is the slot_7 slot of wui_vtable_sport row 0 (word 0xba3e0);
+    nothing calls it
 - address: 0x81adc
   name: on_foreground_sport
   kind: function
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x0c is wui_view_sport's
+- address: 0x81aec
+  name: wui_vtable_sport_summary_slot_7
+  kind: function
+  class: slot
+  evidence: 0x81aec is the slot_7 slot of wui_vtable_sport_summary row 0 (word 0xba428);
+    nothing calls it
 - address: 0x81bac
   name: on_enter_sport_summary
   kind: function
@@ -9911,17 +10067,65 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_alarm's
+- address: 0x82d80
+  name: wui_vtable_cycletrackingmenu_slot_12
+  kind: function
+  class: slot
+  evidence: 0x82d80 is the slot_12 slot of wui_vtable_cycletrackingmenu row 0 (word
+    0xba600); nothing calls it
+- address: 0x82d9c
+  name: wui_vtable_cycletrackingmenu_slot_10
+  kind: function
+  class: slot
+  evidence: 0x82d9c is the slot_10 slot of wui_vtable_cycletrackingmenu row 0 (word
+    0xba5f8); nothing calls it
 - address: 0x82dd8
   name: refresh_cycle
   kind: function
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x14 is wui_view_cycle's
+- address: 0x82f9c
+  name: wui_vtable_cycletrackingsymptomsmenu_slot_7
+  kind: function
+  class: slot
+  evidence: 0x82f9c is the slot_7 slot of wui_vtable_cycletrackingsymptomsmenu row
+    0 (word 0xba628); nothing calls it
 - address: 0x82fc8
   name: symptoms_init
   kind: function
   class: logline
   evidence: 'the only line 0x82fc8 logs, wlog(''Symptoms init: %d'') at 0x82fee'
+- address: 0x83018
+  name: wui_vtable_cycletrackingmenu_slot_11
+  kind: function
+  class: slot
+  evidence: 0x83018 is the slot_11 slot of wui_vtable_cycletrackingmenu row 0 (word
+    0xba5fc); nothing calls it
+- address: 0x83030
+  name: wui_vtable_cycletrackingsymptomsmenu_slot_10
+  kind: function
+  class: slot
+  evidence: 0x83030 is the slot_10 slot of wui_vtable_cycletrackingsymptomsmenu
+    row 0 (word 0xba634); nothing calls it
+- address: 0x8305c
+  name: wui_vtable_cycletrackingmenu_slot_9
+  kind: function
+  class: slot
+  evidence: 0x8305c is the slot_9 slot of wui_vtable_cycletrackingmenu row 0 (word
+    0xba5f4); nothing calls it
+- address: 0x83080
+  name: wui_vtable_cycletrackingsymptomsmenu_slot_9
+  kind: function
+  class: slot
+  evidence: 0x83080 is the slot_9 slot of wui_vtable_cycletrackingsymptomsmenu row
+    0 (word 0xba630); nothing calls it
+- address: 0x830a4
+  name: wui_vtable_cycletrackingmenu_slot_7
+  kind: function
+  class: slot
+  evidence: 0x830a4 is the slot_7 slot of wui_vtable_cycletrackingmenu row 0 (word
+    0xba5ec); nothing calls it
 - address: 0x830f8
   name: on_exit_cycletrackingsymptomsmenu
   kind: function
@@ -9934,6 +10138,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_cycle's
+- address: 0x83184
+  name: wui_vtable_cycle_slot_7
+  kind: function
+  class: slot
+  evidence: 0x83184 is the slot_7 slot of wui_vtable_cycle row 0 (word 0xba5c4);
+    nothing calls it
 - address: 0x831a0
   name: on_event_cycle
   kind: function
@@ -10291,6 +10501,18 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_home's
+- address: 0x85390
+  name: wui_vtable_missing_medical_permissions_refresh
+  kind: function
+  class: slot
+  evidence: 0x85390 is the refresh slot of wui_vtable_missing_medical_permissions
+    row 0 (word 0xba938); nothing calls it
+- address: 0x853b4
+  name: wui_vtable_missing_medical_permissions_on_enter
+  kind: function
+  class: slot
+  evidence: 0x853b4 is the on_enter slot of wui_vtable_missing_medical_permissions
+    row 0 (word 0xba928); nothing calls it
 - address: 0x853ec
   name: on_event_low_battery_screen
   kind: function
@@ -10308,6 +10530,12 @@ symbols:
   kind: function
   class: helper
   evidence: only 0xa5ffe (refresh_low_battery_screen) calls 0x854fc; 100 bytes
+- address: 0x855f8
+  name: wui_vtable_shortcut_pause_slot_6
+  kind: function
+  class: slot
+  evidence: 0x855f8 is the slot_6 slot of wui_vtable_shortcut_pause row 0 (word
+    0xba9c0); nothing calls it
 - address: 0x85608
   name: on_foreground_shortcut
   kind: function
@@ -10374,6 +10602,18 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_sleep_duration's
+- address: 0x859f0
+  name: wui_vtable_calories_slot_8
+  kind: function
+  class: slot
+  evidence: 0x859f0 is the slot_8 slot of wui_vtable_calories row 0 (word 0xbaa34);
+    nothing calls it
+- address: 0x85a1c
+  name: wui_vtable_calories_slot_9
+  kind: function
+  class: slot
+  evidence: 0x85a1c is the slot_9 slot of wui_vtable_calories row 0 (word 0xbaa38);
+    nothing calls it
 - address: 0x85a50
   name: on_event_ecg_fake
   kind: function
@@ -10438,12 +10678,42 @@ symbols:
   class: logline
   evidence: the only line 0x86354 logs, wlog('[ECG] %d/%d measures | nb_days_since_last_meas=%lu/%d
     -> Display tuto') at 0x8639a
+- address: 0x863fc
+  name: wui_vtable_elevation_slot_9
+  kind: function
+  class: slot
+  evidence: 0x863fc is the slot_9 slot of wui_vtable_elevation row 0 (word 0xbab64);
+    nothing calls it
+- address: 0x864fc
+  name: wui_vtable_high_hr_popup_slot_6
+  kind: function
+  class: slot
+  evidence: 0x864fc is the slot_6 slot of wui_vtable_high_hr_popup row 0 (word 0xbabbc);
+    nothing calls it
+- address: 0x86524
+  name: wui_vtable_ecg_hr_on_event
+  kind: function
+  class: slot
+  evidence: 0x86524 is the on_event slot of wui_vtable_ecg_hr row 0 (word 0xbac00);
+    nothing calls it
 - address: 0x86544
   name: hr_restart_hr_measure_manually_after
   kind: function
   class: logline
   evidence: the only line 0x86544 logs, wlog('[HR] Restart HR measure manually after
     error') at 0x8655a
+- address: 0x8658c
+  name: wui_vtable_high_hr_popup_on_enter
+  kind: function
+  class: slot
+  evidence: 0x8658c is the on_enter slot of wui_vtable_high_hr_popup row 0 (word
+    0xbaba8); nothing calls it
+- address: 0x865a8
+  name: wui_vtable_hr_slot_10
+  kind: function
+  class: slot
+  evidence: 0x865a8 is the slot_10 slot of wui_vtable_hr row 0 (word 0xbab98); nothing
+    calls it
 - address: 0x8666c
   name: display_mode
   kind: function
@@ -10471,12 +10741,24 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x14 is wui_view_body_temperature's
+- address: 0x86a28
+  name: wui_vtable_spo2_meas_slot_13
+  kind: function
+  class: slot
+  evidence: 0x86a28 is the slot_13 slot of wui_vtable_spo2_meas row 0 (word 0xbacc8);
+    nothing calls it
 - address: 0x86a3c
   name: refresh_spo2_error
   kind: function
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x14 is wui_view_spo2_error's
+- address: 0x86ac0
+  name: wui_vtable_spo2_slot_8
+  kind: function
+  class: slot
+  evidence: 0x86ac0 is the slot_8 slot of wui_vtable_spo2 row 0 (word 0xbac88);
+    nothing calls it
 - address: 0x86ae0
   name: on_enter_spo2_error
   kind: function
@@ -10516,6 +10798,24 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_spo2_meas's
+- address: 0x87020
+  name: wui_vtable_steps_slot_8
+  kind: function
+  class: slot
+  evidence: 0x87020 is the slot_8 slot of wui_vtable_steps row 0 (word 0xbad64);
+    nothing calls it
+- address: 0x87048
+  name: wui_vtable_steps_slot_9
+  kind: function
+  class: slot
+  evidence: 0x87048 is the slot_9 slot of wui_vtable_steps row 0 (word 0xbad68);
+    nothing calls it
+- address: 0x8707c
+  name: wui_vtable_dbt_mode_slot_10
+  kind: function
+  class: slot
+  evidence: 0x8707c is the slot_10 slot of wui_vtable_dbt_mode row 0 (word 0xbadc8);
+    nothing calls it
 - address: 0x8709c
   name: on_event_dbt
   kind: function
@@ -10534,6 +10834,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_dbt_meas's
+- address: 0x87288
+  name: wui_vtable_dbt_mode_slot_9
+  kind: function
+  class: slot
+  evidence: 0x87288 is the slot_9 slot of wui_vtable_dbt_mode row 0 (word 0xbadc4);
+    nothing calls it
 - address: 0x87330
   name: refresh_dbt_meas
   kind: function
@@ -10569,6 +10875,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_dbt_duration's
+- address: 0x877d4
+  name: wui_vtable_dbt_mode_slot_7
+  kind: function
+  class: slot
+  evidence: 0x877d4 is the slot_7 slot of wui_vtable_dbt_mode row 0 (word 0xbadbc);
+    nothing calls it
 - address: 0x87834
   name: on_enter_dbt_mode
   kind: function
@@ -10597,6 +10909,23 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_ppg_afib's
+- address: 0x881d0
+  name: wui_vtable_custo_2_refresh__1
+  kind: function
+  class: helper
+  evidence: only 0x88254 (wui_vtable_custo_2_refresh) calls 0x881d0; 128 bytes
+- address: 0x88254
+  name: wui_vtable_custo_2_refresh
+  kind: function
+  class: slot
+  evidence: 0x88254 is the refresh slot of wui_vtable_custo_2 row 0 (word 0xbaf10);
+    nothing calls it
+- address: 0x8839c
+  name: wui_vtable_custo_2_on_enter
+  kind: function
+  class: slot
+  evidence: 0x8839c is the on_enter slot of wui_vtable_custo_2 row 0 (word 0xbaf00);
+    nothing calls it
 - address: 0x884a8
   name: on_enter_ecg_selection
   kind: function
@@ -10615,6 +10944,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_cycletrackingmenu's
+- address: 0x88790
+  name: wui_vtable_notif_slot_10
+  kind: function
+  class: slot
+  evidence: 0x88790 is the slot_10 slot of wui_vtable_notif row 0 (word 0xbaf78);
+    nothing calls it
 - address: 0x88868
   name: gui_notif_resources_available
   kind: function
@@ -10627,12 +10962,24 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_notif's
-- address: 0x88b64
-  name: tracker_inactivity_word_20024934_get
+- address: 0x88ae0
+  name: wui_vtable_fake_notif_3_on_event
   kind: function
-  class: accessor
-  evidence: the body is one ldr through tracker_inactivity_word_20024934 (pool word
-    0x88b6c = 0x20024934) and a return
+  class: slot
+  evidence: 0x88ae0 is the on_event slot of wui_vtable_fake_notif_3 row 0 (word
+    0xbaf90); nothing calls it
+- address: 0x88b64
+  name: wui_vtable_activity_reminder_slot_7
+  kind: function
+  class: slot
+  evidence: 0x88b64 is the slot_7 slot of wui_vtable_activity_reminder row 0 (word
+    0xbaff0); nothing calls it
+- address: 0x88b70
+  name: wui_vtable_activity_reminder_slot_6
+  kind: function
+  class: slot
+  evidence: 0x88b70 is the slot_6 slot of wui_vtable_activity_reminder row 0 (word
+    0xbafec); nothing calls it
 - address: 0x88bec
   name: on_enter_activity_reminder
   kind: function
@@ -10840,6 +11187,11 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_setup_flow's
+- address: 0x89e00
+  name: wui_vtable_scanwatch_slot_13__4
+  kind: function
+  class: helper
+  evidence: only 0x80860 (wui_vtable_scanwatch_slot_13) calls 0x89e00; 8 bytes
 - address: 0x89e0c
   name: on_event_install_bt_key
   kind: function
@@ -10869,6 +11221,18 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_workout's
+- address: 0x89fc8
+  name: wui_vtable_workout_2_slot_7
+  kind: function
+  class: slot
+  evidence: 0x89fc8 is the slot_7 slot of wui_vtable_workout_2 row 0 (word 0xbb388);
+    nothing calls it
+- address: 0x8a038
+  name: wui_vtable_workout_2_slot_10
+  kind: function
+  class: slot
+  evidence: 0x8a038 is the slot_10 slot of wui_vtable_workout_2 row 0 (word 0xbb394);
+    nothing calls it
 - address: 0x8a058
   name: on_event_sport_notif
   kind: function
@@ -10959,6 +11323,12 @@ symbols:
   class: logline
   evidence: the only line 0x8a460 logs, wlog('[SPORT CONGRATS] => Go to summary')
     at 0x8a484
+- address: 0x8a4a0
+  name: wui_vtable_sport_pause_slot_7
+  kind: function
+  class: slot
+  evidence: 0x8a4a0 is the slot_7 slot of wui_vtable_sport_pause row 0 (word 0xbb514);
+    nothing calls it
 - address: 0x8a4b8
   name: refresh_sport_pause
   kind: function
@@ -11051,6 +11421,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_workout_temperature's
+- address: 0x8adf0
+  name: wui_vtable_workout_temperature_slot_9
+  kind: function
+  class: slot
+  evidence: 0x8adf0 is the slot_9 slot of wui_vtable_workout_temperature row 0 (word
+    0xbb65c); nothing calls it
 - address: 0x8ae3c
   name: widget_scrolling_text_e_inactivity
   kind: function
@@ -11691,23 +12067,23 @@ symbols:
   class: helper
   evidence: only 0x80378 (wui_event_resent) calls 0x9200e; 66 bytes
 - address: 0x920a8
-  name: i2c_device_table_4_fn0
+  name: i2c_device_table_4_acquire
   kind: function
   class: slot
-  evidence: 0x920a8 is the fn0 slot of i2c_device_table row 4 (word 0xb2340); nothing
-    calls it
+  evidence: 0x920a8 is the acquire slot of i2c_device_table row 4 (word 0xb2340);
+    nothing calls it
 - address: 0x920be
-  name: i2c_device_table_4_fn1
+  name: i2c_device_table_4_slot_1
   kind: function
   class: slot
-  evidence: 0x920be is the fn1 slot of i2c_device_table row 4 (word 0xb2344); nothing
-    calls it
+  evidence: 0x920be is the slot_1 slot of i2c_device_table row 4 (word 0xb2344);
+    nothing calls it
 - address: 0x920d4
-  name: i2c_device_table_4_fn3
+  name: i2c_device_table_4_release
   kind: function
   class: slot
-  evidence: 0x920d4 is the fn3 slot of i2c_device_table row 4 (word 0xb234c); nothing
-    calls it
+  evidence: 0x920d4 is the release slot of i2c_device_table row 4 (word 0xb234c);
+    nothing calls it
 - address: 0x920ea
   name: factory_reset_perform__2
   kind: function
@@ -15176,11 +15552,11 @@ symbols:
   class: helper
   evidence: only 0x50658 (WPP_CMD_GET_LIGHT_SENSOR) calls 0x9a9c6; 12 bytes
 - address: 0x9a9d2
-  name: i2c_device_table_3_fn1
+  name: i2c_device_table_3_slot_1
   kind: function
   class: slot
-  evidence: 0x9a9d2 is the fn1 slot of i2c_device_table row 3 (word 0xb2328); nothing
-    calls it
+  evidence: 0x9a9d2 is the slot_1 slot of i2c_device_table row 3 (word 0xb2328);
+    nothing calls it
 - address: 0x9ab06
   name: ppg_sample_channel_slot
   kind: function
@@ -15531,6 +15907,11 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x9335c (REBOOT__1) calls 0x9c076; 50 bytes
+- address: 0x9c112
+  name: wui_vtable_elevation_slot_8__2
+  kind: function
+  class: helper
+  evidence: only 0xa6154 (wui_vtable_elevation_slot_8) calls 0x9c112; 8 bytes
 - address: 0x9c122
   name: refresh_spo2_meas_2__1
   kind: function
@@ -17066,22 +17447,86 @@ symbols:
   kind: function
   class: helper
   evidence: only 0xa70fc (gui_notif_resources_available__1) calls 0xa508a; 20 bytes
+- address: 0xa553c
+  name: wui_vtable_scanwatch_demo_slot_13
+  kind: function
+  class: slot
+  evidence: 0xa553c is the slot_13 slot of wui_vtable_scanwatch_demo row 0 (word
+    0xb9190); nothing calls it
+- address: 0xa5540
+  name: wui_vtable_scanwatch_demo_slot_14
+  kind: function
+  class: slot
+  evidence: 0xa5540 is the slot_14 slot of wui_vtable_scanwatch_demo row 0 (word
+    0xb9194); nothing calls it
+- address: 0xa5550
+  name: wui_vtable_scanwatch_factory_slot_14
+  kind: function
+  class: slot
+  evidence: 0xa5550 is the slot_14 slot of wui_vtable_scanwatch_factory row 0 (word
+    0xb9144); nothing calls it
+- address: 0xa5564
+  name: wui_vtable_scanwatch_factory_slot_15
+  kind: function
+  class: slot
+  evidence: 0xa5564 is the slot_15 slot of wui_vtable_scanwatch_factory row 0 (word
+    0xb9148); nothing calls it
+- address: 0xa5578
+  name: wui_vtable_scanwatch_demo_slot_15
+  kind: function
+  class: slot
+  evidence: 0xa5578 is the slot_15 slot of wui_vtable_scanwatch_demo row 0 (word
+    0xb9198); nothing calls it
+- address: 0xa5588
+  name: wui_vtable_scanwatch_on_enter
+  kind: function
+  class: slot
+  evidence: 0xa5588 is the on_enter slot of wui_vtable_scanwatch row 0 (word 0xb90c0);
+    nothing calls it
 - address: 0xa5648
   name: ui_event_handler
   kind: label
   class: prose
   evidence: r1=event id; event 7 -> 0x304d8 battery percent init + 0x3060c give
+- address: 0xa56da
+  name: wui_vtable_workout_low_batt_slot_6
+  kind: function
+  class: slot
+  evidence: 0xa56da is the slot_6 slot of wui_vtable_workout_low_batt row 0 (word
+    0xbb3d8); nothing calls it
 - address: 0xa5722
   name: refresh_sport_summary_2__1
   kind: function
   class: helper
   evidence: only 0xa5bd8 (refresh_sport_summary_2) calls 0xa5722; 30 bytes
+- address: 0xa5740
+  name: wui_vtable_scanwatch_slot_13__5
+  kind: function
+  class: helper
+  evidence: only 0x80860 (wui_vtable_scanwatch_slot_13) calls 0xa5740; 122 bytes
 - address: 0xa57ba
   name: on_event_menu_carousel
   kind: function
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_menu_carousel's
+- address: 0xa57c2
+  name: wui_vtable_menu_carousel_slot_7
+  kind: function
+  class: slot
+  evidence: 0xa57c2 is the slot_7 slot of wui_vtable_menu_carousel row 0 (word 0xba00c);
+    nothing calls it
+- address: 0xa5848
+  name: wui_vtable_menu_carousel_slot_8
+  kind: function
+  class: slot
+  evidence: 0xa5848 is the slot_8 slot of wui_vtable_menu_carousel row 0 (word 0xba010);
+    nothing calls it
+- address: 0xa591c
+  name: wui_vtable_scanwatch_slot_13__5__1
+  kind: function
+  class: helper
+  evidence: only 0xa5740 (wui_vtable_scanwatch_slot_13__5) calls 0xa591c; 36 bytes
 - address: 0xa594e
   name: refresh_menu_carousel
   kind: function
@@ -17094,6 +17539,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_menu_carousel's
+- address: 0xa595e
+  name: wui_vtable_menu_carousel_on_foreground
+  kind: function
+  class: slot
+  evidence: 0xa595e is the on_foreground slot of wui_vtable_menu_carousel row 0
+    (word 0xb9ffc); nothing calls it
 - address: 0xa597c
   name: on_foreground_menu_carousel
   kind: function
@@ -17177,6 +17628,30 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_demo_carousel_2's
+- address: 0xa5b1a
+  name: wui_vtable_carousel_settings_2_on_foreground
+  kind: function
+  class: slot
+  evidence: 0xa5b1a is the on_foreground slot of wui_vtable_carousel_settings_2
+    row 0 (word 0xba2d0); nothing calls it
+- address: 0xa5b22
+  name: wui_vtable_carousel_settings_2_on_background
+  kind: function
+  class: slot
+  evidence: 0xa5b22 is the on_background slot of wui_vtable_carousel_settings_2
+    row 0 (word 0xba2d4); nothing calls it
+- address: 0xa5b2a
+  name: wui_vtable_carousel_settings_2_on_enter
+  kind: function
+  class: slot
+  evidence: 0xa5b2a is the on_enter slot of wui_vtable_carousel_settings_2 row 0
+    (word 0xba2c8); nothing calls it
+- address: 0xa5b32
+  name: wui_vtable_carousel_settings_2_on_exit
+  kind: function
+  class: slot
+  evidence: 0xa5b32 is the on_exit slot of wui_vtable_carousel_settings_2 row 0
+    (word 0xba2cc); nothing calls it
 - address: 0xa5b3a
   name: on_foreground_carousel_clocks_2
   kind: function
@@ -17301,6 +17776,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x0c is wui_view_alarm_popup's
+- address: 0xa5d5a
+  name: wui_vtable_alarm_slot_7
+  kind: function
+  class: slot
+  evidence: 0xa5d5a is the slot_7 slot of wui_vtable_alarm row 0 (word 0xba540);
+    nothing calls it
 - address: 0xa5d6e
   name: on_foreground_alarm
   kind: function
@@ -17390,12 +17871,36 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_info's
+- address: 0xa5f34
+  name: wui_vtable_home_slot_8
+  kind: function
+  class: slot
+  evidence: 0xa5f34 is the slot_8 slot of wui_vtable_home row 0 (word 0xba914);
+    nothing calls it
+- address: 0xa5f58
+  name: wui_vtable_home_slot_7
+  kind: function
+  class: slot
+  evidence: 0xa5f58 is the slot_7 slot of wui_vtable_home row 0 (word 0xba910);
+    nothing calls it
 - address: 0xa5f66
   name: on_event_home
   kind: function
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_home's
+- address: 0xa5f78
+  name: wui_vtable_home_slot_9
+  kind: function
+  class: slot
+  evidence: 0xa5f78 is the slot_9 slot of wui_vtable_home row 0 (word 0xba918);
+    nothing calls it
+- address: 0xa5fc2
+  name: wui_vtable_missing_medical_permissions_on_event
+  kind: function
+  class: slot
+  evidence: 0xa5fc2 is the on_event slot of wui_vtable_missing_medical_permissions
+    row 0 (word 0xba924); nothing calls it
 - address: 0xa5fd8
   name: refresh_power_reserve_screen
   kind: function
@@ -17408,11 +17913,34 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x14 is wui_view_low_battery_screen's
+- address: 0xa6034
+  name: wui_vtable_shortcut_slot_6
+  kind: function
+  class: slot
+  evidence: 0xa6034 is the slot_6 slot of wui_vtable_shortcut row 0 (word 0xba99c);
+    nothing calls it
 - address: 0xa6038
   name: on_enter_sport__5
   kind: function
   class: helper
   evidence: only 0x818e8 (on_enter_sport) calls 0xa6038; 40 bytes
+- address: 0xa6060
+  name: wui_vtable_workout_2_slot_7__2
+  kind: function
+  class: helper
+  evidence: only 0x89fc8 (wui_vtable_workout_2_slot_7) calls 0xa6060; 6 bytes
+- address: 0xa6066
+  name: wui_vtable_distance_slot_8
+  kind: function
+  class: slot
+  evidence: 0xa6066 is the slot_8 slot of wui_vtable_distance row 0 (word 0xbaa64);
+    nothing calls it
+- address: 0xa6080
+  name: wui_vtable_distance_slot_9
+  kind: function
+  class: slot
+  evidence: 0xa6080 is the slot_9 slot of wui_vtable_distance row 0 (word 0xbaa68);
+    nothing calls it
 - address: 0xa60aa
   name: on_foreground_ecg_fake__1
   kind: function
@@ -17442,6 +17970,18 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_ecg_selection's
+- address: 0xa6154
+  name: wui_vtable_elevation_slot_8
+  kind: function
+  class: slot
+  evidence: 0xa6154 is the slot_8 slot of wui_vtable_elevation row 0 (word 0xbab60);
+    nothing calls it
+- address: 0xa617c
+  name: wui_vtable_ecg_hr_slot_9
+  kind: function
+  class: slot
+  evidence: 0xa617c is the slot_9 slot of wui_vtable_ecg_hr row 0 (word 0xbac24);
+    nothing calls it
 - address: 0xa6182
   name: on_exit_hr_demo
   kind: function
@@ -17454,12 +17994,54 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_hr_demo's
+- address: 0xa61ae
+  name: wui_vtable_hr_demo_slot_9
+  kind: function
+  class: slot
+  evidence: 0xa61ae is the slot_9 slot of wui_vtable_hr_demo row 0 (word 0xbabf0);
+    nothing calls it
 - address: 0xa620a
   name: on_enter_hr
   kind: function
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_hr's
+- address: 0xa6278
+  name: wui_vtable_hr_slot_9
+  kind: function
+  class: slot
+  evidence: 0xa6278 is the slot_9 slot of wui_vtable_hr row 0 (word 0xbab94); nothing
+    calls it
+- address: 0xa6304
+  name: wui_vtable_spo2_meas_slot_15
+  kind: function
+  class: slot
+  evidence: 0xa6304 is the slot_15 slot of wui_vtable_spo2_meas row 0 (word 0xbacd0);
+    nothing calls it
+- address: 0xa630a
+  name: wui_vtable_spo2_meas_2_slot_14
+  kind: function
+  class: slot
+  evidence: 0xa630a is the slot_14 slot of wui_vtable_spo2_meas_2 row 0 (word 0xbad14);
+    nothing calls it
+- address: 0xa630e
+  name: wui_vtable_spo2_meas_2_slot_15
+  kind: function
+  class: slot
+  evidence: 0xa630e is the slot_15 slot of wui_vtable_spo2_meas_2 row 0 (word 0xbad18);
+    nothing calls it
+- address: 0xa6312
+  name: wui_vtable_spo2_meas_slot_12
+  kind: function
+  class: slot
+  evidence: 0xa6312 is the slot_12 slot of wui_vtable_spo2_meas row 0 (word 0xbacc4);
+    nothing calls it
+- address: 0xa6322
+  name: wui_vtable_spo2_meas_slot_14
+  kind: function
+  class: slot
+  evidence: 0xa6322 is the slot_14 slot of wui_vtable_spo2_meas row 0 (word 0xbaccc);
+    nothing calls it
 - address: 0xa6326
   name: on_background_spo2_meas_2
   kind: function
@@ -17478,6 +18060,30 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x0c is wui_view_spo2_meas_2's
+- address: 0xa6380
+  name: wui_vtable_spo2_meas_2_slot_11
+  kind: function
+  class: slot
+  evidence: 0xa6380 is the slot_11 slot of wui_vtable_spo2_meas_2 row 0 (word 0xbad08);
+    nothing calls it
+- address: 0xa63b2
+  name: wui_vtable_spo2_meas_2_slot_12
+  kind: function
+  class: slot
+  evidence: 0xa63b2 is the slot_12 slot of wui_vtable_spo2_meas_2 row 0 (word 0xbad0c);
+    nothing calls it
+- address: 0xa63e0
+  name: wui_vtable_spo2_meas_2_slot_13
+  kind: function
+  class: slot
+  evidence: 0xa63e0 is the slot_13 slot of wui_vtable_spo2_meas_2 row 0 (word 0xbad10);
+    nothing calls it
+- address: 0xa6400
+  name: wui_vtable_spo2_meas_slot_11
+  kind: function
+  class: slot
+  evidence: 0xa6400 is the slot_11 slot of wui_vtable_spo2_meas row 0 (word 0xbacc0);
+    nothing calls it
 - address: 0xa6468
   name: on_event_spo2
   kind: function
@@ -17532,6 +18138,11 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_dbt_duration's
+- address: 0xa65ae
+  name: wui_vtable_dbt_mode_slot_7__1
+  kind: function
+  class: helper
+  evidence: only 0x877d4 (wui_vtable_dbt_mode_slot_7) calls 0xa65ae; 54 bytes
 - address: 0xa65e4
   name: on_event_dbt_mode
   kind: function
@@ -17544,6 +18155,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_back's
+- address: 0xa6722
+  name: wui_vtable_ppg_afib_slot_6
+  kind: function
+  class: slot
+  evidence: 0xa6722 is the slot_6 slot of wui_vtable_ppg_afib row 0 (word 0xbaeec);
+    nothing calls it
 - address: 0xa6738
   name: refresh_ppg_afib__1__1
   kind: function
@@ -17572,6 +18189,48 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x14 is wui_view_ppg_afib's
+- address: 0xa67e6
+  name: wui_vtable_custo_2_slot_7
+  kind: function
+  class: slot
+  evidence: 0xa67e6 is the slot_7 slot of wui_vtable_custo_2 row 0 (word 0xbaf18);
+    nothing calls it
+- address: 0xa6840
+  name: wui_vtable_workout_2_slot_8
+  kind: function
+  class: slot
+  evidence: 0xa6840 is the slot_8 slot of wui_vtable_workout_2 row 0 (word 0xbb38c);
+    nothing calls it
+- address: 0xa68ce
+  name: wui_vtable_cycletrackingmenu_slot_8
+  kind: function
+  class: slot
+  evidence: 0xa68ce is the slot_8 slot of wui_vtable_cycletrackingmenu row 0 (word
+    0xba5f0); nothing calls it
+- address: 0xa6970
+  name: wui_vtable_fake_notif_3_slot_10
+  kind: function
+  class: slot
+  evidence: 0xa6970 is the slot_10 slot of wui_vtable_fake_notif_3 row 0 (word 0xbafb8);
+    nothing calls it
+- address: 0xa697e
+  name: wui_vtable_notif_slot_9
+  kind: function
+  class: slot
+  evidence: 0xa697e is the slot_9 slot of wui_vtable_notif row 0 (word 0xbaf74);
+    nothing calls it
+- address: 0xa698a
+  name: wui_vtable_fake_notif_3_slot_9
+  kind: function
+  class: slot
+  evidence: 0xa698a is the slot_9 slot of wui_vtable_fake_notif_3 row 0 (word 0xbafb4);
+    nothing calls it
+- address: 0xa69de
+  name: wui_vtable_fake_notif_3_slot_11
+  kind: function
+  class: slot
+  evidence: 0xa69de is the slot_11 slot of wui_vtable_fake_notif_3 row 0 (word 0xbafbc);
+    nothing calls it
 - address: 0xa6b14
   name: refresh_battery
   kind: function
@@ -17596,6 +18255,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x00 is wui_view_clock_mode's
+- address: 0xa6b7a
+  name: wui_vtable_clock_mode_slot_7
+  kind: function
+  class: slot
+  evidence: 0xa6b7a is the slot_7 slot of wui_vtable_clock_mode row 0 (word 0xbb0c0);
+    nothing calls it
 - address: 0xa6b8e
   name: on_event_quick_look
   kind: function
@@ -17608,6 +18273,18 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_quicklook_selection's
+- address: 0xa6bdc
+  name: wui_vtable_quick_look_slot_7
+  kind: function
+  class: slot
+  evidence: 0xa6bdc is the slot_7 slot of wui_vtable_quick_look row 0 (word 0xbb0e8);
+    nothing calls it
+- address: 0xa6bf0
+  name: wui_vtable_dnd_settings_slot_7
+  kind: function
+  class: slot
+  evidence: 0xa6bf0 is the slot_7 slot of wui_vtable_dnd_settings row 0 (word 0xbb130);
+    nothing calls it
 - address: 0xa6c3a
   name: on_background_hands_calibration_settings
   kind: function
@@ -17626,6 +18303,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x0c is wui_view_hands_calibration_settings's
+- address: 0xa6c58
+  name: wui_vtable_home_face_settings_slot_7
+  kind: function
+  class: slot
+  evidence: 0xa6c58 is the slot_7 slot of wui_vtable_home_face_settings row 0 (word
+    0xbb1d8); nothing calls it
 - address: 0xa6c6c
   name: on_enter_install_connected
   kind: function
@@ -17680,6 +18363,12 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_workout_2's
+- address: 0xa6e52
+  name: wui_vtable_workout_2_slot_9
+  kind: function
+  class: slot
+  evidence: 0xa6e52 is the slot_9 slot of wui_vtable_workout_2 row 0 (word 0xbb390);
+    nothing calls it
 - address: 0xa6e74
   name: refresh_workout_2
   kind: function
@@ -17715,6 +18404,18 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x14 is wui_view_sport_notif's
+- address: 0xa6f5e
+  name: wui_vtable_sport_pause_slot_8
+  kind: function
+  class: slot
+  evidence: 0xa6f5e is the slot_8 slot of wui_vtable_sport_pause row 0 (word 0xbb518);
+    nothing calls it
+- address: 0xa6f62
+  name: wui_vtable_sport_pause_slot_9
+  kind: function
+  class: slot
+  evidence: 0xa6f62 is the slot_9 slot of wui_vtable_sport_pause row 0 (word 0xbb51c);
+    nothing calls it
 - address: 0xa6f86
   name: on_background_pause_selection
   kind: function
@@ -17727,6 +18428,23 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x14 is wui_view_sport_chrono_summary's
+- address: 0xa6fec
+  name: wui_vtable_sport_heart_rate_slot_8
+  kind: function
+  class: slot
+  evidence: 0xa6fec is the slot_8 slot of wui_vtable_sport_heart_rate row 0 (word
+    0xbb628); nothing calls it
+- address: 0xa6ff0
+  name: wui_vtable_workout_temperature_slot_8
+  kind: function
+  class: slot
+  evidence: 0xa6ff0 is the slot_8 slot of wui_vtable_workout_temperature row 0 (word
+    0xbb658); nothing calls it
+- address: 0xa6ff4
+  name: gui__shared_1
+  kind: function
+  class: shared
+  evidence: 'every caller of 0xa6ff4 is in GUI: on_event_notif, wui_vtable_fake_notif_3_on_event'
 - address: 0xa70f0
   name: on_event_notif__1
   kind: function
@@ -18455,6 +19173,27 @@ symbols:
   evidence: 'the nrf_pwm_sequence_t step_motor_play_step passes as SEQ1 of every
     drive pulse: four halfwords at 0x20007920 whose compares all sit above their
     COUNTERTOP, so the three pins hold one level for the 2.3 ms after the step'
+- address: 0xb90bc
+  name: wui_vtable_scanwatch
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9098, whose own name string
+    is 'ScanWatch'; 18 handler words before the next vtable at 0xb9104
+- address: 0xb910c
+  name: wui_vtable_scanwatch_factory
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb907c, whose own name string
+    is 'ScanWatch Factory'; 18 handler words before the next vtable at 0xb9154
+- address: 0xb915c
+  name: wui_vtable_scanwatch_demo
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9060, whose own name string
+    is 'ScanWatch Demo'; 18 handler words before the next vtable at 0xb91a4
 - address: 0xb91cc
   name: wui_view_factory_test_screen
   kind: global
@@ -19330,6 +20069,20 @@ symbols:
   module: wui
   evidence: the descriptor's own name string ('Setup flow' at 0xe7243), which the
     "[WUI] %s %s" line prints; its vtable is 0xbb300
+- address: 0xb9ff0
+  name: wui_vtable_menu_carousel
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xba034, whose own name string
+    is 'Menu carousel'; 9 handler words before the next vtable at 0xba014
+- address: 0xba01c
+  name: wui_vtable_menu_carousel_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xba048, whose own name string
+    is 'Menu carousel'; 6 handler words before the next vtable at 0xba034
 - address: 0xba048
   name: wui_view_menu_carousel
   kind: global
@@ -19346,6 +20099,847 @@ symbols:
     Both the address and the count are the two words at 0xba068, which hold 0xba070
     and 16; the fifteen live rows point at the view descriptors in 0xb9238..0xb9e68
     that wui_push takes as its second argument.
+- address: 0xba0f8
+  name: wui_vtable_hidden_screens
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9f10, whose own name string
+    is 'Hidden screens'; 7 handler words before the next vtable at 0xba114
+- address: 0xba11c
+  name: wui_vtable_hidden_screens_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9f24, whose own name string
+    is 'Hidden screens'; 6 handler words before the next vtable at 0xba134
+- address: 0xba194
+  name: wui_vtable_demo_carousel
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9ee0, whose own name string
+    is 'Demo carousel'; 8 handler words before the next vtable at 0xba1b4
+- address: 0xba1bc
+  name: wui_vtable_demo_carousel_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9ef4, whose own name string
+    is 'Demo carousel'; 6 handler words before the next vtable at 0xba1d4
+- address: 0xba29c
+  name: wui_vtable_carousel_settings
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xba2dc, whose own name string
+    is 'Carousel Settings'; 8 handler words before the next vtable at 0xba2bc
+- address: 0xba2c4
+  name: wui_vtable_carousel_settings_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xba2f0, whose own name string
+    is 'Carousel Settings'; 6 handler words before the next vtable at 0xba2dc
+- address: 0xba37c
+  name: wui_vtable_carousel_clocks
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9e7c, whose own name string
+    is 'Carousel Clocks'; 8 handler words before the next vtable at 0xba39c
+- address: 0xba3a4
+  name: wui_vtable_carousel_clocks_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9e90, whose own name string
+    is 'Carousel Clocks'; 6 handler words before the next vtable at 0xba3bc
+- address: 0xba3c4
+  name: wui_vtable_sport
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9f70, whose own name string
+    is 'Sport'; 8 handler words before the next vtable at 0xba3e4
+- address: 0xba3ec
+  name: wui_vtable_sport_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9f84, whose own name string
+    is 'Sport'; 6 handler words before the next vtable at 0xba404
+- address: 0xba40c
+  name: wui_vtable_sport_summary
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9f3c, whose own name string
+    is 'Sport summary'; 8 handler words before the next vtable at 0xba42c
+- address: 0xba434
+  name: wui_vtable_sport_summary_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9f50, whose own name string
+    is 'Sport summary'; 6 handler words before the next vtable at 0xba44c
+- address: 0xba454
+  name: wui_vtable_timer
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9470, whose own name string
+    is 'Timer'; 8 handler words before the next vtable at 0xba474
+- address: 0xba47c
+  name: wui_vtable_stopwatch
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb949c, whose own name string
+    is 'StopWatch'; 8 handler words before the next vtable at 0xba49c
+- address: 0xba4a4
+  name: wui_vtable_clock_menu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb94e0, whose own name string
+    is 'Clock Menu'; 10 handler words before the next vtable at 0xba4cc
+- address: 0xba4d4
+  name: wui_vtable_stopwatch_menu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb94b4, whose own name string
+    is 'Stopwatch Menu'; 8 handler words before the next vtable at 0xba4f4
+- address: 0xba4fc
+  name: wui_vtable_timer_menu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9488, whose own name string
+    is 'Timer Menu'; 8 handler words before the next vtable at 0xba51c
+- address: 0xba524
+  name: wui_vtable_alarm
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb94c8, whose own name string
+    is 'Alarm'; 8 handler words before the next vtable at 0xba544
+- address: 0xba54c
+  name: wui_vtable_alarm_popup
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb996c, whose own name string
+    is 'Alarm Popup'; 8 handler words before the next vtable at 0xba56c
+- address: 0xba574
+  name: wui_vtable_alarm_ringing
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9980, whose own name string
+    is 'Alarm ringing'; 8 handler words before the next vtable at 0xba594
+- address: 0xba5a8
+  name: wui_vtable_cycle
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9238, whose own name string
+    is 'Cycle'; 8 handler words before the next vtable at 0xba5c8
+- address: 0xba5d0
+  name: wui_vtable_cycletrackingmenu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9220, whose own name string
+    is 'CycleTrackingMenu'; 13 handler words before the next vtable at 0xba604
+- address: 0xba60c
+  name: wui_vtable_cycletrackingsymptomsmenu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9208, whose own name string
+    is 'CycleTrackingSymptomsMenu'; 11 handler words before the next vtable at 0xba638
+- address: 0xba640
+  name: wui_vtable_charge_station
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb981c, whose own name string
+    is 'Charge Station'; 6 handler words before the next vtable at 0xba658
+- address: 0xba660
+  name: wui_vtable_factory_check
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb98ec, whose own name string
+    is 'Factory check'; 7 handler words before the next vtable at 0xba67c
+- address: 0xba684
+  name: wui_vtable_factory_test
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb91f4, whose own name string
+    is 'Factory Test'; 8 handler words before the next vtable at 0xba6a4
+- address: 0xba6ac
+  name: wui_vtable_factory_test_temperature
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb91e0, whose own name string
+    is 'Factory Test Temperature'; 8 handler words before the next vtable at 0xba6cc
+- address: 0xba6d4
+  name: wui_vtable_factory_test_screen
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb91cc, whose own name string
+    is 'Factory Test Screen'; 8 handler words before the next vtable at 0xba6f4
+- address: 0xba6fc
+  name: wui_vtable_lapping_test
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9888, whose own name string
+    is 'Lapping test'; 7 handler words before the next vtable at 0xba718
+- address: 0xba720
+  name: wui_vtable_factory_charging
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9874, whose own name string
+    is 'Factory charging'; 7 handler words before the next vtable at 0xba73c
+- address: 0xba744
+  name: wui_vtable_goal
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9954, whose own name string
+    is 'Goal'; 8 handler words before the next vtable at 0xba764
+- address: 0xba76c
+  name: wui_vtable_version
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9940, whose own name string
+    is 'Version'; 7 handler words before the next vtable at 0xba788
+- address: 0xba790
+  name: wui_vtable_certif
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb992c, whose own name string
+    is 'Certif'; 7 handler words before the next vtable at 0xba7ac
+- address: 0xba7b4
+  name: wui_vtable_certif_japan
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9918, whose own name string
+    is 'Certif Japan'; 7 handler words before the next vtable at 0xba7d0
+- address: 0xba7d8
+  name: wui_vtable_info
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9900, whose own name string
+    is 'Info'; 7 handler words before the next vtable at 0xba7f4
+- address: 0xba7fc
+  name: wui_vtable_factory_reset
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb98d8, whose own name string
+    is 'Factory reset'; 7 handler words before the next vtable at 0xba818
+- address: 0xba820
+  name: wui_vtable_factory_reset_coutdown
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb98c4, whose own name string
+    is 'Factory reset coutdown'; 7 handler words before the next vtable at 0xba83c
+- address: 0xba844
+  name: wui_vtable_erase_cache
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb98b0, whose own name string
+    is 'Erase Cache'; 7 handler words before the next vtable at 0xba860
+- address: 0xba868
+  name: wui_vtable_temperature_sensors
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb989c, whose own name string
+    is 'Temperature sensors'; 7 handler words before the next vtable at 0xba884
+- address: 0xba88c
+  name: wui_vtable_demo_menu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9300, whose own name string
+    is 'Demo Menu'; 7 handler words before the next vtable at 0xba8a8
+- address: 0xba8b0
+  name: wui_vtable_demo_exit
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb92e8, whose own name string
+    is 'Demo exit'; 7 handler words before the next vtable at 0xba8cc
+- address: 0xba8d4
+  name: wui_vtable_hold_the_watch
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9530, whose own name string
+    is 'Hold the watch'; 6 handler words before the next vtable at 0xba8ec
+- address: 0xba8f4
+  name: wui_vtable_home
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9e68, whose own name string
+    is 'Home'; 10 handler words before the next vtable at 0xba91c
+- address: 0xba924
+  name: wui_vtable_missing_medical_permissions
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9500, whose own name string
+    is 'Missing Medical Permissions'; 6 handler words before the next vtable at
+    0xba93c
+- address: 0xba944
+  name: wui_vtable_power_reserve_screen
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb985c, whose own name string
+    is 'Power reserve screen'; 6 handler words before the next vtable at 0xba95c
+- address: 0xba964
+  name: wui_vtable_low_battery_screen
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9844, whose own name string
+    is 'Low battery screen'; 6 handler words before the next vtable at 0xba97c
+- address: 0xba984
+  name: wui_vtable_shortcut
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9b5c, whose own name string
+    is 'Shortcut'; 7 handler words before the next vtable at 0xba9a0
+- address: 0xba9a8
+  name: wui_vtable_shortcut_pause
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9b44, whose own name string
+    is 'Shortcut pause'; 7 handler words before the next vtable at 0xba9c4
+- address: 0xba9cc
+  name: wui_vtable_tighten_the_watch
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9634, whose own name string
+    is 'Tighten the watch'; 6 handler words before the next vtable at 0xba9e4
+- address: 0xba9ec
+  name: wui_vtable_sleep_duration
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9d74, whose own name string
+    is 'Sleep duration'; 8 handler words before the next vtable at 0xbaa0c
+- address: 0xbaa14
+  name: wui_vtable_calories
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9e50, whose own name string
+    is 'Calories'; 10 handler words before the next vtable at 0xbaa3c
+- address: 0xbaa44
+  name: wui_vtable_distance
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9e20, whose own name string
+    is 'Distance'; 10 handler words before the next vtable at 0xbaa6c
+- address: 0xbaa74
+  name: wui_vtable_ecg
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9e00, whose own name string
+    is 'ECG'; 9 handler words before the next vtable at 0xbaa98
+- address: 0xbaaa0
+  name: wui_vtable_ecg_meas
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb958c, whose own name string
+    is 'ECG meas'; 6 handler words before the next vtable at 0xbaab8
+- address: 0xbaac0
+  name: wui_vtable_ecg_live_app
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9578, whose own name string
+    is 'ECG live app'; 6 handler words before the next vtable at 0xbaad8
+- address: 0xbaae0
+  name: wui_vtable_ecg_fake
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb93d8, whose own name string
+    is 'ECG fake'; 6 handler words before the next vtable at 0xbaaf8
+- address: 0xbab00
+  name: wui_vtable_ecg_result
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9564, whose own name string
+    is 'ECG result'; 6 handler words before the next vtable at 0xbab18
+- address: 0xbab20
+  name: wui_vtable_ecg_selection
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9548, whose own name string
+    is 'ECG selection'; 6 handler words before the next vtable at 0xbab38
+- address: 0xbab40
+  name: wui_vtable_elevation
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9de8, whose own name string
+    is 'Elevation'; 10 handler words before the next vtable at 0xbab68
+- address: 0xbab70
+  name: wui_vtable_hr
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9dc0, whose own name string
+    is 'HR'; 11 handler words before the next vtable at 0xbab9c
+- address: 0xbaba4
+  name: wui_vtable_high_hr_popup
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9a40, whose own name string
+    is 'High HR Popup'; 8 handler words before the next vtable at 0xbabc4
+- address: 0xbabcc
+  name: wui_vtable_hr_demo
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb93ec, whose own name string
+    is 'HR Demo'; 11 handler words before the next vtable at 0xbabf8
+- address: 0xbac00
+  name: wui_vtable_ecg_hr
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9ca4, whose own name string
+    is 'ECG HR'; 11 handler words before the next vtable at 0xbac2c
+- address: 0xbac34
+  name: wui_vtable_body_temperature
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9c80, whose own name string
+    is 'Body Temperature'; 11 handler words before the next vtable at 0xbac60
+- address: 0xbac68
+  name: wui_vtable_spo2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb92c8, whose own name string
+    is 'SPO2'; 9 handler words before the next vtable at 0xbac8c
+- address: 0xbac94
+  name: wui_vtable_spo2_meas
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9274, whose own name string
+    is 'SPO2 meas'; 16 handler words before the next vtable at 0xbacd4
+- address: 0xbacdc
+  name: wui_vtable_spo2_meas_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb929c, whose own name string
+    is 'SPO2 meas'; 16 handler words before the next vtable at 0xbad1c
+- address: 0xbad24
+  name: wui_vtable_spo2_error
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9260, whose own name string
+    is 'Spo2 error'; 6 handler words before the next vtable at 0xbad3c
+- address: 0xbad44
+  name: wui_vtable_steps
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9e38, whose own name string
+    is 'Steps'; 10 handler words before the next vtable at 0xbad6c
+- address: 0xbad74
+  name: wui_vtable_dbt
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9d54, whose own name string
+    is 'DBT'; 9 handler words before the next vtable at 0xbad98
+- address: 0xbada0
+  name: wui_vtable_dbt_mode
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9d3c, whose own name string
+    is 'DBT Mode'; 11 handler words before the next vtable at 0xbadcc
+- address: 0xbadd4
+  name: wui_vtable_dbt_duration
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9d20, whose own name string
+    is 'DBT duration'; 6 handler words before the next vtable at 0xbadec
+- address: 0xbadf4
+  name: wui_vtable_dbt_meas
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9d08, whose own name string
+    is 'DBT meas'; 6 handler words before the next vtable at 0xbae0c
+- address: 0xbae14
+  name: wui_vtable_dbt_result
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9cf4, whose own name string
+    is 'DBT result'; 6 handler words before the next vtable at 0xbae2c
+- address: 0xbae8c
+  name: wui_vtable_back
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9b30, whose own name string
+    is 'Back'; 8 handler words before the next vtable at 0xbaeac
+- address: 0xbaeb4
+  name: wui_vtable_nok
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9af0, whose own name string
+    is 'nok'; 6 handler words before the next vtable at 0xbaecc
+- address: 0xbaed4
+  name: wui_vtable_ppg_afib
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb99e8, whose own name string
+    is 'Ppg afib'; 8 handler words before the next vtable at 0xbaef4
+- address: 0xbaefc
+  name: wui_vtable_custo_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9d90, whose own name string
+    is 'Custo 2'; 8 handler words before the next vtable at 0xbaf1c
+- address: 0xbaf50
+  name: wui_vtable_notif
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9418, whose own name string
+    is 'Notif'; 11 handler words before the next vtable at 0xbaf7c
+- address: 0xbaf90
+  name: wui_vtable_fake_notif_3
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9318, whose own name string
+    is 'Fake Notif 3'; 12 handler words before the next vtable at 0xbafc0
+- address: 0xbafd4
+  name: wui_vtable_activity_reminder
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9994, whose own name string
+    is 'Activity Reminder'; 8 handler words before the next vtable at 0xbaff4
+- address: 0xbb054
+  name: wui_vtable_battery
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9c4c, whose own name string
+    is 'Battery'; 8 handler words before the next vtable at 0xbb074
+- address: 0xbb07c
+  name: wui_vtable_battery_charging
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9830, whose own name string
+    is 'Battery charging'; 8 handler words before the next vtable at 0xbb09c
+- address: 0xbb0a4
+  name: wui_vtable_clock_mode
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9bb4, whose own name string
+    is 'Clock Mode'; 8 handler words before the next vtable at 0xbb0c4
+- address: 0xbb0cc
+  name: wui_vtable_quick_look
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9be8, whose own name string
+    is 'Quick Look'; 8 handler words before the next vtable at 0xbb0ec
+- address: 0xbb0f4
+  name: wui_vtable_quicklook_selection
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9bcc, whose own name string
+    is 'Quicklook selection'; 6 handler words before the next vtable at 0xbb10c
+- address: 0xbb114
+  name: wui_vtable_dnd_settings
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9c34, whose own name string
+    is 'DND Settings'; 8 handler words before the next vtable at 0xbb134
+- address: 0xbb13c
+  name: wui_vtable_dnd_selection
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9c18, whose own name string
+    is 'DND selection'; 6 handler words before the next vtable at 0xbb154
+- address: 0xbb15c
+  name: wui_vtable_hands_calibration
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb924c, whose own name string
+    is 'Hands Calibration'; 6 handler words before the next vtable at 0xbb174
+- address: 0xbb17c
+  name: wui_vtable_hands_calibration_tuto
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9b88, whose own name string
+    is 'Hands Calibration Tuto'; 6 handler words before the next vtable at 0xbb194
+- address: 0xbb19c
+  name: wui_vtable_hands_calibration_settings
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9b74, whose own name string
+    is 'Hands Calibration Settings'; 6 handler words before the next vtable at 0xbb1b4
+- address: 0xbb1bc
+  name: wui_vtable_home_face_settings
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9c00, whose own name string
+    is 'Home Face Settings'; 8 handler words before the next vtable at 0xbb1dc
+- address: 0xbb1e4
+  name: wui_vtable_settings
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9c60, whose own name string
+    is 'Settings'; 10 handler words before the next vtable at 0xbb20c
+- address: 0xbb214
+  name: wui_vtable_hands_calib_menu
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9b9c, whose own name string
+    is 'Hands calib menu'; 8 handler words before the next vtable at 0xbb234
+- address: 0xbb23c
+  name: wui_vtable_install_go
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb961c, whose own name string
+    is 'Install go'; 6 handler words before the next vtable at 0xbb254
+- address: 0xbb25c
+  name: wui_vtable_install_bt_key
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9608, whose own name string
+    is 'Install BT key'; 6 handler words before the next vtable at 0xbb274
+- address: 0xbb27c
+  name: wui_vtable_install_connected
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb95f4, whose own name string
+    is 'Install connected'; 6 handler words before the next vtable at 0xbb294
+- address: 0xbb29c
+  name: wui_vtable_install_ok
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb95e0, whose own name string
+    is 'Install OK'; 6 handler words before the next vtable at 0xbb2b4
+- address: 0xbb2bc
+  name: wui_vtable_install_nok
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb95cc, whose own name string
+    is 'Install NOK'; 6 handler words before the next vtable at 0xbb2d4
+- address: 0xbb2dc
+  name: wui_vtable_setup_flow
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9fa4, whose own name string
+    is 'Setup flow'; 7 handler words before the next vtable at 0xbb2f8
+- address: 0xbb300
+  name: wui_vtable_setup_flow_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9fb8, whose own name string
+    is 'Setup flow'; 6 handler words before the next vtable at 0xbb318
+- address: 0xbb320
+  name: wui_vtable_screen_update
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb95a0, whose own name string
+    is 'Screen Update'; 6 handler words before the next vtable at 0xbb338
+- address: 0xbb340
+  name: wui_vtable_workout
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb97fc, whose own name string
+    is 'Workout'; 9 handler words before the next vtable at 0xbb364
+- address: 0xbb36c
+  name: wui_vtable_workout_2
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb97e0, whose own name string
+    is 'Workout 2'; 11 handler words before the next vtable at 0xbb398
+- address: 0xbb3a0
+  name: wui_vtable_sport_notif
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb96a4, whose own name string
+    is 'Sport notif'; 6 handler words before the next vtable at 0xbb3b8
+- address: 0xbb3c0
+  name: wui_vtable_workout_low_batt
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb964c, whose own name string
+    is 'workout low batt'; 8 handler words before the next vtable at 0xbb3e0
+- address: 0xbb3e8
+  name: wui_vtable_sport_time
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb977c, whose own name string
+    is 'Sport Time'; 10 handler words before the next vtable at 0xbb410
+- address: 0xbb418
+  name: wui_vtable_sport_calories
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb97cc, whose own name string
+    is 'Sport Calories'; 10 handler words before the next vtable at 0xbb440
+- address: 0xbb448
+  name: wui_vtable_sport_gps_distance
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9768, whose own name string
+    is 'Sport GPS distance'; 10 handler words before the next vtable at 0xbb470
+- address: 0xbb478
+  name: wui_vtable_sport_gps_pace_summary
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb973c, whose own name string
+    is 'Sport GPS pace summary'; 10 handler words before the next vtable at 0xbb4a0
+- address: 0xbb4a8
+  name: wui_vtable_sport_elevation
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9714, whose own name string
+    is 'Sport elevation'; 10 handler words before the next vtable at 0xbb4d0
+- address: 0xbb4d8
+  name: wui_vtable_sport_congrats
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9700, whose own name string
+    is 'Sport congrats'; 6 handler words before the next vtable at 0xbb4f0
+- address: 0xbb4f8
+  name: wui_vtable_sport_pause
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb96d8, whose own name string
+    is 'Sport pause'; 10 handler words before the next vtable at 0xbb520
+- address: 0xbb528
+  name: wui_vtable_sport_chrono
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb97a4, whose own name string
+    is 'Sport Chrono'; 10 handler words before the next vtable at 0xbb550
+- address: 0xbb558
+  name: wui_vtable_sport_chrono_summary
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9790, whose own name string
+    is 'Sport Chrono Summary'; 10 handler words before the next vtable at 0xbb580
+- address: 0xbb588
+  name: wui_vtable_sport_gps_pace
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9754, whose own name string
+    is 'Sport GPS pace'; 10 handler words before the next vtable at 0xbb5b0
+- address: 0xbb5b8
+  name: wui_vtable_sport_gps_speed
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb9728, whose own name string
+    is 'Sport GPS speed'; 10 handler words before the next vtable at 0xbb5e0
+- address: 0xbb5e8
+  name: wui_vtable_pause_selection
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb96bc, whose own name string
+    is 'Pause selection'; 6 handler words before the next vtable at 0xbb600
+- address: 0xbb608
+  name: wui_vtable_sport_heart_rate
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb97b8, whose own name string
+    is 'Sport Heart Rate'; 10 handler words before the next vtable at 0xbb630
+- address: 0xbb638
+  name: wui_vtable_workout_temperature
+  kind: global
+  class: wuiview
+  module: wui
+  evidence: the vtable of the view descriptor at 0xb96ec, whose own name string
+    is 'Workout Temperature'; 10 handler words before the next vtable at 0xbb660
 - address: 0xbbf50
   name: asset_table
   kind: table
