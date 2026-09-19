@@ -5385,17 +5385,10 @@ symbols:
   evidence: the only line 0x4bef8 logs, wlog('[FEATURE_TAGS] Nothings stored') at
     0x4bf12
 - address: 0x4bf28
-  name: feature_tags_struct_2001a26c_check
   kind: function
-  class: provenance
-  evidence: 0x4bf28 reaches feature_tags_struct_2001a26c through its own literal
-    pool and no other named global; the body checks through it
-- address: 0x4bf68
-  name: feature_tags_struct_2001a26c_copy
-  kind: function
-  class: provenance
-  evidence: 0x4bf68 reaches feature_tags_struct_2001a26c through its own literal
-    pool and no other named global; the body copys through it
+  class: bymodule
+  module: FEATURE_TAGS
+  evidence: 0x4bf28 calls only feature_tags_nothings_stored
 - address: 0x4bfcc
   name: shell_cmd_feature_tags
   kind: function
@@ -16481,11 +16474,6 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x5f5c8 (sensors_sync_push_accel__1) calls 0x921da; 4 bytes
-- address: 0x9225e
-  name: feature_tags_struct_2001a26c_copy__1
-  kind: function
-  class: helper
-  evidence: only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x9225e; 20 bytes
 - address: 0x92272
   name: dbg_mask_change_ie_debug_mask__1
   kind: function
@@ -16736,12 +16724,6 @@ symbols:
   class: bymodule
   module: BLUETOOTH
   evidence: '0x9314e every caller is a body this rule placed in BLUETOOTH: 0x395dc'
-- address: 0x931ca
-  name: feature_tags_struct_2001a26c_copy__2
-  kind: function
-  class: helper
-  evidence: only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x931ca; 126
-    bytes
 - address: 0x93248
   name: shell_cmd_probe__3
   kind: function
@@ -31220,22 +31202,6 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WPP] (1 read it,
     2 write it)
-- address: 0x2001a26c
-  name: feature_tags_struct_2001a26c
-  kind: global
-  class: global
-  module: FEATURE_TAGS
-  size: 6
-  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (2
-    read it, 0 write it)
-- address: 0x2001a30c
-  name: feature_tags_word_2001a30c
-  kind: global
-  class: global
-  module: FEATURE_TAGS
-  size: 4
-  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (1
-    read it, 0 write it)
 - address: 0x2001a3ac
   name: flash_cache
   kind: global
