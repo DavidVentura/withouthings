@@ -57,6 +57,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import callargs  # noqa: E402  (the forward reading of a call's own block)
 import match  # noqa: E402  (same directory; the normaliser and matcher live there)
 import libc_find  # noqa: E402  (the archive-side body search)
 import symbols as symmap  # noqa: E402  (the address map these names go into)
@@ -531,6 +532,15 @@ def wlog_sites(img, ex):
     One pass back over the run of instructions that sets up the call, recording
     the pool string each argument register was last loaded with; a prior call
     ends the walk because AAPCS lets it clobber the argument registers.
+
+    What that walk cannot answer, abi/callargs.py's forward reading of the same
+    block can: a register loaded before a `mov` chain, an argument the block
+    computes from a pool word, and an argument stored into an outgoing stack
+    slot. Where it finds a string the back-walk missed the string is taken;
+    where it finds that the value is a field of a struct or a row of a table it
+    is recorded as a shape and nothing is claimed about the value, because
+    where a value comes from is a fact about the image and what it happens to
+    be at that call is not.
     """
     sites = []
     for i, (addr, mnem, ops) in enumerate(img.insns):
@@ -554,9 +564,23 @@ def wlog_sites(img, ex):
         fn = ex.owner(addr) if ex.ok else img.owner(addr)
         if fmt is None:
             fmt = hoisted_format(img, i, fmtreg, fn, addr)
+        frame = callargs.resolve(img, img.insns, i)
+        if fmt is None:
+            fmt = callargs.string_of(img, frame.arg(WLOG_FMT_REG[entry]))
+        shapes = {}
+        for k in range(4):
+            reg = "r%d" % k
+            if reg == fmtreg or regs.get(reg) is not None:
+                continue
+            value = frame.arg(k)
+            text = callargs.string_of(img, value)
+            if text is None:
+                shapes[reg] = {"kind": value.kind, "detail": value.text()}
+            else:
+                regs[reg] = text
         sites.append({"site": addr, "fn": fn,
                       "entry": entry, "fmt": fmt.decode("latin1") if fmt else None,
-                      "args": regs, "how": "calling sequence"})
+                      "args": regs, "shapes": shapes, "how": "calling sequence"})
     return sites
 
 
@@ -680,8 +704,33 @@ def widen_sites(img, ex, sites, reach, loaders):
                 if len(mine) == 1:
                     args["r%d" % k] = reach[(s["site"], k)][mine[0]]
             out.append({"site": s["site"], "fn": fn, "entry": s["entry"],
-                        "fmt": text, "args": args, "how": "word_uses edges"})
+                        "fmt": text, "args": args, "shapes": {},
+                        "how": "word_uses edges"})
     return out
+
+
+def string_argument_shapes(sites):
+    """What the block says about every `%s` argument of a resolved format.
+
+    `string` is a value the image carries at that call; the other buckets are
+    where the value comes from and not what it is, which is as far as anything
+    static goes for an argument the caller was handed.
+    """
+    counts = collections.Counter()
+    for s in sites:
+        base = 1 if WLOG_FMT_REG[s["entry"]] == 0 else 3
+        convs = [c for c in (m.group(1) for m in SPEC.finditer(s["fmt"]))
+                 if c != "%"]
+        for k, conv in enumerate(convs):
+            reg = "r%d" % (base + k)
+            if conv != "s" or base + k > 3:
+                continue
+            if s["args"].get(reg) is not None:
+                counts["string"] += 1
+            else:
+                shape = s.get("shapes", {}).get(reg)
+                counts[shape["kind"] if shape else "unknown"] += 1
+    return counts
 
 
 def log_tag(fmt):
@@ -1649,6 +1698,8 @@ def main():
                               pool_loaders(ex))
         stats["wlog_sites_edges"] = len(widened)
         sites += widened
+    for shape, n in string_argument_shapes(sites).items():
+        stats["wlog_string_arg_" + shape] = n
     entries = []
     modules, direct = (log_modules(ex, sites) if ex.ok else ({}, {}))
     if ex.ok:

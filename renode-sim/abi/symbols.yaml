@@ -335,6 +335,13 @@ symbols:
     static quorem in the libc class instead of the helper one.
   evidence: newlib-nano-ll libc.a, 2884 bytes of the built body reproduced at 0x2d668
     with the 440 bytes a relocation owns masked
+- address: 0x2e1d8
+  name: main_task
+  kind: function
+  class: kernel
+  module: null
+  evidence: the name string 'main' and the entry pointer 0x2e1d9 that xTaskCreateStatic
+    at 0x2ec78 was given
 - address: 0x2e2a0
   name: appl_main_init
   kind: label
@@ -475,11 +482,12 @@ symbols:
   evidence: 'wpp_cmd_table row 0x274c0: key 2483, label ''FACTORY_TEST'', CMD_FACTORY_TEST
     in wpp/src/commands.rs'
 - address: 0x303a0
-  name: battery_task
-  kind: label
-  class: prose
-  evidence: prio 1; creates its semaphore into 0x2001753c, then loops on take +
-    ADC average
+  name: contrast_task
+  kind: function
+  class: kernel
+  module: null
+  evidence: the name string 'CONTRAST' and the entry pointer 0x303a1 that xTaskCreateStatic
+    at 0x305ba was given
 - address: 0x30588
   name: contrast_task_create
   kind: label
@@ -630,6 +638,13 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x2f05c (shell_cmd_hwa10) calls 0x32960; 176 bytes
+- address: 0x3320c
+  name: button_task
+  kind: function
+  class: kernel
+  module: null
+  evidence: the name string 'BUTTON' and the entry pointer 0x3320d that xTaskCreateStatic
+    at 0x33348 was given
 - address: 0x33368
   name: vasistas_send_duration
   kind: function
@@ -815,6 +830,13 @@ symbols:
   kind: function
   class: logline
   evidence: the only line 0x33fe4 logs, wlog('chronometer_start') at 0x33fee
+- address: 0x34068
+  name: ble_task
+  kind: function
+  class: kernel
+  module: null
+  evidence: the name string 'BLE' and the entry pointer 0x34069 that xTaskCreateStatic
+    at 0x2e24e was given
 - address: 0x340f8
   name: WPP_CMD_GET_LUMINOSITY_LEVEL
   kind: function
@@ -1493,6 +1515,13 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x27100: command ''account_secret'', run slot (+4)'
+- address: 0x3b6f8
+  name: acquistion_task
+  kind: function
+  class: kernel
+  module: acq
+  evidence: the name string 'acquistion_task' and the entry pointer 0x3b6f9 that
+    xTaskCreate at 0x3b8f4 was given
 - address: 0x3b80c
   name: acq_warn_buffer_queue_is_full
   kind: function
@@ -2089,6 +2118,13 @@ symbols:
   kind: function
   class: logline
   evidence: the only line 0x42a0c logs, wlog('[BODY_TEMP][info] Stop') at 0x42a14
+- address: 0x42b7c
+  name: body_temp_task
+  kind: function
+  class: kernel
+  module: body_temp
+  evidence: the name string 'body_temp_task' and the entry pointer 0x42b7d that
+    xTaskCreate at 0x42b20 was given
 - address: 0x42d2c
   name: shell_cmd_body_temperature__1
   kind: function
@@ -2175,6 +2211,13 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x27160: command ''bq25180'', run slot (+4)'
+- address: 0x43e04
+  name: bq25180_task
+  kind: function
+  class: kernel
+  module: bq25180
+  evidence: the name string 'BQ25180' and the entry pointer 0x43e05 that xTaskCreate
+    at 0x43bfa was given
 - address: 0x43fcc
   name: shell_help_calibration
   kind: function
@@ -2586,11 +2629,12 @@ symbols:
   evidence: Delta_XY_Hi decode, negated. The caller at 0x2ee64 passes NULL for delta_y
     and 0x979d8 stores through it; machine.resc patches the sim.
 - address: 0x492d0
-  name: digital_crown_starting_calib
+  name: crown_cal_task
   kind: function
-  class: logline
-  evidence: the only line 0x492d0 logs, wlog('[DIGITAL CROWN] Starting calib') at
-    0x492e0
+  class: kernel
+  module: null
+  evidence: the name string 'crown cal' and the entry pointer 0x492d1 that xTaskCreate
+    at 0x49648 was given
 - address: 0x4943c
   name: crown_probe
   kind: function
@@ -4151,10 +4195,12 @@ symbols:
   evidence: the only line 0x50fd4 logs, wlog('[wlog] log store failed queue full')
     at 0x51020
 - address: 0x51084
-  name: dropped_log
+  name: wlog_task
   kind: function
-  class: logline
-  evidence: the only line 0x51084 logs, wlog('Dropped log !') at 0x510c0
+  class: kernel
+  module: null
+  evidence: the name string 'wlog' and the entry pointer 0x51085 that xTaskCreateStatic
+    at 0x50f16 was given
 - address: 0x51170
   name: loc_stored_locale
   kind: function
@@ -4276,6 +4322,13 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x5345c (shell_cmd_max8617x) calls 0x52958; 48 bytes
+- address: 0x52b1c
+  name: max_led_config_task
+  kind: function
+  class: kernel
+  module: max8617x
+  evidence: the name string 'max_LED_config' and the entry pointer 0x52b1d that
+    xTaskCreate at 0x5275c was given
 - address: 0x52c3c
   name: shell_cmd_max8617x__2
   kind: function
@@ -4713,11 +4766,12 @@ symbols:
   evidence: 'the only line 0x57ff0 logs, wlog(''raw_data_flash_usage_get: used_byte=%u,
     filled_sector=%u'') at 0x58084'
 - address: 0x5819c
-  name: error_no_oldest_rawdata_found
+  name: raw_task
   kind: function
-  class: logline
-  evidence: 'the only line 0x5819c logs, wlog(''error: no oldest rawdata found'')
-    at 0x58352'
+  class: kernel
+  module: null
+  evidence: the name string 'raw' and the entry pointer 0x5819d that xTaskCreate
+    at 0x57c2c was given
 - address: 0x587dc
   name: shell_help_raw_data
   kind: function
@@ -7219,10 +7273,12 @@ symbols:
   evidence: 'wpp_cmd_table row 0x27b8c: key 2451, label ''WPP_CMD_EVENTS_GET_V2'',
     CMD_EVENTS_GET_V2 in wpp/src/commands.rs'
 - address: 0x6ed34
-  name: ui_event_task
-  kind: label
-  class: prose
-  evidence: prio 2, created @0x30908163 us right before battery_task
+  name: wui_task
+  kind: function
+  class: kernel
+  module: null
+  evidence: the name string 'WUI' and the entry pointer 0x6ed35 that xTaskCreateStatic
+    at 0x6f106 was given
 - address: 0x6eed8
   name: wui_failed_to_push_event_0x
   kind: function
@@ -8201,6 +8257,13 @@ symbols:
   class: helper
   evidence: only 0x66e04 (vib_ignore_vib_request_current_vib) calls 0x7ef38; 168
     bytes
+- address: 0x7f86c
+  name: temperature_task
+  kind: function
+  class: kernel
+  module: null
+  evidence: the name string 'temperature_task' and the entry pointer 0x7f86d that
+    xTaskCreate at 0x7fa6a was given
 - address: 0x7fa08
   name: temperature_acquisition_already_ongoing
   kind: function
@@ -8720,6 +8783,13 @@ symbols:
   class: logline
   evidence: the only line 0x83c64 logs, wlog('Failed to start lapping test task')
     at 0x83d58
+- address: 0x83de8
+  name: lapping_task
+  kind: function
+  class: kernel
+  module: null
+  evidence: the name string 'LAPPING' and the entry pointer 0x83de9 that xTaskCreate
+    at 0x83d4e was given
 - address: 0x83ee0
   name: refresh_lapping_test
   kind: function
@@ -9500,18 +9570,42 @@ symbols:
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x14 is wui_view_sport_elevation's
+- address: 0x8a384
+  name: wui_default_on_enter
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the 10 view vtables that share this hold a body whose whole work is
+    the "[WUI] %s %s" line with the fixed slot literal "on_enter", so it announces
+    the slot and does nothing else
 - address: 0x8a398
   name: on_enter_sport_pause
   kind: function
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x04 is wui_view_sport_pause's
+- address: 0x8a3b0
+  name: wui_default_on_foreground
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the 11 view vtables that share this hold a body whose whole work is
+    the "[WUI] %s %s" line with the fixed slot literal "on_foreground", so it announces
+    the slot and does nothing else
 - address: 0x8a3c4
   name: on_foreground_sport_pause
   kind: function
   class: wuiview
   module: wui
   evidence: the only view vtable holding this at +0x0c is wui_view_sport_pause's
+- address: 0x8a3dc
+  name: wui_default_on_exit
+  kind: function
+  class: wuiview
+  module: wui
+  evidence: the 12 view vtables that share this hold a body whose whole work is
+    the "[WUI] %s %s" line with the fixed slot literal "on_exit", so it announces
+    the slot and does nothing else
 - address: 0x8a3f0
   name: refresh_sport_congrats
   kind: function
@@ -11257,6 +11351,13 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x6e3e8 (WPP_CMD_STORED_MEASURE_SIGNAL_DEL) calls 0x97ae0; 10 bytes
+- address: 0x97b16
+  name: ecg_task
+  kind: function
+  class: kernel
+  module: ecg
+  evidence: the name string 'ECG' and the entry pointer 0x97b17 that xTaskCreate
+    at 0x4b112 was given
 - address: 0x97b44
   name: sd_clock_hfclk_request_copy_0x97b44
   kind: function
@@ -17459,15 +17560,74 @@ symbols:
 - address: 0x20014d40
   name: main_task_tcb
   kind: global
-  class: hand
-  module: misc
-  evidence: static TCB of the "main" task, not a pointer to one; declared opaque
-- address: 0x2001753c
-  name: battery_sem_handle
+  class: kernel
+  module: null
+  evidence: the task control block the call was handed; the name string 'main' and
+    the entry pointer 0x2e1d9 that xTaskCreateStatic at 0x2ec78 was given
+- address: 0x20014da0
+  name: main_task_stack
   kind: global
-  class: hand
-  module: bat
-  evidence: NULL until battery_task's first run
+  class: kernel
+  module: null
+  evidence: the stack buffer the call was handed; the name string 'main' and the
+    entry pointer 0x2e1d9 that xTaskCreateStatic at 0x2ec78 was given
+- address: 0x20015ee0
+  name: ble_task_tcb
+  kind: global
+  class: kernel
+  module: null
+  evidence: the task control block the call was handed; the name string 'BLE' and
+    the entry pointer 0x34069 that xTaskCreateStatic at 0x2e24e was given
+- address: 0x20015f40
+  name: ble_task_stack
+  kind: global
+  class: kernel
+  module: null
+  evidence: the stack buffer the call was handed; the name string 'BLE' and the
+    entry pointer 0x34069 that xTaskCreateStatic at 0x2e24e was given
+- address: 0x2001715c
+  name: contrast_sem_static
+  kind: global
+  class: kernel
+  module: contrast
+  evidence: the static object handed to xQueueGenericCreateStatic at 0x303ba with
+    queue type 3; the name's module is the creating function is the contrast_task
+    body
+- address: 0x200171b0
+  name: contrast_task_tcb
+  kind: global
+  class: kernel
+  module: null
+  evidence: the task control block the call was handed; the name string 'CONTRAST'
+    and the entry pointer 0x303a1 that xTaskCreateStatic at 0x305ba was given
+- address: 0x20017210
+  name: contrast_task_stack
+  kind: global
+  class: kernel
+  module: null
+  evidence: the stack buffer the call was handed; the name string 'CONTRAST' and
+    the entry pointer 0x303a1 that xTaskCreateStatic at 0x305ba was given
+- address: 0x2001753c
+  name: contrast_sem
+  kind: global
+  class: kernel
+  module: contrast
+  evidence: 'the handle word: xQueueGenericCreateStatic at 0x303ba with queue type
+    3; the name''s module is the creating function is the contrast_task body'
+- address: 0x200178c4
+  name: button_task_tcb
+  kind: global
+  class: kernel
+  module: null
+  evidence: the task control block the call was handed; the name string 'BUTTON'
+    and the entry pointer 0x3320d that xTaskCreateStatic at 0x33348 was given
+- address: 0x20017924
+  name: button_task_stack
+  kind: global
+  class: kernel
+  module: null
+  evidence: the stack buffer the call was handed; the name string 'BUTTON' and the
+    entry pointer 0x3320d that xTaskCreateStatic at 0x33348 was given
 - address: 0x20017c84
   name: nrf_nvic_state
   kind: global
@@ -17488,6 +17648,21 @@ symbols:
   kind: global
   class: hand
   module: misc
+- address: 0x2001833c
+  name: adxl367_mutex_static
+  kind: global
+  class: kernel
+  module: adxl367
+  evidence: the static object handed to xQueueCreateMutexStatic at 0x3bdda with
+    queue type 1; the name's module is the module of the functions that read the
+    handle word
+- address: 0x20018390
+  name: adxl367_mutex
+  kind: global
+  class: kernel
+  module: adxl367
+  evidence: 'the handle word: xQueueCreateMutexStatic at 0x3bdda with queue type
+    1; the name''s module is the module of the functions that read the handle word'
 - address: 0x20018b58
   name: battery_state
   kind: global
@@ -17497,14 +17672,169 @@ symbols:
     word is 0x40348 and the `ldrh r3, [r5, #8]` at 0x40284 is the gate that decides
     whether the cached reading is usable or a fresh conversion is needed. Only that
     field is identified.'
+- address: 0x20018eb0
+  name: body_temp_task_handle
+  kind: global
+  class: kernel
+  module: body_temp
+  evidence: the word the created task's handle is stored in; the name string 'body_temp_task'
+    and the entry pointer 0x42b7d that xTaskCreate at 0x42b20 was given
+- address: 0x20018ebc
+  name: body_temp_mutex_static
+  kind: global
+  class: kernel
+  module: body_temp
+  evidence: the static object handed to xQueueCreateMutexStatic at 0x43398 with
+    queue type 1; the name's module is the module of the functions that read the
+    handle word
+- address: 0x20018f10
+  name: body_temp_mutex
+  kind: global
+  class: kernel
+  module: body_temp
+  evidence: 'the handle word: xQueueCreateMutexStatic at 0x43398 with queue type
+    1; the name''s module is the module of the functions that read the handle word'
+- address: 0x20018f24
+  name: bq25180_task_handle
+  kind: global
+  class: kernel
+  module: bq25180
+  evidence: the word the created task's handle is stored in; the name string 'BQ25180'
+    and the entry pointer 0x43e05 that xTaskCreate at 0x43bfa was given
+- address: 0x2001924c
+  name: ecg_mutex_static
+  kind: global
+  class: kernel
+  module: ecg
+  evidence: the static object handed to xQueueCreateMutexStatic at 0x4a736 with
+    queue type 1; the name's module is the name of the creating function, ecg_module_init
+- address: 0x200192a0
+  name: ecg_queue_static
+  kind: global
+  class: kernel
+  module: ecg
+  evidence: the static object handed to xQueueGenericCreateStatic at 0x4a726 with
+    queue type the block does not establish; the name's module is the module of
+    the functions that read the handle word
+- address: 0x200192f4
+  name: ecg_queue
+  kind: global
+  class: kernel
+  module: ecg
+  evidence: 'the handle word: xQueueGenericCreateStatic at 0x4a726 with queue type
+    the block does not establish; the name''s module is the module of the functions
+    that read the handle word'
+- address: 0x2001a830
+  name: wlog_task_tcb
+  kind: global
+  class: kernel
+  module: null
+  evidence: the task control block the call was handed; the name string 'wlog' and
+    the entry pointer 0x51085 that xTaskCreateStatic at 0x50f16 was given
+- address: 0x2001a890
+  name: wlog_task_stack
+  kind: global
+  class: kernel
+  module: null
+  evidence: the stack buffer the call was handed; the name string 'wlog' and the
+    entry pointer 0x51085 that xTaskCreateStatic at 0x50f16 was given
+- address: 0x2001ac90
+  name: wlog_queue_static
+  kind: global
+  class: kernel
+  module: wlog
+  evidence: the static object handed to xQueueGenericCreateStatic at 0x50efa with
+    queue type the block does not establish; the name's module is the name of the
+    creating function, wlog_init
+- address: 0x2001ace4
+  name: wlog_mutex_static
+  kind: global
+  class: kernel
+  module: wlog
+  evidence: the static object handed to xQueueCreateMutexStatic at 0x50ed0 with
+    queue type 1; the name's module is the name of the creating function, wlog_init
+- address: 0x2001ad38
+  name: debug_dump_mutex_static
+  kind: global
+  class: kernel
+  module: debug_dump
+  evidence: the static object handed to xQueueCreateMutexStatic at 0x50ec6 with
+    queue type 1; the name's module is the module of the functions that read the
+    handle word
+- address: 0x2001ad8c
+  name: debug_dump_mutex
+  kind: global
+  class: kernel
+  module: debug_dump
+  evidence: 'the handle word: xQueueCreateMutexStatic at 0x50ec6 with queue type
+    1; the name''s module is the module of the functions that read the handle word'
+- address: 0x2001adac
+  name: local_notifications_mutex_static
+  kind: global
+  class: kernel
+  module: local_notifications
+  evidence: the static object handed to xQueueCreateMutexStatic at 0x516e0 with
+    queue type 1; the name's module is the module of the functions that read the
+    handle word
+- address: 0x2001ae00
+  name: local_notifications_mutex
+  kind: global
+  class: kernel
+  module: local_notifications
+  evidence: 'the handle word: xQueueCreateMutexStatic at 0x516e0 with queue type
+    1; the name''s module is the module of the functions that read the handle word'
+- address: 0x2001bd5c
+  name: max8617x_queue_static
+  kind: global
+  class: kernel
+  module: max8617x
+  evidence: the static object handed to xQueueGenericCreateStatic at 0x52742 with
+    queue type the block does not establish; the name's module is the module of
+    the functions that read the handle word
+- address: 0x2001bdb0
+  name: max8617x_queue
+  kind: global
+  class: kernel
+  module: max8617x
+  evidence: 'the handle word: xQueueGenericCreateStatic at 0x52742 with queue type
+    the block does not establish; the name''s module is the module of the functions
+    that read the handle word'
+- address: 0x2001bdb4
+  name: max_led_config_task_handle
+  kind: global
+  class: kernel
+  module: max8617x
+  evidence: the word the created task's handle is stored in; the name string 'max_LED_config'
+    and the entry pointer 0x52b1d that xTaskCreate at 0x5275c was given
+- address: 0x2001bdb8
+  name: max8617x_sem_static
+  kind: global
+  class: kernel
+  module: max8617x
+  evidence: the static object handed to xQueueGenericCreateStatic at 0x52716 with
+    queue type 3; the name's module is the module of the functions that read the
+    handle word
+- address: 0x2001be0c
+  name: max8617x_sem
+  kind: global
+  class: kernel
+  module: max8617x
+  evidence: 'the handle word: xQueueGenericCreateStatic at 0x52716 with queue type
+    3; the name''s module is the module of the functions that read the handle word'
+- address: 0x2001d280
+  name: sensors_sync_mutex_static
+  kind: global
+  class: kernel
+  module: sensors_sync_mutex
+  evidence: the static object handed to xQueueCreateMutexStatic at 0x59706 with
+    queue type 1; the name's module is the name of the creating function, sensors_sync_mutex_init
 - address: 0x2001d2d4
   name: sensors_sync_mutex
   kind: global
-  class: hand
-  module: sensors_sync
-  evidence: the handle xQueueCreateMutexStatic leaves at 0x59700, taken with portMAX_DELAY
-    by sensors_sync_lock and given by sensors_sync_unlock; its static queue storage
-    is the 0x54 bytes at 0x2001d280.
+  class: kernel
+  module: sensors_sync_mutex
+  evidence: 'the handle word: xQueueCreateMutexStatic at 0x59706 with queue type
+    1; the name''s module is the name of the creating function, sensors_sync_mutex_init'
 - address: 0x2001d2d8
   name: sensors_sync_slots
   kind: global
@@ -17540,6 +17870,43 @@ symbols:
     (0x598ba) and bit 1 by the push''s overrun path (0x59776). The consumer hands
     a non-zero value to 0x31410 and zeroes it (0x59646..0x59650), which is the "[TRACKER_ALGO]
     Exception detected (0x2)" line.'
+- address: 0x2001fe34
+  name: spo2_mutex_static
+  kind: global
+  class: kernel
+  module: spo2
+  evidence: the static object handed to xQueueCreateMutexStatic at 0x61982 with
+    queue type 1; the name's module is the module of the functions that read the
+    handle word
+- address: 0x2001fe90
+  name: spo2_mutex
+  kind: global
+  class: kernel
+  module: spo2
+  evidence: 'the handle word: xQueueCreateMutexStatic at 0x61982 with queue type
+    1; the name''s module is the module of the functions that read the handle word'
+- address: 0x2001ff40
+  name: hr_event_mutex_static
+  kind: global
+  class: kernel
+  module: hr_event
+  evidence: the static object handed to xQueueCreateMutexStatic at 0x6239c with
+    queue type 1; the name's module is the module the creating function logs under
+- address: 0x2001ff94
+  name: hr_measure_mutex_static
+  kind: global
+  class: kernel
+  module: hr_measure
+  evidence: the static object handed to xQueueCreateMutexStatic at 0x62390 with
+    queue type 1; the name's module is the module of the functions that read the
+    handle word
+- address: 0x2001fff0
+  name: hr_measure_mutex
+  kind: global
+  class: kernel
+  module: hr_measure
+  evidence: 'the handle word: xQueueCreateMutexStatic at 0x62390 with queue type
+    1; the name''s module is the module of the functions that read the handle word'
 - address: 0x2001fff4
   name: hr_screen_data
   kind: global
@@ -17550,6 +17917,28 @@ symbols:
   kind: global
   class: hand
   module: hr
+- address: 0x20020038
+  name: hr_event_mutex
+  kind: global
+  class: kernel
+  module: hr_event
+  evidence: 'the handle word: xQueueCreateMutexStatic at 0x6239c with queue type
+    1; the name''s module is the module the creating function logs under'
+- address: 0x20020118
+  name: ppg_dbt_mutex_static
+  kind: global
+  class: kernel
+  module: ppg_dbt
+  evidence: the static object handed to xQueueCreateMutexStatic at 0x638fa with
+    queue type 1; the name's module is the module of the functions that read the
+    handle word
+- address: 0x2002016c
+  name: ppg_dbt_mutex
+  kind: global
+  class: kernel
+  module: ppg_dbt
+  evidence: 'the handle word: xQueueCreateMutexStatic at 0x638fa with queue type
+    1; the name''s module is the module of the functions that read the handle word'
 - address: 0x20020aa0
   name: wpp_rx_frame_buffer
   kind: global
@@ -17558,11 +17947,62 @@ symbols:
   evidence: the 200-byte reassembly buffer installed at 0x6c16c together with the
     capacity 200 at ctx+64; FIRMWARE.md's frame-length section is the evidence,
     including that the next global begins exactly 200 bytes later
+- address: 0x20020bec
+  name: wui_task_tcb
+  kind: global
+  class: kernel
+  module: null
+  evidence: the task control block the call was handed; the name string 'WUI' and
+    the entry pointer 0x6ed35 that xTaskCreateStatic at 0x6f106 was given
+- address: 0x20020c4c
+  name: wui_task_stack
+  kind: global
+  class: kernel
+  module: null
+  evidence: the stack buffer the call was handed; the name string 'WUI' and the
+    entry pointer 0x6ed35 that xTaskCreateStatic at 0x6f106 was given
+- address: 0x2002184c
+  name: wui_sem_static
+  kind: global
+  class: kernel
+  module: wui
+  evidence: the static object handed to xQueueGenericCreateStatic at 0x6f0e6 with
+    queue type 3; the name's module is the only task the creating function creates
+    is wui_task
+- address: 0x200218a0
+  name: wui_queue_static
+  kind: global
+  class: kernel
+  module: wui
+  evidence: the static object handed to xQueueGenericCreateStatic at 0x6f0d2 with
+    queue type the block does not establish; the name's module is the only task
+    the creating function creates is wui_task
+- address: 0x200218f4
+  name: wui_task_handle
+  kind: global
+  class: kernel
+  module: null
+  evidence: the word the created task's handle is stored in; the name string 'WUI'
+    and the entry pointer 0x6ed35 that xTaskCreateStatic at 0x6f106 was given
+- address: 0x20021900
+  name: idle_task_handle
+  kind: global
+  class: kernel
+  module: null
+  evidence: the word the created task's handle is stored in; the name string 'IDLE'
+    and the entry pointer 0x27da1 that xTaskCreateStatic at 0x73032 was given
 - address: 0x20021920
   name: xTickCount
   kind: global
   class: hand
   module: freertos
+- address: 0x20021a2c
+  name: adc_mutex_static
+  kind: global
+  class: kernel
+  module: adc
+  evidence: the static object handed to xQueueCreateMutexStatic at 0x7e30c with
+    queue type 1; the name's module is the module the creating function logs under
 - address: 0x20021b5c
   name: step_motor_pending
   kind: global
@@ -17576,6 +18016,22 @@ symbols:
   kind: label
   class: prose
   evidence: RAM; 1-byte SPI response buffer for the OLED poll
+- address: 0x200252d6
+  name: ecg_queue_storage
+  kind: global
+  class: kernel
+  module: ecg
+  evidence: the static object handed to xQueueGenericCreateStatic at 0x4a726 with
+    queue type the block does not establish; the name's module is the module of
+    the functions that read the handle word
+- address: 0x200254d0
+  name: wlog_queue_storage
+  kind: global
+  class: kernel
+  module: wlog
+  evidence: the static object handed to xQueueGenericCreateStatic at 0x50efa with
+    queue type the block does not establish; the name's module is the name of the
+    creating function, wlog_init
 - address: 0x20026bd2
   name: step_motor_lock_depth
   kind: global
@@ -17583,3 +18039,11 @@ symbols:
   module: hands
   evidence: the step_motor_lock nesting counter; the position save waits for it
     to reach zero
+- address: 0x200270bc
+  name: wui_queue_storage
+  kind: global
+  class: kernel
+  module: wui
+  evidence: the static object handed to xQueueGenericCreateStatic at 0x6f0d2 with
+    queue type the block does not establish; the name's module is the only task
+    the creating function creates is wui_task

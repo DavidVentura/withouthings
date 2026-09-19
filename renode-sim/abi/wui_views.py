@@ -45,6 +45,11 @@ ROLE_STRINGS = {0xE6C09: ("on_enter", 0x04),
 
 CLASS = "wuiview"
 
+# The wlog entry points a slot body can tail-call, from abi/autonames.py's
+# WLOG_FMT_REG; only the four that take the format in r0 can be tail-called
+# with the format already in place.
+WLOG_ENTRIES = frozenset((0x8F460, 0x8F494, 0x9B1C8, 0x5E7A8))
+
 # The slots a caller fixes the role of, from struct wui_view_vtable. A slot no
 # caller fixes gets no name, here or in the header.
 SLOT_ROLE = {0x00: "on_event", 0x04: "on_enter", 0x08: "on_exit",
@@ -58,6 +63,22 @@ class Image(object):
 
     def word(self, at):
         return struct.unpack_from("<I", self.data, at - APP_BASE)[0]
+
+    def half(self, at):
+        return struct.unpack_from("<H", self.data, at - APP_BASE)[0]
+
+    def text(self, at):
+        """A string that may hold the whitespace a log line ends with."""
+        if not APP_BASE <= at < APP_END:
+            return None
+        end = self.data.find(b"\0", at - APP_BASE)
+        if end < 0:
+            return None
+        raw = self.data[at - APP_BASE:end]
+        if not raw or any(not (32 <= c < 127 or c in (9, 10, 13))
+                          for c in bytearray(raw)):
+            return None
+        return raw.decode()
 
     def string(self, at):
         if not APP_BASE <= at < APP_END:
@@ -107,12 +128,8 @@ def identifier(name, taken):
     return base if taken[base] == 1 else "%s_%d" % (base, taken[base])
 
 
-def defaults(img, found):
-    """slot -> (address, how many vtables share it, how many of those log it).
-
-    An implementation is a default when the vtables that share it are the
-    plurality at that slot and it logs the slot's own role string.
-    """
+def slot_counts(img, found):
+    """slot -> {implementation: how many view vtables hold it there}."""
     by_slot = {}
     for _, vtable, _ in found:
         for i in range(16):
@@ -121,6 +138,16 @@ def defaults(img, found):
                 break
             by_slot.setdefault(4 * i, {})
             by_slot[4 * i][value & ~1] = by_slot[4 * i].get(value & ~1, 0) + 1
+    return by_slot
+
+
+def defaults(img, found):
+    """slot -> (address, how many vtables share it, how many of those log it).
+
+    An implementation is a default when the vtables that share it are the
+    plurality at that slot and it logs the slot's own role string.
+    """
+    by_slot = slot_counts(img, found)
     out = {}
     for target, (role, slot) in ROLE_STRINGS.items():
         counts = by_slot.get(slot, {})
@@ -131,6 +158,87 @@ def defaults(img, found):
             continue
         out[role] = (addr, n, sum(counts.values()))
     return out
+
+
+def thumb_literal(img, at):
+    """The pool word a 16-bit `ldr rN,[pc,#imm8]` at `at` loads, and its register."""
+    half = img.half(at)
+    if half >> 11 != 0b01001:
+        return None, None
+    pool = ((at + 4) & ~3) + (half & 0xFF) * 4
+    return (half >> 8) & 7, img.word(pool)
+
+
+def thumb_wide_branch(img, at):
+    """The target of a 32-bit `b.w` or `bl` at `at`, or None if it is neither."""
+    first, second = img.half(at), img.half(at + 2)
+    if first >> 11 != 0b11110 or (second >> 14) != 0b10 or not (second >> 12) & 1:
+        return None
+    sign = (first >> 10) & 1
+    j1, j2 = (second >> 13) & 1, (second >> 11) & 1
+    offset = (sign << 24) | ((1 - (j1 ^ sign)) << 23) | ((1 - (j2 ^ sign)) << 22) \
+        | ((first & 0x3FF) << 12) | ((second & 0x7FF) << 1)
+    if sign:
+        offset -= 1 << 25
+    return at + 4 + offset
+
+
+def log_only_slots(img, found, held):
+    """Implementations whose whole body is the slot's own log line.
+
+    The four bodies `defaults` finds are the plurality at their slot, and the
+    image has a second family of the same thing: four instructions that load
+    the "[WUI] %s %s" format and a fixed role literal, put the view's own name
+    string in the third argument and tail-call the logger. A body like that
+    does nothing but announce the slot it is in, so it is a default for that
+    slot whichever vtables hold it, and the role it prints is the firmware's
+    own word for which slot that is. Only a body several vtables share is
+    named, because one vtable holding it makes it that view's own.
+    """
+    counts = {}
+    for slot_impls in slot_counts(img, found).values():
+        for addr, n in slot_impls.items():
+            counts[addr] = counts.get(addr, 0) + n
+    out, taken = [], {}
+    for addr in sorted(counts):
+        if counts[addr] < 2 or addr in held:
+            continue
+        role = logged_role(img, addr)
+        if role is None:
+            continue
+        name = "wui_default_" + role
+        taken[name] = taken.get(name, 0) + 1
+        if taken[name] > 1:
+            name = "%s_%d" % (name, taken[name] - 1)
+        out.append((addr, name, role, counts[addr]))
+    return out
+
+
+def logged_role(img, addr):
+    """The role a four-instruction log-only slot body prints, or None.
+
+        ldr r2, [r0, #4]        the view descriptor's own name string
+        ldr r1, [pc, #..]       the role literal, which is the slot
+        ldr r0, [pc, #..]       the "[WUI] %s %s" format
+        b.w  wlog
+
+    Anything else in the body means the body does something, and a body that
+    does something is not a default.
+    """
+    if img.half(addr) != 0x6842:          # ldr r2, [r0, #4]
+        return None
+    reg1, role_word = thumb_literal(img, addr + 2)
+    reg0, fmt_word = thumb_literal(img, addr + 4)
+    if reg1 != 1 or reg0 != 0:
+        return None
+    if thumb_wide_branch(img, addr + 6) not in WLOG_ENTRIES:
+        return None
+    if role_word not in ROLE_STRINGS:
+        return None
+    fmt = img.text(fmt_word)
+    if fmt is None or fmt.count("%s") != 2:
+        return None
+    return ROLE_STRINGS[role_word][0]
 
 
 def slot_owners(img, found, named):
@@ -182,7 +290,17 @@ def rows(img, held=frozenset()):
                     "kind": "function", "class": CLASS, "module": "wui",
                     "evidence": "the only view vtable holding this at +0x%02x"
                                 " is %s's" % (slot, view)})
-    for role, (addr, n, total) in sorted(defaults(img, found).items()):
+    plurality = defaults(img, found)
+    for addr, name, role, n in log_only_slots(
+            img, found, held | {a for a, _, _ in plurality.values()}):
+        out.append({"address": addr, "name": name,
+                    "kind": "function", "class": CLASS, "module": "wui",
+                    "evidence": "the %d view vtables that share this hold a body"
+                                " whose whole work is the \"[WUI] %%s %%s\" line"
+                                " with the fixed slot literal \"%s\", so it"
+                                " announces the slot and does nothing else"
+                                % (n, role)})
+    for role, (addr, n, total) in sorted(plurality.items()):
         out.append({"address": addr, "name": "wui_view_default_" + role,
                     "kind": "function", "class": CLASS, "module": "wui",
                     "evidence": "the %d of %d view vtables that share this slot"

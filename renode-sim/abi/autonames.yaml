@@ -12,7 +12,7 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {bleevt: 28, extlib: 0, helper: 389, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1788, modules: 184, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2238, wlog_sites_edges: 112, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
+  counts: {bleevt: 28, extlib: 0, helper: 389, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1788, modules: 184, prototypes_derived: 12, shell: 156, shell_table_rows: 79, string: 20, svc: 79, syscall: 9, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114}
   known_addresses: {agree: 194, disagree: 0}
 
 functions:

@@ -97,10 +97,14 @@ HAND = "hand"
 # bodies: the call-graph rule finds an encoder by its first two writes, while
 # abi/protocol.py carries the type id, the byte count and the field layout it
 # recovered, so where both reach an address the measured one keeps it.
+# `kernel` sits with the other readings a table or a call carries: a FreeRTOS
+# create is handed the name and the object, so the argument is the evidence.
+# `runtime` is a line a run printed, which is weaker than every static reading
+# of the same address but stronger than a nickname off the call graph.
 RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "vendor", "string",
         "wppcmd", "codec", "wppobj", "wuiview", "vasistas", "store", "sensor",
-        "trace", "shell", "logtag", "logcb", "bleevt", "logline", "helper",
-        "prose"]
+        "kernel", "trace", "runtime", "shell", "logtag", "logcb", "bleevt",
+        "logline", "helper", "prose"]
 
 
 # The derivations that settle an address rather than read it: a byte verdict
@@ -112,7 +116,7 @@ RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "vendor", "string",
 # the repo is standing on.
 SETTLED = ("libc", "libm", "extlib", "svc", "syscall", "string",
            "wppcmd", "shell", "bleevt", "codec", "wuiview", "store",
-           "vasistas", "sensor", "trace")
+           "vasistas", "sensor", "trace", "kernel")
 
 
 def outranks(klass, other):
