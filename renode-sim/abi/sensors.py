@@ -295,6 +295,22 @@ ROWS = [
                   " 0x2a022), so the two rates are one per sample and one per"
                   " second of accelerometer at 25 Hz"),
 
+    dict(address=0x79974, name="ewma_pair_step", kind="function",
+         reads=[0x3D75C290, 0x3F70A3D7, 0x3CF5C280, 0x3F7851EC],
+         rate="19 calls in the 1200 s schedule run, one for each of"
+              " motion_window_decide and two hooks after it, and none in any"
+              " of the other eight scenarios",
+         evidence="two first-order low passes over one input, at two time"
+                  " constants. It reads x from +0x8a0 and writes"
+                  " 0.06 * x + 0.94 * a back over a at +0x898 and"
+                  " 0.03 * x + 0.97 * b back over b at +0x89c, with the four"
+                  " coefficients as literal pool words 0x3d75c290, 0x3f70a3d7,"
+                  " 0x3cf5c280 and 0x3f7851ec (0x79974..0x799b4). Each pair"
+                  " sums to one, which is what makes each of them an"
+                  " exponential moving average and not a gain, and the two"
+                  " alphas differ by a factor of two, which is what makes the"
+                  " pair a fast and a slow estimate of the same quantity"),
+
     # --- the beat detector under ppg_heart_beats_algo_step ------------------
     dict(address=0x9EE42, name="ring_index_advance", kind="function",
          evidence="(i + step + capacity) modulo capacity, with the `blt` at"
