@@ -5,7 +5,7 @@ a=cpu.GetRegisterUnsafe(0).RawValue
 s=''
 i=0
 while i<160:
-    b=sysbus.ReadByte(a+i)
+    b=cpu.GetMachine().SystemBus.ReadByte(a+i)
     if b==0: break
     s+=chr(b); i+=1
 print 'L494 '+s
@@ -15,7 +15,7 @@ a=cpu.GetRegisterUnsafe(0).RawValue
 s=''
 i=0
 while i<160:
-    b=sysbus.ReadByte(a+i)
+    b=cpu.GetMachine().SystemBus.ReadByte(a+i)
     if b==0: break
     s+=chr(b); i+=1
 print 'L460 '+s
@@ -25,7 +25,7 @@ a=cpu.GetRegisterUnsafe(2).RawValue
 s=''
 i=0
 while i<160:
-    b=sysbus.ReadByte(a+i)
+    b=cpu.GetMachine().SystemBus.ReadByte(a+i)
     if b==0: break
     s+=chr(b); i+=1
 print 'L50c '+s
@@ -35,7 +35,7 @@ a=cpu.GetRegisterUnsafe(0).RawValue
 s=''
 i=0
 while i<160:
-    b=sysbus.ReadByte(a+i)
+    b=cpu.GetMachine().SystemBus.ReadByte(a+i)
     if b==0: break
     s+=chr(b); i+=1
 print 'L9b1 '+s
@@ -45,7 +45,7 @@ a=cpu.GetRegisterUnsafe(0).RawValue
 s=''
 i=0
 while i<160:
-    b=sysbus.ReadByte(a+i)
+    b=cpu.GetMachine().SystemBus.ReadByte(a+i)
     if b==0: break
     s+=chr(b); i+=1
 print 'L5e7 '+s
