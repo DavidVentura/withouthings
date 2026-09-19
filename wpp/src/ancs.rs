@@ -120,7 +120,7 @@ impl ControlPoint {
         let id = rest
             .get(..4)
             .ok_or(AncsError::Truncated)
-            .map(|b| NotificationId(u32::from_be_bytes([b[0], b[1], b[2], b[3]])))?;
+            .map(|b| NotificationId(u32::from_le_bytes([b[0], b[1], b[2], b[3]])))?;
 
         let mut queries = Vec::new();
         let mut rest = &rest[4..];
@@ -199,7 +199,7 @@ pub fn announcement(kind: EventKind, notification: &Notification) -> [u8; 8] {
         EventKind::Added => 1,
         EventKind::Removed => 0,
     };
-    let id = notification.id.0.to_be_bytes();
+    let id = notification.id.0.to_le_bytes();
     [
         kind as u8,
         EVENT_FLAGS,
@@ -285,20 +285,20 @@ mod tests {
     }
 
     #[test]
-    fn an_announcement_is_eight_bytes_with_a_big_endian_id() {
+    fn an_announcement_is_eight_bytes_with_a_little_endian_id() {
         assert_eq!(
             announcement(EventKind::Added, &notification()),
-            [0, 0x02, 4, 1, 0x01, 0x02, 0x03, 0x04]
+            [0, 0x02, 4, 1, 0x04, 0x03, 0x02, 0x01]
         );
         assert_eq!(
             announcement(EventKind::Removed, &notification()),
-            [2, 0x02, 4, 0, 0x01, 0x02, 0x03, 0x04]
+            [2, 0x02, 4, 0, 0x04, 0x03, 0x02, 0x01]
         );
     }
 
     #[test]
-    fn the_id_changes_byte_order_between_the_request_and_the_reply() {
-        let write = [0x00, 0x01, 0x02, 0x03, 0x04, 0x00, 0x01, 0x10, 0x00];
+    fn the_id_keeps_its_byte_order_between_the_request_and_the_reply() {
+        let write = [0x00, 0x04, 0x03, 0x02, 0x01, 0x00, 0x01, 0x10, 0x00];
         let request = ControlPoint::parse(&write).unwrap();
         assert_eq!(request.id, NotificationId(0x0102_0304));
         assert_eq!(

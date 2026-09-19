@@ -207,17 +207,17 @@ fn a_notification_is_announced_then_served_when_the_watch_asks() {
     assert_eq!(announced[0].len(), 8);
     assert_eq!(announced[0][0], 0, "added");
     assert_eq!(announced[0][2], 4, "social");
-    assert_eq!(&announced[0][4..], &id.to_be_bytes(), "id, big-endian");
+    assert_eq!(&announced[0][4..], &id.to_le_bytes(), "id, little-endian");
 
     let mut write = vec![0x00];
-    write.extend_from_slice(&id.to_be_bytes());
+    write.extend_from_slice(&id.to_le_bytes());
     write.extend_from_slice(&[0x01, 0x20, 0x00]);
     service.on_ancs_write(write, 128).unwrap();
 
     let attributes = recorder.attributes.lock().unwrap().clone();
     assert_eq!(attributes.len(), 1, "short enough for one fragment");
     let response = &attributes[0];
-    assert_eq!(&response[1..5], &id.to_le_bytes(), "id, little-endian back");
+    assert_eq!(&response[1..5], &id.to_le_bytes(), "id, little-endian");
     assert_eq!(
         &response[5..],
         &[0x01, 0x05, 0x00, b'T', b'i', b't', b'l', b'e']
@@ -230,7 +230,7 @@ fn a_notification_is_announced_then_served_when_the_watch_asks() {
 
     recorder.attributes.lock().unwrap().clear();
     let mut write = vec![0x00];
-    write.extend_from_slice(&id.to_be_bytes());
+    write.extend_from_slice(&id.to_le_bytes());
     write.push(0x01);
     write.extend_from_slice(&[0x20, 0x00]);
     service.on_ancs_write(write, 128).unwrap();
@@ -257,7 +257,7 @@ fn a_long_message_is_split_across_data_source_fragments() {
         NotificationCategory::Other,
     );
     let mut write = vec![0x00];
-    write.extend_from_slice(&id.to_be_bytes());
+    write.extend_from_slice(&id.to_le_bytes());
     write.extend_from_slice(&[0x03, 0xff, 0x00]);
     service.on_ancs_write(write, 20).unwrap();
 
