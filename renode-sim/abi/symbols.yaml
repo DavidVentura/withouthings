@@ -559,6 +559,16 @@ symbols:
   class: provenance
   evidence: 0x2f860 reaches auto_burst_flag_20024f3d through its own literal pool
     and no other named global; the body checks through it
+- address: 0x2f8b4
+  name: auto_burst_request_all
+  kind: function
+  class: hand
+  module: auto_burst
+  evidence: 'the firmware names it: it prints `[AUTO_BURST] AUTO measures request
+    ALL` (0x2f8ce) and then arms the passive schedule, handing 0x9227e the four
+    periodic_task_table rows at 0x27d7c, 0x27d88, 0x27d70 and 0x27d64, each behind
+    its own feature test. It is a one-shot: the byte at 0x20024f3d gates the whole
+    body and is set at the end (0x2f8b8, 0x2f908)'
 - address: 0x2f930
   name: auto_burst_flag_20024f3d_update
   kind: function
@@ -9027,10 +9037,13 @@ symbols:
   evidence: 'wpp_cmd_table row 0x27898: key 2458, label ''WPP_CMD_INACTIVITY_CFG_GET'',
     CMD_INACTIVITY_CFG_GET in wpp/src/commands.rs'
 - address: 0x5f044
+  name: tracker_live_counters_reset
   kind: function
-  class: bymodule
-  module: TRACKER
-  evidence: 0x5f044 reaches only tracker_struct_2001fce0
+  class: hand
+  module: tracker_live
+  evidence: memset(tracker_live_counters, 0, 0x38) and nothing else (0x5f044..0x5f04a),
+    which is what fixes the object's extent at fourteen words. Ran once in the tracker
+    scenario, on `tracker_live init`
 - address: 0x5f054
   name: day_goal_reached_times__1
   kind: function
@@ -9038,22 +9051,73 @@ symbols:
   module: DAY
   evidence: only 0x92ba4 (day_goal_reached_times) calls 0x5f054; 4 bytes
 - address: 0x5f05c
+  name: tracker_live_counters_reset_wrap
   kind: function
-  class: bymodule
-  module: BOOT
-  evidence: 0x5f05c reaches only rambkp_block
+  class: wrapper
+  evidence: 0x5f05c is 6 instructions with one call, to tracker_live_counters_reset,
+    and returns
+- address: 0x5f070
+  name: tracker_live_counters_reset_keep_anchor
+  kind: function
+  class: hand
+  module: tracker_live
+  evidence: 'tracker_live_counters_reset with the anchor saved across it: it reads
+    +0x18 into r5 (0x5f074), calls the reset and writes r5 back (0x5f080). The one
+    field a reset keeps is what makes +0x18 the accumulator''s position in the store
+    rather than a counter'
+- address: 0x5f094
+  name: tracker_live_init
+  kind: function
+  class: hand
+  module: tracker_live
+  evidence: calls tracker_live_counters_reset (0x5f0ae) after zeroing a 0x1c-byte
+    record on the stack, and is what main_task enters at 0x2e6f0 and the shell's
+    `tracker_live init` runs; in the tracker scenario it ran exactly once, at that
+    command, and the watch printed [TRACKER][INIT][DEFAULT], [SWAP] and [END]
+- address: 0x5f27c
+  name: tracker_live_steps_total_get
+  kind: function
+  class: hand
+  module: tracker_live
+  evidence: 'steps_certain + steps_unknown + tracker_live_steps_minute + steps_delta
+    (0x5f292..0x5f2a2), the same sum the [TRACKER_LIVE][STEPS] line prints as `total`.
+    Two readers name it: the shell''s `tracker_live data` prints its return as `certain
+    steps` and CMD_WAM_DISPLAYED_INFO_GET puts it in WamDailyActivities.steps (0x6cc18,
+    the first of the object''s five words). In the tracker scenario it ran once
+    per `tracker_live data`, first of the command''s four getters, in the order
+    the four lines print'
+- address: 0x5f2b4
+  name: tracker_live_goal_check
+  kind: function
+  class: hand
+  module: tracker_live
+  evidence: 'the step goal, as the firmware''s own [TRACKER_LIVE][GOAL] lines name
+    it: tracker_live_steps_total_get divided by 0x6089c''s goal gives a percentage
+    byte (0x5f2b8..0x5f2cc) which is compared against, and only ever raised above,
+    the byte at 0x20002800+0xd7 in the retained block (0x5f2ce). Past the goal it
+    reads dblib entry 4, and either prints `days in a row counter already updated
+    today` or writes a new one and prints `Goal Reached: %u/%u steps %lu days in
+    a row`. tracker_live_steps_add calls it on every delta (0x5f3ee)'
 - address: 0x5f398
-  name: tracker_struct_2001fce0_unknown_4_get
+  name: tracker_live_steps_unknown_get
   kind: function
-  class: accessor
-  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_4 (pool
-    word 0x5f3a0 = 0x2001fce0) and a return
+  class: hand
+  module: tracker_live
+  supersedes: tracker_struct_2001fce0_unknown_4_get
+  evidence: loads tracker_live_counters at 0x2001fce0, whose groups abi/include/withings/sensors_sync.h
+    establishes from the four [TRACKER_LIVE] log lines and the two arms of tracker_live_counters_add_record
+    +4. CMD_UNKNOWN_DATA_GET (0x6cc50) sends its return as the one word of the UnknownSteps
+    object, and the shell prints it as `unknown steps`; it ran second of the four
+    getters in the tracker scenario
 - address: 0x5f3a4
-  name: tracker_struct_2001fce0_get
+  name: tracker_live_steps_certain_get
   kind: function
-  class: accessor
-  evidence: the body is one ldr through tracker_struct_2001fce0 (pool word 0x5f3ac
-    = 0x2001fce0) and a return
+  class: hand
+  module: tracker_live
+  supersedes: tracker_struct_2001fce0_get
+  evidence: loads tracker_live_counters at 0x2001fce0, whose groups abi/include/withings/sensors_sync.h
+    establishes from the four [TRACKER_LIVE] log lines and the two arms of tracker_live_counters_add_record
+    +0
 - address: 0x5f3b0
   name: alti_struct_2001fcbc_get_1
   kind: function
@@ -9061,25 +9125,33 @@ symbols:
   evidence: 0x5f3b0 reaches alti_struct_2001fcbc through its own literal pool and
     no other named global; the body gets through it
 - address: 0x5f3bc
-  name: tracker_struct_2001fce0_unknown_24_get
+  name: tracker_live_anchor_get
   kind: function
-  class: accessor
-  module: WPP
-  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_24 (pool
-    word 0x5f3c4 = 0x2001fce0) and a return
+  class: hand
+  module: tracker_live
+  supersedes: tracker_struct_2001fce0_unknown_24_get
+  evidence: loads tracker_live_counters at 0x2001fce0, whose groups abi/include/withings/sensors_sync.h
+    establishes from the four [TRACKER_LIVE] log lines and the two arms of tracker_live_counters_add_record
+    +0x18, the accumulator's anchor
 - address: 0x5f3c8
-  name: tracker_live_steps_confirmed_unknown_min_delta
+  name: tracker_live_steps_add
   kind: function
-  class: logline
-  module: TRACKER_LIVE
-  evidence: the only line 0x5f3c8 logs, wlog('[TRACKER_LIVE][STEPS] confirmed:%d,
-    unknown:%d, min:%d, delta:%d, total:%d') at 0x5f3ea
+  class: hand
+  module: tracker_live
+  supersedes: tracker_live_steps_confirmed_unknown_min_delta
+  evidence: stores its argument as the counters' steps_delta (0x5f3d0), prints the
+    [TRACKER_LIVE][STEPS] line over the whole group and then calls tracker_live_goal_check
+    (0x5f3ee). The derived name is the line's field list, which says what the body
+    prints and not what it does
 - address: 0x5f408
-  name: tracker_struct_2001fce0_unknown_8_get
+  name: tracker_live_steps_delta_get
   kind: function
-  class: accessor
-  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_8 (pool
-    word 0x5f410 = 0x2001fce0) and a return
+  class: hand
+  module: tracker_live
+  supersedes: tracker_struct_2001fce0_unknown_8_get
+  evidence: loads tracker_live_counters at 0x2001fce0, whose groups abi/include/withings/sensors_sync.h
+    establishes from the four [TRACKER_LIVE] log lines and the two arms of tracker_live_counters_add_record
+    +8
 - address: 0x5f414
   name: alti_struct_2001fcbc_set
   kind: function
@@ -9093,64 +9165,90 @@ symbols:
   evidence: 0x5f420 reaches alti_struct_2001fcbc through its own literal pool and
     no other named global; the body gets through it
 - address: 0x5f42c
-  name: tracker_struct_2001fce0_get_1
+  name: tracker_live_calories_total_get
   kind: function
-  class: provenance
-  evidence: 0x5f42c reaches tracker_struct_2001fce0 through its own literal pool
-    and no other named global; the body gets through it
+  class: hand
+  module: tracker_live
+  supersedes: tracker_struct_2001fce0_get_1
+  evidence: calories_current + tracker_live_calories_minute + calories_certain +
+    calories_unknown + calories_delta (0x5f42c..0x5f440), which is the [TRACKER_LIVE][CCALO]
+    line's `total` term for term. CMD_WAM_DISPLAYED_INFO_GET puts it in WamDailyActivities.calories
+    (0x6cc12) and the shell prints it as `ccalo`; fourth of the four getters
 - address: 0x5f44c
-  name: tracker_struct_2001fce0_unknown_28_get
+  name: tracker_live_calories_certain_get
   kind: function
-  class: accessor
-  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_28 (pool
-    word 0x5f454 = 0x2001fce0) and a return
+  class: hand
+  module: tracker_live
+  supersedes: tracker_struct_2001fce0_unknown_28_get
+  evidence: loads tracker_live_counters at 0x2001fce0, whose groups abi/include/withings/sensors_sync.h
+    establishes from the four [TRACKER_LIVE] log lines and the two arms of tracker_live_counters_add_record
+    +0x1c
 - address: 0x5f458
-  name: tracker_struct_2001fce0_get_2
+  name: tracker_live_counters_get
   kind: function
   class: provenance
   module: WPP
-  evidence: 0x5f458 reaches tracker_struct_2001fce0 through its own literal pool
-    and no other named global; the body gets through it
+  evidence: 0x5f458 reaches tracker_live_counters through its own literal pool and
+    no other named global; the body gets through it
 - address: 0x5f468
-  name: tracker_struct_2001fce0_unknown_32_get
+  name: tracker_live_calories_unknown_get
   kind: function
-  class: accessor
-  module: WPP
-  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_32 (pool
-    word 0x5f470 = 0x2001fce0) and a return
+  class: hand
+  module: tracker_live
+  supersedes: tracker_struct_2001fce0_unknown_32_get
+  evidence: loads tracker_live_counters at 0x2001fce0, whose groups abi/include/withings/sensors_sync.h
+    establishes from the four [TRACKER_LIVE] log lines and the two arms of tracker_live_counters_add_record
+    +0x20
 - address: 0x5f480
-  name: tracker_live_ccalo_current_min_certain_unknown
+  name: tracker_live_calories_add
   kind: function
-  class: logline
-  module: TRACKER_LIVE
-  evidence: the only line 0x5f480 logs, wlog('[TRACKER_LIVE][CCALO] current:%d,
-    min:%d, certain:%d, unknown:%d, delta:%d, total:%d') at 0x5f4b0
+  class: hand
+  module: tracker_live
+  supersedes: tracker_live_ccalo_current_min_certain_unknown
+  evidence: divides its argument by ten, stores that as calories_delta (0x5f48e..0x5f494)
+    and prints the [TRACKER_LIVE][CCALO] line over the group; the divide is the
+    only place the caller's unit and the counter's differ by a decade
+- address: 0x5f4cc
+  name: tracker_live_distance_total_get
+  kind: function
+  class: hand
+  module: tracker_live
+  evidence: distance_certain + distance_unknown + distance_delta plus the minute's
+    own distance, which 0x5d808 makes out of tracker_live_steps_minute's neighbour
+    (0x5f4e2..0x5f4f4). CMD_WAM_DISPLAYED_INFO_GET puts it in WamDailyActivities.distance
+    (0x6cc1e) and the shell prints it as `distance`; third of the four getters in
+    the run
 - address: 0x5f508
-  name: tracker_struct_2001fce0_unknown_12_get
+  name: tracker_live_distance_certain_get
   kind: function
-  class: accessor
-  module: WPP
-  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_12 (pool
-    word 0x5f510 = 0x2001fce0) and a return
+  class: hand
+  module: tracker_live
+  supersedes: tracker_struct_2001fce0_unknown_12_get
+  evidence: loads tracker_live_counters at 0x2001fce0, whose groups abi/include/withings/sensors_sync.h
+    establishes from the four [TRACKER_LIVE] log lines and the two arms of tracker_live_counters_add_record
+    +0xc
 - address: 0x5f514
-  name: tracker_struct_2001fce0_unknown_16_get
+  name: tracker_live_distance_unknown_get
   kind: function
-  class: accessor
-  module: WPP
-  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_16 (pool
-    word 0x5f51c = 0x2001fce0) and a return
+  class: hand
+  module: tracker_live
+  supersedes: tracker_struct_2001fce0_unknown_16_get
+  evidence: loads tracker_live_counters at 0x2001fce0, whose groups abi/include/withings/sensors_sync.h
+    establishes from the four [TRACKER_LIVE] log lines and the two arms of tracker_live_counters_add_record
+    +0x10
 - address: 0x5f520
   kind: function
   class: bymodule
   module: ALTI
   evidence: 0x5f520 reaches only alti_struct_2001fcbc
 - address: 0x5f52c
-  name: tracker_live_dist_current_min_unknown_delta
+  name: tracker_live_distance_add
   kind: function
-  class: logline
-  module: TRACKER_LIVE
-  evidence: the only line 0x5f52c logs, wlog('[TRACKER_LIVE][DIST] current:%d, min:%d,
-    unknown:%d, delta:%d, total:%d') at 0x5f568
+  class: hand
+  module: tracker_live
+  supersedes: tracker_live_dist_current_min_unknown_delta
+  evidence: stores its argument as distance_delta (0x5f534) and prints the [TRACKER_LIVE][DIST]
+    line over the group
 - address: 0x5f584
   name: adxl367_mutex_update_1__1
   kind: function
@@ -9166,19 +9264,33 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x3bd10 (sensors_sync_push_accel) calls 0x5f5c8; 240 bytes
+- address: 0x5f6d4
+  name: tracker_live_ascent_total_get
+  kind: function
+  class: hand
+  module: tracker_live
+  evidence: 'ascent_certain + ascent_delta + the minute''s own ascent at 0x2001fca8
+    (0x5f6d4..0x5f6e0), the sum the [TRACKER_LIVE][STAIRS] line prints as `total`.
+    No WPP command carries it: WamDailyActivities'' ascent and descent words are
+    written as zero (0x6cc0c)'
 - address: 0x5f6ec
-  name: tracker_struct_2001fce0_unknown_48_get
+  name: tracker_live_ascent_unknown_get
   kind: function
-  class: accessor
-  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_48 (pool
-    word 0x5f6f4 = 0x2001fce0) and a return
+  class: hand
+  module: tracker_live
+  supersedes: tracker_struct_2001fce0_unknown_48_get
+  evidence: loads tracker_live_counters at 0x2001fce0, whose groups abi/include/withings/sensors_sync.h
+    establishes from the four [TRACKER_LIVE] log lines and the two arms of tracker_live_counters_add_record
+    +0x30, the one counter no log line prints
 - address: 0x5f6f8
-  name: tracker_struct_2001fce0_unknown_44_get
+  name: tracker_live_ascent_certain_get
   kind: function
-  class: accessor
-  module: WPP
-  evidence: the body is one ldr through tracker_struct_2001fce0_unknown_44 (pool
-    word 0x5f700 = 0x2001fce0) and a return
+  class: hand
+  module: tracker_live
+  supersedes: tracker_struct_2001fce0_unknown_44_get
+  evidence: loads tracker_live_counters at 0x2001fce0, whose groups abi/include/withings/sensors_sync.h
+    establishes from the four [TRACKER_LIVE] log lines and the two arms of tracker_live_counters_add_record
+    +0x2c
 - address: 0x5f704
   name: tracker_live_struct_2001fca8_get
   kind: function
@@ -9186,12 +9298,13 @@ symbols:
   evidence: the body is one ldr through tracker_live_struct_2001fca8 (pool word
     0x5f70c = 0x2001fca8) and a return
 - address: 0x5f710
-  name: tracker_live_stairs_confirmed_min_delta_total
+  name: tracker_live_ascent_add
   kind: function
-  class: logline
-  module: TRACKER_LIVE
-  evidence: the only line 0x5f710 logs, wlog('[TRACKER_LIVE][STAIRS] confirmed:%d,
-    min:%d, delta:%d, total:%d') at 0x5f72c
+  class: hand
+  module: tracker_live
+  supersedes: tracker_live_stairs_confirmed_min_delta_total
+  evidence: stores its argument as ascent_delta (0x5f716) and prints the [TRACKER_LIVE][STAIRS]
+    line over the group
 - address: 0x5f748
   name: alti_failed_to_take_pressure_measure__1
   kind: function
@@ -9211,11 +9324,20 @@ symbols:
   evidence: 0x5f7a4 reaches alti_struct_2001fcbc through its own literal pool and
     no other named global; the body checks through it
 - address: 0x5f970
-  name: tracker_struct_2001fce0_update
+  name: tracker_live_counters_add_record
   kind: function
-  class: provenance
-  evidence: 0x5f970 reaches tracker_struct_2001fce0 through its own literal pool
-    and no other named global; the body updates through it
+  class: hand
+  module: tracker_live
+  supersedes: tracker_struct_2001fce0_update
+  evidence: 'the one writer of the certain and unknown counters. It switches on
+    the record''s six-bit type (0x5f972) and takes only the activity-shaped ones
+    -- 0, 1, 2 and 37 on the contiguous-minute path at 0x5fabe and 8, sleep, at
+    0x5f9e8 -- and both arms accumulate the same four fields of struct vasistas_activity:
+    steps (bits 55..63), distance (75..90), calories (128..140) and ascent (160..173).
+    Which quadruple an arm writes is the whole certain-versus-unknown split. A record
+    whose timestamp is not the anchor''s minute plus one sends it walking the store
+    for the records in between (0x5f9a4..0x5f9be), and the gap path moves the anchor
+    and clears the four unknown counters at once (0x5f9d0..0x5f9dc)'
 - address: 0x5fb00
   name: on_enter_goal__1
   kind: function
@@ -9251,6 +9373,16 @@ symbols:
   class: provenance
   evidence: 0x5fda8 reaches tracker_word_2001fd18 through its own literal pool and
     no other named global; the body updates through it
+- address: 0x5fdb8
+  name: tracker_live_sleep_replay
+  kind: function
+  class: hand
+  module: tracker_live
+  evidence: a vasistas walk from the timestamp it is handed (0x9c67c at 0x5fdf6,
+    0x9c6ae stepping at 0x5fe28) that adds a minute per record through 0x5fce8 and
+    routes only type 8, VASISTAS_TYPE_SLEEP, to 0x5fda8 (0x5fe3c). It runs under
+    tracker_live_init and nowhere else, which is how the `certain sleep` the shell
+    prints survives a reboot
 - address: 0x5fe70
   name: refresh_sleep_duration__1
   kind: function
@@ -13233,10 +13365,13 @@ symbols:
   module: SENSORS_SYNC
   evidence: only 0x7cde4 (spo2_multi_algo_step__4) calls 0x7d110; 152 bytes
 - address: 0x7d4b4
+  name: algo_enabled_set
   kind: function
-  class: bymodule
-  module: ALGO_MANAGER
-  evidence: '0x7d4b4 every caller is a body this rule placed in ALGO_MANAGER: 0x4ec0c'
+  class: hand
+  module: algo_manager
+  evidence: '`strb r1, [r3, r0]` into the same byte array at 0x200270c6 that algo_enabled
+    (0x7d4c0) reads with `ldrb r0, [r3, r0]`, indexed by the registry id the same
+    way, so it is that reader''s writer and nothing else'
 - address: 0x7d4c0
   name: algo_enabled
   kind: function
@@ -16520,6 +16655,16 @@ symbols:
   class: helper
   module: WPP
   evidence: only 0x44798 (wpp_clock_calib_move_motor) calls 0x9227a; 4 bytes
+- address: 0x9227e
+  name: periodic_task_request
+  kind: function
+  class: hand
+  module: auto_burst
+  evidence: its only callers are auto_burst_request_all's four arms, each handing
+    it a periodic_task_table row. It reads the uptime (0x3a85c) against the first
+    word of the row's state block (0x92286) and calls 0x946d2 with 0 when the deadline
+    has already passed before tail-calling 0x946e0 with 1, so it is the arm-now-or-schedule
+    the table's sweep reads
 - address: 0x922b0
   kind: function
   class: bymodule
@@ -20811,6 +20956,12 @@ symbols:
   module: BODY_TEMP
   evidence: 'every caller of 0x9c1c2 is in BODY_TEMP: body_temp_struct_20018e68_set_3,
     body_temp_task'
+- address: 0x9c1f0
+  name: auto_burst_request_all__1
+  kind: function
+  class: helper
+  module: AUTO_BURST
+  evidence: only 0x2f8b4 (auto_burst_request_all) calls 0x9c1f0; 4 bytes
 - address: 0x9c1f4
   name: algo_manager_publish_results__1__1
   kind: function
@@ -24911,7 +25062,18 @@ symbols:
     segment''s head. feature is 0..4 in all four trees, so the ensemble reads five
     features. Which algorithm scores it is not settled: the descriptor that holds
     the four roots also holds 0.025, 0.5, 1.0 and 1.0 as floats and a RAM pointer,
-    and it is only ever addressed after the startup copy.'
+    and it is only ever addressed after the startup copy. What a leaf is is settled
+    by the values: they run from -19 to -1024 with many distinct ones among the
+    77 rows, so a leaf is a score out of 1024 and not a class index, and the ensemble
+    is four regressors averaged into [0, 1]. The descriptor holds 0.5 beside the
+    roots, which is the threshold that makes the answer binary, and its RAM pointer
+    is sleep_wake_algo_ctx, so the two classes are asleep and awake. What each of
+    the five feature indices is stays refused: the window half that assembles them
+    (0xa15b4, three delay lines through delay_i32_push_pop, two vec_i32_mean over
+    them and a sum) was hooked in the tracker scenario and never entered, because
+    the shell''s `tracker_algo sleep_wake 200` drives only the per-sample half --
+    0xa1420 and acc_iir4_i16_step 200 times each and nothing else in the region
+    -- and no scenario yet runs the algorithm''s window.'
 - address: 0xb47f0
   name: adxl367_mode_names
   kind: table
@@ -27029,14 +27191,6 @@ symbols:
   size: 1
   evidence: every function that loads or stores it logs under [VAS_STORE_BKP] (2
     read it, 1 write it)
-- address: 0x200028d6
-  name: tracker_flag_200028d6
-  kind: global
-  class: global
-  module: TRACKER
-  size: 2
-  evidence: every function that loads or stores it logs under [TRACKER] (0 read
-    it, 3 write it)
 - address: 0x200028d8
   name: respiratory_scan_word_200028d8
   kind: global
@@ -32429,13 +32583,14 @@ symbols:
   evidence: every function that loads or stores it logs under [TRACKER_LIVE] (4
     read it, 0 write it)
 - address: 0x2001fcb8
-  name: tracker_live_word_2001fcb8
+  name: tracker_live_calories_minute
   kind: global
-  class: global
-  module: TRACKER_LIVE
-  size: 4
-  evidence: every function that loads or stores it logs under [TRACKER_LIVE] (3
-    read it, 0 write it)
+  class: hand
+  module: tracker_live
+  supersedes: tracker_live_word_2001fcb8
+  evidence: the `min` of the [TRACKER_LIVE][CCALO] line (0x5f486, printed second
+    of six) and a term of tracker_live_calories_total_get's sum (0x5f432), the same
+    position tracker_live_steps_minute holds for steps
 - address: 0x2001fcbc
   name: alti_struct_2001fcbc
   kind: global
@@ -32445,29 +32600,27 @@ symbols:
   evidence: every function that loads or stores it logs under [ALTI] (4 read it,
     0 write it)
 - address: 0x2001fcc0
-  name: tracker_live_word_2001fcc0
+  name: tracker_live_steps_minute
   kind: global
-  class: global
-  module: TRACKER_LIVE
-  size: 4
-  evidence: every function that loads or stores it logs under [TRACKER_LIVE] (5
-    read it, 0 write it)
+  class: hand
+  module: tracker_live
+  supersedes: tracker_live_word_2001fcc0
+  evidence: the `min` of the [TRACKER_LIVE][STEPS] line (0x5f3d4, printed third
+    of five) and the third term of tracker_live_steps_total_get's sum (0x5f29e),
+    so it is the step count of the minute the counters have not folded in yet
 - address: 0x2001fce0
-  name: tracker_struct_2001fce0
+  name: tracker_live_counters
   kind: global
-  class: global
-  module: TRACKER
+  class: hand
+  module: tracker_live
   size: 56
-  evidence: every function that loads or stores it logs under [TRACKER] (3 read
-    it, 2 write it)
-- address: 0x2001fce4
-  name: tracker_word_2001fce4
-  kind: global
-  class: global
-  module: TRACKER
-  size: 4
-  evidence: every function that loads or stores it logs under [TRACKER] (3 read
-    it, 2 write it)
+  supersedes: tracker_struct_2001fce0
+  evidence: 14 words, and 0x38 is the length tracker_live_counters_reset memsets
+    (0x5f046), so the object's extent is its own. The four [TRACKER_LIVE] lines
+    print its groups in field order and tracker_live_counters_add_record accumulates
+    exactly four bit fields of a struct vasistas_activity into them -- steps, distance,
+    calories and ascent -- which is what says which group is which; sensors_sync.h
+    carries the fields
 - address: 0x2001fce8
   name: tracker_live_word_2001fce8
   kind: global
@@ -32476,22 +32629,6 @@ symbols:
   size: 4
   evidence: stored in the same straight line as wlog('[TRACKER_LIVE][STEPS] confirmed:%d,
     unknown:%d, min:%d, delta:%d, total:%d\n') at 0x5f3ea
-- address: 0x2001fcec
-  name: tracker_word_2001fcec
-  kind: global
-  class: global
-  module: TRACKER
-  size: 4
-  evidence: it is +0xc of the struct at 0x2001fce0, which only [TRACKER] writes
-    the base word of; TRACKER/TRACKER_LIVE/WPP also reach it
-- address: 0x2001fcf0
-  name: tracker_word_2001fcf0
-  kind: global
-  class: global
-  module: TRACKER
-  size: 4
-  evidence: it is +0x10 of the struct at 0x2001fce0, which only [TRACKER] writes
-    the base word of; TRACKER/TRACKER_LIVE/WPP also reach it
 - address: 0x2001fcf4
   name: tracker_live_word_2001fcf4
   kind: global
@@ -32500,30 +32637,6 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [TRACKER_LIVE] (2
     read it, 1 write it)
-- address: 0x2001fcf8
-  name: tracker_word_2001fcf8
-  kind: global
-  class: global
-  module: TRACKER
-  size: 4
-  evidence: it is +0x18 of the struct at 0x2001fce0, which only [TRACKER] writes
-    the base word of; TRACKER/WPP also reach it
-- address: 0x2001fcfc
-  name: tracker_word_2001fcfc
-  kind: global
-  class: global
-  module: TRACKER
-  size: 4
-  evidence: it is +0x1c of the struct at 0x2001fce0, which only [TRACKER] writes
-    the base word of; TRACKER/WPP also reach it
-- address: 0x2001fd00
-  name: tracker_word_2001fd00
-  kind: global
-  class: global
-  module: TRACKER
-  size: 4
-  evidence: it is +0x20 of the struct at 0x2001fce0, which only [TRACKER] writes
-    the base word of; TRACKER/WPP also reach it
 - address: 0x2001fd04
   name: tracker_live_word_2001fd04
   kind: global
@@ -32532,30 +32645,6 @@ symbols:
   size: 4
   evidence: stored in the same straight line as wlog('[TRACKER_LIVE][CCALO] current:%d,
     min:%d, certain:%d, unknown:%d, delta:%d, total:%d\n') at 0x5f4b0
-- address: 0x2001fd08
-  name: tracker_word_2001fd08
-  kind: global
-  class: global
-  module: TRACKER
-  size: 4
-  evidence: it is +0x28 of the struct at 0x2001fce0, which only [TRACKER] writes
-    the base word of; TRACKER/TRACKER_LIVE/WPP also reach it
-- address: 0x2001fd0c
-  name: tracker_word_2001fd0c
-  kind: global
-  class: global
-  module: TRACKER
-  size: 4
-  evidence: it is +0x2c of the struct at 0x2001fce0, which only [TRACKER] writes
-    the base word of; TRACKER/TRACKER_LIVE/WPP also reach it
-- address: 0x2001fd10
-  name: tracker_word_2001fd10
-  kind: global
-  class: global
-  module: TRACKER
-  size: 4
-  evidence: every function that loads or stores it logs under [TRACKER] (3 read
-    it, 2 write it)
 - address: 0x2001fd14
   name: tracker_live_word_2001fd14
   kind: global

@@ -422,9 +422,16 @@ extern struct algo_entry algo_table[18];
    greater than the row's own and inside that tree's node count, so every
    segment closes on itself exactly at the next segment's head. feature is
    0..4 in all four trees, so the ensemble reads five features. Which
-   algorithm scores it is not settled: the descriptor that holds the four
-   roots also holds 0.025, 0.5, 1.0 and 1.0 as floats and a RAM pointer, and
-   it is only ever addressed after the startup copy.
+   algorithm scores it is settled by that descriptor: the four roots sit at
+   0x20007134..0x20007140 in the RAM initialiser image, and the words beside
+   them are 0.025, 0.5, 1.0, 1.0 and a pointer to sleep_wake_algo_ctx, which
+   is the object the shell hands the sleep/wake step. A leaf's value runs
+   from -19 to -1024 with many distinct values among the 77 rows, so a leaf
+   is a score out of 1024 and not a class index: the ensemble is four
+   regressors averaged into [0, 1] and 0.5 is the threshold that makes the
+   answer binary, asleep against awake. Which per-window statistic each of
+   the five feature indices is stays open; the body that assembles them is
+   0xa15b4 and no scenario has run it.
    */
 extern struct algo_tree_node algo_tree_table[77];
 

@@ -12,8 +12,8 @@ meta:
   softdevice_headers: s140 7.2.0 (nRF5 SDK 17.1.0)
   toolchain: arm-gnu-toolchain-13.2.Rel1 (abi/refbuild.sh)
   libc_toolchain: arm-gnu-toolchain-13.2.Rel1 (newlib 4.3.0.20230120), multilib thumb/v7e-m+fp/hard
-  counts: {accessor: 31, bleevt: 28, bymodule: 148, bymodule_contested: 18, extlib: 0, helper: 689, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1821, modules: 179, prototypes_derived: 36, provenance: 493, provenance_body_call_sites_disagree_or_say_nothing: 643, provenance_body_field: 10, provenance_body_global: 30, provenance_body_literal: 97, provenance_body_more_than_one_named_global_in_its_own_pool: 117, provenance_body_no_named_global_in_its_own_pool: 1328, provenance_body_param: 107, provenance_body_reaches_one_global_and_dereferences_none_of_it: 45, provenance_body_the_displacement_names_no_declared_field: 9, provenance_body_the_offset_it_accesses_names_no_declared_field: 9, provenance_body_unknown: 927, provenance_leaf_call_sites_disagree_or_say_nothing: 403, provenance_leaf_field: 5, provenance_leaf_global: 24, provenance_leaf_literal: 51, provenance_leaf_more_than_one_named_global_in_its_own_pool: 22, provenance_leaf_no_named_global_in_its_own_pool: 863, provenance_leaf_param: 39, provenance_leaf_reaches_one_global_and_dereferences_none_of_it: 19, provenance_leaf_the_displacement_names_no_declared_field: 4, provenance_leaf_the_offset_it_accesses_names_no_declared_field: 9, provenance_leaf_unknown: 571, provenance_named_check: 112, provenance_named_copy: 3, provenance_named_get: 115, provenance_named_on_no_verb_: 16, provenance_named_set: 120, provenance_named_update: 129, role: 4, shared: 22, shell: 156, shell_table_rows: 79, slot: 134, string: 20, svc: 79, syscall: 9, vector: 54, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114, wrapper: 37}
-  known_addresses: {agree: 194, disagree: 0}
+  counts: {accessor: 21, bleevt: 28, bymodule: 145, bymodule_contested: 17, extlib: 0, helper: 690, libc: 120, libc_refused: 2, libm: 37, libm_refused: 0, logcb: 3, logline: 310, logtag: 9, module_functions: 1821, modules: 179, prototypes_derived: 36, provenance: 491, provenance_body_call_sites_disagree_or_say_nothing: 639, provenance_body_field: 10, provenance_body_global: 30, provenance_body_literal: 97, provenance_body_more_than_one_named_global_in_its_own_pool: 111, provenance_body_no_named_global_in_its_own_pool: 1327, provenance_body_param: 109, provenance_body_reaches_one_global_and_dereferences_none_of_it: 45, provenance_body_the_displacement_names_no_declared_field: 9, provenance_body_the_offset_it_accesses_names_no_declared_field: 8, provenance_body_unknown: 920, provenance_leaf_call_sites_disagree_or_say_nothing: 402, provenance_leaf_field: 5, provenance_leaf_global: 24, provenance_leaf_literal: 51, provenance_leaf_more_than_one_named_global_in_its_own_pool: 21, provenance_leaf_no_named_global_in_its_own_pool: 864, provenance_leaf_param: 40, provenance_leaf_reaches_one_global_and_dereferences_none_of_it: 18, provenance_leaf_the_displacement_names_no_declared_field: 4, provenance_leaf_the_offset_it_accesses_names_no_declared_field: 9, provenance_leaf_unknown: 569, provenance_named_check: 112, provenance_named_copy: 3, provenance_named_get: 114, provenance_named_on_no_verb_: 16, provenance_named_set: 120, provenance_named_update: 128, role: 4, shared: 22, shell: 156, shell_table_rows: 79, slot: 134, string: 20, svc: 79, syscall: 9, vector: 54, wlog_call_sites: 2359, wlog_sites: 2254, wlog_sites_edges: 96, wlog_string_arg_field: 45, wlog_string_arg_imm: 3, wlog_string_arg_pool: 2, wlog_string_arg_string: 182, wlog_string_arg_table: 10, wlog_string_arg_unknown: 74, wpp_table_rows: 156, wppcmd: 156, wppobj: 194, wppobj_crate_types: 368, wppobj_encode: 132, wppobj_image_types: 159, wppobj_length_mismatch: 0, wppobj_parse: 62, wppobj_size_checked: 114, wrapper: 38}
+  known_addresses: {agree: 194, disagree: 4}
 
 functions:
   - name: memchr
@@ -5004,45 +5004,24 @@ functions:
     evidence: "wpp_cmd_table row 0x27898: key 2458, label 'WPP_CMD_INACTIVITY_CFG_GET', CMD_INACTIVITY_CFG_GET in wpp/src/commands.rs"
     module: INACTIVITY_CONFIG
     also_named: [process_cmd_inactivity_cfg_get (string)]
-  - address: 0x5f044
-    class: bymodule
-    evidence: "0x5f044 reaches only tracker_struct_2001fce0"
-    module: TRACKER
   - name: day_goal_reached_times__1
     address: 0x5f054
     class: helper
     evidence: "only 0x92ba4 (day_goal_reached_times) calls 0x5f054; 4 bytes"
     module: DAY
-  - address: 0x5f05c
-    class: bymodule
-    evidence: "0x5f05c reaches only rambkp_block"
-    module: BOOT
-  - name: tracker_struct_2001fce0_unknown_4_get
-    address: 0x5f398
-    class: accessor
-    evidence: "the body is one ldr through tracker_struct_2001fce0_unknown_4 (pool word 0x5f3a0 = 0x2001fce0) and a return"
-  - name: tracker_struct_2001fce0_get
-    address: 0x5f3a4
-    class: accessor
-    evidence: "the body is one ldr through tracker_struct_2001fce0 (pool word 0x5f3ac = 0x2001fce0) and a return"
+  - name: tracker_live_counters_reset_wrap
+    address: 0x5f05c
+    class: wrapper
+    evidence: "0x5f05c is 6 instructions with one call, to tracker_live_counters_reset, and returns"
   - name: alti_struct_2001fcbc_get_1
     address: 0x5f3b0
     class: provenance
     evidence: "0x5f3b0 reaches alti_struct_2001fcbc through its own literal pool and no other named global; the body gets through it"
-  - name: tracker_struct_2001fce0_unknown_24_get
-    address: 0x5f3bc
-    class: accessor
-    evidence: "the body is one ldr through tracker_struct_2001fce0_unknown_24 (pool word 0x5f3c4 = 0x2001fce0) and a return"
-    module: WPP
   - name: tracker_live_steps_confirmed_unknown_min_delta
     address: 0x5f3c8
     class: logline
     evidence: "the only line 0x5f3c8 logs, wlog('[TRACKER_LIVE][STEPS] confirmed:%d, unknown:%d, min:%d, delta:%d, total:%d') at 0x5f3ea"
     module: TRACKER_LIVE
-  - name: tracker_struct_2001fce0_unknown_8_get
-    address: 0x5f408
-    class: accessor
-    evidence: "the body is one ldr through tracker_struct_2001fce0_unknown_8 (pool word 0x5f410 = 0x2001fce0) and a return"
   - name: alti_struct_2001fcbc_set
     address: 0x5f414
     class: provenance
@@ -5051,39 +5030,16 @@ functions:
     address: 0x5f420
     class: provenance
     evidence: "0x5f420 reaches alti_struct_2001fcbc through its own literal pool and no other named global; the body gets through it"
-  - name: tracker_struct_2001fce0_get_1
-    address: 0x5f42c
-    class: provenance
-    evidence: "0x5f42c reaches tracker_struct_2001fce0 through its own literal pool and no other named global; the body gets through it"
-  - name: tracker_struct_2001fce0_unknown_28_get
-    address: 0x5f44c
-    class: accessor
-    evidence: "the body is one ldr through tracker_struct_2001fce0_unknown_28 (pool word 0x5f454 = 0x2001fce0) and a return"
-  - name: tracker_struct_2001fce0_get_2
+  - name: tracker_live_counters_get
     address: 0x5f458
     class: provenance
-    evidence: "0x5f458 reaches tracker_struct_2001fce0 through its own literal pool and no other named global; the body gets through it"
-    module: WPP
-  - name: tracker_struct_2001fce0_unknown_32_get
-    address: 0x5f468
-    class: accessor
-    evidence: "the body is one ldr through tracker_struct_2001fce0_unknown_32 (pool word 0x5f470 = 0x2001fce0) and a return"
+    evidence: "0x5f458 reaches tracker_live_counters through its own literal pool and no other named global; the body gets through it"
     module: WPP
   - name: tracker_live_ccalo_current_min_certain_unknown
     address: 0x5f480
     class: logline
     evidence: "the only line 0x5f480 logs, wlog('[TRACKER_LIVE][CCALO] current:%d, min:%d, certain:%d, unknown:%d, delta:%d, total:%d') at 0x5f4b0"
     module: TRACKER_LIVE
-  - name: tracker_struct_2001fce0_unknown_12_get
-    address: 0x5f508
-    class: accessor
-    evidence: "the body is one ldr through tracker_struct_2001fce0_unknown_12 (pool word 0x5f510 = 0x2001fce0) and a return"
-    module: WPP
-  - name: tracker_struct_2001fce0_unknown_16_get
-    address: 0x5f514
-    class: accessor
-    evidence: "the body is one ldr through tracker_struct_2001fce0_unknown_16 (pool word 0x5f51c = 0x2001fce0) and a return"
-    module: WPP
   - address: 0x5f520
     class: bymodule
     evidence: "0x5f520 reaches only alti_struct_2001fcbc"
@@ -5105,15 +5061,6 @@ functions:
     address: 0x5f5c8
     class: helper
     evidence: "only 0x3bd10 (sensors_sync_push_accel) calls 0x5f5c8; 240 bytes"
-  - name: tracker_struct_2001fce0_unknown_48_get
-    address: 0x5f6ec
-    class: accessor
-    evidence: "the body is one ldr through tracker_struct_2001fce0_unknown_48 (pool word 0x5f6f4 = 0x2001fce0) and a return"
-  - name: tracker_struct_2001fce0_unknown_44_get
-    address: 0x5f6f8
-    class: accessor
-    evidence: "the body is one ldr through tracker_struct_2001fce0_unknown_44 (pool word 0x5f700 = 0x2001fce0) and a return"
-    module: WPP
   - name: tracker_live_struct_2001fca8_get
     address: 0x5f704
     class: accessor
@@ -5136,10 +5083,6 @@ functions:
     address: 0x5f7a4
     class: provenance
     evidence: "0x5f7a4 reaches alti_struct_2001fcbc through its own literal pool and no other named global; the body checks through it"
-  - name: tracker_struct_2001fce0_update
-    address: 0x5f970
-    class: provenance
-    evidence: "0x5f970 reaches tracker_struct_2001fce0 through its own literal pool and no other named global; the body updates through it"
   - name: on_enter_goal__1
     address: 0x5fb00
     class: helper
@@ -7029,10 +6972,6 @@ functions:
     class: helper
     evidence: "only 0x7cde4 (spo2_multi_algo_step__4) calls 0x7d110; 152 bytes"
     module: SENSORS_SYNC
-  - address: 0x7d4b4
-    class: bymodule
-    evidence: "0x7d4b4 every caller is a body this rule placed in ALGO_MANAGER: 0x4ec0c"
-    module: ALGO_MANAGER
   - name: ppg_hrv_algo_step__1
     address: 0x7d778
     class: helper
@@ -9858,6 +9797,11 @@ functions:
     class: shared
     evidence: "every caller of 0x9c1c2 is in BODY_TEMP: body_temp_struct_20018e68_set_3, body_temp_task"
     module: BODY_TEMP
+  - name: auto_burst_request_all__1
+    address: 0x9c1f0
+    class: helper
+    evidence: "only 0x2f8b4 (auto_burst_request_all) calls 0x9c1f0; 4 bytes"
+    module: AUTO_BURST
   - name: algo_manager_publish_results__1__1
     address: 0x9c1f4
     class: helper
@@ -11546,3 +11490,7 @@ agrees_with_hand_map:
   - {address: 0x9a878, name: wpp_obj_VasistasDbt_encode, class: wppobj}
   - {address: 0x9a918, name: wpp_obj_Null_encode_copy_0x9a918, class: wppobj}
 disagrees_with_hand_map:
+  - {address: 0x5f3c8, hand: tracker_live_steps_add, derived: tracker_live_steps_confirmed_unknown_min_delta, class: logline}
+  - {address: 0x5f480, hand: tracker_live_calories_add, derived: tracker_live_ccalo_current_min_certain_unknown, class: logline}
+  - {address: 0x5f52c, hand: tracker_live_distance_add, derived: tracker_live_dist_current_min_unknown_delta, class: logline}
+  - {address: 0x5f710, hand: tracker_live_ascent_add, derived: tracker_live_stairs_confirmed_min_delta_total, class: logline}

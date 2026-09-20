@@ -390,7 +390,17 @@ enum vasistas_type {
    0x65fb0; sent as WamVasistasHead, WamVasistasDuration, WamVasistasMetCal
    (or MetCalEarned), WamVasistasAwake, WamVasistasWalk/Run/Sleep and
    VasistasActiRecoV1V2 by the builders at 0x334bc, 0x335d4, 0x3366a and
-   0x33634. */
+   0x33634.
+
+   Four of the fields have a second, independent reader that agrees with the
+   encoder: tracker_live_counters_add_record (0x5f970) accumulates bits
+   55..63 into the live step counters, 75..90 into the distance ones, 128..140
+   into the calories ones and 160..173 into the ones the
+   [TRACKER_LIVE][STAIRS] line prints, which is what makes `ascent` a floor
+   count and not the other half of the descent pair. It reads no other field
+   but the type and the timestamp, and it takes the record on two arms: types
+   0, 1, 2 and 37 into the certain counters and type 8, sleep, into the
+   unknown ones. */
 struct vasistas_activity {
     VASISTAS_HEADER_BITS;
     unsigned int steps : 9;         /* 55..63,  WamVasistasAwake.steps */

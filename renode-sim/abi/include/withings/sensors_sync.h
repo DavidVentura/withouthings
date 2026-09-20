@@ -739,33 +739,91 @@ extern unsigned short sensors_sync_rd;
 extern unsigned int sensors_sync_exception_flags;
 
 /* The tracker's live counters, 14 words the whole module indexes off one
-   base: the four "[TRACKER_LIVE][STEPS|DIST|CCALO|STAIRS] ... " lines at
-   0x5f3ea, 0x5f568, 0x5f4b0 and 0x5f72c print their groups out of it, the
-   `certain steps`, `unknown steps`, `distance` and `ccalo` lines at
-   0x60124..0x60148 print single fields, and 23 bodies reach it at +0 through
-   +52 in steps of four, every one of them a word-wide load or store. Nothing
-   dereferences any of them, so none is a pointer; which counter each word is
-   the log lines do not settle, because the same word answers to more than one
-   of them.
+   base, and 0x38 is the length tracker_live_counters_reset memsets (0x5f044),
+   so the object's own extent is the struct's.
+
+   Four quantities are counted, and the four "[TRACKER_LIVE][STEPS|DIST|CCALO|
+   STAIRS] ..." lines at 0x5f3ea, 0x5f568, 0x5f4b0 and 0x5f72c name the words
+   of each group by printing them in order. Which quantity a group is is fixed
+   twice over: tracker_live_counters_add_record (0x5f970) accumulates exactly
+   four bit-fields of a `struct vasistas_activity` into the four groups --
+   steps (bits 55..63, `[+6]>>7`), distance (bits 75..90), calories (bits
+   128..140) and ascent (bits 160..173), at 0x5f9e8..0x5fa16 and again at
+   0x5fabe..0x5faf0 -- and CMD_WAM_DISPLAYED_INFO_GET's reply (0x6cbf8) puts
+   the three total getters into WamDailyActivities' `steps`, `distance` and
+   `calories` fields in that order.
+
+   The two quadruples are the two arms of that body: the certain one is what
+   the awake activity records (types 0, 1, 2 and 37) add, and nothing clears
+   it; the unknown one is what the sleep record (type 8) adds, and the
+   discontinuity path zeroes all four of it at once (0x5f9d4..0x5f9dc), which
+   is what makes them one group and not four unrelated words.
+
+   The current minute is not in here: the STEPS, DIST, CCALO and STAIRS lines
+   each print a `min` that comes from outside the struct (0x2001fcc0 for
+   steps, 0x2001fcb8 for calories, 0x2001fca8 for ascent, and for distance the
+   minute's own step count at 0x2001fcbc put through 0x5d808), and every total
+   getter adds that word to the three fields below.
    */
 struct tracker_live_counters {
-    unsigned int unknown_0;
-    unsigned int unknown_4;
-    unsigned int unknown_8;
-    unsigned int unknown_12;
-    unsigned int unknown_16;
-    unsigned int unknown_20;
-    unsigned int unknown_24;
-    unsigned int unknown_28;
-    unsigned int unknown_32;
-    unsigned int unknown_36;
-    unsigned int unknown_40;
-    unsigned int unknown_44;
-    unsigned int unknown_48;
-    unsigned int unknown_52;
+    unsigned int steps_certain;      /* +0,  "[STEPS] confirmed" */
+    unsigned int steps_unknown;      /* +4,  "[STEPS] unknown", and the
+                                        UnknownSteps object CMD_UNKNOWN_DATA_
+                                        GET sends (0x6cc50) */
+    unsigned int steps_delta;        /* +8,  the argument of 0x5f3c8 */
+    unsigned int distance_certain;   /* +12, "[DIST] current" */
+    unsigned int distance_unknown;   /* +16, "[DIST] unknown" */
+    unsigned int distance_delta;     /* +20, the argument of 0x5f52c */
+    /* +24, the timestamp of the last record the accumulator consumed: the
+       one word 0x5f070 saves and puts back across a reset, the bound the
+       next record's timestamp is tested against as `anchor + 59..61`
+       (0x5f98c..0x5f99a), and what the gap path overwrites before it clears
+       the four unknown counters. */
+    unsigned int anchor;
+    unsigned int calories_certain;   /* +28, "[CCALO] certain" */
+    unsigned int calories_unknown;   /* +32, "[CCALO] unknown" */
+    unsigned int calories_delta;     /* +36, the argument of 0x5f480, which
+                                        divides it by ten first */
+    /* +40, "[CCALO] current": the only counter no record feeds. It takes
+       0x678b0(60) once per minute of record the accumulator walks past
+       (0x5fa1c..0x5fa28), so it is the resting calories of elapsed time and
+       not of measured activity. */
+    unsigned int calories_current;
+    unsigned int ascent_certain;     /* +44, "[STAIRS] confirmed" */
+    unsigned int ascent_unknown;     /* +48, the sleep arm's fourth field;
+                                        the STAIRS line never prints it */
+    unsigned int ascent_delta;       /* +52, the argument of 0x5f710 */
 };
 
-extern struct tracker_live_counters tracker_struct_2001fce0;
+extern struct tracker_live_counters tracker_live_counters;
+/* the minute the counters have not folded in yet: the `min` term of the
+   [TRACKER_LIVE][STEPS] and [CCALO] lines and of the totals below. */
+extern unsigned int tracker_live_steps_minute;
+extern unsigned int tracker_live_calories_minute;
+
+/* The three totals CMD_WAM_DISPLAYED_INFO_GET's handler (0x6cbf8) reads into
+   WamDailyActivities' first, second and fifth words, in that order; its
+   `ascent` and `descent` words are written as zero, so the ascent the watch
+   does count never leaves it over that command. */
+extern unsigned int tracker_live_steps_total_get(void);
+extern unsigned int tracker_live_distance_total_get(void);
+extern unsigned int tracker_live_calories_total_get(void);
+extern unsigned int tracker_live_ascent_total_get(void);
+/* the one counter a command of its own carries: CMD_UNKNOWN_DATA_GET sends it
+   as the single word of the UnknownSteps object. */
+extern unsigned int tracker_live_steps_unknown_get(void);
+/* Each adder stores its argument as its group's delta and logs the group; the
+   calories one divides by ten on the way in. */
+extern void tracker_live_steps_add(unsigned int delta);
+extern void tracker_live_distance_add(unsigned int delta);
+extern void tracker_live_calories_add(unsigned int delta);
+extern void tracker_live_ascent_add(unsigned int delta);
+/* the step goal, off tracker_live_steps_total_get against 0x6089c's goal; the
+   percentage it has already reported lives in the retained block at
+   0x20002800+0xd7, so a reboot does not re-announce the goal. */
+extern int tracker_live_goal_check(void);
+extern void tracker_live_counters_reset(void);
+extern void tracker_live_counters_add_record(const void *record);
 
 /* tables */
 /* the ten MAX86173 measurement configurations by name --
