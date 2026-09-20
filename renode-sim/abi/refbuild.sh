@@ -437,6 +437,125 @@ if [ -d "$ROOT/nrfx/nrfx-2.1.0" ]; then
     done
 fi
 
+# ---- every nrfx release, driver by driver -----------------------------------
+# The SAADC driver came out of nrfx 2.1.0, so the question the rest of the
+# image's peripherals raise is which release the rest of its drivers came out
+# of. This recipe answers it by building all of them: one variant per nrfx
+# release, each driver compiled standalone out of that release's own tree with
+# the `app` recipe's architecture, optimisation and glue, so abi/nrfx_survey.py
+# can score every driver body of every release against the image at once.
+#
+# Standalone, not through the SDK 17 integration layer, for the reason the
+# SAADC build gives: a release's own headers and the SDK's disagree from 2.0 on.
+# $INC is still on the line for CMSIS, the SoftDevice headers and the SDK's own
+# nrfx glue, which abi/config-relink/nrfx_glue.h reaches by #include_next.
+#
+# ONLY=nrfx builds the set; a bare run builds it too, because it is cheap
+# (seconds) and a survey run against a stale variant is worse than no survey.
+NRFX_RELEASES="1.7.2 1.8.6 2.0.0 2.1.0 2.2.0 2.3.0 2.4.0 2.5.0 2.6.0"
+NRFX_DL=https://github.com/NordicSemiconductor/nrfx/archive/refs/tags
+
+nrfx_tree() {
+    # A release already unpacked wins, wherever it sits: the trees predate this
+    # recipe and re-downloading one would change what the SAADC patch applies to.
+    for d in "$ROOT/nrfx/nrfx-$1" "$ROOT/nrfx-extra/nrfx-$1"; do
+        [ -d "$d" ] && { echo "$d"; return 0; }
+    done
+    local f=$ROOT/dl/nrfx-v$1.tar.gz
+    [ -f "$f" ] || f=$ROOT/dl/nrfx-$1.tar.gz
+    [ -f "$f" ] || curl -Lf -o "$f" "$NRFX_DL/v$1.tar.gz" || return 1
+    mkdir -p "$ROOT/nrfx" && tar xf "$f" -C "$ROOT/nrfx" || return 1
+    echo "$ROOT/nrfx/nrfx-$1"
+}
+
+# The config is the release's own templates/nrfx_config.h, not the SDK's
+# integration one: the SDK's maps every nrfx switch onto an SDK switch through
+# apply_old_config.h, so a TWI0 configured without EasyDMA compiles nrfx_twi.c
+# and leaves nrfx_twim.c empty, and the survey would then report a driver as
+# proposing nothing when the truth is that it was never built. The template's
+# switches are all `#ifndef`, so the enables below decide them, and every
+# driver of every release comes out with bodies in it.
+#
+# TIMER0 and RTC0 stay off because both drivers `#error` on an instance the
+# SoftDevice reserves, and the image does not use those instances either.
+#
+# These are not the app recipe's $DEFS: those carry the SDK's own legacy switches
+# (TIMER0_ENABLED, SPI0_USE_EASY_DMA and the rest), and the SDK's
+# apply_old_config.h `#undef`s the nrfx switch and re-derives it from them, so
+# a driver would be built under the SDK's configuration rather than the one
+# this recipe asks for -- which is how nrfx_twim.c first came out empty while
+# the survey reported it as proposing nothing.
+NRFX_DEFS="-DNRF52840_XXAA -DFLOAT_ABI_HARD -DS140 -DSOFTDEVICE_PRESENT
+ -DNRF_SD_BLE_API_VERSION=7 -DCONFIG_GPIO_AS_PINRESET
+ -DNRFX_CLOCK_ENABLED=1 -DNRFX_GPIOTE_ENABLED=1 -DNRFX_NVMC_ENABLED=1
+ -DNRFX_POWER_ENABLED=1 -DNRFX_PPI_ENABLED=1 -DNRFX_PRS_ENABLED=1
+ -DNRFX_PRS_BOX_0_ENABLED=1 -DNRFX_PRS_BOX_1_ENABLED=1 -DNRFX_PRS_BOX_2_ENABLED=1
+ -DNRFX_PRS_BOX_3_ENABLED=1 -DNRFX_PRS_BOX_4_ENABLED=1
+ -DNRFX_PWM_ENABLED=1 -DNRFX_PWM0_ENABLED=1 -DNRFX_PWM1_ENABLED=1
+ -DNRFX_PWM2_ENABLED=1 -DNRFX_PWM3_ENABLED=1
+ -DNRFX_RNG_ENABLED=1 -DNRFX_RTC_ENABLED=1 -DNRFX_RTC0_ENABLED=0
+ -DNRFX_RTC1_ENABLED=1 -DNRFX_RTC2_ENABLED=1
+ -DNRFX_SAADC_ENABLED=1 -DNRFX_SWI_ENABLED=1 -DNRFX_SYSTICK_ENABLED=1
+ -DNRFX_SPI_ENABLED=1 -DNRFX_SPI0_ENABLED=1 -DNRFX_SPI1_ENABLED=1 -DNRFX_SPI2_ENABLED=1
+ -DNRFX_SPIM_ENABLED=1 -DNRFX_SPIM0_ENABLED=1 -DNRFX_SPIM1_ENABLED=1
+ -DNRFX_SPIM2_ENABLED=1 -DNRFX_SPIM3_ENABLED=1
+ -DNRFX_TEMP_ENABLED=1 -DNRFX_TIMER_ENABLED=1 -DNRFX_TIMER0_ENABLED=0
+ -DNRFX_TIMER1_ENABLED=1 -DNRFX_TIMER2_ENABLED=1 -DNRFX_TIMER3_ENABLED=1
+ -DNRFX_TIMER4_ENABLED=1
+ -DNRFX_TWI_ENABLED=1 -DNRFX_TWI0_ENABLED=1 -DNRFX_TWI1_ENABLED=1
+ -DNRFX_TWIM_ENABLED=1 -DNRFX_TWIM0_ENABLED=1 -DNRFX_TWIM1_ENABLED=1
+ -DNRFX_UART_ENABLED=1 -DNRFX_UART0_ENABLED=1
+ -DNRFX_UARTE_ENABLED=1 -DNRFX_UARTE0_ENABLED=1 -DNRFX_UARTE1_ENABLED=1
+ -DNRFX_WDT_ENABLED=1 -DNRFX_WDT0_ENABLED=1
+ -DNRFX_GPIOTE_CONFIG_NUM_OF_LOW_POWER_EVENTS=8
+ -DNRFX_GPIOTE_CONFIG_NUM_OF_EVT_HANDLERS=8
+ -DNRFX_POWER_CONFIG_DEFAULT_IRQ_PRIORITY=6 -DNRFX_CLOCK_CONFIG_LF_SRC=1"
+
+build_nrfx_release() {
+    local ver=$1 tree od o objs=""
+    tree=$(nrfx_tree "$ver") || { echo "nrfx $ver unavailable"; return 0; }
+    od=$OUT/nrfx-$ver
+    rm -rf "$od"; mkdir -p "$od"
+    # The release's own nrfx_config.h, reached through a forwarder so that its
+    # directory can sit at the end of the include path: the glue and the log
+    # header have to keep coming from abi/config-relink and the SDK, because a
+    # release's templates/nrfx_glue.h is a template with empty macro bodies and
+    # nothing compiles against it.
+    mkdir -p "$od/config"
+    # 1.7 and 1.8 keep the config per SoC under templates/nRF52840/; 2.x has one
+    # templates/nrfx_config.h that dispatches on the SoC macro.
+    local tcfg=$tree/templates/nrfx_config.h
+    [ -f "$tcfg" ] || tcfg=$tree/templates/nRF52840/nrfx_config.h
+    printf '#include "%s"\n' "$tcfg" > "$od/config/nrfx_config.h"
+    local ninc="-I$HERE/config-relink -I$od/config"
+    ninc="$ninc -I$tree -I$tree/hal -I$tree/drivers -I$tree/drivers/include -I$tree/soc -I$tree/mdk"
+    # One object per driver, kept, because abi/nrfx_survey.py reports by driver
+    # and the object file is the only thing that says which driver a body is in.
+    for s in "$tree"/drivers/src/*.c "$tree"/drivers/src/prs/*.c "$tree"/soc/*.c; do
+        [ -f "$s" ] || continue
+        o="$od/$(basename "$s" .c).o"
+        if "$GCC-gcc" $ARCH -ffunction-sections -fdata-sections -fshort-enums \
+             -std=gnu99 -g3 -w -Os -fcommon $NRFX_DEFS \
+             $ninc $INC -I"$tree/templates" -I"$tree/templates/nRF52840" \
+             -c "$s" -o "$o" 2>>"$od/err.log"; then
+            objs="$objs $o"
+        else
+            # 2.0.0's nrfx_saadc.c and nrfx_spim.c do not compile at all: both
+            # name `err_code` inside an NRFX_LOG_WARNING in a function that
+            # declares no such variable, an upstream defect that only shows
+            # when the log macros evaluate their arguments. 2.1.0 is the SAADC
+            # reference anyway and eight other releases carry SPIM.
+            echo "  skip $(basename "$s")" >> "$od/skipped.log"
+        fi
+    done
+    "$GCC-ld" -r -o "$od/ref.elf" $objs
+    printf '%-10s %3d objs  %s\n' "nrfx-$ver" "$(echo $objs | wc -w)" "$od/ref.elf"
+}
+
+if want nrfx; then
+    for v in $NRFX_RELEASES; do build_nrfx_release "$v"; done
+fi
+
 # ---- the app's own build ----------------------------------------------------
 # The kernel, port and driver abi/relink.sh links, measured against the image.
 # nrfx 2.1.0 is the SAADC driver's tree alone: its other headers disagree with

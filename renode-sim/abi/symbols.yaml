@@ -2424,10 +2424,16 @@ symbols:
   class: shell
   evidence: 'shell_cmd_table row 0x27394: command ''rtc'', --help slot (+8)'
 - address: 0x3aac4
-  name: nrfx_spim_init
+  name: spim_init
   kind: label
   class: prose
-  evidence: configures SPIM PSEL/ENABLE from a config struct
+  evidence: >-
+    configures SPIM PSEL/ENABLE from a config struct, and it is Withings' own
+    and not nrfx. No nrfx release from 1.7.2 to 2.6.0 built with the image's own
+    compiler proposes any body anywhere in 0x3a000..0x3b600 (abi/nrfx_survey.py),
+    nrfx_spim_init's best alignment in the whole image is 0x58a7c at 0.119 with
+    431 of its 492 bytes differing, and this body reads its pins out of Withings'
+    own spi_device descriptor rather than an nrfx_spim_config_t
 - address: 0x3aaf0
   name: oled_spi_init
   kind: label
