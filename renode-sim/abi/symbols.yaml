@@ -2296,6 +2296,23 @@ symbols:
   class: logline
   module: BLE_WPP
   evidence: the only line 0x39c60 logs, wlog('Add WPPS chars.') at 0x39c6e
+- address: 0x39f58
+  name: gpio_latch_test
+  kind: function
+  class: hand
+  module: gpio
+  evidence: 'pin is {u8 port, u16 number}: it indexes a two-entry table of GPIO
+    bases by the port byte, reads LATCH at +0x520 and returns bit `number` of it
+    (0x39f58..0x39f6a). The one test gpiote_port_handler makes before it calls a
+    handler'
+- address: 0x39f74
+  name: gpio_latch_clear
+  kind: function
+  class: hand
+  module: gpio
+  evidence: the same pin lookup as gpio_latch_test, writing 1 << number back into
+    LATCH (0x39f80..0x39f88), which is how that register is cleared on this part;
+    gpiote_port_handler calls it after the handler returns
 - address: 0x39fb8
   name: vector_22_handler
   kind: function
@@ -2307,6 +2324,32 @@ symbols:
   class: prose
   evidence: walks registered pins by reading GPIO LATCH (0x39f58), clears LATCH
     (0x39f74)
+- address: 0x3a05c
+  name: gpiote_port_is_registered
+  kind: function
+  class: hand
+  module: gpio
+  evidence: walks gpiote_port_registrations under the critical section comparing
+    the candidate's number at +2 and port at +0 (0x3a07e..0x3a08c) and returns 1
+    on a hit, 0 otherwise
+- address: 0x3a0a0
+  name: gpiote_port_register
+  kind: function
+  class: hand
+  module: gpio
+  evidence: 'appends {pin, handler} to gpiote_port_registrations and raises the
+    count, refusing with 1 once the count is past 9 (0x3a0b0), then arms the pin''s
+    sense through 0x936f8. The rows it writes are the pairs gpiote_port_handler
+    loads as `ldrd r0, r3, [r4, #-4]` and calls through, so an INT1 line -- the
+    ADXL367''s on P0.27 -- reaches its driver only through this table'
+- address: 0x3a0e4
+  name: gpiote_port_unregister
+  kind: function
+  class: hand
+  module: gpio
+  evidence: finds the row by pin, moves the last row over it, zeroes the tail pair
+    and lowers the count (0x3a106..0x3a130), with 0x936ea undoing what gpiote_port_register's
+    0x936f8 armed
 - address: 0x3a148
   name: mcuflash_ptr_20018180_get
   kind: function
@@ -5412,17 +5455,10 @@ symbols:
   evidence: the only line 0x4bef8 logs, wlog('[FEATURE_TAGS] Nothings stored') at
     0x4bf12
 - address: 0x4bf28
-  name: feature_tags_struct_2001a26c_check
   kind: function
-  class: provenance
-  evidence: 0x4bf28 reaches feature_tags_struct_2001a26c through its own literal
-    pool and no other named global; the body checks through it
-- address: 0x4bf68
-  name: feature_tags_struct_2001a26c_copy
-  kind: function
-  class: provenance
-  evidence: 0x4bf68 reaches feature_tags_struct_2001a26c through its own literal
-    pool and no other named global; the body copys through it
+  class: bymodule
+  module: FEATURE_TAGS
+  evidence: 0x4bf28 calls only feature_tags_nothings_stored
 - address: 0x4bfcc
   name: shell_cmd_feature_tags
   kind: function
@@ -16633,11 +16669,6 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x5f5c8 (sensors_sync_push_accel__1) calls 0x921da; 4 bytes
-- address: 0x9225e
-  name: feature_tags_struct_2001a26c_copy__1
-  kind: function
-  class: helper
-  evidence: only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x9225e; 20 bytes
 - address: 0x92272
   name: dbg_mask_change_ie_debug_mask__1
   kind: function
@@ -16898,12 +16929,6 @@ symbols:
   class: bymodule
   module: BLUETOOTH
   evidence: '0x9314e every caller is a body this rule placed in BLUETOOTH: 0x395dc'
-- address: 0x931ca
-  name: feature_tags_struct_2001a26c_copy__2
-  kind: function
-  class: helper
-  evidence: only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x931ca; 126
-    bytes
 - address: 0x93248
   name: shell_cmd_probe__3
   kind: function
@@ -30253,6 +30278,23 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [BLUETOOTH] (1 read
     it, 1 write it)
+- address: 0x2001812c
+  name: gpiote_port_registration_count
+  kind: global
+  class: hand
+  module: gpio
+  size: 4
+  evidence: the word gpiote_port_handler stops its walk at (0x3a01a), gpiote_port_register
+    raises and gpiote_port_unregister lowers; one flash word takes it, 0x3a058
+- address: 0x20018134
+  name: gpiote_port_registrations
+  kind: global
+  class: hand
+  module: gpio
+  size: 80
+  evidence: 'ten eight-byte {pin, handler} rows: the bound is the `cmp r3,#9` gpiote_port_register
+    refuses past (0x3a0b0) and the stride is the `lsl #3` all four bodies index
+    with. One flash word takes its start, 0x3a054, which gpiote_port_handler reads'
 - address: 0x20018180
   name: mcuflash_ptr_20018180
   kind: global
@@ -31391,22 +31433,6 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WPP] (1 read it,
     2 write it)
-- address: 0x2001a26c
-  name: feature_tags_struct_2001a26c
-  kind: global
-  class: global
-  module: FEATURE_TAGS
-  size: 6
-  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (2
-    read it, 0 write it)
-- address: 0x2001a30c
-  name: feature_tags_word_2001a30c
-  kind: global
-  class: global
-  module: FEATURE_TAGS
-  size: 4
-  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (1
-    read it, 0 write it)
 - address: 0x2001a3ac
   name: flash_cache
   kind: global
