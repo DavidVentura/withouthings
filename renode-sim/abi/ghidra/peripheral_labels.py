@@ -28,9 +28,15 @@ import pyghidra
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ABI = os.path.dirname(HERE)
-sys.path.insert(0, ABI)
-
-import peripherals  # noqa: E402
+# Loaded by path rather than by putting abi/ on sys.path: this file's own
+# directory is abi/ghidra/, and with abi/ first on the path `import ghidra`
+# resolves to that directory instead of pyghidra's package, which sends the
+# launcher into an import recursion before Ghidra starts.
+import importlib.util  # noqa: E402
+_spec = importlib.util.spec_from_file_location(
+    "peripherals", os.path.join(ABI, "peripherals.py"))
+peripherals = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(peripherals)
 
 ROOT = os.environ.get("ROOT", os.path.expanduser("~/ref-build"))
 
