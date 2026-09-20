@@ -37,5 +37,9 @@ if [ ! -x "$VENV/bin/python" ]; then
         --find-links "$DIR/Ghidra/Features/PyGhidra/pypkg/dist" pyghidra
 fi
 "$VENV/bin/python" -c "import pyghidra" || { echo "pyghidra install failed" >&2; exit 1; }
+# The scripts that write names and bookmarks read abi/symbols.yaml and
+# abi/words.yaml from inside the venv, so it needs the same yaml reader the
+# rest of abi/ uses.
+"$VENV/bin/python" -c "import yaml" 2>/dev/null || "$VENV/bin/pip" install -q pyyaml
 
 echo "$DIR"

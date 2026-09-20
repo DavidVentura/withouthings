@@ -4,6 +4,7 @@
 # abi/body_check.py can settle each body byte for byte.
 #
 #   abi/refbuild.sh          # downloads (once) into ~/ref-build, builds both recipes
+#   ONLY=nrfx abi/refbuild.sh  # the nine-release nrfx survey set, for abi/nrfx_survey.py
 #   abi/refbuild.sh --check  # report the newlib archives against abi/newlib-sizes.txt
 #
 # Two recipes, because the image has two builds in it:
@@ -69,6 +70,15 @@ if [ ! -d "$TC" ]; then
     f="$ROOT/dl/arm-gnu-toolchain-13.2.rel1.tar.xz"
     [ -f "$f" ] || curl -L -o "$f" "$TC_URL"
     tar xf "$f" -C "$ROOT/tc"
+fi
+
+# The chip's register map, which abi/peripherals.py, abi/accesses.py and the
+# Ghidra labels read; it is gitignored beside the firmware images, so a fresh
+# checkout fetches it here rather than by hand.
+SVD_URL=https://dl.antmicro.com/projects/renode/svd/NRF52840.svd.gz
+SVD=$(dirname "$0")/../NRF52840.svd
+if [ ! -f "$SVD" ]; then
+    curl -L -o "$SVD.gz" "$SVD_URL" && gunzip "$SVD.gz"
 fi
 
 mkdir -p "$OUT" "$CFG"
@@ -450,8 +460,10 @@ fi
 # $INC is still on the line for CMSIS, the SoftDevice headers and the SDK's own
 # nrfx glue, which abi/config-relink/nrfx_glue.h reaches by #include_next.
 #
-# ONLY=nrfx builds the set; a bare run builds it too, because it is cheap
-# (seconds) and a survey run against a stale variant is worse than no survey.
+# ONLY=nrfx builds the set, and only then: the survey's answer is recorded
+# (the SAADC driver is the one nrfx body in the image), so a bare run does not
+# download eight releases it has no use for; the `app` recipe fetches 2.1.0
+# on its own.
 NRFX_RELEASES="1.7.2 1.8.6 2.0.0 2.1.0 2.2.0 2.3.0 2.4.0 2.5.0 2.6.0"
 NRFX_DL=https://github.com/NordicSemiconductor/nrfx/archive/refs/tags
 
@@ -552,7 +564,7 @@ build_nrfx_release() {
     printf '%-10s %3d objs  %s\n' "nrfx-$ver" "$(echo $objs | wc -w)" "$od/ref.elf"
 }
 
-if want nrfx; then
+if [ -n "${ONLY:-}" ] && want nrfx; then
     for v in $NRFX_RELEASES; do build_nrfx_release "$v"; done
 fi
 

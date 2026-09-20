@@ -34,11 +34,19 @@ to-socket adapter so that the simulator can talk to the rust code implementing t
 
 ## Dependencies
 
-  - Renode 1.17
-  - llvm-objdump/llvm-objcopy and python3
-  - Firmware file for v3411
-  - A dump of the SPI flash
-  - [NRF52840.svd](https://dl.antmicro.com/projects/renode/svd/NRF52840.svd.gz)
+Yours to bring, both gitignored: the v3411 update package (`extract.py` cuts
+the four images out of it) and a dump of your watch's SPI flash
+(`external_flash.bin`, which holds the association secret).
+
+On the machine: Renode 1.17 (`renode` on `PATH`, or `RENODE=`), python3 with
+`pyyaml` and `pyelftools`, llvm-objdump/llvm-objcopy, and Rust for the
+client. Everything else is fetched by two scripts into `~/ref-build`
+(`ROOT=` to put it elsewhere): `abi/refbuild.sh` downloads the Arm GCC 13.2
+toolchain, nRF5 SDK 17.1.0, newlib 4.3.0 and the chip's SVD and builds the
+reference libraries the relink and the byte verdicts rest on;
+`abi/ghidra/fetch.sh` downloads Ghidra 12.1.3 and makes its Python venv.
+Nothing under `~/ref-build` is expected to exist by magic; a script made it
+and the same script remakes it.
 
 ## How to run
 
