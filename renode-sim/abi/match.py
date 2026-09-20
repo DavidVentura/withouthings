@@ -601,7 +601,7 @@ def main():
         "PendSV_Handler": 0x27e50, "SVC_Handler": 0x27e20,
         "prvCopyDataToQueue": 0x9e590, "xTaskIncrementTick": 0x730bc,
         "vTaskStepTick": 0x730ac, "xTaskCreateStatic": 0x9e3dc,
-        "xQueueGenericCreateStatic": 0x9e752, "nrfx_spim_init": 0x3aac4,
+        "xQueueGenericCreateStatic": 0x9e752,
         "nrfx_saadc_init": 0x7dcc0, "nrfx_saadc_channel_init": 0x7de34,
         "nrfx_saadc_buffer_convert": 0x7df40, "nrfx_saadc_sample_convert": 0x7dfb8,
     }
