@@ -5455,10 +5455,17 @@ symbols:
   evidence: the only line 0x4bef8 logs, wlog('[FEATURE_TAGS] Nothings stored') at
     0x4bf12
 - address: 0x4bf28
+  name: feature_tags_struct_2001a26c_check
   kind: function
-  class: bymodule
-  module: FEATURE_TAGS
-  evidence: 0x4bf28 calls only feature_tags_nothings_stored
+  class: provenance
+  evidence: 0x4bf28 reaches feature_tags_struct_2001a26c through its own literal
+    pool and no other named global; the body checks through it
+- address: 0x4bf68
+  name: feature_tags_struct_2001a26c_copy
+  kind: function
+  class: provenance
+  evidence: 0x4bf68 reaches feature_tags_struct_2001a26c through its own literal
+    pool and no other named global; the body copys through it
 - address: 0x4bfcc
   name: shell_cmd_feature_tags
   kind: function
@@ -16669,6 +16676,11 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x5f5c8 (sensors_sync_push_accel__1) calls 0x921da; 4 bytes
+- address: 0x9225e
+  name: feature_tags_struct_2001a26c_copy__1
+  kind: function
+  class: helper
+  evidence: only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x9225e; 20 bytes
 - address: 0x92272
   name: dbg_mask_change_ie_debug_mask__1
   kind: function
@@ -16929,6 +16941,12 @@ symbols:
   class: bymodule
   module: BLUETOOTH
   evidence: '0x9314e every caller is a body this rule placed in BLUETOOTH: 0x395dc'
+- address: 0x931ca
+  name: feature_tags_struct_2001a26c_copy__2
+  kind: function
+  class: helper
+  evidence: only 0x4bf68 (feature_tags_struct_2001a26c_copy) calls 0x931ca; 126
+    bytes
 - address: 0x93248
   name: shell_cmd_probe__3
   kind: function
@@ -22327,6 +22345,20 @@ symbols:
   class: helper
   module: INIT
   evidence: only 0xa425e (algo_manager_init) calls 0xa13ce; 70 bytes
+- address: 0xa1420
+  name: sleep_wake_process_sample
+  kind: function
+  class: hand
+  module: sensors_sync
+  evidence: 'the per-accelerometer-sample half, and the shell measures it exactly:
+    `tracker_algo sleep_wake 200` runs it 200 times and acc_iir4_i16_step 200 times
+    and nothing else in the region at all. In the 1200 s schedule run it is 27532
+    calls, the same count as motion_energy_step and acc_iir4_i16_step and about
+    23 Hz, against sleep_wake_algo_step''s 2446 -- one per popped sync slot -- so
+    the registry''s step and this share no rate and the sample this one sees comes
+    off the accelerometer and not off the ring. The body is the reading: |x| + |y|
+    + |z| through 0x9ea78 (0xa1556..0xa1574), acc_iir4_i16_step over it, and a counter
+    at +0x26c raised whenever the filtered value crosses 15 (0xa1590..0xa159e)'
 - address: 0xa1426
   name: algo_manager_ctx_check__1__5
   kind: function
@@ -22367,17 +22399,33 @@ symbols:
   module: INIT
   evidence: only 0xa13ce (algo_manager_init__9) calls 0xa1500; 106 bytes
 - address: 0xa15a4
-  name: algo_manager_ctx_check__1__6
+  name: sleep_wake_window_latch
   kind: function
-  class: helper
-  evidence: only 0x79764 (algo_manager_ctx_check__1) calls 0xa15a4; 16 bytes
+  class: hand
+  module: sensors_sync
+  supersedes: algo_manager_ctx_check__1__6
+  evidence: four instructions that move the crossing count sleep_wake_process_sample
+    raises at +0x26c into +0x270 and zero it, which is what closes a window. 19
+    calls in the 1200 s schedule run, the same nineteen windows motion_window_decide
+    sees and none in any console scenario, so the window is the algorithm's and
+    not this body's own
 - address: 0xa15b4
-  name: algo_manager_ctx_check__1__7
+  name: sleep_wake_window_features
   kind: function
-  class: helper
-  evidence: only 0x79764 (algo_manager_ctx_check__1) calls 0xa15b4; 122 bytes
+  class: hand
+  module: sensors_sync
+  supersedes: algo_manager_ctx_check__1__7
+  evidence: 'the window''s statistics, assembled from the one number the latch left
+    at +0x270: it is pushed through three delay_i32_push_pop lines at +0x1a4, +0x1b4
+    and +0x1c4 and through 0x9f1a4 at +0x224 whose result goes to +0x24c, then vec_i32_mean
+    over the first line''s ten entries lands at +0x244 and over the second''s twenty
+    at +0x248, and the array at +0x1d0 is summed into +0x240 (0xa15b4..0xa162c).
+    Five quantities, which is the number of features algo_tree_table''s nodes index;
+    which index is which is refused, since nothing in the image reads +0x240 through
+    +0x24c back. 19 calls in the schedule run, one per window, and none in the console
+    scenarios'
 - address: 0xa162e
-  name: algo_manager_ctx_check__1__8
+  name: algo_manager_ctx_check__1__6
   kind: function
   class: helper
   evidence: only 0x79764 (algo_manager_ctx_check__1) calls 0xa162e; 246 bytes
@@ -22393,7 +22441,7 @@ symbols:
   module: INIT
   evidence: only 0xa13ce (algo_manager_init__9) calls 0xa174a; 4 bytes
 - address: 0xa1798
-  name: algo_manager_ctx_check__1__9
+  name: algo_manager_ctx_check__1__7
   kind: function
   class: helper
   evidence: only 0x79764 (algo_manager_ctx_check__1) calls 0xa1798; 6 bytes
@@ -22404,7 +22452,7 @@ symbols:
   module: INIT
   evidence: only 0xa13ce (algo_manager_init__9) calls 0xa179e; 8 bytes
 - address: 0xa17a6
-  name: algo_manager_ctx_check__1__10
+  name: algo_manager_ctx_check__1__8
   kind: function
   class: helper
   evidence: only 0x79764 (algo_manager_ctx_check__1) calls 0xa17a6; 8 bytes
@@ -25092,13 +25140,17 @@ symbols:
     77 rows, so a leaf is a score out of 1024 and not a class index, and the ensemble
     is four regressors averaged into [0, 1]. The descriptor holds 0.5 beside the
     roots, which is the threshold that makes the answer binary, and its RAM pointer
-    is sleep_wake_algo_ctx, so the two classes are asleep and awake. What each of
-    the five feature indices is stays refused: the window half that assembles them
-    (0xa15b4, three delay lines through delay_i32_push_pop, two vec_i32_mean over
-    them and a sum) was hooked in the tracker scenario and never entered, because
-    the shell''s `tracker_algo sleep_wake 200` drives only the per-sample half --
-    0xa1420 and acc_iir4_i16_step 200 times each and nothing else in the region
-    -- and no scenario yet runs the algorithm''s window.'
+    is sleep_wake_algo_ctx, so the two classes are asleep and awake. The five features
+    are sleep_wake_window_features'' five outputs at +0x240 through +0x24c: three
+    delay lines through delay_i32_push_pop, two vec_i32_mean over the first two
+    of them and a sum over the array at +0x1d0, all of the crossing count sleep_wake_process_sample
+    raises. Which index is which stays refused, because nothing in the image reads
+    those four words back and the trees are reached only through RAM words no instruction
+    names, so the evaluator has not been located. The window itself does run: in
+    the 1200 s schedule run sleep_wake_window_latch, sleep_wake_window_features
+    and motion_window_decide are 19 calls each while sleep_wake_process_sample is
+    27532, and the shell''s `tracker_algo sleep_wake 200` reaches only the per-sample
+    half.'
 - address: 0xb47f0
   name: adxl367_mode_names
   kind: table
@@ -31433,6 +31485,22 @@ symbols:
   size: 4
   evidence: every function that loads or stores it logs under [WPP] (1 read it,
     2 write it)
+- address: 0x2001a26c
+  name: feature_tags_struct_2001a26c
+  kind: global
+  class: global
+  module: FEATURE_TAGS
+  size: 6
+  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (2
+    read it, 0 write it)
+- address: 0x2001a30c
+  name: feature_tags_word_2001a30c
+  kind: global
+  class: global
+  module: FEATURE_TAGS
+  size: 4
+  evidence: every function that loads or stores it logs under [FEATURE_TAGS] (1
+    read it, 0 write it)
 - address: 0x2001a3ac
   name: flash_cache
   kind: global

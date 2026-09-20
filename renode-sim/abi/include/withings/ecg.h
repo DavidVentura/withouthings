@@ -430,8 +430,12 @@ extern struct algo_entry algo_table[18];
    is a score out of 1024 and not a class index: the ensemble is four
    regressors averaged into [0, 1] and 0.5 is the threshold that makes the
    answer binary, asleep against awake. Which per-window statistic each of
-   the five feature indices is stays open; the body that assembles them is
-   0xa15b4 and no scenario has run it.
+   the five feature indices is stays open: sleep_wake_window_features
+   (0xa15b4) assembles five numbers out of the crossing count
+   sleep_wake_process_sample raises -- two means over delay lines, a sum and
+   a fourth statistic -- and nothing in the image reads them back, so the
+   evaluator that turns them into a score is not located. The window does
+   run: nineteen of them in the 1200 s schedule scenario.
    */
 extern struct algo_tree_node algo_tree_table[77];
 
