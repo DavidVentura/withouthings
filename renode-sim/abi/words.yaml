@@ -22,6 +22,45 @@ contracts:
   0xf117c: >
     The app image end, which is a length in disguise.
 
+# Several peripherals of the SVD share a base address, because the hardware
+# block is one and the programming models are alternatives. Which one this
+# firmware drives is a fact about the firmware, so it is declared here; the
+# evidence is hwa10.repl, whose model at each base is the one the application
+# boots and runs against in the simulator.
+peripherals:
+  - base: 0x40002000
+    peripheral: UART0
+    why: >
+      The console. hwa10.repl gives 0x40002000 a UART with easyDMA off and the
+      app drives TXD/RXD a byte at a time, which is UART0 and not UARTE0.
+
+  - base: 0x40003000
+    peripheral: TWI0
+    why: >
+      The I2C bus the charger, the crown, both thermometers, the light sensor
+      and the barometer sit on. hwa10.repl models it as NRF52840_I2C, the
+      non-EasyDMA controller, which is TWI0 rather than TWIM0 or TWIS0.
+
+  - base: 0x40004000
+    peripheral: SPIM1
+    why: >
+      The optical front end's bus. The firmware arms TXD/RXD EasyDMA and
+      TASKS_START on this instance, which is the SPIM programming model; the
+      repl's comment records the same reading.
+
+  - base: 0x4001E000
+    peripheral: NVMC
+    why: >
+      The flash controller the update path writes through. ACL shares the base
+      and this image never configures a protection region; the repl models an
+      NVMC here and nothing else.
+
+  - base: 0x40023000
+    peripheral: SPIM2
+    why: >
+      The SPI flash and the accelerometer, told apart by chip select. The
+      controller is the master with EasyDMA, which is SPIM2.
+
 reasons:
   unit_table_six_byte_records: >
     The unit table at 0xbe4d0: 48 records of (u16 code, u16 size, u16 flag),

@@ -51,10 +51,12 @@ import argparse
 import collections
 import json
 import os
+import re
 import sys
 
 import yaml
 
+import peripherals
 import runs
 import shapes
 import symbols
@@ -168,6 +170,11 @@ class Partition(object):
                              for i in range(len(blob)))
         self.slots = None
         self.copy_sources = None
+        # The chip's register map, and how many instructions read each word:
+        # a peripheral address is one the code loads, so a data word holding
+        # one names nothing.
+        self.chip = None
+        self.read_sites = {}
         # The recovered copies as ranges, and the memory-cell use summaries
         # abi/ghidra/word_uses.py writes; together they answer what the code
         # does with a word that only exists in RAM.
@@ -283,6 +290,58 @@ class Partition(object):
 # `scaled`, `stored_value` and `returned` are recorded too, and none of them is
 # evidence either way: pointers are compared, stored and returned constantly.
 POINTER_USES = frozenset(("call", "load_base", "store_base"))
+
+FIELD_USE = re.compile(r"^field([+-]\d+):(\d+)$")
+
+
+def selected_registers(chip, base, uses):
+    """The registers a reader's own immediates select from a peripheral base.
+
+    A driver loads the block's base once and reaches every register through an
+    offset the instruction carries, so the word alone names the peripheral and
+    the pair names the register. word_uses.py already records the displacement
+    and the width of every dereference of the loaded value, which is that
+    offset, so the registers are read off the reading code rather than guessed
+    from the block's span.
+    """
+    found = []
+    for use in uses:
+        matched = FIELD_USE.match(use)
+        if not matched:
+            continue
+        at = chip.register_after(base, int(matched.group(1)))
+        if at is not None and at.register is not None:
+            found.append(at.register.name)
+    return sorted(set(found))
+
+
+def peripheral_note(chip, word, uses):
+    """What `word` names in the chip's register map, or None.
+
+    Two conditions beyond the value landing on a register. The word has to be
+    one the code loads, because a peripheral address is reached through a
+    literal pool and a data word that happens to hold 0x40000000 reproduces
+    nothing; and where the flow summary says what the loaded value was used
+    for, it has to have been dereferenced. A word the code only ever compares
+    is a number that collided with the range -- 0x73a20 holds two of them and
+    compares them two thousand times -- which is the one reading a register
+    address has no use for.
+    """
+    located = chip.at(word["value"])
+    if located is None:
+        return None
+    if uses and not uses & POINTER_USES:
+        return None
+    if located.peripheral.base != word["value"]:
+        return located.name
+    # The value is the block's own base, which is how a driver holds a
+    # peripheral: the register is whatever offset the reading instruction
+    # carries, and a register that happens to sit at offset zero is one of
+    # those and not the word's meaning.
+    selected = selected_registers(chip, word["value"], uses)
+    if not selected:
+        return "NRF_%s" % located.peripheral.name
+    return "NRF_%s, read at %s" % (located.peripheral.name, ", ".join(selected))
 
 STRIDES = tuple(range(4, 68, 4))
 MIN_RECORDS = 3
@@ -478,6 +537,17 @@ def decide(word, part, contracts, overrides):
         # export carries it so that a later RAM move knows where they are.
         return "constant", "ram", "static or stack address; RAM is not moved yet"
     if not APP_BASE <= (target if thumb else value) < APP_END:
+        if peripherals.in_peripheral_space(value):
+            # The peripherals never move, so this stays a constant and the
+            # linker is not involved; what the signal adds is the name, which
+            # is what every reader of words.json was missing here.
+            note = (peripheral_note(part.chip, word, uses)
+                    if part.read_sites.get(word["addr"]) else None)
+            if note is not None:
+                return "constant", "peripheral", note
+            number = peripherals.plausible_float(value)
+            if number is not None:
+                return "constant", "float_constant", "%g as a float" % number
         return "constant", "out_of_range", ""
     if thumb and target in part.functions:
         # Landing exactly on a function entry with bit 0 set survives the
@@ -573,12 +643,14 @@ def owning_item(part, target):
     return target, 0
 
 
-def classify(items, refs, blob, contracts, overrides, tables, cells=()):
+def classify(items, refs, blob, contracts, overrides, tables, chip, cells=()):
     outside = sorted(set(overrides) - set(w["addr"] for w in refs["words"]))
     if outside:
         sys.exit("abi/words.yaml declares %d addresses the candidate set does"
                  " not offer, starting at 0x%x" % (len(outside), outside[0]))
     part = Partition(items, refs["words"], blob)
+    part.chip = chip
+    part.read_sites = collections.Counter(r["target"] for r in refs["pool_reads"])
     part.slots = slot_objects(items, blob, part)
     part.copy_sources = copy_initialisers(items, refs, blob, part)
     part.cells = dict(cells)
@@ -659,7 +731,8 @@ def main():
     contracts, overrides = read_facts(args.facts, blob, items["functions"])
     tables = shapes.load().typed_regions(symbols.load())
     rows, buckets, review, displacements = classify(items, refs, blob, contracts,
-                                                    overrides, tables, cells)
+                                                    overrides, tables,
+                                                    peripherals.load(), cells)
     pointers = [r for r in rows if r["class"] == "pointer"]
     summary = {
         "candidates": len(rows),
