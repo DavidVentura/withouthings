@@ -2413,6 +2413,12 @@ symbols:
   kind: function
   class: helper
   evidence: only 0x3320c (button_task) calls 0x3a8f0; 32 bytes
+- address: 0x3a94c
+  name: rtc1_intenclr_clear
+  kind: function
+  class: periph
+  evidence: the body's whole side is one write to NRF_RTC1->INTENCLR; pool word
+    0x3a97c read at 0x3a958, at +776
 - address: 0x3a9a0
   name: shell_cmd_rtc
   kind: function
@@ -2541,6 +2547,12 @@ symbols:
   kind: label
   class: prose
   evidence: the wedge address inside the take
+- address: 0x3b510
+  name: wdt_intenset_set
+  kind: function
+  class: periph
+  evidence: the body's whole side is one write to NRF_WDT->INTENSET; pool word 0x3b520
+    read at 0x3b510, at +772
 - address: 0x3b574
   name: id_secret
   kind: function

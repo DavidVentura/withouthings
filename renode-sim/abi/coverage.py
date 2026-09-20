@@ -15,6 +15,8 @@ import json
 import os
 import re
 
+import accesses as accessindex
+import peripherals
 import shapes
 import symbols as symmap
 
@@ -99,8 +101,57 @@ def main():
           " %d bytes" % (len(ram), sum(1 for x in ram if x.size),
                          sum(x.size or 0 for x in ram)))
 
+    peripheral_line()
+    index_line(items)
     per_module(items, named)
     worklist(items, named)
+
+
+def peripheral_line():
+    """How much of the chip's register map the image's own words reach.
+
+    Two numbers: how many of the words that hold a peripheral address the SVD
+    resolves to a register, and how many instructions read one of them. The
+    second is the one to watch, because a word is only evidence where the code
+    loads it.
+    """
+    chip = peripherals.load()
+    words = json.load(open(os.path.join(OUT, "words.json")))["words"]
+    refs = json.load(open(os.path.join(OUT, "references.json")))
+    sites = collections.Counter(r["target"] for r in refs["pool_reads"])
+    named = [w for w in words if w["signal"] == "peripheral"]
+    blocks = set()
+    for word in named:
+        blocks.add(chip.at(word["value"]).peripheral.name)
+    unnamed = [w for w in words if w["signal"] in ("out_of_range",
+                                                   "float_constant")
+               and sites[w["addr"]]
+               and peripherals.in_peripheral_space(w["value"])]
+    print("peripherals: %d of the %d read words in the peripheral ranges name a"
+          " register, over %d blocks, from %d sites"
+          % (len(named), len(named) + len(unnamed), len(blocks),
+             sum(sites[w["addr"]] for w in named)))
+
+
+def index_line(items):
+    """How much of the image abi/accesses.py can say anything about.
+
+    A function with a non-empty side is one whose globals and registers are
+    known; a function with none holds no address of its own, which is either a
+    leaf that works on its arguments or a body the flow lost.
+    """
+    sides, summary = accessindex.load_index()
+    total = len(items["functions"])
+    with_side = sum(1 for s in sides.values() if s.accesses)
+    print("access index: %d of %d functions have a side, %d accesses over %d"
+          " RAM objects and %d registers"
+          % (with_side, total, summary["accesses"], summary["ram_objects"],
+             summary["registers"]))
+    if "runtime" in summary:
+        print("  runtime: %d observed-only, %d confirmed, %d static-only"
+              % (summary["runtime"]["observed_only"],
+                 summary["runtime"]["confirmed"],
+                 summary["runtime"]["static_only"]))
 
 
 def per_module(items, named):

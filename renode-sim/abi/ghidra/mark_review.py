@@ -7,7 +7,11 @@ Every review word (a word the classifier could not call a pointer or a
 constant) gets a "Review" bookmark with its signal and, where the value lands
 on something the partition names, the target, plus an end-of-line comment;
 every classified pointer gets a plain "Pointer" bookmark; and every function
-the map has no meaningful name for (a FUN_/block_/caseD_ name) gets an
+whose side abi/accesses.py knows gets an "Access" bookmark, categorised by the
+peripheral it drives (or `ram` where it only touches globals) and commented
+with what it touches, so the reading pass starts from "writes ecg_filter_ctx,
+triggers NRF_SAADC->TASKS_START" rather than from a pool word; and every
+function the map has no meaningful name for (a FUN_/block_/caseD_ name) gets an
 "Unnamed" bookmark whose category is Unnamed1..Unnamed5 by its distance up
 the call graph to the nearest named function (UnnamedDeep beyond that) and
 whose comment carries its size, module and named callers, so Window >
@@ -95,6 +99,38 @@ def unnamed_functions(items_path, modules_path, references_path):
     return out
 
 
+# How many of a function's accesses the bookmark spells out. A driver that
+# touches forty registers says what it is in the first few, and the whole list
+# belongs in abi/out/accesses.json, which is where the reader goes next.
+ACCESS_LIMIT = 8
+
+
+def sides(path):
+    """abi/out/accesses.json, as (start, category, text) per function.
+
+    Read as plain json rather than through abi/accesses.py: this runs in
+    Ghidra's own venv, which has none of the repo's dependencies in it, and the
+    index already carries the clause each access is spelled with.
+    """
+    if not os.path.exists(path):
+        raise SystemExit("%s does not exist; run python3 abi/accesses.py" % path)
+    found = json.load(open(path))
+    out = []
+    for row in found["functions"]:
+        clauses, blocks = [], []
+        for access in row["accesses"]:
+            clauses.append(access["phrase"]
+                           + (" (observed)" if access["observed"] else ""))
+            if access["object"].startswith("NRF_"):
+                blocks.append(access["object"].split("->")[0][len("NRF_"):])
+        shown = clauses[:ACCESS_LIMIT]
+        if len(clauses) > len(shown):
+            shown.append("and %d more" % (len(clauses) - len(shown)))
+        out.append((row["start"], sorted(set(blocks))[0] if blocks else "ram",
+                    ", ".join(shown)))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", default=os.path.join(ROOT, "ghidra-project"))
@@ -102,6 +138,7 @@ def main():
     ap.add_argument("--items", default=os.path.join(ABI, "out", "ghidra", "items.json"))
     ap.add_argument("--modules", default=os.path.join(ABI, "out", "ghidra", "modules.json"))
     ap.add_argument("--references", default=os.path.join(ABI, "out", "ghidra", "references.json"))
+    ap.add_argument("--accesses", default=os.path.join(ABI, "out", "accesses.json"))
     ap.add_argument("--install", default=None,
                     help="Ghidra install dir; defaults to the release fetch.sh put under ROOT")
     args = ap.parse_args()
@@ -119,8 +156,9 @@ def main():
     from ghidra.program.model.listing import CodeUnit
     from java.awt import Color
     from resources import ResourceManager
-    counts = {"review": 0, "pointer": 0, "unnamed": 0}
+    counts = {"review": 0, "pointer": 0, "unnamed": 0, "access": 0}
     unnamed = unnamed_functions(args.items, args.modules, args.references)
+    touching = sides(args.accesses)
     project = pyghidra.open_project(args.project, "hwa10", create=False)
     try:
         # pyghidra hands back the framework project, whose files are domain
@@ -144,7 +182,8 @@ def main():
             # both are defined before they are cleared.
             for kind, image, color in (("Review", "images/warning.png", Color.RED),
                                        ("Pointer", "images/flag.png", Color.BLUE),
-                                       ("Unnamed", "images/notes.gif", Color.GRAY)):
+                                       ("Unnamed", "images/notes.gif", Color.GRAY),
+                                       ("Access", "images/flag.png", Color.GREEN)):
                 bookmarks.defineType(kind, ResourceManager.loadImage(image), color, 0)
                 bookmarks.removeBookmarks(kind)
             for r in rows:
@@ -161,6 +200,20 @@ def main():
                     bookmarks.setBookmark(addr, "Pointer", r["kind"],
                                           "%s -> 0x%x" % (r["signal"], r["value"]))
                 counts[r["class"]] += 1
+            # The plate comment goes on the function as well as the
+            # bookmark, because the decompiler window shows it and the bookmark
+            # list does not: the side is what the reader needs while reading
+            # the body, not only while choosing which body to read.
+            for start, category, text in touching:
+                addr = space.getAddress(start)
+                bookmarks.setBookmark(addr, "Access", category, text)
+                fn = listing.getFunctionAt(addr)
+                if fn is not None:
+                    fn.setComment("touches: " + text)
+                else:
+                    listing.setComment(addr, CodeUnit.PLATE_COMMENT,
+                                       "touches: " + text)
+                counts["access"] += 1
             for f in unnamed:
                 addr = space.getAddress(f["start"])
                 category = ("Unnamed%d" % f["depth"]) if f["depth"] else "UnnamedDeep"
@@ -174,7 +227,9 @@ def main():
         program.release(consumer)
     finally:
         project.close()
-        print("bookmarked %(review)d review words, %(pointer)d pointers and %(unnamed)d unnamed functions" % counts)
+        print("bookmarked %(review)d review words, %(pointer)d pointers,"
+              " %(access)d function sides and %(unnamed)d unnamed functions"
+              % counts)
 
 
 if __name__ == "__main__":

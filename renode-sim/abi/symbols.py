@@ -115,12 +115,15 @@ HAND = "hand"
 # the body operates on, where `shared` and `helper` say only who calls it; a
 # body named from a declared struct field plus a verb read off its own uses is
 # the same reading `accessor` makes of a three-instruction body.
+# `periph` sits with `accessor`: a body whose whole peripheral side is one write
+# to a register the SVD names as a task or a mask is named by that register,
+# which is a reading of what the body does and not of who calls it.
 # `bymodule` is last because it is not a name at all: it attributes an address
 # to a module and says nothing that could displace something called something.
 RANK = ["match", "libc", "libm", "svc", "syscall", "extlib", "vendor", "string",
         "wppcmd", "codec", "wppobj", "wuiview", "vasistas", "store", "sensor",
         "kernel", "global", "trace", "runtime", "shell", "logtag", "logcb",
-        "bleevt", "logline", "slot", "accessor", "provenance", "shared",
+        "bleevt", "logline", "slot", "accessor", "periph", "provenance", "shared",
         "helper", "role", "wrapper", "prose", "bymodule"]
 
 
