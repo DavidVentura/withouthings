@@ -34,8 +34,10 @@ EXTERNAL_BLOCKS = [
     ("ppb", 0xE0000000, 0x100000),
 ]
 
-# Ghidra's name for AAPCS-VFP on Cortex, its default prototype.
+# Ghidra's name for AAPCS-VFP on Cortex, its default prototype, and for the
+# base standard, floats in core registers, which the libgcc helpers keep to.
 AAPCS_VFP = "__stdcall"
+AAPCS_BASE = "__stdcall_softfp"
 
 # The seed carries a width and a shape, never a C spelling: the compiler has
 # already read the header and the three shapes below are all Ghidra needs to lay
@@ -157,10 +159,11 @@ def apply_prototypes(functions, indexes):
         source = entry.get("prototype")
         if source is None:
             continue
-        found = indexes[source].get(entry["name"])
+        declared = entry.get("declared", entry["name"])
+        found = indexes[source].get(declared)
         if not found:
-            raise RuntimeError("%s at 0x%x: routed to %s, which declares no such function"
-                               % (entry["name"], entry["address"], source))
+            raise RuntimeError("%s at 0x%x: routed to %s, which declares no %s"
+                               % (entry["name"], entry["address"], source, declared))
         if len({shape_of(fn) for fn in found}) != 1:
             raise RuntimeError("%s: %s declares it %d ways: %s" % (
                 entry["name"], source, len(found),
@@ -171,15 +174,18 @@ def apply_prototypes(functions, indexes):
             raise RuntimeError("%s at 0x%x: no function to give a prototype" % (
                 entry["name"], entry["address"]))
         # DWARF records no calling convention, so the import leaves it unknown;
-        # the image is built -mfloat-abi=hard, which is Ghidra's AAPCS-VFP default.
-        sig = FunctionDefinitionDataType(decl.getSignature())
-        sig.setCallingConvention(AAPCS_VFP)
+        # the image is built -mfloat-abi=hard, which is Ghidra's AAPCS-VFP
+        # default, except where the declaration says pcs("aapcs").
+        # Bound to the program's manager, whose compiler spec is what knows the
+        # ARM conventions by name.
+        sig = FunctionDefinitionDataType(decl.getSignature(), currentProgram.getDataTypeManager())
+        sig.setCallingConvention(AAPCS_BASE if entry.get("base_pcs") else AAPCS_VFP)
         if not ApplyFunctionSignatureCmd(target.getEntryPoint(), sig,
                                          SourceType.USER_DEFINED).applyTo(currentProgram, monitor):
             raise RuntimeError("%s: %s would not apply" % (entry["name"], sig.getPrototypeString()))
         target.setNoReturn(decl.hasNoReturn())
         applied += 1
-        hand = indexes["hand"].get(entry["name"]) if source != "hand" else None
+        hand = indexes["hand"].get(declared) if source != "hand" else None
         if hand and shape_of(hand[0]) != shape_of(decl):
             disagree.append("%s: %s says %s, the hand header %s" % (
                 entry["name"], source, sig.getPrototypeString(),

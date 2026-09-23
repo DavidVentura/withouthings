@@ -13,6 +13,7 @@ two meet by name, and this is the only thing that reads or writes the map.
 
 import collections
 import os
+import re
 import sys
 
 import yaml
@@ -158,6 +159,9 @@ def outranks(klass, other):
     return RANK.index(klass) < RANK.index(other)
 
 
+COPY_SUFFIX = re.compile(r"_copy_0x[0-9a-f]+$")
+
+
 class Symbol(object):
     def __init__(self, row):
         self.address = row["address"]
@@ -186,6 +190,15 @@ class Symbol(object):
         # this is not, and survives the rewrite.
         self.note = row.get("note")
         self.row = row
+
+    @property
+    def declared_name(self):
+        """The name the body is declared under. abi/autonames.py names the
+        second and later copies of one static body `<name>_copy_0x<address>`
+        (SVCALL leaves one per translation unit), and each is still `<name>`."""
+        if self.name is None:
+            return None
+        return COPY_SUFFIX.sub("", self.name)
 
     def __repr__(self):
         return "<%s %s @0x%x>" % (self.kind, self.name, self.address)

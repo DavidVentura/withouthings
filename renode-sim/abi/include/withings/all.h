@@ -18,6 +18,7 @@
 #include "withings/hands.h"
 #include "withings/hr.h"
 #include "withings/hw.h"
+#include "withings/libgcc.h"
 #include "withings/misc.h"
 #include "withings/sensors.h"
 #include "withings/sensors_sync.h"

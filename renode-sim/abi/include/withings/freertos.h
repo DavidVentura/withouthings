@@ -47,9 +47,9 @@ extern char *_dtoa_r(void *reent, double value, int mode, int ndigits, int *decp
    __assert_func__1__1 at 0x91ea4, which keeps both of them inside a tile
    that cannot be replaced.
    */
-extern long long __fixdfdi(double value);
+extern __attribute__((pcs("aapcs"))) long long __fixdfdi(double value);
 /* the second of the two libgcc bodies interleaved into 0x91ea4's tile */
-extern unsigned long long __fixunsdfdi(double value);
+extern __attribute__((pcs("aapcs"))) unsigned long long __fixunsdfdi(double value);
 
 /* globals */
 extern unsigned int xTickCount;

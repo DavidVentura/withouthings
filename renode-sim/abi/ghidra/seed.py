@@ -45,24 +45,36 @@ def in_app(addr):
 # Classes whose name is the reference's own: the reference's DWARF is the
 # declaration, and a hand header declaring the same name is at most a copy.
 REFERENCE_CLASSES = ("match", "libm")
-LIBC_CLASSES = ("libc", "syscall")
+LIBC_CLASSES = ("libc", "libm", "syscall")
+# Where a library function's declaration is looked for, best first: newlib's
+# debug build, where the body is C; newlib's installed headers, where it is
+# assembly or a Withings syscall stub; the hand headers, for libgcc, which no
+# installed header declares.
+LIBC_SOURCES = ("libc", "newlib", "hand")
+NOT_REFERENCES = ("hand", "libc", "newlib", "s140")
 
 
 def prototype_source(sym, recorded, defines):
     """The prototype source a map function is declared by, or None.
 
     `recorded` is the reference variant abi/matches.yaml measured the body
-    against; `defines` maps each source to the names its object defines.
+    against; `defines` maps each source to the names its object defines. A
+    function is looked up under the name it is declared as, which for the
+    second copy of an SVC wrapper is the first copy's.
     """
+    name = sym.declared_name
+    if sym.klass in REFERENCE_CLASSES and recorded is not None:
+        return recorded if name in defines[recorded] else None
     if sym.klass in REFERENCE_CLASSES:
-        if recorded is not None:
-            return recorded if sym.name in defines[recorded] else None
         refs = [src for src, names in defines.items()
-                if src not in ("hand", "libc") and sym.name in names]
-        return refs[0] if len(refs) == 1 else None
+                if src not in NOT_REFERENCES and name in names]
+        if len(refs) == 1:
+            return refs[0]
     if sym.klass in LIBC_CLASSES:
-        return "libc" if sym.name in defines["libc"] else None
-    return "hand" if sym.name in defines["hand"] else None
+        return next((src for src in LIBC_SOURCES if name in defines[src]), None)
+    if sym.klass == "svc":
+        return "s140" if name in defines["s140"] else None
+    return "hand" if name in defines["hand"] else None
 
 
 def shape(field):
@@ -89,6 +101,7 @@ def main():
     with open(args.protos) as fh:
         protos = json.load(fh)["sources"]
     defines = {src["name"]: set(src["defines"]) for src in protos}
+    base_pcs = {src["name"]: set(src["base_pcs"]) for src in protos}
     with open(os.path.join(ABI, "matches.yaml")) as fh:
         # `app+graph` is the `app` build, reached through its call graph.
         recorded = {m["address"]: m["variant"].split("+")[0]
@@ -115,6 +128,10 @@ def main():
                 unrouted[sym.klass] += 1
             else:
                 functions[sym.address]["prototype"] = src
+                if sym.declared_name != sym.name:
+                    functions[sym.address]["declared"] = sym.declared_name
+                if sym.declared_name in base_pcs[src]:
+                    functions[sym.address]["base_pcs"] = True
         elif sym.kind == "global":
             obj = types.object(sym.name)
             data.append({"address": sym.address, "name": sym.name,
