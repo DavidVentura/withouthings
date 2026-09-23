@@ -5,10 +5,14 @@
 #
 # The app slice of flash.bin (0x27000..0xf117c) is imported raw as
 # ARM:LE:32:Cortex at 0x27000, seeded with every name the repo knows
-# (abi/ghidra/seed.py -> abi/ghidra/seed_symbols.py) and analysed; then
+# (abi/ghidra/seed.py -> abi/ghidra/seed_symbols.py), given the prototypes the
+# headers and the reference builds declare (abi/ghidra/protos.py builds the
+# objects, which are imported to the project's /protos folder for their DWARF)
+# and analysed; then
 # abi/ghidra/export_partition.py writes abi/out/ghidra/{items,references,
-# symbols}.* . abi/ghidra/crosscheck.py checks the result against appl.dis and
-# the hand maps.
+# symbols}.* and abi/ghidra/audit_decompile.py decompiles everything into
+# decompile_audit.json. abi/ghidra/crosscheck.py checks the result against
+# appl.dis and the hand maps.
 #
 # Scripts run as CPython 3 under PyGhidra, which is why Ghidra is launched
 # through pyghidra's ghidra_launch rather than support/analyzeHeadless: the
@@ -37,11 +41,20 @@ if flash[0x27000:0x27000 + len(appl)] != appl or len(appl) != 0xf117c - 0x27000:
     sys.exit("appl.bin is not flash.bin[0x27000:0xf117c]")
 PY
 
-python3 "$HERE/seed.py" -o "$OUT/seed.json"
+python3 "$HERE/protos.py" --out "$OUT"
+python3 "$HERE/seed.py" -o "$OUT/seed.json" --protos "$OUT/protos.json"
 
 rm -rf "$PROJ"
 mkdir -p "$PROJ"
 start=$(date +%s)
+"$PY" -m pyghidra.ghidra_launch --install-dir "$GHIDRA" \
+    -Dghidra.repositories.dir="$PROJ" \
+    ghidra.app.util.headless.AnalyzeHeadless \
+    "$PROJ" hwa10/protos \
+    -import "$OUT"/protos/*.o "$OUT"/protos/*.elf \
+    -scriptPath "$HERE" \
+    -preScript dwarf_only.py \
+    -log "$OUT/protos.log" 2>&1 | tee "$OUT/headless-protos.log"
 "$PY" -m pyghidra.ghidra_launch --install-dir "$GHIDRA" \
     -Dghidra.repositories.dir="$PROJ" \
     ghidra.app.util.headless.AnalyzeHeadless \
@@ -56,10 +69,17 @@ start=$(date +%s)
     -postScript classify_gaps.py \
     -postScript export_partition.py "$OUT" \
     -postScript word_uses.py "$OUT" \
+    -postScript audit_decompile.py "$OUT" \
     -log "$OUT/analysis.log" -scriptlog "$OUT/script.log" 2>&1 | tee "$OUT/headless.log"
 
 # analyzeHeadless logs a failing script and carries on; a half-seeded or
 # half-exported run must not look like a success.
+# The prototype import logs the DWARF location expressions it cannot use as
+# errors; only a failed import or script is one.
+if grep -q "SCRIPT ERROR\|Import failed" "$OUT/headless-protos.log"; then
+    grep -A5 "SCRIPT ERROR\|Import failed" "$OUT/headless-protos.log" >&2
+    exit 1
+fi
 if grep -q "^ERROR" "$OUT/headless.log"; then
     grep -A5 "^ERROR" "$OUT/headless.log" >&2
     exit 1

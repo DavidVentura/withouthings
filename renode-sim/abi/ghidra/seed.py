@@ -6,6 +6,10 @@
 abi/ghidra/analyze.sh runs this before analyzeHeadless; the Ghidra pre-script
 applies the result.
 
+A function's prototype is not written here but routed: abi/ghidra/protos.py has
+already built the objects whose DWARF declares them, and each seeded function
+names the one its prototype is read from.
+
 abi/symbols.yaml is where every name comes from and its `kind` is what each is
 trusted to say: a function start, a typed global, a table, or -- for the prose
 entries, which mix code, flash data and RAM in one list -- a bare label that
@@ -16,9 +20,12 @@ abi/shapes.py, which is also the only place a stride can come from: a stride is
 """
 
 import argparse
+import collections
 import json
 import os
 import sys
+
+import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ABI = os.path.dirname(HERE)
@@ -33,6 +40,29 @@ APP_END = S.APP_END
 
 def in_app(addr):
     return APP_BASE <= addr < APP_END
+
+
+# Classes whose name is the reference's own: the reference's DWARF is the
+# declaration, and a hand header declaring the same name is at most a copy.
+REFERENCE_CLASSES = ("match", "libm")
+LIBC_CLASSES = ("libc", "syscall")
+
+
+def prototype_source(sym, recorded, defines):
+    """The prototype source a map function is declared by, or None.
+
+    `recorded` is the reference variant abi/matches.yaml measured the body
+    against; `defines` maps each source to the names its object defines.
+    """
+    if sym.klass in REFERENCE_CLASSES:
+        if recorded is not None:
+            return recorded if sym.name in defines[recorded] else None
+        refs = [src for src, names in defines.items()
+                if src not in ("hand", "libc") and sym.name in names]
+        return refs[0] if len(refs) == 1 else None
+    if sym.klass in LIBC_CLASSES:
+        return "libc" if sym.name in defines["libc"] else None
+    return "hand" if sym.name in defines["hand"] else None
 
 
 def shape(field):
@@ -51,10 +81,19 @@ def shape(field):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-o", "--out", default=os.path.join(ABI, "out", "ghidra", "seed.json"))
+    ap.add_argument("--protos", default=os.path.join(ABI, "out", "ghidra", "protos.json"))
     args = ap.parse_args()
 
     smap = S.load()
     types = T.load()
+    with open(args.protos) as fh:
+        protos = json.load(fh)["sources"]
+    defines = {src["name"]: set(src["defines"]) for src in protos}
+    with open(os.path.join(ABI, "matches.yaml")) as fh:
+        # `app+graph` is the `app` build, reached through its call graph.
+        recorded = {m["address"]: m["variant"].split("+")[0]
+                    for m in yaml.safe_load(fh)["functions"]}
+    unrouted = collections.Counter()
     functions, labels, data, tables = {}, {}, [], []
     corrected = smap.corrected()
 
@@ -71,6 +110,11 @@ def main():
             continue
         if sym.kind == "function":
             functions[sym.address] = {"name": sym.name, "source": sym.klass}
+            src = prototype_source(sym, recorded.get(sym.address), defines)
+            if src is None:
+                unrouted[sym.klass] += 1
+            else:
+                functions[sym.address]["prototype"] = src
         elif sym.kind == "global":
             obj = types.object(sym.name)
             data.append({"address": sym.address, "name": sym.name,
@@ -95,6 +139,7 @@ def main():
             labels.setdefault(sym.address, {"name": name, "source": sym.klass})
 
     out = {"app_base": APP_BASE, "app_end": APP_END,
+           "prototype_sources": {src["name"]: src["file"] for src in protos},
            "attributions": sorted(attributions, key=lambda a: a["address"]),
            "functions": [dict(address=a, **v) for a, v in sorted(functions.items())],
            "labels": [dict(address=a, **v) for a, v in sorted(labels.items())],
@@ -107,6 +152,10 @@ def main():
           " %d attributions -> %s"
           % (len(out["functions"]), len(out["labels"]), len(out["data"]),
              len(out["tables"]), len(out["attributions"]), args.out),
+          file=sys.stderr)
+    routed = collections.Counter(f["prototype"] for f in out["functions"] if "prototype" in f)
+    print("seed: prototypes %s; none for %d functions by class %s"
+          % (dict(routed), sum(unrouted.values()), dict(unrouted.most_common())),
           file=sys.stderr)
 
 

@@ -13,9 +13,11 @@ import json
 
 from java.math import BigInteger
 from ghidra.app.cmd.disassemble import ArmDisassembleCommand
+from ghidra.app.cmd.function import ApplyFunctionSignatureCmd
 from ghidra.program.model.address import AddressSet
 from ghidra.program.model.data import (ArrayDataType, ByteDataType, CategoryPath,
-                                       PointerDataType, StructureDataType,
+                                       FunctionDefinitionDataType, PointerDataType,
+                                       StructureDataType,
                                        UnsignedIntegerDataType, UnsignedShortDataType)
 from ghidra.program.model.symbol import SourceType
 
@@ -31,6 +33,9 @@ EXTERNAL_BLOCKS = [
     ("peripherals", 0x40000000, 0x10000000),
     ("ppb", 0xE0000000, 0x100000),
 ]
+
+# Ghidra's name for AAPCS-VFP on Cortex, its default prototype.
+AAPCS_VFP = "__stdcall"
 
 # The seed carries a width and a shape, never a C spelling: the compiler has
 # already read the header and the three shapes below are all Ghidra needs to lay
@@ -109,6 +114,79 @@ def apply_table(entry, category):
     clearListing(at, at.add(array.getLength() - 1))
     createData(at, array)
     createLabel(at, entry["name"], True, SourceType.USER_DEFINED)
+
+
+def prototype_index(program):
+    """Name -> the signatures the program's DWARF gave every function so called."""
+    index = {}
+    for fn in program.getFunctionManager().getFunctions(True):
+        if fn.getSignatureSource() == SourceType.DEFAULT:
+            continue
+        index.setdefault(fn.getName(), []).append(fn)
+    return index
+
+
+def open_prototype_sources(files):
+    """The programs analyze.sh imported to /protos, by source; the caller releases them."""
+    data = getState().getProject().getProjectData()
+    programs = {}
+    for source, name in files.items():
+        df = data.getFile("/protos/" + name)
+        if df is None:
+            raise RuntimeError("prototype source %s: /protos/%s was not imported" % (source, name))
+        programs[source] = df.getReadOnlyDomainObject(this, -1, monitor)
+    return programs
+
+
+def shape_of(fn):
+    """What a caller relies on: the return width, the parameter widths, varargs."""
+    return (fn.getReturnType().getLength(),
+            tuple(p.getLength() for p in fn.getParameters()), fn.hasVarArgs())
+
+
+def apply_prototypes(functions, indexes):
+    """Lock every routed function's signature to its source's declaration.
+
+    A name the source declares twice with different shapes is two functions the
+    map cannot tell apart, so it is an error rather than a pick. Where a reference
+    is the source and a hand header declares the name too, the two are compared,
+    because the headers are what abi/relink.sh compiles callers against.
+    """
+    applied, disagree = 0, []
+    for entry in functions:
+        source = entry.get("prototype")
+        if source is None:
+            continue
+        found = indexes[source].get(entry["name"])
+        if not found:
+            raise RuntimeError("%s at 0x%x: routed to %s, which declares no such function"
+                               % (entry["name"], entry["address"], source))
+        if len({shape_of(fn) for fn in found}) != 1:
+            raise RuntimeError("%s: %s declares it %d ways: %s" % (
+                entry["name"], source, len(found),
+                "; ".join(str(fn.getSignature().getPrototypeString()) for fn in found)))
+        decl = found[0]
+        target = getFunctionAt(addr(entry["address"]))
+        if target is None:
+            raise RuntimeError("%s at 0x%x: no function to give a prototype" % (
+                entry["name"], entry["address"]))
+        # DWARF records no calling convention, so the import leaves it unknown;
+        # the image is built -mfloat-abi=hard, which is Ghidra's AAPCS-VFP default.
+        sig = FunctionDefinitionDataType(decl.getSignature())
+        sig.setCallingConvention(AAPCS_VFP)
+        if not ApplyFunctionSignatureCmd(target.getEntryPoint(), sig,
+                                         SourceType.USER_DEFINED).applyTo(currentProgram, monitor):
+            raise RuntimeError("%s: %s would not apply" % (entry["name"], sig.getPrototypeString()))
+        target.setNoReturn(decl.hasNoReturn())
+        applied += 1
+        hand = indexes["hand"].get(entry["name"]) if source != "hand" else None
+        if hand and shape_of(hand[0]) != shape_of(decl):
+            disagree.append("%s: %s says %s, the hand header %s" % (
+                entry["name"], source, sig.getPrototypeString(),
+                hand[0].getSignature().getPrototypeString()))
+    for line in disagree:
+        println("prototype disagreement: " + line)
+    return applied, len(disagree)
 
 
 def seed_vector_table(known_names):
@@ -218,6 +296,14 @@ for t in seed["tables"]:
     apply_table(t, hwa10_category)
     counts["tables"] += 1
 
+sources = open_prototype_sources(seed["prototype_sources"])
+try:
+    prototypes, disagreements = apply_prototypes(
+        seed["functions"], {src: prototype_index(p) for src, p in sources.items()})
+finally:
+    for program in sources.values():
+        program.release(this)
+
 # What the map calls each address, whatever kind it calls it: the two passes
 # below run after the seed is applied, so without this they would rename what
 # the seed had just named.
@@ -230,9 +316,14 @@ vectors = seed_vector_table(known_names)
 svc = seed_svc_wrappers(app_first, app_last, known_names)
 
 # The decompiler's parameter ID pass costs more than the partition gains from it.
+# Data archives match functions by name alone against Ghidra's generic C
+# library, whose POSIX-on-x86 prototypes are not newlib's; a prototype comes
+# from the seed or not at all.
 for option, value in [("Decompiler Parameter ID", "false"),
+                      ("Apply Data Archives", "false"),
                       ("ARM Aggressive Instruction Finder", "true"),
                       ("Non-Returning Functions - Discovered", "true")]:
     setAnalysisOption(currentProgram, option, value)
 
-println("seeded: %s, vectors %d, svc wrappers %d" % (counts, vectors, svc))
+println("seeded: %s, vectors %d, svc wrappers %d, prototypes %d (%d disagree with a hand header)"
+        % (counts, vectors, svc, prototypes, disagreements))
