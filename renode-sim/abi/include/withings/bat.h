@@ -29,6 +29,14 @@ struct name_ptr {
     const char *name;
 };
 
+/* the two bytes bq25180_status fills and bat_charging_decision decides
+   from; both callers of the decision keep it on their stack (0x2fd8e,
+   0x92326). */
+struct bq25180_state {
+    unsigned char chg_stat;
+    unsigned char vin_pgood;
+};
+
 /* functions */
 /* SAADC AIN0; the gain adaptation is gated on product id 0x280010. Named by
    the __func__ the function logs, which symbols.txt already follows; the
@@ -41,12 +49,14 @@ extern void battery_level_get(unsigned char *out_percent);
    turns a percentage into the millivolts the battery reply carries
    */
 extern short battery_pct_to_mv(int percent);
-/* inferred; reads STAT0, logs "VIN_PGOOD = %hu" */
-extern int bq25180_status(void *dev);
+/* inferred; reads STAT0, logs "VIN_PGOOD = %hu"; writes VIN_PGOOD to +1
+   (0x4399a) and the charge state to +0 (0x439c4) when st is not NULL */
+extern int bq25180_status(struct bq25180_state *st);
 /* inferred; sets/clears ICHG_CTRL bit 7 (CHG_DIS) */
 extern int bq25180_charge_enable(void *dev, int enable);
-/* I2C error -> 2, VIN_PGOOD=0 -> 0, else the table at 0xc6cbc */
-extern int bat_charging_decision(void);
+/* I2C error -> 2, VIN_PGOOD=0 -> 0, else the table at 0xc6cbc indexed by
+   the charge state; zeroes both bytes on the I2C error (0x2fcc8) */
+extern int bat_charging_decision(struct bq25180_state *st);
 /* stores the charge state into out+1: 0 while the charger reports an error
    (0x922a2), otherwise 2 when the charger is idle and 1 or 3 from
    bat_charging_decision's verdict. Its only caller is

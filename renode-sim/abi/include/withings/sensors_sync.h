@@ -423,7 +423,7 @@ extern float spectral_purity_index(int n, const float *x);
 /* out[i] = sum of kernel[j] * x[i+j] over a centred kernel, with the boundary
    mode 0 dropping the tap, 1 repeating the first element and 2 mirroring.
    */
-extern int vec_f32_convolve(int n, const float *x, int lo, const float *kernel, float *out, int klen, unsigned char mode);
+extern int vec_f32_convolve(int n, const float *x, int klen, const float *kernel, float *out, unsigned char mode);
 /* x[i] multiplied by powf(tab[2i], e) inside [lo, hi] and copied through
    outside it.
    */
@@ -432,12 +432,18 @@ extern int vec_f32_band_weight_powf(int n, const float *tab, int lo, int hi, flo
    four of the vector primitives and a sqrtf, one per line.
    */
 extern float vec_f32_weighted_stddev(int n, const float *x, const float *w, float *scratch);
-/* puts the weights back to a uniform 1/bins and clears every estimate. */
-extern int spectrotrack_reset(struct spectrotrack *t);
-/* stores the axis, the weights, the three scratch arrays and the estimator
-   window, then resets; refuses a window wider than the bin count.
+/* copies the prior into the weights (0xa2b9a..0xa2ba2), zeroes scratch_b and
+   scratch_c and fills scratch_a with 1/window (0xa2b6c..0xa2b88); refuses a
+   bin count other than the one init stored.
    */
-extern int spectrotrack_init(struct spectrotrack *t, int bins, const float *axis, float *weight, float *sa, float *sb, float *sc, int window);
+extern int spectrotrack_reset(struct spectrotrack *t, int bins, const float *prior);
+/* stores the axis, the weights, the three scratch arrays and the estimator
+   window, then resets with the prior; refuses a window wider than the bin
+   count. Five arguments on the stack, which both callers (0xa2da4, 0xa3014)
+   store.
+   */
+extern int spectrotrack_init(struct spectrotrack *t, int bins, float *weight, const float *prior,
+                             const float *axis, float *sb, float *sc, int window, float *sa);
 /* one multiplicative update: a smoothed likelihood raised to `e`, multiplied
    into the weights, renormalised to sum one and clamped away from zero.
    Refuses an exponent outside [0, 1].
@@ -460,8 +466,10 @@ extern int spectrotrack_step(struct spectrotrack *t, int bins, float *scratch, i
 extern int spectrotrack_publish(struct spectrotrack_slot *s);
 /* the quality byte: 2 - valid below the config's level, 0 above it. */
 extern int spectrotrack_grade_quality(struct spectrotrack_slot *s, float x);
-/* one sample into the slot: the step, then the publish, then the quality. */
-extern int spectrotrack_feed(struct spectrotrack_slot *s, float x);
+/* one sample into the slot: the step, then the publish, then the quality.
+   bins and likelihood go through to spectrotrack_step unchanged (0xa2e02).
+   */
+extern int spectrotrack_feed(struct spectrotrack_slot *s, int bins, float *likelihood, float x);
 
 /* one sample into one of the two sensor rings. The body indexes a two-entry
    table of ring descriptors by the first argument and refuses anything above
@@ -555,9 +563,11 @@ extern void sensors_sync_push_accel(void);
    that channel's word inside the sample and packs the caller's 20-bit datum
    and the channel configuration's two upper fields into it, then calls
    sensors_sync_ring_push with r0 = 1 (0x523f6). The 0x40-byte buffer and the
-   channel-indexed slot are the PPG stream's size and layout.
+   channel-indexed slot are the PPG stream's size and layout. It is the
+   callback 0x52840 registers (0x523cd), called through `blx r2` at 0x52396
+   with the channel values and the measurement id 0x8b790 looks up.
    */
-extern void sensors_sync_push_ppg(void);
+extern void sensors_sync_push_ppg(const unsigned int *channel_values, unsigned char meas_id);
 /* a `tbb` switch on the channel id, refusing above 0xf, whose every arm
    returns the address of that channel's word in the caller's PPG sample; it
    is what fixes sensor_sample_ppg as sixteen words indexed by channel id.
@@ -579,9 +589,13 @@ extern void motion_detection_algo_step(void *algo, const void *axes);
 extern void ppg_heart_beats_algo_step(void *algo, const struct algo_sample_frame *frame);
 /* the call under algo_enabled(7) (0x7d55e, 0x7d584); id 7 is PPG_ARRHYTHMIA.
    Five values are read out of the HR algorithm's object and passed alongside
-   the frame (0x7d566..0x7d582).
+   the frame (0x7d566..0x7d582), all as integers: no s register is read on
+   entry, and a and b are tested signed (0x76488, 0x764a2). a and a_aux go to
+   the rings at +0x128/+0x380, b and b_aux to +0x5dc/+0x834, reset_arg to
+   0xa0490. Always answers 0.
    */
-extern void ppg_arrhythmia_algo_step(void *algo, float a, float b, float c, float d, const struct algo_sample_frame *frame);
+extern int ppg_arrhythmia_algo_step(void *algo, int a, int b, int a_aux, int b_aux,
+                                    int reset_arg, const struct algo_sample_frame *frame);
 /* the call under algo_enabled(0x11) (0x7d5bc, 0x7d5cc); id 17 is PPG_HRV. It
    is the root of the beat detector: its only callee chain in the trace is
    0x7d778 and ppg_hrv_peak_detect, 2262 and 9016 calls against 1131 samples.
@@ -592,17 +606,25 @@ extern void ppg_hrv_algo_step(void *algo, const struct algo_sample_frame *frame)
    for id 6 (0x7d650), but this call is re-gated on 5 alone.
    */
 extern void spo2_multi_algo_step(void *algo, const struct algo_sample_frame *frame, int state, unsigned int first);
-/* the call under algo_enabled(6) (0x7d60c, 0x7d63e); id 6 is SPO2_MONO. */
-extern void spo2_mono_algo_step(void *algo, const struct algo_sample_frame *frame, int state);
+/* the call under algo_enabled(6) (0x7d60c, 0x7d63e); id 6 is SPO2_MONO. The
+   flag is the byte at ctx+0x3c5 (0x7d62c), tested at 0x2a28c; the caller also
+   leaves a float in s0 (0x7d632) that nothing on the way reads.
+   */
+extern void spo2_mono_algo_step(void *algo, const struct algo_sample_frame *frame, int state,
+                                unsigned char flag);
 /* the call under algo_enabled(0xa) (0x7d65a, 0x7d672); id 10 is PPG_BR. */
 extern void ppg_br_algo_step(void *algo, const struct algo_sample_frame *frame);
 /* the call under algo_enabled(0xb) (0x7d676, 0x7d6b6); id 11 is PPG_APNEA. */
 extern void ppg_apnea_algo_step(void *algo, const struct algo_sample_frame *frame, int beat, void *hr);
 /* the call under algo_enabled(0xe) (0x7d6ba, 0x7d71e); id 14 is SLEEP_WAKE.
    The four HRV getters feed it on the stack (0x7d6ea..0x7d706). 1279 calls
-   in the trace, one per popped slot.
+   in the trace, one per popped slot. The float is 0x7b808's result, which
+   the body keeps in s0 for 0x79b1c; the last four are hrv+0, the SDNN, hrv+0xc
+   and the byte at hrv+0x11, and 0x79684 forwards them to 0x79e24.
    */
-extern void sleep_wake_algo_step(void *algo, int beats, unsigned int a, unsigned int b);
+extern void sleep_wake_algo_step(void *algo, int beats, unsigned int a, unsigned int b,
+                                 float x, int hrv_0, int hrv_sdnn, int hrv_c,
+                                 unsigned char hrv_flag);
 /* the call under algo_enabled(0x12) (0x7d722, 0x7d73e); id 18 is PPG_RR. */
 extern void ppg_rr_algo_step(void *algo, const struct algo_sample_frame *frame, int beat);
 /* one halfword load out of a global and nothing else; its only caller is

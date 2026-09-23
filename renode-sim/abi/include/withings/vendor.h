@@ -51,12 +51,33 @@ struct greenteg_cbta_sample {
     float skin_temperature;
 };
 
+/* The sport instance's parameters, at 0x20006fc8. The reset sizes the
+   instance's means from `window`; config_apply tests the two minute-means
+   against the rest: heat flux below slope * skin temperature + intercept and
+   below flux_limit, and the current skin temperature below skin_threshold. */
+struct greenteg_cbta_sport_params {
+    unsigned int window;
+    float skin_threshold;
+    float slope;
+    float intercept;
+    float flux_limit;
+};
+
+/* The free-living instance's parameters, at 0x20006fbc; its reset reads the
+   window and nothing else. */
+struct greenteg_cbta_fl_params {
+    unsigned int window;
+};
+
 /* Both inits return zero on failure, which is what the firmware logs as
    "algorithm init failed"; both updates return the instance's ready flag. */
 int vendor_greenteg_cbta_free_living_init(void);
 int vendor_greenteg_cbta_sport_init(void);
-void vendor_greenteg_cbta_free_living_reset(void);
-void vendor_greenteg_cbta_sport_reset(void);
+/* Each passes params->window to its instance's window init (0x8bf14 and
+   0xa79d0) and returns what that answers, nonzero once the means are sized;
+   the caller at 0x429ae logs the init failure on zero. */
+int vendor_greenteg_cbta_free_living_reset(const struct greenteg_cbta_fl_params *params);
+int vendor_greenteg_cbta_sport_reset(const struct greenteg_cbta_sport_params *params);
 
 /* The configuration in, the model's two inputs out. What 0x8bd04 computes:
    the bin character is a sensitivity in microvolts per unit, (c - 'A' + 1)/10
@@ -71,7 +92,12 @@ void vendor_greenteg_cbta_sample_convert(const struct greenteg_cbta_config *cfg,
                                          float *out_skin_temperature,
                                          float raw_heat_flux,
                                          float raw_skin_temperature);
-void vendor_greenteg_cbta_config_apply(const struct greenteg_cbta_config *cfg);
+/* Feeds the converted pair into the sport means and decides from them; the
+   caller (0x425a0) passes the enable byte as `active` and gets the decision
+   code through out_state. Always answers 1. */
+int vendor_greenteg_cbta_config_apply(const struct greenteg_cbta_sport_params *params,
+                                      int active, unsigned char *out_state,
+                                      float heat_flux, float skin_temperature);
 int vendor_greenteg_cbta_config_validate(const struct greenteg_cbta_config *cfg);
 
 /* One sample. The first two are the converted readings and the third is the
@@ -166,16 +192,11 @@ struct ecgsw2_result {
     unsigned char bytes[ECGSW2_RESULT_BYTES];
 };
 
-/* What vendor_ecgsw2_configure takes from ecg_module_init. The three ranges
-   it rejects are what name the three fields: "sampling frequency is not in
-   the [%d, %d] range", "Gain is not in the [%d, %d] range", "lfboost mode
-   should be between %d and %d". */
-struct ecgsw2_config {
-    long sampling_frequency_hz;
-    long gain;
-    long lfboost_mode;
-};
-
-extern int vendor_ecgsw2_configure(void *ctx, const struct ecgsw2_config *cfg);
+/* The three ranges it rejects are what name the three arguments, which come
+   by value (0x4a718 passes 300, 0x64a, 2): "sampling frequency is not in the
+   [%d, %d] range", "Gain is not in the [%d, %d] range", "lfboost mode should
+   be between %d and %d". */
+extern void vendor_ecgsw2_configure(void *ctx, unsigned int sampling_frequency_hz,
+                                    unsigned int gain, unsigned int lfboost_mode);
 
 #endif

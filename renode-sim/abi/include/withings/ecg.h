@@ -191,9 +191,11 @@ extern void ecg_task_state_machine(void);
    against ecg_session.expected_evt_counter and bumps it (0x49de0), walks the
    block's 0x32 samples, adds 0x32 to sample_count (0x49f54) and stops when
    that passes target_sample_count. The derived name it takes over came from
-   the shell command that also calls it.
+   the shell command that also calls it. The block is fifty samples (copied
+   as 0x64 bytes at 0x49e08); evt_counter is checked against the expected
+   one (0x49dc4) and is the `%u` of "Drop ADC buffer (evt counter = %u)".
    */
-extern void ecg_adc_block_handler(void);
+extern void ecg_adc_block_handler(const short samples[50], unsigned int evt_counter);
 /* the only reader of ecg_session.sample_ring that walks it whole: 0x90
    iterations from ring_wr, starting at zero or at the cursor depending on
    ring_wrapped (0x49ffe), emitting two samples at a time. Three ring fields

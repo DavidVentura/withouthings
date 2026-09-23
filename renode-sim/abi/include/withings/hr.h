@@ -294,22 +294,26 @@ extern void hr_measure_on_algo_result(const struct hr_algo_report *report);
 /* refuses with -2 while the HR algorithm's mode byte is zero, otherwise
    copies hr_algo_result's bpm, bpm_ref, ready and acceptable as one word and
    quality as one byte into the caller's report and returns the status field.
-   It is the only reader of that five-byte group.
+   It is the only reader of that five-byte group; out points at it inside the
+   report (0x63fde passes report+7), and the copy is 0xa265c's.
    */
-extern int hr_algo_get_result(struct hr_algo_report *out);
+extern int hr_algo_get_result(const struct hr_algo *algo, unsigned char *out);
 /* the only writer of hr_algo_result's bpm, bpm_ref, ready, acceptable,
    quality, warm and status. It steps the three channel filters and the
    motion filter, sets warm once all four report ready (0x7aade), and on a
    full window converts the rate and the quality to bytes (0x7ac6c, 0x7ac88)
    and decides acceptability from the sample count and the distance to
-   bpm_ref.
+   bpm_ref. The caller (0xa2498..0xa24ae) passes the result object, the
+   slot's quality byte, the sample it also stores as last_value, the floats at
+   +0x1c68 and +0x1c64, and its own s0, which becomes bpm_ref (0x7aaa6).
    */
-extern int hr_algo_step(void);
+extern int hr_algo_step(struct hr_algo_result *r, unsigned char rate_quality, float last_value,
+                        float band_c, float band_b, float bpm_ref);
 /* resets the four filters of hr_algo_result, memsets its three 0x98-byte
    buffers and puts status back to -3 with bpm, quality and warm at zero
    (0xa257c..0xa2592). The mirror of hr_algo_step and nothing else.
    */
-extern int hr_algo_reset(void);
+extern int hr_algo_reset(struct hr_algo_result *r);
 /* one load whose result is hr_measure_ctx.rmssd and the `%ld` of "rmssd:". */
 extern int hrv_get_rmssd(void *hrv);
 /* one load whose result is hr_measure_ctx.hrv_quality, the `%d` the "Poor

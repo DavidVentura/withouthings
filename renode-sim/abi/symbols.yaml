@@ -3355,18 +3355,15 @@ symbols:
   module: INIT
   evidence: only 0x2fbdc (main_task__1) calls 0x40060; 22 bytes
 - address: 0x40080
-  kind: function
-  class: bymodule
-  module: BAT
-  evidence: 0x40080 reaches only battery_curve_bounds, battery_state
-- address: 0x400b4
   name: battery_adc_value_gain_adaptation
   kind: function
   class: string
   module: BATTERY
   note: SAADC AIN0; the gain adaptation is gated on product id 0x280010. Named by
     the __func__ the function logs, which symbols.txt already follows; the manifest
-    still carried the older battery_adc_read.
+    still carried the older battery_adc_read. The entry is the push at 0x40080, after
+    the pool; this name once sat on 0x400b4, a bl inside the body that nothing
+    branches to, and seeding it there is what split the body in two.
   evidence: wlog('[%s] adapt adc value %d with gain %d -> ', 'battery_adc_value_gain_adaptation')
     at 0x400cc
 - address: 0x40184
@@ -7833,13 +7830,16 @@ symbols:
   kind: function
   class: shell
   evidence: 'shell_cmd_table row 0x27334: command ''power'', run slot (+4)'
-- address: 0x56e8e
+- address: 0x56e88
   name: wlog_putchar
   kind: function
   class: hand
   module: wlog
   evidence: 'NOT AAPCS-callable: the ring context comes in r12, so this is the sink
     the formatter installs, not an entry point. Listed for completeness; call wlog.'
+  note: all five callers (0x56f24, 0x5709a, 0x9b182, 0x9b19c, 0x9b1a6) branch to 0x56e88,
+    whose two instructions bump the ring's count through r12 before the push at
+    0x56e8e; the Renode hooks at 0x56e8e see the same r0 and r12.
 - address: 0x570e0
   kind: function
   class: bymodule

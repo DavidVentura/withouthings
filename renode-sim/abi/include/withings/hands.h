@@ -99,8 +99,9 @@ struct step_motor_waveform {
    coils, reloads the calibration phases and nrfx_pwm_init's the three
    instances with PRESCALER 5 and DECODER.LOAD = WaveForm. */
 extern void step_motor_init(const unsigned int restored_positions[STEP_MOTOR_COUNT]);
-/* step_motor_init behind a once guard; logs "already initialized" after. */
-extern void step_motor_init_once(void);
+/* step_motor_init behind a once guard, passing the positions through;
+   logs "already initialized" after. */
+extern void step_motor_init_once(const unsigned int restored_positions[STEP_MOTOR_COUNT]);
 /* Stages a move. Panics if target is above the motor's max_position. */
 extern void step_motor_request_move(struct step_motor *motor, const struct step_motor_move *move);
 /* The shorter way round, into motor->direction. */

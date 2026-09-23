@@ -265,12 +265,13 @@ struct flash_cache_ctx {
 };
 
 /* functions */
-extern void flash_cache_init(struct flash_cache_ctx *ctx,
-                             unsigned short wftl_type,
-                             unsigned short nb_blocks,
-                             struct flash_cache_entry *table,
-                             unsigned short table_capacity,
-                             unsigned int force_format);
+/* 0, or -4 when the mutex it stores at +0x1c cannot be created (0x4c5f4) */
+extern int flash_cache_init(struct flash_cache_ctx *ctx,
+                            unsigned short wftl_type,
+                            unsigned short nb_blocks,
+                            struct flash_cache_entry *table,
+                            unsigned short table_capacity,
+                            unsigned int force_format);
 extern void flash_cache_deinit(struct flash_cache_ctx *ctx);
 extern int flash_cache_insert(struct flash_cache_ctx *ctx, unsigned int id,
                               unsigned int nseg, const unsigned int *lens,
@@ -613,11 +614,21 @@ extern unsigned int vasistas_size_from_header(const struct vasistas_header *r);
 /* (wftl_type, index, offset) -- the sim's trace shows the walk calling it as
    vasistas_read_record(1, 4, 0x45c) and wftl_read(1, 4, 0x45c) straight
    after, so the three are the WFTL coordinates and not a bank pointer */
+/* header_only stops after the eight-byte header and its size check
+   (0x6678c); a record larger than capacity is -4 (0x66790); an empty or
+   unknown header is -5 with empty_is_end set, else -1 (0x66776). All eight
+   callers store the three stack words.
+   */
 extern int vasistas_read_record(unsigned char wftl_type, unsigned short index,
-                                unsigned int offset, void *out);
+                                unsigned int offset, int header_only, void *out,
+                                unsigned int capacity, int empty_is_end);
 extern int vasistas_store(const void *rec, unsigned char wftl_type);
-extern int vasistas_walk_next(struct vasistas_bank *cursor, void *out);
-extern int vasistas_walk_prev(struct vasistas_bank *cursor, void *out);
+/* header_only, out and capacity go through to vasistas_read_record; next_out,
+   when not NULL, gets the cursor advanced past the record (0x9c8aa..0x9c8be). */
+extern int vasistas_walk_next(struct vasistas_bank *cursor, int header_only, void *out,
+                              unsigned int capacity, struct vasistas_bank *next_out);
+extern int vasistas_walk_prev(struct vasistas_bank *cursor, int header_only, void *out,
+                              unsigned int capacity);
 
 /* ---------------------------------------------------------- dblib's port */
 

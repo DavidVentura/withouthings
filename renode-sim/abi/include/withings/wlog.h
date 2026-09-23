@@ -9,13 +9,19 @@
 /* functions */
 /* the app's printf into the wlog ring that reaches UART0; `push
    {r0,r1,r2,r3}` prologue is the AAPCS va_list spill, so it is callable as a
-   plain variadic. Format strings carry their own trailing newline.
+   plain variadic. Format strings carry their own trailing newline. It is
+   newlib's printf, _vfprintf_r (0x914bc) on _impure_ptr's stdout, whose count
+   it returns.
    */
-extern void wlog(const char *fmt, ...);
-/* inferred; r0 is a small level constant (5 at the 0x4029a call site), fmt
-   in r1
+extern int wlog(const char *fmt, ...);
+/* r0 is a small level constant (5 at the 0x4029a call site); r1 a 32-bit
+   log id (0xea633770 beside "[M] reset_reason : 0x%x\n" at 0x2e466), stored
+   raw into the binary record at +0xf; r2 the format, which is also what the
+   record's arguments are scanned against. The source takes the format as its
+   first va_arg (`push {r2, r3}`); as a named third argument it lands in the
+   same place. Always answers 0.
    */
-extern void wlog_level(unsigned int level, const char *fmt, ...);
+extern int wlog_level(unsigned int level, unsigned int log_id, const char *fmt, ...);
 /* NOT AAPCS-callable: the ring context comes in r12, so this is the sink the
    formatter installs, not an entry point. Listed for completeness; call
    wlog.
