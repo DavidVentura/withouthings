@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -38,38 +37,22 @@ fun AfibAlertScreen(alert: AfibAlert?, onBack: () -> Unit) {
             Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(AppTheme.space.blockLoose),
         ) {
-            AccentCard(Modifier.fillMaxWidth()) {
-                Text(
-                    confirmation(alert),
-                    style = AppTheme.type.body,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
+            val (confirming, earlier) = alert.readings.partition { it.id == alert.id }
+            confirming.forEach { ReadingCard(it, confirming = true) }
+            if (earlier.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    RowDivider(inset = 0.dp)
+                    Text(
+                        "Readings that led to this alert",
+                        style = AppTheme.type.rowMeta,
+                        color = AppTheme.colors.onSurfaceTertiary,
+                    )
+                }
             }
-            alert.readings.asReversed().forEach { reading ->
-                ReadingCard(reading, confirming = reading.id == alert.id)
-            }
+            earlier.asReversed().forEach { ReadingCard(it, confirming = false) }
             Spacer(Modifier.height(8.dp))
         }
     }
-}
-
-private fun confirmation(alert: AfibAlert): String {
-    val first = alert.readings.firstOrNull()?.measuredAtMs ?: alert.measuredAtMs
-    val hours = (alert.measuredAtMs - first) / 3_600_000.0
-    val counted = alert.counted.toInt()
-    val span = if (counted > 1) {
-        " over ${grouped(hours, 1)} h, from ${clock(first)} on ${fullDate(first)}"
-    } else {
-        ""
-    }
-    val empty = when (alert.empty.toInt()) {
-        0 -> ""
-        1 -> " One of them is an empty recording (0 s) and is not shown."
-        else -> " ${alert.empty} of them are empty recordings (0 s) and are not shown."
-    }
-    return "The watch confirmed this after $counted background readings its classifier " +
-        "called AFib$span. It alerts once it counts ${alert.run} within " +
-        "${alert.windowHours} h; a normal reading in between starts the count again.$empty"
 }
 
 @Composable
