@@ -56,6 +56,7 @@ import dev.davidv.withoutings.ui.StorageScreen
 import dev.davidv.withoutings.ui.Tab
 import dev.davidv.withoutings.ui.TileSource
 import dev.davidv.withoutings.ui.TodayScreen
+import dev.davidv.withoutings.ui.TrendsScreen
 import dev.davidv.withoutings.ui.WatchActivitiesScreen
 import dev.davidv.withoutings.ui.WatchScreensScreen
 import dev.davidv.withoutings.ui.WatchSensorsScreen
@@ -396,6 +397,21 @@ private fun Navigation(
                         model.showAfibAlert(it.id)
                         nav.navigate(Routes.AFIB_ALERT)
                     },
+                )
+            }
+
+            composable(Tab.Trends.route) {
+                val trends by model.trends.collectAsState()
+                val trendSpan by model.trendSpan.collectAsState()
+                val trendCategory by model.trendCategory.collectAsState()
+                TrendsScreen(
+                    trends = trends,
+                    span = trendSpan,
+                    category = trendCategory,
+                    onSpan = { model.showTrendSpan(it) },
+                    onCategory = { model.showTrendCategory(it) },
+                    onAddNote = { atMs, text -> model.addNote(atMs, text) },
+                    onDeleteNote = { model.deleteNote(it) },
                 )
             }
 

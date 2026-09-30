@@ -8,6 +8,7 @@ pub mod commands;
 pub mod debug_dump;
 pub mod energy;
 pub mod frame;
+pub mod heart;
 pub mod image;
 pub mod objects;
 pub mod pairing;

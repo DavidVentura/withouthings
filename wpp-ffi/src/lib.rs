@@ -5,6 +5,7 @@ use wpp::ancs::{self, NotificationCenter, NotificationId};
 use wpp::capture::{FrameReassembler, StreamItem};
 use wpp::client::{
     Action, Category, Client, Credentials, Event, Feature, FeatureId, FeatureSchedule, Phase,
+    Source,
 };
 use wpp::energy::{self, Beat, Reading, Wearer};
 use wpp::image::{GlyphRequest, IconRequest, Mono};
@@ -412,6 +413,51 @@ pub struct Night {
     pub asleep_from_ms: Option<i64>,
     pub asleep_to_ms: Option<i64>,
     pub score: Option<SleepScore>,
+}
+
+/// Heart rate over a session with the stretches the sensor lost the wrist
+/// left out, so a figure never stands on readings the wearer's heart did not
+/// make.
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct SessionHeart {
+    pub median_bpm: u16,
+    pub p95_bpm: u16,
+    pub measured_ms: i64,
+    pub dropout_ms: i64,
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct WorkoutTrend {
+    pub workout: WorkoutSummary,
+    pub heart: Option<SessionHeart>,
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct AwakeHeart {
+    pub median_bpm: u16,
+    pub readings: u32,
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct Note {
+    pub id: i64,
+    pub at_ms: i64,
+    pub text: String,
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct NightHeart {
+    pub median_bpm: u16,
+    pub resting_bpm: u16,
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct NightTrend {
+    pub asleep_from_ms: i64,
+    pub asleep_to_ms: i64,
+    pub asleep_ms: i64,
+    pub score: Option<SleepScore>,
+    pub heart: Option<NightHeart>,
 }
 
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
@@ -1047,6 +1093,32 @@ impl WatchService {
             .collect()
     }
 
+    /// Every session the span touches, one still running included.
+    pub fn workouts_between(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<Vec<WorkoutSummary>, WatchError> {
+        let store = self.store.lock().unwrap();
+        let user = store.watch_user(self.device_id)?;
+        store
+            .workouts_between(
+                self.device_id,
+                from_ms.div_euclid(1000),
+                to_ms.div_euclid(1000),
+            )?
+            .into_iter()
+            .map(|row| summarise(&store, self.device_id, user.as_ref(), row))
+            .collect()
+    }
+
+    /// Hours of each window the watch measured a heart rate in, which is the
+    /// hours it was on a wrist.
+    pub fn worn_hours(&self, edges_ms: Vec<i64>) -> Result<Vec<u32>, WatchError> {
+        let store = self.store.lock().unwrap();
+        Ok(store.windowed_hours(self.device_id, Metric::HeartRate.kind(), &edges_ms)?)
+    }
+
     pub fn delete_workout(&self, id: i64) -> Result<(), WatchError> {
         let store = self.store.lock().unwrap();
         store.delete_workout(self.device_id, id)?;
@@ -1652,113 +1724,75 @@ impl WatchService {
 
     pub fn night(&self, from_ms: i64, to_ms: i64) -> Result<Night, WatchError> {
         let store = self.store.lock().unwrap();
-        let minutes = store.activity_minutes(self.device_id, from_ms / 1000, to_ms / 1000)?;
+        read_night(&store, self.device_id, from_ms, to_ms)
+    }
 
-        let levels: Vec<(i64, i64, SleepStage)> = minutes
-            .iter()
-            .filter_map(|minute| {
-                let level = activity::SleepLevel::from_wire(minute.sleep_level?)?;
-                Some((
-                    minute.at.0 * 1000,
-                    minute.ended_at().0 * 1000,
-                    SleepStage::of(level),
-                ))
-            })
-            .collect();
+    /// One entry for each window the watch staged any sleep in; a window it
+    /// did not is left out rather than reported as a night of none.
+    pub fn night_trend(&self, windows: Vec<SleepSpan>) -> Result<Vec<NightTrend>, WatchError> {
+        let store = self.store.lock().unwrap();
+        night_trend(&store, self.device_id, windows)
+    }
 
-        let asleep = levels
-            .iter()
-            .filter(|(_, _, stage)| *stage != SleepStage::Awake)
-            .fold(None, |span: Option<(i64, i64)>, (from, to, _)| {
-                Some(match span {
-                    None => (*from, *to),
-                    Some((lo, hi)) => (lo.min(*from), hi.max(*to)),
-                })
-            });
+    /// When the first session of any kind was recorded: the watch keeps no
+    /// workouts from before it was paired, so there is no knowing what was
+    /// done before then.
+    pub fn first_workout_at_ms(&self) -> Result<Option<i64>, WatchError> {
+        let store = self.store.lock().unwrap();
+        Ok(store
+            .first_workout(self.device_id)?
+            .map(|at| at.to_millis().0))
+    }
 
-        let stages = merge_adjacent(minutes.iter().filter_map(|minute| {
-            let (from_ms, to_ms) = (minute.at.0 * 1000, minute.ended_at().0 * 1000);
-            let stage = match minute.sleep_level {
-                Some(level) => SleepStage::of(activity::SleepLevel::from_wire(level)?),
-                None => SleepStage::Awake,
-            };
-            // The night runs from the first minute asleep to the last, so being
-            // awake outside that is time in bed and not part of it. The watch
-            // reports those minutes as Awake rather than leaving them out, which
-            // is indistinguishable from the gaps filled in above.
-            if stage == SleepStage::Awake {
-                let (night_from, night_to) = asleep?;
-                if from_ms < night_from || to_ms > night_to {
-                    return None;
-                }
-            }
-            Some(SleepBand {
-                from_ms,
-                to_ms,
-                stage,
-            })
-        }));
-
-        let score = wpp::sleep::score(
-            &stages
-                .iter()
-                .map(|band| wpp::sleep::Band {
-                    from_ms: band.from_ms,
-                    to_ms: band.to_ms,
-                    level: match band.stage {
-                        SleepStage::Awake => activity::SleepLevel::Awake,
-                        SleepStage::Light => activity::SleepLevel::Light,
-                        SleepStage::Deep => activity::SleepLevel::Deep,
-                        SleepStage::Rem => activity::SleepLevel::Rem,
-                    },
-                })
-                .collect::<Vec<_>>(),
-        )
-        .map(|s| SleepScore {
-            total: s.total,
-            duration: s.duration,
-            efficiency: s.efficiency,
-            deep: s.deep,
-            rem: s.rem,
-            continuity: s.continuity,
-        });
-
-        Ok(Night {
-            asleep_from_ms: asleep.map(|(from, _)| from),
-            asleep_to_ms: asleep.map(|(_, to)| to),
-            score,
-            stages,
-        })
+    /// Finished sessions of one activity, oldest first.
+    pub fn workout_trend(
+        &self,
+        subcategory: i32,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<Vec<WorkoutTrend>, WatchError> {
+        let store = self.store.lock().unwrap();
+        workout_trend(&store, self.device_id, subcategory, from_ms, to_ms)
     }
 
     /// A few minutes awake in the middle of a night leave the body on its
     /// sleeping baseline, so a stretch survives them as one span.
     pub fn sleep_spans(&self, from_ms: i64, to_ms: i64) -> Result<Vec<SleepSpan>, WatchError> {
-        const AWAKE_BRIDGE_MS: i64 = 45 * 60 * 1000;
-
         let store = self.store.lock().unwrap();
-        let minutes = store.sleep_minutes(self.device_id, from_ms / 1000, to_ms / 1000)?;
-        Ok(minutes
+        asleep_spans(&store, self.device_id, from_ms, to_ms)
+    }
+
+    /// The median waking rate of each window, readings taken asleep, in a
+    /// session or while recovering from one left out. None for a window with
+    /// nothing left.
+    pub fn add_note(&self, at_ms: i64, text: String) -> Result<i64, WatchError> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(WatchError::Refused {
+                reason: "a note needs some text".to_string(),
+            });
+        }
+        let store = self.store.lock().unwrap();
+        Ok(store.add_note(at_ms, text)?)
+    }
+
+    pub fn notes(&self) -> Result<Vec<Note>, WatchError> {
+        let store = self.store.lock().unwrap();
+        Ok(store
+            .notes()?
             .into_iter()
-            .filter(|(_, _, level)| {
-                !matches!(
-                    activity::SleepLevel::from_wire(*level),
-                    None | Some(activity::SleepLevel::Awake)
-                )
-            })
-            .fold(Vec::new(), |mut out: Vec<SleepSpan>, (at, duration, _)| {
-                let (from, to) = (at * 1000, (at + duration) * 1000);
-                match out.last_mut() {
-                    Some(last) if from - last.to_ms <= AWAKE_BRIDGE_MS => {
-                        last.to_ms = last.to_ms.max(to)
-                    }
-                    _ => out.push(SleepSpan {
-                        from_ms: from,
-                        to_ms: to,
-                    }),
-                }
-                out
-            }))
+            .map(|(id, at_ms, text)| Note { id, at_ms, text })
+            .collect())
+    }
+
+    pub fn delete_note(&self, id: i64) -> Result<(), WatchError> {
+        let store = self.store.lock().unwrap();
+        Ok(store.delete_note(id)?)
+    }
+
+    pub fn awake_heart(&self, edges_ms: Vec<i64>) -> Result<Vec<Option<AwakeHeart>>, WatchError> {
+        let store = self.store.lock().unwrap();
+        awake_heart(&store, self.device_id, &edges_ms)
     }
 
     pub fn has_staging(&self, from_ms: i64, to_ms: i64) -> Result<bool, WatchError> {
@@ -2365,6 +2399,269 @@ fn summarise(
     })
 }
 
+fn read_night(
+    store: &Store,
+    device_id: i64,
+    from_ms: i64,
+    to_ms: i64,
+) -> Result<Night, WatchError> {
+    let minutes = store.activity_minutes(device_id, from_ms / 1000, to_ms / 1000)?;
+
+    let levels: Vec<(i64, i64, SleepStage)> = minutes
+        .iter()
+        .filter_map(|minute| {
+            let level = activity::SleepLevel::from_wire(minute.sleep_level?)?;
+            Some((
+                minute.at.0 * 1000,
+                minute.ended_at().0 * 1000,
+                SleepStage::of(level),
+            ))
+        })
+        .collect();
+
+    let asleep = levels
+        .iter()
+        .filter(|(_, _, stage)| *stage != SleepStage::Awake)
+        .fold(None, |span: Option<(i64, i64)>, (from, to, _)| {
+            Some(match span {
+                None => (*from, *to),
+                Some((lo, hi)) => (lo.min(*from), hi.max(*to)),
+            })
+        });
+
+    let stages = merge_adjacent(minutes.iter().filter_map(|minute| {
+        let (from_ms, to_ms) = (minute.at.0 * 1000, minute.ended_at().0 * 1000);
+        let stage = match minute.sleep_level {
+            Some(level) => SleepStage::of(activity::SleepLevel::from_wire(level)?),
+            None => SleepStage::Awake,
+        };
+        // The night runs from the first minute asleep to the last, so being
+        // awake outside that is time in bed and not part of it. The watch
+        // reports those minutes as Awake rather than leaving them out, which
+        // is indistinguishable from the gaps filled in above.
+        if stage == SleepStage::Awake {
+            let (night_from, night_to) = asleep?;
+            if from_ms < night_from || to_ms > night_to {
+                return None;
+            }
+        }
+        Some(SleepBand {
+            from_ms,
+            to_ms,
+            stage,
+        })
+    }));
+
+    let score = wpp::sleep::score(
+        &stages
+            .iter()
+            .map(|band| wpp::sleep::Band {
+                from_ms: band.from_ms,
+                to_ms: band.to_ms,
+                level: match band.stage {
+                    SleepStage::Awake => activity::SleepLevel::Awake,
+                    SleepStage::Light => activity::SleepLevel::Light,
+                    SleepStage::Deep => activity::SleepLevel::Deep,
+                    SleepStage::Rem => activity::SleepLevel::Rem,
+                },
+            })
+            .collect::<Vec<_>>(),
+    )
+    .map(|s| SleepScore {
+        total: s.total,
+        duration: s.duration,
+        efficiency: s.efficiency,
+        deep: s.deep,
+        rem: s.rem,
+        continuity: s.continuity,
+    });
+
+    Ok(Night {
+        asleep_from_ms: asleep.map(|(from, _)| from),
+        asleep_to_ms: asleep.map(|(_, to)| to),
+        score,
+        stages,
+    })
+}
+
+fn asleep_spans(
+    store: &Store,
+    device_id: i64,
+    from_ms: i64,
+    to_ms: i64,
+) -> Result<Vec<SleepSpan>, WatchError> {
+    const AWAKE_BRIDGE_MS: i64 = 45 * 60 * 1000;
+
+    let minutes = store.sleep_minutes(device_id, from_ms / 1000, to_ms / 1000)?;
+    Ok(minutes
+        .into_iter()
+        .filter(|(_, _, level)| {
+            !matches!(
+                activity::SleepLevel::from_wire(*level),
+                None | Some(activity::SleepLevel::Awake)
+            )
+        })
+        .fold(Vec::new(), |mut out: Vec<SleepSpan>, (at, duration, _)| {
+            let (from, to) = (at * 1000, (at + duration) * 1000);
+            match out.last_mut() {
+                Some(last) if from - last.to_ms <= AWAKE_BRIDGE_MS => {
+                    last.to_ms = last.to_ms.max(to)
+                }
+                _ => out.push(SleepSpan {
+                    from_ms: from,
+                    to_ms: to,
+                }),
+            }
+            out
+        }))
+}
+
+/// A heart still coming down from a session is not the waking rate either.
+const RECOVERY_MS: i64 = 10 * 60 * 1000;
+
+/// Everything a waking rate at rest is read against, read once for a span.
+struct Waking {
+    busy: Vec<std::ops::Range<i64>>,
+    beats: Vec<Beat>,
+}
+
+impl Waking {
+    fn read(store: &Store, device_id: i64, from_ms: i64, to_ms: i64) -> Result<Waking, WatchError> {
+        let (from_secs, to_secs) = (from_ms.div_euclid(1000), to_ms.div_euclid(1000));
+        let recorded: Vec<std::ops::Range<UnixTime>> = store
+            .workouts_between(device_id, from_secs, to_secs)?
+            .iter()
+            .map(|row| row.started_at..row.ended_at.unwrap_or(UnixTime(to_secs)))
+            .collect();
+        let minutes = store.activity_minutes(device_id, from_secs, to_secs)?;
+        let detected = activity::detect(&minutes, &recorded)
+            .into_iter()
+            .map(|session| session.started_at..session.ended_at);
+        let busy = recorded
+            .iter()
+            .cloned()
+            .chain(detected)
+            .map(|span| span.start.to_millis().0..span.end.to_millis().0 + RECOVERY_MS)
+            .chain(
+                asleep_spans(store, device_id, from_ms, to_ms)?
+                    .into_iter()
+                    .map(|span| span.from_ms..span.to_ms),
+            )
+            .collect();
+        let beats = store
+            .samples_from(
+                device_id,
+                Metric::HeartRate.kind(),
+                Source::Stored,
+                from_ms,
+                to_ms - 1,
+            )?
+            .into_iter()
+            .map(|(at, bpm)| Beat {
+                at: UnixMillis(at),
+                rate: Bpm(bpm as u16),
+            })
+            .collect();
+        Ok(Waking { busy, beats })
+    }
+
+    fn at_rest(&self, from_ms: i64, to_ms: i64) -> Option<AwakeHeart> {
+        let within: Vec<Beat> = self
+            .beats
+            .iter()
+            .filter(|beat| beat.at.0 >= from_ms && beat.at.0 < to_ms)
+            .copied()
+            .collect();
+        wpp::heart::at_rest(&within, &self.busy).map(|rest| AwakeHeart {
+            median_bpm: rest.median.0,
+            readings: rest.readings,
+        })
+    }
+}
+
+fn awake_heart(
+    store: &Store,
+    device_id: i64,
+    edges_ms: &[i64],
+) -> Result<Vec<Option<AwakeHeart>>, WatchError> {
+    let (Some(&first), Some(&last)) = (edges_ms.first(), edges_ms.last()) else {
+        return Ok(Vec::new());
+    };
+    let waking = Waking::read(store, device_id, first, last)?;
+    Ok(edges_ms
+        .windows(2)
+        .map(|edge| waking.at_rest(edge[0], edge[1]))
+        .collect())
+}
+
+fn night_trend(
+    store: &Store,
+    device_id: i64,
+    windows: Vec<SleepSpan>,
+) -> Result<Vec<NightTrend>, WatchError> {
+    let mut out = Vec::new();
+    for window in windows {
+        let night = read_night(store, device_id, window.from_ms, window.to_ms)?;
+        let (Some(asleep_from_ms), Some(asleep_to_ms)) = (night.asleep_from_ms, night.asleep_to_ms)
+        else {
+            continue;
+        };
+        let asleep: Vec<&SleepBand> = night
+            .stages
+            .iter()
+            .filter(|band| band.stage != SleepStage::Awake)
+            .collect();
+        let beats: Vec<Beat> = beats_between(store, device_id, asleep_from_ms, asleep_to_ms)?
+            .into_iter()
+            .filter(|beat| {
+                asleep
+                    .iter()
+                    .any(|band| beat.at.0 >= band.from_ms && beat.at.0 < band.to_ms)
+            })
+            .collect();
+        out.push(NightTrend {
+            asleep_from_ms,
+            asleep_to_ms,
+            asleep_ms: asleep.iter().map(|band| band.to_ms - band.from_ms).sum(),
+            score: night.score,
+            heart: wpp::heart::asleep(&beats).map(|heart| NightHeart {
+                median_bpm: heart.median.0,
+                resting_bpm: heart.resting.0,
+            }),
+        });
+    }
+    Ok(out)
+}
+
+fn workout_trend(
+    store: &Store,
+    device_id: i64,
+    subcategory: i32,
+    from_ms: i64,
+    to_ms: i64,
+) -> Result<Vec<WorkoutTrend>, WatchError> {
+    let user = store.watch_user(device_id)?;
+    store
+        .workouts_between(device_id, from_ms.div_euclid(1000), to_ms.div_euclid(1000))?
+        .into_iter()
+        .filter(|row| row.subcategory == subcategory as i64 && row.ended_at.is_some())
+        .map(|row| {
+            let workout = summarise(store, device_id, user.as_ref(), row)?;
+            let ended_at_ms = workout.ended_at_ms.expect("only finished sessions");
+            let beats = beats_between(store, device_id, workout.started_at_ms, ended_at_ms)?;
+            Ok(WorkoutTrend {
+                workout,
+                heart: wpp::heart::effort(&beats).map(|effort| SessionHeart {
+                    median_bpm: effort.median.0,
+                    p95_bpm: effort.p95.0,
+                    measured_ms: effort.measured_ms,
+                    dropout_ms: effort.dropout_ms,
+                }),
+            })
+        })
+        .collect()
+}
+
 fn beats_between(
     store: &Store,
     device_id: i64,
@@ -2864,6 +3161,7 @@ impl PairingService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wpp::activity::Minute;
     use wpp::client::{Record, SampleKind, Source, UserProfile};
 
     const DAY_ONE: i64 = 1_786_662_000_000;
@@ -2953,5 +3251,103 @@ mod tests {
         let after = day_total(&store, device, DAY_ONE + DAY_MS);
         assert!(lifted > 1805.0, "the session is the day's own: {lifted}");
         assert!(after < 1706.0, "and is not the next day's: {after}");
+    }
+
+    fn rate(at_ms: i64, bpm: i64, source: Source) -> Record {
+        Record::Sample {
+            measured_at: UnixMillis(at_ms),
+            kind: SampleKind::HeartRate,
+            value: bpm,
+            quality: None,
+            source,
+            window_secs: None,
+            context: None,
+        }
+    }
+
+    fn staged(at_ms: i64, minutes: i64, level: i64) -> Record {
+        Record::Activity(Minute {
+            duration_secs: minutes * 60,
+            sleep_level: Some(level),
+            ..Minute::opened(UnixMillis(at_ms).to_seconds())
+        })
+    }
+
+    #[test]
+    fn a_session_trend_leaves_out_the_stretch_the_sensor_lost_the_wrist() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let opened = DAY_ONE + 12 * 3_600_000;
+        let mut records = vec![
+            Record::WorkoutStarted {
+                started_at: UnixMillis(opened).to_seconds(),
+                subcategory: 16,
+            },
+            Record::WorkoutEnded {
+                started_at: UnixMillis(opened).to_seconds(),
+                ended_at: UnixMillis(opened + 30 * 60 * 1000).to_seconds(),
+                paused_secs: 0,
+            },
+            Record::WorkoutStarted {
+                started_at: UnixMillis(opened + 3_600_000).to_seconds(),
+                subcategory: 6,
+            },
+        ];
+        records.extend((0..1800).map(|second| {
+            let bpm = if (600..900).contains(&second) {
+                42
+            } else {
+                125
+            };
+            rate(opened + second * 1000, bpm, Source::Live)
+        }));
+        records.extend((0..60).map(|step| rate(opened + step * 30_000 + 500, 125, Source::Stored)));
+        store.store(device, &records).unwrap();
+
+        let trend = workout_trend(&store, device, 16, DAY_ONE, DAY_ONE + DAY_MS).unwrap();
+        assert_eq!(
+            trend.len(),
+            1,
+            "one finished weights session, the ride is still open"
+        );
+        let heart = trend[0].heart.clone().unwrap();
+        assert_eq!(heart.median_bpm, 125);
+        assert_eq!(heart.p95_bpm, 125);
+        assert!((299_000..=301_000).contains(&heart.dropout_ms), "{heart:?}");
+    }
+
+    #[test]
+    fn a_night_trend_reads_only_the_windows_the_watch_staged() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let bed = DAY_ONE + 23 * 3_600_000;
+        let mut records = vec![
+            staged(bed, 60, 1),
+            staged(bed + 60 * 60_000, 20, 0),
+            staged(bed + 80 * 60_000, 120, 2),
+        ];
+        records.extend((0..20).map(|step| {
+            let at = bed + step * 10 * 60_000;
+            let awake = (60..80).contains(&(step * 10));
+            rate(at, if awake { 90 } else { 50 + step }, Source::Stored)
+        }));
+        store.store(device, &records).unwrap();
+
+        let windows = vec![
+            SleepSpan {
+                from_ms: bed - 6 * 3_600_000,
+                to_ms: bed + 12 * 3_600_000,
+            },
+            SleepSpan {
+                from_ms: bed + 18 * 3_600_000,
+                to_ms: bed + 36 * 3_600_000,
+            },
+        ];
+        let nights = night_trend(&store, device, windows).unwrap();
+        assert_eq!(nights.len(), 1);
+        assert_eq!(nights[0].asleep_ms, 180 * 60_000);
+        let heart = nights[0].heart.clone().unwrap();
+        assert!(heart.median_bpm < 90, "awake readings stay out: {heart:?}");
+        assert_eq!(heart.resting_bpm, 50);
     }
 }

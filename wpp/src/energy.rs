@@ -15,7 +15,7 @@ const MILLIS_PER_MINUTE: f64 = 60_000.0;
 
 /// A rate stands in for the stretch it was measured over. Past this the watch
 /// stopped reporting rather than the wearer holding one rate for that long.
-const LONGEST_HELD_MS: i64 = 120_000;
+pub(crate) const LONGEST_HELD_MS: i64 = 120_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sex {

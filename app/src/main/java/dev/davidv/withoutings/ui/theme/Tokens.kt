@@ -153,6 +153,7 @@ data class ChartTokens(
     val grid: Dp = 0.8.dp,
     val cursor: Dp = 1.dp,
     val cursorDot: Dp = 4.dp,
+    val scatterDot: Dp = 3.dp,
     val areaAlpha: Float = 0.12f,
     val areaAlphaLight: Float = 0.10f,
     val sessionAlpha: Float = 0.07f,
@@ -160,6 +161,7 @@ data class ChartTokens(
     val zoneAlpha: Float = 0.09f,
     val legendSessionAlpha: Float = 0.09f,
     val ecgMinorAlpha: Float = 0.55f,
+    val scatterAlpha: Float = 0.35f,
 )
 
 val DefaultSpacing = Spacing()

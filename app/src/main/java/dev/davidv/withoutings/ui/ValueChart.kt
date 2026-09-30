@@ -49,9 +49,17 @@ sealed interface ChartForm {
     data object Line : ChartForm
 
     data class Bars(val widthMs: Long) : ChartForm
+
+    // One mark per reading and no line between them: each is its own session or
+    // night, and a line joining them reads as a level held in between.
+    data object Scatter : ChartForm
 }
 
 data class ChartSession(val span: Span, val label: String)
+
+/// An instant the wearer marked, drawn across the plot. The label is for the
+/// one chart of a stack that names them; the rest only draw the line.
+data class ChartEvent(val atMs: Long, val label: String?)
 
 private val TICK_SECONDS = listOf(
     10, 30, 60, 120, 300, 600, 1800, 3600, 7200, 21600, 43200,
@@ -134,6 +142,8 @@ fun ValueChart(
     cursorAlpha: Float = 1f,
     readout: ChartReadout = ChartReadout.InChart,
     unit: String = "",
+    trend: List<ChartPoint> = emptyList(),
+    events: List<ChartEvent> = emptyList(),
     lineColor: Color = AppTheme.colors.dataStroke,
     fillColor: Color = MaterialTheme.colorScheme.primary,
 ) {
@@ -281,6 +291,40 @@ fun ValueChart(
                     plotHeight,
                     fillColor,
                 )
+
+                is ChartForm.Scatter -> drawScatter(
+                    nearby,
+                    ::x,
+                    ::y,
+                    plotHeight,
+                    lineColor.copy(alpha = tokens.scatterAlpha),
+                    tokens.scatterDot.toPx(),
+                )
+            }
+
+            for (event in events) {
+                if (event.atMs !in window) continue
+                val at = x(event.atMs)
+                drawLine(
+                    scheme.onSurfaceVariant,
+                    Offset(at, 0f),
+                    Offset(at, plotHeight),
+                    tokens.cursor.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())),
+                )
+                val label = event.label ?: continue
+                val measured = measurer.measure(label, sessionStyle)
+                drawText(
+                    measured,
+                    topLeft = Offset(
+                        (at + 3.dp.toPx()).coerceAtMost(size.width - measured.size.width),
+                        0f,
+                    ),
+                )
+            }
+
+            if (trend.isNotEmpty()) {
+                drawTrend(trend.spanning(window), ::x, ::y, plotHeight, lineColor, tokens.traceHeavy.toPx())
             }
 
             if (showTimeAxis) {
@@ -333,7 +377,7 @@ fun ValueChart(
             val cursor = scrubAtMs?.takeIf { it in window }
             if (cursor != null) {
                 val nearest = when (form) {
-                    is ChartForm.Line -> nearby.minByOrNull { abs(it.atMs - cursor) }
+                    is ChartForm.Line, is ChartForm.Scatter -> nearby.minByOrNull { abs(it.atMs - cursor) }
                     is ChartForm.Bars ->
                         nearby.firstOrNull { cursor in Span(it.atMs, it.atMs + form.widthMs) }
                 }
@@ -362,7 +406,7 @@ fun ValueChart(
                             "${formatValue(nearest.value, decimals)}$unit · " +
                                 when (form) {
                                     is ChartForm.Line -> clock(nearest.atMs)
-                                    is ChartForm.Bars -> dayAndMonth(nearest.atMs)
+                                    is ChartForm.Bars, is ChartForm.Scatter -> dayAndMonth(nearest.atMs)
                                 },
                             at,
                             size.width,
@@ -464,6 +508,36 @@ private fun DrawScope.drawBars(
                 cornerRadius = radius,
             )
         }
+    }
+}
+
+private fun DrawScope.drawScatter(
+    points: List<ChartPoint>,
+    x: (Long) -> Float,
+    y: (Double) -> Float,
+    plotHeight: Float,
+    color: Color,
+    radius: Float,
+) {
+    clipRect(left = 0f, top = 0f, right = size.width, bottom = plotHeight) {
+        points.forEach { drawCircle(color, radius = radius, center = Offset(x(it.atMs), y(it.value))) }
+    }
+}
+
+private fun DrawScope.drawTrend(
+    points: List<ChartPoint>,
+    x: (Long) -> Float,
+    y: (Double) -> Float,
+    plotHeight: Float,
+    color: Color,
+    width: Float,
+) {
+    val path = Path()
+    points.sortedBy { it.atMs }.forEachIndexed { index, point ->
+        if (index == 0) path.moveTo(x(point.atMs), y(point.value)) else path.lineTo(x(point.atMs), y(point.value))
+    }
+    clipRect(left = 0f, top = 0f, right = size.width, bottom = plotHeight) {
+        drawPath(path, color, style = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }
 

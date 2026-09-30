@@ -465,6 +465,41 @@ impl Store {
     /// `edges_ms` holds one more entry than the result. Reads the samples
     /// themselves rather than [`Store::series`], whose bucketing may drop the
     /// peak a window is being asked for.
+    /// Distinct hours of each window holding a sample of the kind: a count
+    /// of how long something was measured that the sampling rate does not
+    /// move, where a count of samples would read a 1 Hz workout as a day of
+    /// wearing.
+    pub fn windowed_hours(
+        &self,
+        device_id: i64,
+        kind: i64,
+        edges_ms: &[i64],
+    ) -> Result<Vec<u32>, Error> {
+        let (Some(&first), Some(&last)) = (edges_ms.first(), edges_ms.last()) else {
+            return Ok(Vec::new());
+        };
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT measured_at / 3600000 FROM sample
+              WHERE device_id = ?1 AND kind = ?4
+                AND measured_at >= ?2 AND measured_at < ?3
+              ORDER BY 1",
+        )?;
+        let rows = stmt.query_map(params![device_id, first, last, kind], |r| {
+            r.get::<_, i64>(0)
+        })?;
+
+        let mut found = vec![0; edges_ms.len() - 1];
+        let mut window = 0;
+        for row in rows {
+            let at = row? * 3_600_000;
+            while at >= edges_ms[window + 1] {
+                window += 1;
+            }
+            found[window] += 1;
+        }
+        Ok(found)
+    }
+
     pub fn windowed_max(
         &self,
         device_id: i64,
@@ -602,6 +637,26 @@ impl Store {
         rows.collect()
     }
 
+    pub fn samples_from(
+        &self,
+        device_id: i64,
+        kind: i64,
+        source: Source,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<Vec<(i64, i64)>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT measured_at, value FROM sample
+              WHERE device_id = ?1 AND kind = ?2 AND source = ?5
+                AND measured_at BETWEEN ?3 AND ?4
+              ORDER BY measured_at",
+        )?;
+        let rows = stmt.query_map(params![device_id, kind, from_ms, to_ms, source.id()], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?;
+        rows.collect()
+    }
+
     pub fn extent(&self, device_id: i64, kind: i64) -> Result<Option<(i64, i64)>, Error> {
         self.conn
             .query_row(
@@ -641,6 +696,14 @@ impl Store {
         )?;
         let rows = stmt.query_map(params![device_id, from_secs, to_secs], workout_row)?;
         rows.collect()
+    }
+
+    pub fn first_workout(&self, device_id: i64) -> Result<Option<UnixTime>, Error> {
+        self.conn.query_row(
+            "SELECT min(started_at) FROM workout WHERE device_id = ?1",
+            params![device_id],
+            |r| Ok(r.get::<_, Option<i64>>(0)?.map(UnixTime)),
+        )
     }
 
     pub fn workout(&self, device_id: i64, id: i64) -> Result<Option<WorkoutRow>, Error> {
@@ -818,6 +881,28 @@ impl Store {
         )?;
         tx.commit()?;
         Ok(Trim::Applied)
+    }
+
+    pub fn add_note(&self, at_ms: i64, text: &str) -> Result<i64, Error> {
+        self.conn.execute(
+            "INSERT INTO note (at_ms, text) VALUES (?1, ?2)",
+            params![at_ms, text],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn notes(&self) -> Result<Vec<(i64, i64, String)>, Error> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, at_ms, text FROM note ORDER BY at_ms")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect()
+    }
+
+    pub fn delete_note(&self, id: i64) -> Result<(), Error> {
+        self.conn
+            .execute("DELETE FROM note WHERE id = ?1", params![id])?;
+        Ok(())
     }
 
     pub fn mark_set(&self, device_id: i64, at_ms: i64, edge: i64) -> Result<(), Error> {
@@ -1320,6 +1405,44 @@ mod tests {
             .windowed_max(device, kind, &[1000, 2000, 3000, 4000])
             .unwrap();
         assert_eq!(found, vec![Some(88), Some(71), None]);
+    }
+
+    #[test]
+    fn notes_come_back_in_time_order_and_go_when_deleted() {
+        let store = Store::open_in_memory().unwrap();
+        let later = store.add_note(2000, "30 mg").unwrap();
+        let earlier = store.add_note(1000, "20 mg").unwrap();
+        assert_eq!(
+            store.notes().unwrap(),
+            vec![
+                (earlier, 1000, "20 mg".to_string()),
+                (later, 2000, "30 mg".to_string())
+            ]
+        );
+        store.delete_note(earlier).unwrap();
+        assert_eq!(store.notes().unwrap().len(), 1);
+        assert!(
+            store.add_note(3000, "").is_err(),
+            "an empty note says nothing"
+        );
+    }
+
+    #[test]
+    fn hours_worn_count_once_however_dense_the_readings() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        const HOUR: i64 = 3_600_000;
+        let mut records: Vec<Record> = (0..3600)
+            .map(|second| sample(HOUR + second * 1000, 120, Source::Live))
+            .collect();
+        records.push(sample(3 * HOUR + 600_000, 60, Source::Stored));
+        records.push(sample(5 * HOUR, 60, Source::Stored));
+        store.store(device, &records).unwrap();
+        let kind = SampleKind::HeartRate.id();
+        let found = store
+            .windowed_hours(device, kind, &[0, 4 * HOUR, 8 * HOUR])
+            .unwrap();
+        assert_eq!(found, vec![2, 1]);
     }
 
     #[test]

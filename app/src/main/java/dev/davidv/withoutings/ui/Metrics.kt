@@ -94,7 +94,7 @@ enum class MetricStyle(
         get() = summary == SummaryKind.Resting || summary == SummaryKind.Baseline
 
     fun axisFor(form: ChartForm): ClosedFloatingPointRange<Double> = when (form) {
-        is ChartForm.Line -> axis
+        is ChartForm.Line, is ChartForm.Scatter -> axis
         is ChartForm.Bars -> dailyAxis ?: axis
     }
 

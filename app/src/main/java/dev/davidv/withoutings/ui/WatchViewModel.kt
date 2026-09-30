@@ -37,6 +37,7 @@ import uniffi.wpp_ffi.Marker
 import uniffi.wpp_ffi.Metric
 import uniffi.wpp_ffi.Night
 import uniffi.wpp_ffi.Snapshot
+import uniffi.wpp_ffi.SleepSpan
 import uniffi.wpp_ffi.Activity
 import uniffi.wpp_ffi.ActivityTotals
 import uniffi.wpp_ffi.ArmedScan
@@ -166,6 +167,8 @@ private const val BASELINE_MS = BASELINE_DAYS * DAY_MS
 private const val INITIAL_ECG_SPAN_MS = 6_000L
 
 private const val CHARGE_POLL_MS = 15_000L
+
+private const val TRENDS_KEEP_MS = 5_000L
 
 private const val MAX_NIGHT_SEARCH_DAYS = 400
 
@@ -322,6 +325,111 @@ class WatchViewModel : ViewModel() {
                 emptyList()
             },
         )
+    }
+
+    private val _trendSpan = MutableStateFlow(TrendSpan.Quarter)
+
+    // Notes are written here rather than arriving from the watch, so nothing
+    // else would tell the trends to read them again.
+    private val _notesRevision = MutableStateFlow(0L)
+    val trendSpan: StateFlow<TrendSpan> = _trendSpan.asStateFlow()
+
+    private val _trendCategory = MutableStateFlow(TrendCategory.Weights)
+    val trendCategory: StateFlow<TrendCategory> = _trendCategory.asStateFlow()
+
+    // Read only while the screen is watching it: a year of nights is hundreds of
+    // stagings, and a sync would otherwise redo them all for a screen nobody has
+    // open.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val trends: StateFlow<Trends?> = combine(_trendSpan, WatchRepository.revision, _notesRevision) { span, _, _ -> span }
+        .mapLatest { span ->
+            withContext(Dispatchers.IO) {
+                runCatching { loadTrends(span) }
+                    .onFailure { Log.w(TAG, "trends: unreadable", it) }
+                    .getOrNull()
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(TRENDS_KEEP_MS), null)
+
+    private fun loadTrends(span: TrendSpan): Trends? {
+        val service = WatchRepository.get() ?: return null
+        val now = System.currentTimeMillis()
+        val window = (dayStart(now) - (span.days - 1) * DAY_MS)..now
+        val weightsFrom = window.first - TrendCategory.Weights.trendMs
+        val nightsBack = span.days - 1 + (TrendCategory.Sleep.trendMs / DAY_MS).toInt()
+        return Trends(
+            span = span,
+            window = window,
+            recordedFromMs = service.firstWorkoutAtMs() ?: now,
+            weights = service.workoutTrend(WEIGHTS_SUBCATEGORY, weightsFrom, window.last),
+            nights = service.nightTrend(
+                (nightsBack downTo 0).map { daysAgo ->
+                    val range = nightRangeFor(daysAgo)
+                    SleepSpan(range.first, range.last)
+                },
+            ),
+            days = days(service, (window.first - TrendCategory.Daily.trendMs)..window.last, now),
+            notes = service.notes(),
+        )
+    }
+
+    private fun days(service: WatchService, range: LongRange, nowMs: Long): List<DayTrend> {
+        val days = daysCovering(range)
+        val steps = dailyTotals(service, MetricStyle.Steps, days, nowMs)
+        val calories = dailyTotals(service, MetricStyle.Calories, days, nowMs)
+        val distance = dailyTotals(service, MetricStyle.Distance, days, nowMs)
+        val entries = service.workoutsBetween(range.first, range.last).map(::RecordedEntry) +
+            service.detectedActivities(range.first, range.last).map(::DetectedEntry)
+        val active = caloriesByDay(entries, nowMs)
+        val edges = days + (days.last() + DAY_MS)
+        val worn = service.wornHours(edges)
+        val awake = service.awakeHeart(edges)
+        // Each day's dosed hours and the evening and early morning after them,
+        // one after the other: 08:00, 20:00, the next 08:00.
+        val halves = service.awakeHeart(
+            days.flatMap { listOf(atHour(it, DOSED_FROM_HOUR), atHour(it, DOSED_TO_HOUR)) } +
+                atHour(days.last() + DAY_MS, DOSED_FROM_HOUR),
+        )
+        return days.indices.map { index ->
+            val day = days[index]
+            DayTrend(
+                dayMs = day,
+                steps = steps[day],
+                calories = calories[day],
+                activeCalories = active[day] ?: 0.0,
+                distanceMetres = distance[day],
+                awake = awake[index],
+                daytime = halves[2 * index],
+                overnight = halves[2 * index + 1],
+                wornHours = worn[index].toInt(),
+            )
+        }
+    }
+
+    fun showTrendSpan(span: TrendSpan) {
+        _trendSpan.value = span
+    }
+
+    fun addNote(atMs: Long, text: String) {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { service.addNote(atMs, text) } }
+                .onFailure { Log.w(TAG, "note: refused", it) }
+            _notesRevision.value += 1
+        }
+    }
+
+    fun deleteNote(id: Long) {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { service.deleteNote(id) } }
+                .onFailure { Log.w(TAG, "note: not deleted", it) }
+            _notesRevision.value += 1
+        }
+    }
+
+    fun showTrendCategory(category: TrendCategory) {
+        _trendCategory.value = category
     }
 
     private val _save = MutableStateFlow<SaveState>(SaveState.Idle)
