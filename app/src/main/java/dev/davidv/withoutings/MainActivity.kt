@@ -35,6 +35,7 @@ import dev.davidv.withoutings.ble.PairingSession
 import dev.davidv.withoutings.ble.PairingStage
 import dev.davidv.withoutings.ble.WatchConnectionService
 import dev.davidv.withoutings.ui.ActivitiesScreen
+import dev.davidv.withoutings.ui.AfibAlertScreen
 import dev.davidv.withoutings.ui.ActivityDetailScreen
 import dev.davidv.withoutings.ui.AppSettingsScreen
 import dev.davidv.withoutings.ui.BottomNav
@@ -69,6 +70,7 @@ private object Routes {
     const val LIVE = "live"
     const val SLEEP = "sleep"
     const val ECG = "ecg"
+    const val AFIB_ALERT = "afib-alert"
     const val LIVE_ECG = "live-ecg"
     const val SETTINGS = "settings"
     const val METRIC = "metric"
@@ -280,6 +282,7 @@ private fun Navigation(
         if (settings.tiles) TileSource(context, settings.tileUrl) else null
     }
     val ecg by model.ecg.collectAsState()
+    val afibAlert by model.afibAlert.collectAsState()
     val ecgWindow by model.ecgWindow.collectAsState()
     val liveWindow by model.liveWindow.collectAsState()
     val night by model.night.collectAsState()
@@ -378,6 +381,7 @@ private fun Navigation(
                 ActivitiesScreen(
                     entries = state.activityLog,
                     recordings = state.ecgs,
+                    alerts = state.afibEpisodes.filter { it.alerted == true },
                     dailySteps = state.dailySteps,
                     nowMs = nowMs,
                     onSelect = {
@@ -387,6 +391,10 @@ private fun Navigation(
                     onSelectEcg = {
                         model.showEcg(it.id)
                         nav.navigate(Routes.ECG)
+                    },
+                    onSelectAlert = {
+                        model.showAfibAlert(it.id)
+                        nav.navigate(Routes.AFIB_ALERT)
                     },
                 )
             }
@@ -532,6 +540,10 @@ private fun Navigation(
                     onShift = { model.shiftNight(it) },
                     onBack = { nav.popBackStack() },
                 )
+            }
+
+            composable(Routes.AFIB_ALERT) {
+                AfibAlertScreen(alert = afibAlert, onBack = { nav.popBackStack() })
             }
 
             composable(Routes.ECG) {

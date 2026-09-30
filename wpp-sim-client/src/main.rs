@@ -9,14 +9,15 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use wpp::ancs::{Category, NotificationId};
-use wpp::client::{probe_frame, Credentials};
+use wpp::client::{probe_frame, Action, Client, Credentials, Event, Phase, Record};
+use wpp::units::UnixMillis;
 use wpp::commands::Command;
 use wpp::frame::{Channel, Frame};
 use wpp::objects::{
     ActivitySubcategory, Alarm, AncsStatus, Distance, InfoType, LocalNotification, MeasureCategory,
     MeasureLiveAppStatus, Pace, PauseState, ProbeChallenge, ProbeChallengeResponse, ProbeReply,
-    RawDataCmd, SleepActivityGet, Speed, StartTime, TimeSet, Uint32, VasistasType, Version, WamAutoSleep,
-    WamVasistasGet, WorkoutGpsStatus,
+    RawDataCmd, SleepActivityGet, Speed, StartTime, StoredSignalMeta, TimeSet, Uint32, VasistasType,
+    Version, WamAutoSleep, WamVasistasGet, WorkoutGpsStatus,
 };
 use wpp::WppObject;
 
@@ -32,6 +33,8 @@ const WRITE_LIMIT: usize = ATT_MTU - 3;
 const FRAME_PER_WRITE_LIMIT: usize = wpp::frame::MAX_FRAME_BYTES;
 const REPLY_TIMEOUT: Duration = Duration::from_secs(120);
 const QUIET: Duration = Duration::from_secs(20);
+const SYNC_TIMEOUT: Duration = Duration::from_secs(300);
+const SYNC_POLL: Duration = Duration::from_secs(1);
 /// A whole ECG measurement: thirty seconds of the 300 Hz the watch reports in
 /// the measurement's own StoredSignalMeta.
 const ECG_SAMPLES: u32 = 30 * 300;
@@ -263,6 +266,98 @@ fn run(link: &mut Link, step: &Step) -> std::io::Result<()> {
             }
             Answers::UntilQuiet => {}
         }
+    }
+}
+
+/// The poll the official app makes after every sync, one per stored signal
+/// type: the handler at 0x6e21c serves a type only when the request names it,
+/// and an empty store answers Null.
+fn stored(link: &mut Link, signal_type: u16) -> std::io::Result<()> {
+    run(
+        link,
+        &Step {
+            label: "stored measure signal",
+            frame: Frame::new(
+                Command::CMD_STORED_MEASURE_SIGNAL_GET,
+                vec![WppObject::StoredSignalMeta(StoredSignalMeta {
+                    r#type: signal_type,
+                    ..StoredSignalMeta::default()
+                })],
+            ),
+            answers: Answers::UntilQuiet,
+        },
+    )
+}
+
+/// A sync as the app runs it: the phone-side `Client` drives the link from the
+/// probe to the end, and every record it hands over for keeping is printed as a
+/// `stored` line. With no series to walk, what it exercises is the handshake
+/// and the stores drained after the walk.
+fn sync(link: &mut Link, credentials: Credentials) -> std::io::Result<bool> {
+    let mut client = Client::new(credentials, Vec::new(), Vec::new());
+    let mut pending: std::collections::VecDeque<Action> = client.handle(Event::Connected).into();
+    let deadline = Instant::now() + SYNC_TIMEOUT;
+    while Instant::now() < deadline {
+        while let Some(action) = pending.pop_front() {
+            match action {
+                Action::Send(frame) | Action::Delete(frame) => link.send(&frame)?,
+                Action::Store { token, records } => {
+                    for record in &records {
+                        println!("stored {}", describe(record));
+                    }
+                    pending.extend(client.handle(Event::Stored { token }));
+                }
+                Action::Finished => {
+                    if client.phase() == Phase::Finished && client.pending_deletes() == 0 {
+                        println!("sync finished");
+                        return Ok(true);
+                    }
+                }
+                Action::Reconnect => {
+                    println!("the client gave up on a silent watch");
+                    return Ok(false);
+                }
+            }
+        }
+        let now = UnixMillis(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64,
+        );
+        pending.extend(match link.receive(SYNC_POLL)? {
+            Some(frame) => {
+                report(&frame);
+                client.handle(Event::Frame { frame, received_at: now })
+            }
+            None => client.handle(Event::Tick { now }),
+        });
+    }
+    println!("the sync did not finish within {}s", SYNC_TIMEOUT.as_secs());
+    Ok(false)
+}
+
+fn describe(record: &Record) -> String {
+    match record {
+        Record::PpgAfib { measured_at, signal } => format!(
+            "ppg_afib measured_at={} uid={} measures={:?} samples={}",
+            measured_at.0,
+            signal.measure.as_ref().map(|m| m.uid).unwrap_or_default(),
+            signal.measures.iter().map(|m| (m.r#type, m.value)).collect::<Vec<_>>(),
+            signal.data.len(),
+        ),
+        Record::Spo2Check { measured_at, signal } => format!(
+            "spo2_check measured_at={} uid={} measures={:?}",
+            measured_at.0,
+            signal.measure.as_ref().map(|m| m.uid).unwrap_or_default(),
+            signal.measures.iter().map(|m| (m.r#type, m.value)).collect::<Vec<_>>(),
+        ),
+        Record::Ecg(signal) => format!(
+            "ecg uid={:?} samples={}",
+            signal.measure.as_ref().map(|m| m.uid),
+            signal.data.len()
+        ),
+        other => format!("{other:?}"),
     }
 }
 
@@ -844,6 +939,8 @@ fn main() -> ExitCode {
     // the phone sees is the other half, and nothing else here can send a
     // command the scenario does not already use.
     let mut send_commands: Vec<u16> = Vec::new();
+    let mut stored_types: Vec<u16> = Vec::new();
+    let mut sync_scenario = false;
     let mut version_trailer = update::VersionTrailer::STOCK;
     let mut arguments = env::args().skip(1);
     while let Some(argument) = arguments.next() {
@@ -927,8 +1024,16 @@ fn main() -> ExitCode {
                     .parse()
                     .expect("--send takes a command number"),
             ),
+            "--sync" => sync_scenario = true,
+            "--stored" => stored_types.push(
+                arguments
+                    .next()
+                    .expect("--stored takes a stored signal type")
+                    .parse()
+                    .expect("--stored takes a stored signal type"),
+            ),
             other => {
-                eprintln!("usage: wpp-sim-client [--endpoint host:port | --port n] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--workout <seconds> [--activity <n>]] [--hr-measure <seconds>] [--sleep <seconds>] [--spo2 <seconds>] [--ppg <seconds>] [--body-temp] [--raw-data] [--alarm] [--notify] [--notification \"<title>|<message>\" [--app <bundle id>]] [--dismiss <id>] [--send <command>] [--update <package> [--version-address <hex>]]");
+                eprintln!("usage: wpp-sim-client [--endpoint host:port | --port n] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--workout <seconds> [--activity <n>]] [--hr-measure <seconds>] [--sleep <seconds>] [--spo2 <seconds>] [--ppg <seconds>] [--body-temp] [--raw-data] [--alarm] [--notify] [--notification \"<title>|<message>\" [--app <bundle id>]] [--dismiss <id>] [--send <command>] [--stored <type>] [--sync] [--update <package> [--version-address <hex>]]");
                 eprintln!("unknown argument {other}");
                 return ExitCode::FAILURE;
             }
@@ -952,6 +1057,13 @@ fn main() -> ExitCode {
 
     let mut link = Link::connect(&endpoint).expect("the pipe accepts the connection");
     println!("connected to {endpoint}");
+    if sync_scenario {
+        let credentials = Credentials { mac: association.mac.clone(), secret: association.secret.clone() };
+        return match sync(&mut link, credentials).expect("the link stays up") {
+            true => ExitCode::SUCCESS,
+            false => ExitCode::FAILURE,
+        };
+    }
     let Some(identity) = authenticate(&mut link, &association).expect("the link stays up through the handshake")
     else {
         return ExitCode::FAILURE;
@@ -1041,6 +1153,12 @@ fn main() -> ExitCode {
         }
         if let Some(seconds) = sleep_seconds {
             sleep(&mut link, seconds, now as i32).expect("the link stays up");
+        }
+        return ExitCode::SUCCESS;
+    }
+    if !stored_types.is_empty() {
+        for signal_type in stored_types {
+            stored(&mut link, signal_type).expect("the link stays up");
         }
         return ExitCode::SUCCESS;
     }

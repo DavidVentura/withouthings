@@ -7,7 +7,7 @@ use wpp::activity::Minute;
 use wpp::client::{
     Category, DeviceIdentity, Feature, FeatureId, FeatureSchedule, Record, Source, UserProfile,
 };
-use wpp::signal::Signal;
+use wpp::signal::{MeasureType, Signal};
 use wpp::track::Fix;
 use wpp::units::{UnixMillis, UnixTime};
 
@@ -27,6 +27,28 @@ const LONGEST_WINDOW_SECS: i64 = 2 * 24 * 60 * 60;
 
 pub struct Store {
     conn: Connection,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AfibEpisodeRow {
+    pub id: i64,
+    pub measured_at_ms: i64,
+    pub duration_secs: i64,
+    /// The type-139 measure as sent, absent when the episode carried none.
+    pub verdict: Option<i64>,
+    /// StoredMeasureMeta.attrib, absent on rows kept before it was.
+    pub attrib: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AfibReadingRow {
+    pub id: i64,
+    pub measured_at_ms: i64,
+    pub duration_secs: i64,
+    pub sampling_hz: i64,
+    pub sample_bytes: i64,
+    pub samples: Vec<u8>,
+    pub attrib: Option<i64>,
 }
 
 pub struct ActiveWorkout {
@@ -288,6 +310,14 @@ impl Store {
                     )?;
                 }
                 Record::Ecg(signal) => store_ecg(&tx, device_id, signal)?,
+                Record::PpgAfib {
+                    measured_at,
+                    signal,
+                } => store_kept(&tx, KeptTable::AfibEpisode, device_id, *measured_at, signal)?,
+                Record::Spo2Check {
+                    measured_at,
+                    signal,
+                } => store_kept(&tx, KeptTable::Spo2Check, device_id, *measured_at, signal)?,
                 Record::User(profile) => {
                     tx.execute(
                         "INSERT INTO watch_user
@@ -936,6 +966,61 @@ impl Store {
             .optional()
     }
 
+    /// Newest first, each with the PPG verdict code when the watch sent one.
+    pub fn afib_episodes(&self, device_id: i64) -> Result<Vec<AfibEpisodeRow>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT e.id, e.measured_at, e.duration_secs, m.value, e.attrib
+               FROM afib_episode e
+               LEFT JOIN afib_episode_measure m
+                 ON m.parent_id = e.id AND m.type = ?2
+              WHERE e.device_id = ?1
+              ORDER BY e.measured_at DESC",
+        )?;
+        let rows = stmt.query_map(params![device_id, MeasureType::PPG_AFIB_RESULT.0], |r| {
+            Ok(AfibEpisodeRow {
+                id: r.get(0)?,
+                measured_at_ms: r.get(1)?,
+                duration_secs: r.get(2)?,
+                verdict: r.get(3)?,
+                attrib: r.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Every reading from `from_ms` up to and including the one `id` names,
+    /// oldest first, with its beat intervals as stored; empty if `id` is not
+    /// a reading of this device.
+    pub fn afib_readings_up_to(
+        &self,
+        device_id: i64,
+        id: i64,
+        from_ms: i64,
+    ) -> Result<Vec<AfibReadingRow>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT e.id, e.measured_at, e.duration_secs, e.sampling_hz, e.sample_bytes,
+                    e.samples, e.attrib
+               FROM afib_episode e
+              WHERE e.device_id = ?1
+                AND e.measured_at >= ?3
+                AND e.measured_at <= (SELECT measured_at FROM afib_episode
+                                       WHERE id = ?2 AND device_id = ?1)
+              ORDER BY e.measured_at",
+        )?;
+        let rows = stmt.query_map(params![device_id, id, from_ms], |r| {
+            Ok(AfibReadingRow {
+                id: r.get(0)?,
+                measured_at_ms: r.get(1)?,
+                duration_secs: r.get(2)?,
+                sampling_hz: r.get(3)?,
+                sample_bytes: r.get(4)?,
+                samples: r.get(5)?,
+                attrib: r.get(6)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     pub fn count(&self, table: &str) -> Result<i64, Error> {
         self.conn
             .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
@@ -982,6 +1067,76 @@ fn thin_levels(mut newest: HashMap<i64, (i64, i64)>, records: &[Record]) -> Vec<
         kept.push(record);
     }
     kept
+}
+
+/// The tables a measurement the watch kept between syncs is written to: the
+/// record, and one row per measure it came with.
+#[derive(Clone, Copy)]
+enum KeptTable {
+    AfibEpisode,
+    Spo2Check,
+}
+
+impl KeptTable {
+    fn names(self) -> (&'static str, &'static str) {
+        match self {
+            KeptTable::AfibEpisode => ("afib_episode", "afib_episode_measure"),
+            KeptTable::Spo2Check => ("spo2_check", "spo2_check_measure"),
+        }
+    }
+}
+
+fn store_kept(
+    tx: &rusqlite::Transaction<'_>,
+    table: KeptTable,
+    device_id: i64,
+    measured_at: UnixTime,
+    signal: &Signal,
+) -> Result<(), Error> {
+    let (records, measures) = table.names();
+    let measured_at = measured_at.0 * 1000;
+    let (offset, gain, qfix) = match &signal.units {
+        Some(u) => (Some(u.offset), Some(u.gain), Some(u.qfix)),
+        None => (None, None, None),
+    };
+    tx.execute(
+        &format!(
+            "INSERT INTO {records} (device_id, measured_at, duration_secs, sampling_hz,
+                                    sample_bytes, resolution_bits, unit_offset, gain, qfix,
+                                    samples, attrib)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT DO NOTHING"
+        ),
+        params![
+            device_id,
+            measured_at,
+            signal.extend.duration,
+            signal.meta.sampling_freq,
+            signal.meta.size,
+            signal.meta.resolution,
+            offset,
+            gain,
+            qfix,
+            signal.data,
+            signal.measure.as_ref().map(|m| m.attrib),
+        ],
+    )?;
+    let parent_id: i64 = tx.query_row(
+        &format!("SELECT id FROM {records} WHERE device_id = ?1 AND measured_at = ?2"),
+        params![device_id, measured_at],
+        |r| r.get(0),
+    )?;
+    for measure in &signal.measures {
+        tx.execute(
+            &format!(
+                "INSERT INTO {measures} (parent_id, type, value, exponent)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT DO NOTHING"
+            ),
+            params![parent_id, measure.r#type, measure.value, measure.exponent],
+        )?;
+    }
+    Ok(())
 }
 
 fn store_ecg(tx: &rusqlite::Transaction<'_>, device_id: i64, signal: &Signal) -> Result<(), Error> {
@@ -1178,6 +1333,175 @@ mod tests {
         store.store(device, &batch).unwrap();
         store.store(device, &batch).unwrap();
         assert_eq!(store.count("sample").unwrap(), 2);
+    }
+
+    #[test]
+    fn an_afib_episode_is_listed_with_its_verdict_and_kept_once() {
+        use wpp::objects::{
+            StoredMeasureData, StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend,
+        };
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let episode = Record::PpgAfib {
+            measured_at: UnixTime(1785509120),
+            signal: Box::new(Signal {
+                meta: StoredSignalMeta {
+                    r#type: 5,
+                    sampling_freq: 100,
+                    format: 0,
+                    size: 1,
+                    resolution: 8,
+                    channel: 1,
+                },
+                extend: StoredSignalMetaExtend {
+                    duration: 29,
+                    total_size: 4,
+                    filter_bank: 0,
+                },
+                units: None,
+                measure: Some(StoredMeasureMeta {
+                    uid: 1785509120,
+                    user_id_cnt: 1,
+                    user_id: vec![44128913],
+                    attrib: 0,
+                    time: 1785509120,
+                }),
+                measures: vec![StoredMeasureData {
+                    value: 1,
+                    r#type: 139,
+                    exponent: 0,
+                }],
+                data: vec![85, 74, 67, 63],
+            }),
+        };
+        store.store(device, &[episode.clone()]).unwrap();
+        store.store(device, &[episode]).unwrap();
+        assert_eq!(
+            store.afib_episodes(device).unwrap(),
+            vec![AfibEpisodeRow {
+                id: 1,
+                measured_at_ms: 1_785_509_120_000,
+                duration_secs: 29,
+                verdict: Some(1),
+                attrib: Some(0),
+            }]
+        );
+    }
+
+    #[test]
+    fn readings_up_to_one_come_oldest_first_and_stop_at_it() {
+        use wpp::objects::{StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend};
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let reading = |at: u32, attrib: u8| Record::PpgAfib {
+            measured_at: UnixTime(at as i64),
+            signal: Box::new(Signal {
+                meta: StoredSignalMeta {
+                    r#type: 5,
+                    sampling_freq: 100,
+                    format: 0,
+                    size: 1,
+                    resolution: 8,
+                    channel: 1,
+                },
+                extend: StoredSignalMetaExtend {
+                    duration: 29,
+                    total_size: 2,
+                    filter_bank: 0,
+                },
+                units: None,
+                measure: Some(StoredMeasureMeta {
+                    uid: at,
+                    user_id_cnt: 1,
+                    user_id: vec![44128913],
+                    attrib,
+                    time: at,
+                }),
+                measures: Vec::new(),
+                data: vec![85, 110],
+            }),
+        };
+        store
+            .store(
+                device,
+                &[reading(3000, 0), reading(1000, 0), reading(2000, 7)],
+            )
+            .unwrap();
+        let confirmed = store
+            .afib_episodes(device)
+            .unwrap()
+            .into_iter()
+            .find(|row| row.attrib == Some(7))
+            .unwrap();
+        let rows = store
+            .afib_readings_up_to(device, confirmed.id, 1_500_000)
+            .unwrap();
+        assert_eq!(
+            rows.iter()
+                .map(|r| (r.measured_at_ms, r.attrib))
+                .collect::<Vec<_>>(),
+            vec![(2_000_000, Some(7))]
+        );
+        let rows = store.afib_readings_up_to(device, confirmed.id, 0).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].samples, vec![85, 110]);
+    }
+
+    #[test]
+    fn a_spo2_check_keeps_its_units_and_measures() {
+        use wpp::objects::{
+            StoredMeasureData, StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend,
+            UnitConversionParameters,
+        };
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let check = Record::Spo2Check {
+            measured_at: UnixTime(1786729849),
+            signal: Box::new(Signal {
+                meta: StoredSignalMeta {
+                    r#type: 4,
+                    sampling_freq: 25,
+                    format: 0,
+                    size: 4,
+                    resolution: 19,
+                    channel: 1,
+                },
+                extend: StoredSignalMetaExtend {
+                    duration: 1,
+                    total_size: 1,
+                    filter_bank: 0,
+                },
+                units: Some(UnitConversionParameters {
+                    offset: 0,
+                    gain: 0,
+                    qfix: 0,
+                }),
+                measure: Some(StoredMeasureMeta {
+                    uid: 0,
+                    user_id_cnt: 1,
+                    user_id: vec![44128913],
+                    attrib: 0,
+                    time: 1786729849,
+                }),
+                measures: vec![
+                    StoredMeasureData {
+                        value: 0,
+                        r#type: 54,
+                        exponent: -1,
+                    },
+                    StoredMeasureData {
+                        value: -1,
+                        r#type: 89,
+                        exponent: 0,
+                    },
+                ],
+                data: vec![0],
+            }),
+        };
+        store.store(device, &[check.clone()]).unwrap();
+        store.store(device, &[check]).unwrap();
+        assert_eq!(store.count("spo2_check").unwrap(), 1);
+        assert_eq!(store.count("spo2_check_measure").unwrap(), 2);
     }
 
     #[test]

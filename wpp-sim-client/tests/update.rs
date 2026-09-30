@@ -7,14 +7,15 @@
 //! watch's own log and the Renode monitor for everything the protocol does not
 //! say. It skips, loudly, when Renode or the flash dump is not there.
 
+mod common;
+
 use std::fs;
-use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
-const MONITOR_PORT: u16 = 7799;
+use common::{client, renode_binary, repository, scratch, strip_colour, tail, Renode, Rig};
+
 const BOOT_TIMEOUT: Duration = Duration::from_secs(180);
 /// The bootloader compares and then copies the whole 1.15 MB bank over a
 /// modelled SPI bus one byte at a time, which is minutes of wall time.
@@ -23,143 +24,6 @@ const TEST_VERSION: u32 = 9999;
 /// Distinct from TEST_VERSION so a relinked run cannot be mistaken for a stock one.
 const RELINKED_VERSION: u32 = 9998;
 const INSTALLED_VERSION: u32 = 3411;
-
-struct Renode {
-    child: Child,
-    directory: PathBuf,
-}
-
-impl Drop for Renode {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-impl Renode {
-    fn log(&self) -> String {
-        fs::read_to_string(self.directory.join("out/uart0.log")).unwrap_or_default()
-    }
-
-    fn wait_for_boots(&self, boots: usize, timeout: Duration) -> Result<(), String> {
-        let deadline = Instant::now() + timeout;
-        while Instant::now() < deadline {
-            if self.log().matches("Add WPPS chars.").count() >= boots {
-                return Ok(());
-            }
-            std::thread::sleep(Duration::from_secs(2));
-        }
-        Err(format!(
-            "the watch did not reach boot {boots} within {}s; the log ends with:\n{}",
-            timeout.as_secs(),
-            tail(&self.log(), 40)
-        ))
-    }
-
-    /// One monitor command, one answer. Renode echoes the command before the
-    /// result, and the telnet negotiation bytes at the start of the session are
-    /// not text, so both are dropped.
-    fn monitor(&self, command: &str) -> String {
-        let mut socket = TcpStream::connect(("127.0.0.1", MONITOR_PORT))
-            .expect("the Renode monitor accepts a connection");
-        socket.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-        std::thread::sleep(Duration::from_millis(400));
-        let mut banner = [0u8; 4096];
-        let _ = socket.read(&mut banner);
-        socket.write_all(format!("{command}\n").as_bytes()).unwrap();
-        std::thread::sleep(Duration::from_millis(800));
-        let mut answer = [0u8; 4096];
-        let read = socket.read(&mut answer).unwrap_or(0);
-        String::from_utf8_lossy(&answer[..read])
-            .lines()
-            .map(|line| strip_colour(line).trim().to_string())
-            .filter(|line| !line.is_empty() && line != command && !line.starts_with("(hwa10)"))
-            .collect::<Vec<_>>()
-            .join(" ")
-    }
-}
-
-fn strip_colour(line: &str) -> String {
-    let mut out = String::new();
-    let mut characters = line.chars();
-    while let Some(c) = characters.next() {
-        if c != '\u{1b}' {
-            out.push(c);
-            continue;
-        }
-        for skip in characters.by_ref() {
-            if skip == 'm' {
-                break;
-            }
-        }
-    }
-    out
-}
-
-fn tail(text: &str, lines: usize) -> String {
-    let all: Vec<&str> = text.lines().collect();
-    all[all.len().saturating_sub(lines)..].join("\n")
-}
-
-fn repository() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
-}
-
-fn renode_binary() -> PathBuf {
-    match std::env::var("RENODE") {
-        Ok(path) => PathBuf::from(path),
-        Err(_) => PathBuf::from(std::env::var("HOME").unwrap_or_default())
-            .join("renode-portable/renode"),
-    }
-}
-
-/// A scratch copy of the rig: Renode writes its outputs next to the scripts it
-/// runs, and the models and images are large, so everything is symlinked and
-/// only the scripts are copied.
-///
-/// Renode resolves every `@path` against the working directory and not against
-/// the file that names it, so the copy reproduces renode-sim's directory shape:
-/// scripts/ is a real directory of copied scripts and models/ is one symlink.
-fn scratch(source: &Path) -> PathBuf {
-    let directory = repository().join("target/update-test");
-    let _ = fs::remove_dir_all(&directory);
-    fs::create_dir_all(directory.join("out/frames")).expect("the scratch directory is creatable");
-    fs::create_dir_all(directory.join("scripts")).expect("the scratch directory is creatable");
-    for entry in fs::read_dir(source.join("scripts")).expect("renode-sim/scripts is readable") {
-        let entry = entry.unwrap();
-        fs::copy(entry.path(), directory.join("scripts").join(entry.file_name()))
-            .expect("the script copies");
-    }
-    for entry in fs::read_dir(source).expect("renode-sim is readable") {
-        let entry = entry.unwrap();
-        let name = entry.file_name();
-        if name == "out" || name == "scripts" {
-            continue;
-        }
-        let target = directory.join(&name);
-        std::os::unix::fs::symlink(entry.path(), &target).expect("the link is creatable");
-    }
-    directory
-}
-
-fn client(directory: &Path, arguments: &[&str]) -> (bool, String) {
-    let dump = repository().join("renode-sim/external_flash.bin");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_wpp-sim-client"));
-    command
-        .current_dir(directory)
-        .arg("--secret-from-dump")
-        .arg(&dump)
-        .args(arguments)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let child = command.spawn().expect("the client starts");
-    let finished = child
-        .wait_with_output()
-        .expect("the client is waitable");
-    let mut output = String::from_utf8_lossy(&finished.stdout).to_string();
-    output.push_str(&String::from_utf8_lossy(&finished.stderr));
-    (finished.status.success(), output)
-}
 
 /// One `0x…` word out of a monitor answer.
 fn word(answer: String) -> u64 {
@@ -207,54 +71,6 @@ fn reported_version(output: &str) -> u32 {
         .trim()
         .parse()
         .expect("the reported version is a number")
-}
-
-/// The image a rig is generated for: the internal-flash binary the addresses
-/// are read out of, and where the symbol table to resolve them against lives
-/// (`partition` for a stock image, which has no ELF).
-struct Rig {
-    image: PathBuf,
-    symbols: String,
-}
-
-impl Rig {
-    fn stock() -> Rig {
-        Rig {
-            image: repository().join("renode-sim/flash.bin"),
-            symbols: "partition".to_string(),
-        }
-    }
-
-    fn relinked() -> Rig {
-        Rig {
-            image: repository().join("renode-sim/out/flash-relinked.bin"),
-            symbols: repository()
-                .join("renode-sim/out/relink/relinked.elf")
-                .display()
-                .to_string(),
-        }
-    }
-
-    /// Resolve abi/sim.yaml against this image and write the fragments the run
-    /// scripts include, into the scratch rig rather than into the source tree.
-    fn generate(&self, directory: &Path, into: &str) {
-        let repository = repository();
-        let generated = Command::new("python3")
-            .arg(repository.join("renode-sim/abi/rig.py"))
-            .arg("--image")
-            .arg(&self.image)
-            .args(["--symbols", &self.symbols])
-            .arg("--out")
-            .arg(directory.join("out").join(into))
-            .output()
-            .expect("python3 runs");
-        assert!(
-            generated.status.success(),
-            "abi/rig.py refused the {into} addresses: {}",
-            String::from_utf8_lossy(&generated.stderr)
-        );
-        print!("{}", String::from_utf8_lossy(&generated.stdout));
-    }
 }
 
 /// One update scenario: which flash image the watch starts from, what package
@@ -356,7 +172,7 @@ fn run_update(case: &Case) -> Option<(Renode, PathBuf)> {
         }
     }
 
-    let directory = scratch(&repository.join("renode-sim"));
+    let directory = scratch("update-test");
     case.boot.generate(&directory, "rig");
     case.target.generate(&directory, "rig-updated");
     let package = directory.join(format!("hwa10_{}.bin", case.target_version));
@@ -373,19 +189,7 @@ fn run_update(case: &Case) -> Option<(Renode, PathBuf)> {
         Some(image) => format!("$image=@{}; include @scripts/update-test.resc", image.display()),
         None => "include @scripts/update-test.resc".to_string(),
     };
-    let log = fs::File::create(directory.join("log")).unwrap();
-    let mut child = Command::new(&renode)
-        .current_dir(&directory)
-        .args(["--disable-xwt", "--port", &MONITOR_PORT.to_string(), "-e"])
-        .arg(&script)
-        // Renode exits when its input closes, so the handle is held for the run.
-        .stdin(Stdio::piped())
-        .stdout(Stdio::from(log.try_clone().unwrap()))
-        .stderr(Stdio::from(log))
-        .spawn()
-        .expect("Renode starts");
-    let _stdin = child.stdin.take();
-    let renode = Renode { child, directory: directory.clone() };
+    let renode = Renode::start(&directory, &script);
 
     renode.wait_for_boots(1, BOOT_TIMEOUT).expect("the watch boots");
     let (probed, output) = client(&directory, &["--probe-only"]);

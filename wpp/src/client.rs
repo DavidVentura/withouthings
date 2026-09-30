@@ -8,7 +8,7 @@ use crate::objects::{
     StartTime, StoredSignalMeta, TimeSet, TrackerUser, TrackerWearPos, VasistasCbt, VasistasType,
     Version, WamScreensList, WamVasistasGet, WorkoutGpsStatus, WorkoutScreenMetadata,
 };
-use crate::signal::{Signal, SignalCollector};
+use crate::signal::{Signal, SignalCollector, SignalStore};
 use crate::spiflash::{SpiFlash, SpiFlashProgress};
 use crate::units::{UnixMillis, UnixTime};
 use crate::{Command, Frame, WppObject};
@@ -45,6 +45,9 @@ const SILENCE_TIMEOUT_MS: i64 = 90_000;
 const SCREEN_SLOTS: usize = 24;
 const ACTIVITY_SLOTS: usize = 8;
 const MIN_WORKOUT_SECS: i64 = 30;
+/// The stores drained after every walk, in the order the reference app asks.
+const DRAINED_STORES: [SignalStore; 3] =
+    [SignalStore::Ecg, SignalStore::Spo2, SignalStore::PpgAfib];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Credentials {
@@ -214,6 +217,17 @@ pub enum Record {
     },
     Activity(Minute),
     Ecg(Box<Signal>),
+    /// One background reading the PPG classifier called AFib, timed by its
+    /// StoredMeasureMeta; the one that raised the alert has attrib 7.
+    PpgAfib {
+        measured_at: UnixTime,
+        signal: Box<Signal>,
+    },
+    /// A SpO2 spot check, timed by its StoredMeasureMeta.
+    Spo2Check {
+        measured_at: UnixTime,
+        signal: Box<Signal>,
+    },
     Identity(DeviceIdentity),
     User(UserProfile),
 }
@@ -334,6 +348,12 @@ pub struct Client {
     signals: SignalCollector,
     next_token: u64,
     pending_deletes: Vec<(u64, Frame)>,
+    /// Stores still to be drained after the walk, the last one next.
+    stores: Vec<SignalStore>,
+    /// The store the outstanding stored-signal request reads from, and whether
+    /// the record it served is waiting on its delete before the next request.
+    draining: Option<SignalStore>,
+    awaiting_delete: bool,
     walk_started_from: Option<UnixTime>,
     busy_retries: u32,
     stream_total: u32,
@@ -377,6 +397,9 @@ impl Client {
             signals: SignalCollector::new(),
             next_token: 1,
             pending_deletes: Vec::new(),
+            stores: Vec::new(),
+            draining: None,
+            awaiting_delete: false,
             walk_started_from: None,
             busy_retries: 0,
             stream_total,
@@ -454,7 +477,7 @@ impl Client {
         if self.phase != Phase::Finished && self.phase != Phase::Syncing {
             return Vec::new();
         }
-        if self.current.is_some() {
+        if self.current.is_some() || self.draining.is_some() {
             return Vec::new();
         }
         self.queue
@@ -555,6 +578,9 @@ impl Client {
         }
         self.batch_high_water = None;
         self.walk_started_from = None;
+        self.stores.clear();
+        self.draining = None;
+        self.awaiting_delete = false;
         self.signals.reset();
         self.dump.reset();
         self.spi_flash.reset();
@@ -600,6 +626,36 @@ impl Client {
         self.collect_passive(&frame, received_at, &mut records);
         self.collect_history(&frame, &mut records);
         self.live_samples.extend(self.signals.take_live());
+        // Before the control flow below reads the frame: a record and the Null
+        // that ends its reply can share a frame, and the Null moves the drain
+        // on to the next store.
+        for signal in self.take_signals() {
+            let store = self
+                .draining
+                .expect("a stored signal arrives only in answer to a request that named its store");
+            let delete = delete_frame(store, &signal);
+            let measured_at = signal.measure.as_ref().map(|m| UnixTime(m.time as i64));
+            let record = match (store, measured_at) {
+                (SignalStore::Ecg, _) => Record::Ecg(Box::new(signal)),
+                (SignalStore::Spo2 | SignalStore::PpgAfib, None) => continue,
+                (SignalStore::Spo2, Some(measured_at)) => Record::Spo2Check {
+                    measured_at,
+                    signal: Box::new(signal),
+                },
+                (SignalStore::PpgAfib, Some(measured_at)) => Record::PpgAfib {
+                    measured_at,
+                    signal: Box::new(signal),
+                },
+            };
+            records.push(record);
+            if let Some(Action::Store { token, records }) = self.store(std::mem::take(&mut records)) {
+                if let Some(delete) = delete {
+                    self.pending_deletes.push((token, delete));
+                    self.awaiting_delete = self.phase == Phase::Syncing;
+                }
+                actions.push(Action::Store { token, records });
+            }
+        }
         actions.extend(self.dump.on_frame(&frame).into_iter().map(Action::Send));
         self.spi_flash.on_frame(&frame);
 
@@ -639,6 +695,12 @@ impl Client {
                     ],
                 )));
             }
+            c if c == Command::CMD_STORED_MEASURE_SIGNAL_GET.0
+                && self.phase != Phase::Syncing
+                && frame.objects.iter().any(|o| matches!(o, WppObject::Null(_))) =>
+            {
+                self.draining = None;
+            }
             c if c == Command::CMD_SYNC_REQUEST.0 => {
                 actions.push(Action::Send(Frame::new(
                     Command::CMD_SYNC_REQUEST.with_channel(Channel::SlaveRequest),
@@ -664,6 +726,9 @@ impl Client {
                     WppObject::StoredMeasureMeta(m) => Some(m.clone()),
                     _ => None,
                 }) {
+                    // Named by its StoredMeasureMeta alone, the handler reads
+                    // the ECG store.
+                    self.draining = Some(SignalStore::Ecg);
                     actions.push(Action::Send(Frame::new(
                         Command::CMD_STORED_MEASURE_SIGNAL_GET,
                         vec![WppObject::StoredMeasureMeta(measure)],
@@ -717,6 +782,9 @@ impl Client {
                 )));
                 actions.extend(self.request_next());
             }
+            (Phase::Syncing, _) if self.draining.is_some() => {
+                actions.extend(self.on_store_frame(&frame));
+            }
             (Phase::Finished, c) if c == Command::CMD_SYNC_REQUEST.0 => {
                 let walk = self.sync_now();
                 if walk.is_empty() {
@@ -763,16 +831,6 @@ impl Client {
             _ => {}
         }
 
-        for signal in self.take_signals() {
-            let delete = delete_frame(&signal);
-            records.push(Record::Ecg(Box::new(signal)));
-            if let Some(action) = self.store(std::mem::take(&mut records)) {
-                if let Action::Store { token, .. } = action {
-                    self.pending_deletes.push((token, delete));
-                }
-                actions.push(action);
-            }
-        }
         if let Some(action) = self.store(records) {
             actions.push(action);
         }
@@ -1559,12 +1617,55 @@ impl Client {
                 self.request_current()
             }
             None => {
-                self.phase = Phase::Finished;
                 let mut actions = vec![Action::Send(Frame::new(Command::CMD_SYNC_OK, Vec::new()))];
-                actions.extend(self.refresh());
+                self.stores = DRAINED_STORES.iter().rev().copied().collect();
+                actions.extend(self.request_next_store());
                 actions
             }
         }
+    }
+
+    fn request_next_store(&mut self) -> Vec<Action> {
+        self.awaiting_delete = false;
+        self.draining = self.stores.pop();
+        match self.draining {
+            Some(store) => vec![Action::Send(stored_signal_request(store))],
+            None => {
+                self.phase = Phase::Finished;
+                self.refresh()
+            }
+        }
+    }
+
+    /// One record per request: the watch answers with a record and a Null, or
+    /// with a Null alone once the store is empty. A served record is deleted
+    /// once the host has kept it, and only then is the store asked again, so
+    /// the watch never holds more than the one record in flight.
+    fn on_store_frame(&mut self, frame: &Frame) -> Vec<Action> {
+        let store = self.draining.expect("the caller checked a store is being drained");
+        let opcode = frame.command.opcode();
+        if opcode == Command::CMD_ERROR.0 {
+            let busy = frame
+                .objects
+                .iter()
+                .any(|o| matches!(o, WppObject::Cmderror(e) if e.err == ERR_DEVBUSY));
+            if busy && self.busy_retries < MAX_BUSY_RETRIES {
+                self.busy_retries += 1;
+                return vec![Action::Send(stored_signal_request(store))];
+            }
+            return self.request_next_store();
+        }
+        self.busy_retries = 0;
+        if opcode == Command::CMD_STORED_MEASURE_SIGNAL_DEL.0 {
+            self.awaiting_delete = false;
+            return vec![Action::Send(stored_signal_request(store))];
+        }
+        let ends_reply = opcode == Command::CMD_STORED_MEASURE_SIGNAL_GET.0
+            && frame.objects.iter().any(|o| matches!(o, WppObject::Null(_)));
+        if !ends_reply || self.awaiting_delete {
+            return Vec::new();
+        }
+        self.request_next_store()
     }
 
     fn request_current(&mut self) -> Vec<Action> {
@@ -1602,16 +1703,31 @@ impl Client {
     }
 }
 
-fn delete_frame(signal: &Signal) -> Frame {
+fn stored_signal_request(store: SignalStore) -> Frame {
     Frame::new(
+        Command::CMD_STORED_MEASURE_SIGNAL_GET,
+        vec![WppObject::StoredSignalMeta(StoredSignalMeta {
+            r#type: store.type_id(),
+            ..StoredSignalMeta::default()
+        })],
+    )
+}
+
+/// The handler at 0x6e3e8 routes on the store's type and deletes the record
+/// its Id names, which is the record's StoredMeasureMeta uid. A record that
+/// came without one cannot be named, so it stays on the watch.
+fn delete_frame(store: SignalStore, signal: &Signal) -> Option<Frame> {
+    let uid = signal.measure.as_ref()?.uid;
+    Some(Frame::new(
         Command::CMD_STORED_MEASURE_SIGNAL_DEL,
         vec![
-            WppObject::Id(Id { value: 1 }),
+            WppObject::Id(Id { value: uid }),
             WppObject::StoredSignalMeta(StoredSignalMeta {
-                ..signal.meta.clone()
+                r#type: store.type_id(),
+                ..StoredSignalMeta::default()
             }),
         ],
-    )
+    ))
 }
 
 pub fn sha1(data: &[u8]) -> [u8; 20] {
@@ -1833,52 +1949,300 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_delete_waits_for_the_store_to_be_confirmed() {
-        use crate::objects::{StoredSignalData, StoredSignalMetaExtend};
-        let mut client = authenticated();
-        let meta = StoredSignalMeta {
-            r#type: 7,
-            sampling_freq: 300,
-            format: 0,
-            size: 2,
-            resolution: 14,
-            channel: 1,
+    /// A PPG AFib episode as the simulated watch serves one (`hwa10
+    /// fake_afib`, then CMD_STORED_MEASURE_SIGNAL_GET naming store 5): the
+    /// record across two frames, then the Null that ends the reply.
+    fn afib_episode(uid: u32) -> Vec<Frame> {
+        use crate::objects::{
+            AlgorithmVersion, FirmwareVersion, StoredMeasureData, StoredMeasureMeta,
+            StoredSignalData, StoredSignalMetaExtend,
         };
-        let actions = client.handle(Event::Frame {
-            received_at: UnixMillis(0),
-            frame: Frame::new(
+        vec![
+            Frame::new(
                 Command::CMD_STORED_MEASURE_SIGNAL_GET,
                 vec![
-                    WppObject::StoredSignalMeta(meta),
+                    WppObject::StoredMeasureMeta(StoredMeasureMeta {
+                        uid,
+                        user_id_cnt: 1,
+                        user_id: vec![44128913, 537002200, 537004388],
+                        attrib: 0,
+                        time: uid,
+                    }),
+                    WppObject::StoredMeasureData(StoredMeasureData {
+                        value: 1,
+                        r#type: 139,
+                        exponent: 0,
+                    }),
+                    WppObject::AlgorithmVersion(AlgorithmVersion {
+                        r#type: 139,
+                        version: 117572097,
+                    }),
+                    WppObject::FirmwareVersion(FirmwareVersion { version: 3411 }),
+                    WppObject::StoredSignalMeta(StoredSignalMeta {
+                        r#type: 5,
+                        sampling_freq: 100,
+                        format: 0,
+                        size: 1,
+                        resolution: 8,
+                        channel: 1,
+                    }),
                     WppObject::StoredSignalMetaExtend(StoredSignalMetaExtend {
-                        duration: 1,
+                        duration: 29,
                         total_size: 4,
                         filter_bank: 0,
                     }),
-                    WppObject::StoredSignalData(StoredSignalData {
-                        samples: vec![1, 0, 2, 0],
-                    }),
                 ],
             ),
-        });
+            Frame::new(
+                Command::CMD_STORED_MEASURE_SIGNAL_GET,
+                vec![WppObject::StoredSignalData(StoredSignalData {
+                    samples: vec![85, 74, 67, 63],
+                })],
+            ),
+            Frame::new(
+                Command::CMD_STORED_MEASURE_SIGNAL_GET,
+                vec![WppObject::Null(Null {})],
+            ),
+        ]
+    }
+
+    /// The SpO2 record the simulated watch's flash dump holds, as it serves
+    /// it, in one frame with the Null that ends the reply.
+    fn spo2_check() -> Vec<WppObject> {
+        use crate::objects::{
+            AlgoParam, AlgorithmVersion, FirmwareVersion, StoredMeasureData, StoredMeasureMeta,
+            StoredSignalData, StoredSignalMetaExtend, UnitConversionParameters,
+        };
+        vec![
+            WppObject::StoredMeasureMeta(StoredMeasureMeta {
+                uid: 0,
+                user_id_cnt: 1,
+                user_id: vec![44128913, 0, 0],
+                attrib: 0,
+                time: 1786729849,
+            }),
+            WppObject::StoredMeasureData(StoredMeasureData {
+                value: 0,
+                r#type: 54,
+                exponent: -1,
+            }),
+            WppObject::AlgorithmVersion(AlgorithmVersion {
+                r#type: 54,
+                version: 285343749,
+            }),
+            WppObject::FirmwareVersion(FirmwareVersion { version: 3411 }),
+            WppObject::AlgoParam(AlgoParam { id: 1, value: 0 }),
+            WppObject::AlgoParam(AlgoParam { id: 2, value: 3 }),
+            WppObject::StoredSignalMeta(StoredSignalMeta {
+                r#type: 4,
+                sampling_freq: 25,
+                format: 0,
+                size: 4,
+                resolution: 19,
+                channel: 1,
+            }),
+            WppObject::StoredSignalMetaExtend(StoredSignalMetaExtend {
+                duration: 1,
+                total_size: 1,
+                filter_bank: 0,
+            }),
+            WppObject::StoredMeasureData(StoredMeasureData {
+                value: -1,
+                r#type: 89,
+                exponent: 0,
+            }),
+            WppObject::UnitConversionParameters(UnitConversionParameters {
+                offset: 0,
+                gain: 0,
+                qfix: 0,
+            }),
+            WppObject::TrackerWearPos(TrackerWearPos { value: 2 }),
+            WppObject::StoredSignalData(StoredSignalData { samples: vec![0] }),
+            WppObject::Null(Null {}),
+        ]
+    }
+
+    fn requested_store(actions: &[Action]) -> Option<u16> {
+        actions.iter().find_map(|a| match a {
+            Action::Send(f) if f.command == Command::CMD_STORED_MEASURE_SIGNAL_GET => {
+                f.objects.iter().find_map(|o| match o {
+                    WppObject::StoredSignalMeta(m) => Some(m.r#type),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn the_stores_are_drained_after_the_walk_one_record_at_a_time() {
+        let mut client = authenticated();
+        let walked = client.handle(frame(
+            Command::CMD_VASISTAS_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+        assert_eq!(requested_store(&walked), Some(1), "the ECG store first");
+        let ecg_empty = client.handle(frame(
+            Command::CMD_STORED_MEASURE_SIGNAL_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+        assert_eq!(requested_store(&ecg_empty), Some(4), "then the SpO2 store");
+
+        let served = client.handle(frame(
+            Command::CMD_STORED_MEASURE_SIGNAL_GET,
+            spo2_check(),
+        ));
+        let token = served
+            .iter()
+            .find_map(|a| match a {
+                Action::Store { token, records } => {
+                    assert!(matches!(records.as_slice(), [Record::Spo2Check { measured_at, .. }]
+                        if *measured_at == UnixTime(1786729849)), "{records:#?}");
+                    Some(*token)
+                }
+                _ => None,
+            })
+            .expect("the spot check is handed over for storage");
+        let deleted = client.handle(Event::Stored { token });
+        let [Action::Delete(delete)] = deleted.as_slice() else {
+            panic!("the kept spot check is deleted: {deleted:?}");
+        };
+        assert_eq!(
+            delete.objects,
+            vec![
+                WppObject::Id(Id { value: 0 }),
+                WppObject::StoredSignalMeta(StoredSignalMeta {
+                    r#type: 4,
+                    ..StoredSignalMeta::default()
+                }),
+            ],
+            "the gss record index the reply gave as its uid"
+        );
+        let again = client.handle(frame(Command::CMD_STORED_MEASURE_SIGNAL_DEL, Vec::new()));
+        assert_eq!(requested_store(&again), Some(4));
+        let spo2_empty = client.handle(frame(
+            Command::CMD_STORED_MEASURE_SIGNAL_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+        assert_eq!(requested_store(&spo2_empty), Some(5), "then the PPG AFib store");
+
+        let mut served = Vec::new();
+        for part in afib_episode(1785509120) {
+            served.extend(client.handle(Event::Frame {
+                frame: part,
+                received_at: UnixMillis(0),
+            }));
+        }
+        let token = served
+            .iter()
+            .find_map(|a| match a {
+                Action::Store { token, records } => {
+                    assert!(matches!(records.as_slice(), [Record::PpgAfib { measured_at, signal }]
+                        if *measured_at == UnixTime(1785509120)
+                            && signal.measures.iter().any(|m| m.r#type == 139 && m.value == 1)),
+                        "{records:#?}");
+                    Some(*token)
+                }
+                _ => None,
+            })
+            .expect("the episode is handed over for storage");
+        assert!(
+            !served.iter().any(|a| matches!(a, Action::Delete(_) | Action::Send(_))),
+            "nothing goes out before the episode is kept"
+        );
+        assert_eq!(client.phase(), Phase::Syncing);
+
+        let deleted = client.handle(Event::Stored { token });
+        let [Action::Delete(delete)] = deleted.as_slice() else {
+            panic!("the kept episode is deleted: {deleted:?}");
+        };
+        assert_eq!(
+            delete.objects,
+            vec![
+                WppObject::Id(Id { value: 1785509120 }),
+                WppObject::StoredSignalMeta(StoredSignalMeta {
+                    r#type: 5,
+                    ..StoredSignalMeta::default()
+                }),
+            ],
+            "named by its uid, in the store it came from"
+        );
+
+        let again = client.handle(frame(Command::CMD_STORED_MEASURE_SIGNAL_DEL, Vec::new()));
+        assert_eq!(requested_store(&again), Some(5), "the same store, for the next one");
+        let done = client.handle(frame(
+            Command::CMD_STORED_MEASURE_SIGNAL_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+        assert_eq!(client.phase(), Phase::Finished);
+        assert!(sent(&done).contains(&Command::CMD_DISPLAYED_INFO_GET));
+    }
+
+    #[test]
+    fn an_ecg_is_deleted_from_the_ecg_store_whatever_its_signal_type() {
+        use crate::objects::{StoredMeasureMeta, StoredSignalData, StoredSignalMetaExtend};
+        let mut client = authenticated();
+        client.handle(frame(
+            Command::CMD_VASISTAS_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+        let actions = client.handle(frame(
+            Command::CMD_STORED_MEASURE_SIGNAL_GET,
+            vec![
+                WppObject::StoredMeasureMeta(StoredMeasureMeta {
+                    uid: 1,
+                    user_id_cnt: 1,
+                    user_id: vec![44128913, 0, 0],
+                    attrib: 0,
+                    time: 1784999415,
+                }),
+                WppObject::StoredSignalMeta(StoredSignalMeta {
+                    r#type: 7,
+                    sampling_freq: 300,
+                    format: 0,
+                    size: 2,
+                    resolution: 14,
+                    channel: 1,
+                }),
+                WppObject::StoredSignalMetaExtend(StoredSignalMetaExtend {
+                    duration: 1,
+                    total_size: 4,
+                    filter_bank: 0,
+                }),
+                WppObject::StoredSignalData(StoredSignalData {
+                    samples: vec![1, 0, 2, 0],
+                }),
+            ],
+        ));
         let token = actions
             .iter()
             .find_map(|a| match a {
-                Action::Store { token, .. } => Some(*token),
+                Action::Store { token, records } => {
+                    assert!(matches!(records.as_slice(), [Record::Ecg(_)]));
+                    Some(*token)
+                }
                 _ => None,
             })
-            .expect("the ecg should be handed over for storage");
+            .expect("the ecg is handed over for storage");
         assert!(
             !actions.iter().any(|a| matches!(a, Action::Delete(_))),
             "must not delete before the store is confirmed"
         );
 
         let actions = client.handle(Event::Stored { token });
-        assert!(matches!(
-            actions.as_slice(),
-            [Action::Delete(f)] if f.command == Command::CMD_STORED_MEASURE_SIGNAL_DEL
-        ));
+        let [Action::Delete(delete)] = actions.as_slice() else {
+            panic!("the kept ecg is deleted: {actions:?}");
+        };
+        assert_eq!(
+            delete.objects,
+            vec![
+                WppObject::Id(Id { value: 1 }),
+                WppObject::StoredSignalMeta(StoredSignalMeta {
+                    r#type: 1,
+                    ..StoredSignalMeta::default()
+                }),
+            ]
+        );
     }
 
     #[test]
@@ -1946,6 +2310,22 @@ mod tests {
             frame: Frame::new(command, objects),
             received_at: UnixMillis(0),
         }
+    }
+
+    /// What follows a walk's last Null: every drained store answers empty.
+    pub(super) fn stores_empty(client: &mut Client, ms: i64) -> Vec<Action> {
+        DRAINED_STORES
+            .iter()
+            .flat_map(|_| {
+                client.handle(Event::Frame {
+                    frame: Frame::new(
+                        Command::CMD_STORED_MEASURE_SIGNAL_GET,
+                        vec![WppObject::Null(Null {})],
+                    ),
+                    received_at: UnixMillis(ms),
+                })
+            })
+            .collect()
     }
 
     fn sent(actions: &[Action]) -> Vec<Command> {
@@ -2200,6 +2580,7 @@ mod tests {
             Command::CMD_BODY_VASISTAS_GET,
             vec![WppObject::Null(Null {})],
         ));
+        stores_empty(&mut client, 0);
         assert_eq!(client.phase(), Phase::Finished);
         assert_eq!(
             client.watermarks(),
@@ -2220,6 +2601,7 @@ mod tests {
             Command::CMD_VASISTAS_GET,
             vec![WppObject::Null(Null {})],
         ));
+        stores_empty(&mut client, 0);
         assert_eq!(client.phase(), Phase::Finished);
 
         let actions = client.handle(frame(
@@ -2255,12 +2637,14 @@ mod tests {
         };
 
         client.handle(done(0));
+        stores_empty(&mut client, 0);
         let walked = client.handle(ask(1_000));
         assert!(
             sent(&walked).contains(&Command::CMD_VASISTAS_GET),
             "a walk that is due still comes first"
         );
         client.handle(done(2_000));
+        stores_empty(&mut client, 2_000);
 
         let drained = client.handle(ask(3_000));
         assert_eq!(
@@ -2776,10 +3160,11 @@ mod tests {
             "the walk has the watch busy"
         );
 
-        let done = client.handle(frame(
+        client.handle(frame(
             Command::CMD_BODY_VASISTAS_GET,
             vec![WppObject::Null(Null {})],
         ));
+        let done = stores_empty(&mut client, 0);
         assert_eq!(client.phase(), Phase::Finished);
         let commands = sent(&done);
         assert!(commands.contains(&Command::CMD_DISPLAYED_INFO_GET.0));
@@ -2822,6 +3207,7 @@ mod tests {
         };
 
         client.handle(done(0));
+        stores_empty(&mut client, 0);
         assert_eq!(client.phase(), Phase::Finished);
         client.handle(idle(1_000));
         assert!(
@@ -2830,12 +3216,14 @@ mod tests {
         );
 
         client.handle(done(2_000));
+        stores_empty(&mut client, 2_000);
         assert!(client.sync_now().is_empty(), "seconds later is too soon");
 
         client.handle(idle(MIN_WALK_INTERVAL_MS + 2_000));
         assert!(!client.sync_now().is_empty(), "an interval on it is due");
 
         client.handle(done(MIN_WALK_INTERVAL_MS + 3_000));
+        stores_empty(&mut client, MIN_WALK_INTERVAL_MS + 3_000);
         assert!(client.sync_now().is_empty());
         assert!(!client.walk_now().is_empty(), "the button still means now");
     }
@@ -3268,6 +3656,7 @@ mod tests {
             frame: Frame::new(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]),
             received_at: UnixMillis(20_000),
         });
+        stores_empty(&mut client, 20_000);
 
         client.handle(tick(1_000_000));
         assert!(!client.walk_now().is_empty(), "the walk asks for something");
@@ -3287,6 +3676,7 @@ mod tests {
             frame: Frame::new(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]),
             received_at: UnixMillis(1_200_000),
         });
+        stores_empty(&mut client, 1_200_000);
         assert!(client.handle(tick(1_300_000)).is_empty(), "it answered");
     }
 
@@ -3561,8 +3951,14 @@ mod tests {
         ));
         assert_eq!(
             sent(&actions),
+            vec![Command::CMD_SYNC_OK, Command::CMD_STORED_MEASURE_SIGNAL_GET]
+        );
+        assert_eq!(client.phase(), Phase::Syncing, "the stores are drained after the walk");
+        assert_eq!(
+            sent(&stores_empty(&mut client, 0)),
             vec![
-                Command::CMD_SYNC_OK,
+                Command::CMD_STORED_MEASURE_SIGNAL_GET,
+                Command::CMD_STORED_MEASURE_SIGNAL_GET,
                 Command::CMD_DISPLAYED_INFO_GET,
                 Command::CMD_BATTERY_STATUS,
             ]

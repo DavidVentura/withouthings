@@ -15,6 +15,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0009_feature.sql"),
     include_str!("migrations/0010_drop_unnamed_features.sql"),
     include_str!("migrations/0011_track_point.sql"),
+    include_str!("migrations/0012_afib_episode.sql"),
+    include_str!("migrations/0013_spo2_check_and_attrib.sql"),
 ];
 
 pub fn run(conn: &Connection) -> Result<(), Error> {

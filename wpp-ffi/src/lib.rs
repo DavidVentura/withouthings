@@ -501,6 +501,54 @@ pub struct EcgSummary {
     pub rhythm: Option<EcgRhythm>,
 }
 
+/// What the watch's PPG classifier concluded about an episode it kept.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PpgRhythm {
+    Undefined,
+    SinusRhythm,
+    Afib,
+    Other,
+    Noise,
+}
+
+/// A background reading the watch's PPG classifier called AFib. The watch
+/// alerts on a confirmed run of them, not on each.
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct AfibEpisode {
+    pub id: i64,
+    pub measured_at_ms: i64,
+    pub seconds: u32,
+    pub rhythm: Option<PpgRhythm>,
+    /// Whether this is the reading that raised the alert; absent on readings
+    /// kept before the watch's flag was.
+    pub alerted: Option<bool>,
+}
+
+/// One background reading, with the intervals between the beats it found.
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct AfibReading {
+    pub id: i64,
+    pub measured_at_ms: i64,
+    pub seconds: u32,
+    pub heart_rate: Option<u32>,
+    pub beat_intervals_ms: Vec<u32>,
+}
+
+/// A confirmed reading and the readings the watch counted towards it, oldest
+/// first and ending with the confirmed one. Empty recordings (0 s, no beats)
+/// count towards the run like any other stored reading, but are left out of
+/// `readings` and only counted in `empty`.
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct AfibAlert {
+    pub id: i64,
+    pub measured_at_ms: i64,
+    pub run: u32,
+    pub window_hours: u32,
+    pub counted: u32,
+    pub empty: u32,
+    pub readings: Vec<AfibReading>,
+}
+
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct EcgRecording {
     pub id: i64,
@@ -1785,6 +1833,79 @@ impl WatchService {
             .collect())
     }
 
+    pub fn afib_episodes(&self) -> Result<Vec<AfibEpisode>, WatchError> {
+        let store = self.store.lock().unwrap();
+        Ok(store
+            .afib_episodes(self.device_id)?
+            .into_iter()
+            .map(|row| AfibEpisode {
+                id: row.id,
+                measured_at_ms: row.measured_at_ms,
+                seconds: row.duration_secs as u32,
+                rhythm: row.verdict.and_then(ppg_rhythm),
+                alerted: row.attrib.map(|a| a == STORED_MEASURE_ATTRIB_CONFIRMED),
+            })
+            .collect())
+    }
+
+    pub fn afib_alert(&self, id: i64) -> Result<Option<AfibAlert>, WatchError> {
+        use wpp::signal::PpgAfibRule;
+        let store = self.store.lock().unwrap();
+        let Some(anchor) = store
+            .afib_episodes(self.device_id)?
+            .into_iter()
+            .find(|row| row.id == id)
+        else {
+            return Ok(None);
+        };
+        let from_ms = anchor.measured_at_ms - PpgAfibRule::WINDOW_SECS * 1000;
+        let rows = store.afib_readings_up_to(self.device_id, id, from_ms)?;
+        let marks: Vec<(wpp::units::UnixTime, bool)> = rows
+            .iter()
+            .map(|row| {
+                (
+                    wpp::units::UnixTime(row.measured_at_ms / 1000),
+                    row.attrib == Some(STORED_MEASURE_ATTRIB_CONFIRMED),
+                )
+            })
+            .collect();
+        let counted = &rows[PpgAfibRule::counted(&marks, rows.len() - 1)];
+        let recorded = |row: &&wpp_store::AfibReadingRow| {
+            row.duration_secs > 0 && row.samples.iter().any(|b| *b != 0)
+        };
+        let readings = counted
+            .iter()
+            .filter(recorded)
+            .map(|row| {
+                let intervals = wpp::signal::beat_intervals_ms(
+                    &row.samples,
+                    row.sample_bytes as usize,
+                    row.sampling_hz as u16,
+                );
+                let heart_rate = (!intervals.is_empty()).then(|| {
+                    let mean = intervals.iter().sum::<u32>() / intervals.len() as u32;
+                    60_000 / mean.max(1)
+                });
+                AfibReading {
+                    id: row.id,
+                    measured_at_ms: row.measured_at_ms,
+                    seconds: row.duration_secs as u32,
+                    heart_rate,
+                    beat_intervals_ms: intervals,
+                }
+            })
+            .collect();
+        Ok(Some(AfibAlert {
+            id,
+            measured_at_ms: anchor.measured_at_ms,
+            run: PpgAfibRule::RUN as u32,
+            window_hours: (PpgAfibRule::WINDOW_SECS / 3600) as u32,
+            counted: counted.len() as u32,
+            empty: counted.iter().filter(|row| !recorded(row)).count() as u32,
+            readings,
+        }))
+    }
+
     pub fn ecg(&self, id: i64) -> Result<Option<EcgRecording>, WatchError> {
         let store = self.store.lock().unwrap();
         let Some((measured_at, signal_type, hz, lead_count, samples)) = store.ecg(id)? else {
@@ -1816,6 +1937,22 @@ impl WatchService {
             rhythm: verdict.1,
         }))
     }
+}
+
+/// StoredMeasureMeta.attrib on the reading that confirmed a run: the reply
+/// builder at 0x6370c sets it from the header flag the store writer takes from
+/// its confirmed out-parameter.
+const STORED_MEASURE_ATTRIB_CONFIRMED: i64 = 7;
+
+fn ppg_rhythm(code: i64) -> Option<PpgRhythm> {
+    let rhythm = wpp::signal::PpgRhythm::of(i32::try_from(code).ok()?)?;
+    Some(match rhythm {
+        wpp::signal::PpgRhythm::Undefined => PpgRhythm::Undefined,
+        wpp::signal::PpgRhythm::SinusRhythm => PpgRhythm::SinusRhythm,
+        wpp::signal::PpgRhythm::Afib => PpgRhythm::Afib,
+        wpp::signal::PpgRhythm::Other => PpgRhythm::Other,
+        wpp::signal::PpgRhythm::Noise => PpgRhythm::Noise,
+    })
 }
 
 fn verdict_of(store: &wpp_store::Store, id: i64) -> (Option<u32>, Option<EcgRhythm>) {

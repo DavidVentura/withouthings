@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.HeartBroken
 import androidx.compose.material.icons.rounded.MonitorHeart
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,22 +28,28 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.ui.theme.AppTheme
+import uniffi.wpp_ffi.AfibEpisode
 import uniffi.wpp_ffi.EcgRhythm
 import uniffi.wpp_ffi.EcgSummary
+import uniffi.wpp_ffi.PpgRhythm
 
 @Composable
 fun ActivitiesScreen(
     entries: List<ActivityEntry>,
     recordings: List<EcgSummary>,
+    alerts: List<AfibEpisode>,
     dailySteps: Map<Long, Long>,
     nowMs: Long,
     onSelect: (ActivityEntry) -> Unit,
     onSelectEcg: (EcgSummary) -> Unit,
+    onSelectAlert: (AfibEpisode) -> Unit,
 ) {
     var filter by remember { mutableStateOf<String?>(null) }
 
     val items = (
-        entries.map { Item.Activity(it) } + recordings.map { Item.Recording(it) }
+        entries.map { Item.Activity(it) } +
+            recordings.map { Item.Recording(it) } +
+            alerts.map { Item.Alert(it) }
         ).sortedByDescending { it.atMs }
     val kinds = items.map { it.kind }.distinct().sorted()
     val shown = items.filter { filter == null || it.kind == filter }
@@ -117,6 +124,13 @@ fun ActivitiesScreen(
                             meta = ecgMeta(item.summary),
                             accent = false,
                         ) { onSelectEcg(item.summary) }
+
+                        is Item.Alert -> EntityRow(
+                            icon = Icons.Rounded.HeartBroken,
+                            title = "Irregular rhythm alert",
+                            meta = alertMeta(item.episode),
+                            accent = false,
+                        ) { onSelectAlert(item.episode) }
                     }
                 }
             }
@@ -139,6 +153,18 @@ private fun ecgMeta(summary: EcgSummary): String = listOfNotNull(
 ).joinToString(" · ")
 
 private const val STANDARD_ECG_SECONDS = 30
+
+private fun alertMeta(episode: AfibEpisode): String = listOfNotNull(
+    clock(episode.measuredAtMs),
+    "${episode.seconds} s",
+    when (episode.rhythm) {
+        PpgRhythm.AFIB -> "signs of AFib"
+        PpgRhythm.SINUS_RHYTHM -> "sinus rhythm"
+        PpgRhythm.OTHER -> "other rhythm"
+        PpgRhythm.NOISE -> "noisy"
+        PpgRhythm.UNDEFINED, null -> null
+    },
+).joinToString(" · ")
 
 private fun dayHeading(
     dayMs: Long,
@@ -171,5 +197,10 @@ private sealed interface Item {
     data class Recording(val summary: EcgSummary) : Item {
         override val atMs = summary.measuredAtMs
         override val kind = "ECG"
+    }
+
+    data class Alert(val episode: AfibEpisode) : Item {
+        override val atMs = episode.measuredAtMs
+        override val kind = "Rhythm alert"
     }
 }

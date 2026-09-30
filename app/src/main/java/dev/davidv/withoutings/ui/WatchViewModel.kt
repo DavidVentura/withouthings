@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import uniffi.wpp_ffi.AfibAlert
+import uniffi.wpp_ffi.AfibEpisode
 import uniffi.wpp_ffi.DetectedActivity
 import uniffi.wpp_ffi.NotificationCategory
 import uniffi.wpp_ffi.NotificationConfig
@@ -119,6 +121,7 @@ data class UiState(
     val liveRoute: Route? = null,
     val liveRouteAtMs: Long = 0,
     val ecgs: List<EcgSummary> = emptyList(),
+    val afibEpisodes: List<AfibEpisode> = emptyList(),
     val liveEcg: List<Double> = emptyList(),
     val home: HomeState = HomeState(),
 )
@@ -212,6 +215,9 @@ class WatchViewModel : ViewModel() {
 
     private val _window = MutableStateFlow<LongRange?>(null)
     val window: StateFlow<LongRange?> = _window.asStateFlow()
+
+    private val _afibAlert = MutableStateFlow<AfibAlert?>(null)
+    val afibAlert: StateFlow<AfibAlert?> = _afibAlert.asStateFlow()
 
     private val _ecg = MutableStateFlow<EcgRecording?>(null)
     val ecg: StateFlow<EcgRecording?> = _ecg.asStateFlow()
@@ -421,6 +427,7 @@ class WatchViewModel : ViewModel() {
             dailySteps = steps,
             home = home(service, log, previous.home, now),
             ecgs = service.ecgs(),
+            afibEpisodes = service.afibEpisodes(),
             liveEcg = if (snapshot.measuring) {
                 service.liveEcg()
             } else {
@@ -558,6 +565,15 @@ class WatchViewModel : ViewModel() {
         if (range != null) followSpanMs = range.last - range.first
         _window.value = range
         refresh()
+    }
+
+    fun showAfibAlert(id: Long) {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch {
+            _afibAlert.value = withContext(Dispatchers.IO) {
+                runCatching { service.afibAlert(id) }.getOrNull()
+            }
+        }
     }
 
     fun showEcg(id: Long) {

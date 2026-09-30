@@ -2,6 +2,7 @@ use crate::objects::{
     StoredMeasureData, StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend,
     UnitConversionParameters,
 };
+use crate::units::UnixTime;
 use crate::WppObject;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,6 +93,102 @@ pub struct MeasureType(pub u16);
 impl MeasureType {
     pub const HEART_RATE: MeasureType = MeasureType(11);
     pub const AFIB_RESULT: MeasureType = MeasureType(130);
+    pub const SPO2: MeasureType = MeasureType(54);
+    pub const PPG_AFIB_RESULT: MeasureType = MeasureType(139);
+}
+
+/// Where the watch keeps a signal between syncs. `CMD_STORED_MEASURE_SIGNAL_GET`
+/// (handler 0x6e21c) serves a store only to a request whose StoredSignalMeta
+/// names its type, one record per request, and `..._DEL` routes on the same
+/// type; the type of the signal inside a record (an ECG is 7, say) is not it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignalStore {
+    Ecg,
+    /// Spot checks taken on the watch, gss file 0xf.
+    Spo2,
+    /// The episodes behind the "irregular rhythm, take an ECG" alert.
+    PpgAfib,
+}
+
+impl SignalStore {
+    pub fn type_id(self) -> u16 {
+        match self {
+            SignalStore::Ecg => 1,
+            SignalStore::Spo2 => 4,
+            SignalStore::PpgAfib => 5,
+        }
+    }
+}
+
+/// How the watch turns PPG AFib readings into an alert: the store writer at
+/// 0x63394 counts each reading the classifier calls AFib and confirms the one
+/// that makes `RUN` within `WINDOW` of the first counted, then counts afresh.
+/// Both come from the constant table at 0xb0e88 that main_task hands to
+/// 0x63098.
+pub struct PpgAfibRule;
+
+impl PpgAfibRule {
+    pub const RUN: usize = 10;
+    pub const WINDOW_SECS: i64 = 86_400;
+
+    /// The readings the watch counted towards the confirmed one at `confirmed`,
+    /// oldest first and ending with it: those within the window before it, back
+    /// to the previous confirmed reading. `readings` is (time, confirmed) in
+    /// time order. A normal reading between them also restarts the count, and
+    /// the watch keeps no record of those, so this is what it counted at most.
+    pub fn counted(readings: &[(UnixTime, bool)], confirmed: usize) -> std::ops::Range<usize> {
+        let (at, _) = readings[confirmed];
+        let earliest = at.0 - Self::WINDOW_SECS;
+        let mut start = confirmed;
+        while start > 0 && confirmed - start + 1 < Self::RUN {
+            let (previous, was_confirmed) = readings[start - 1];
+            if was_confirmed || previous.0 < earliest {
+                break;
+            }
+            start -= 1;
+        }
+        start..confirmed + 1
+    }
+}
+
+/// The intervals between successive beats of a PPG AFib reading, in
+/// milliseconds. The store writer keeps each as the difference of two peak
+/// positions in samples, `size` bytes little-endian, at the reading's own rate.
+pub fn beat_intervals_ms(samples: &[u8], size: usize, sampling_hz: u16) -> Vec<u32> {
+    samples
+        .chunks_exact(size.max(1))
+        .map(|bytes| {
+            let counts = bytes
+                .iter()
+                .rev()
+                .fold(0u32, |value, byte| (value << 8) | u32::from(*byte));
+            counts * 1000 / u32::from(sampling_hz.max(1))
+        })
+        .collect()
+}
+
+/// The PPG classifier's verdict, in the order of `afib_class_names` (0xb4824),
+/// which the firmware indexes with the verdict plus one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PpgRhythm {
+    Undefined,
+    SinusRhythm,
+    Afib,
+    Other,
+    Noise,
+}
+
+impl PpgRhythm {
+    pub fn of(code: i32) -> Option<PpgRhythm> {
+        match code {
+            -1 => Some(PpgRhythm::Undefined),
+            0 => Some(PpgRhythm::SinusRhythm),
+            1 => Some(PpgRhythm::Afib),
+            2 => Some(PpgRhythm::Other),
+            3 => Some(PpgRhythm::Noise),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -464,5 +561,38 @@ mod tests {
             next[0].measures.iter().map(|m| m.value).collect::<Vec<_>>(),
             vec![62, 5],
         );
+    }
+}
+
+#[cfg(test)]
+mod afib_rule_tests {
+    use super::*;
+
+    fn at(minutes: i64, confirmed: bool) -> (UnixTime, bool) {
+        (UnixTime(minutes * 60), confirmed)
+    }
+
+    #[test]
+    fn a_full_run_is_the_confirmed_reading_and_the_nine_before_it() {
+        let readings: Vec<_> = (0..12).map(|i| at(i * 10, i == 11)).collect();
+        assert_eq!(PpgAfibRule::counted(&readings, 11), 2..12);
+    }
+
+    #[test]
+    fn the_count_stops_at_the_previous_confirmation() {
+        let readings = vec![at(0, false), at(10, true), at(20, false), at(30, true)];
+        assert_eq!(PpgAfibRule::counted(&readings, 3), 2..4);
+    }
+
+    #[test]
+    fn readings_older_than_the_window_are_not_counted() {
+        let readings = vec![at(0, false), at(25 * 60, false), at(26 * 60, true)];
+        assert_eq!(PpgAfibRule::counted(&readings, 2), 1..3);
+    }
+
+    #[test]
+    fn intervals_are_peak_distances_at_the_readings_rate() {
+        assert_eq!(beat_intervals_ms(&[85, 110], 1, 100), vec![850, 1100]);
+        assert_eq!(beat_intervals_ms(&[0x2c, 0x01], 2, 1000), vec![300]);
     }
 }
