@@ -370,8 +370,14 @@ class WatchViewModel : ViewModel() {
             ),
             days = days(service, (window.first - TrendCategory.Daily.trendMs)..window.last, now),
             notes = service.notes(),
+            zoneFloorsBpm = zoneFloorsFor(service, now),
         )
     }
+
+    // Moderate, intense and peak: time under the moderate floor is most of any
+    // day and says nothing about effort.
+    private fun zoneFloorsFor(service: WatchService, nowMs: Long): List<Int> =
+        service.snapshot().user?.let { zoneFloors(maxHeartRate(it.birthSecs, nowMs)).drop(1) }.orEmpty()
 
     private fun days(service: WatchService, range: LongRange, nowMs: Long): List<DayTrend> {
         val days = daysCovering(range)
@@ -386,6 +392,9 @@ class WatchViewModel : ViewModel() {
         val awake = service.awakeHeart(edges)
         // Each day's dosed hours and the evening and early morning after them,
         // one after the other: 08:00, 20:00, the next 08:00.
+        val floors = zoneFloorsFor(service, nowMs)
+        val zones = floors.takeIf { it.isNotEmpty() }
+            ?.let { service.zoneTime(edges, it.map { floor -> floor.toUShort() }) }
         val halves = service.awakeHeart(
             days.flatMap { listOf(atHour(it, DOSED_FROM_HOUR), atHour(it, DOSED_TO_HOUR)) } +
                 atHour(days.last() + DAY_MS, DOSED_FROM_HOUR),
@@ -401,6 +410,7 @@ class WatchViewModel : ViewModel() {
                 awake = awake[index],
                 daytime = halves[2 * index],
                 overnight = halves[2 * index + 1],
+                zoneMs = zones?.get(index).orEmpty(),
                 wornHours = worn[index].toInt(),
             )
         }

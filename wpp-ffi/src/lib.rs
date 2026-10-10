@@ -1765,6 +1765,19 @@ impl WatchService {
     /// The median waking rate of each window, readings taken asleep, in a
     /// session or while recovering from one left out. None for a window with
     /// nothing left.
+    /// Milliseconds in each heart rate zone over the sessions that started in
+    /// each window, every kind of session together. Only sessions are
+    /// counted: outside one the watch reads a rate every ten minutes, too
+    /// seldom to say how long any of it lasted.
+    pub fn zone_time(
+        &self,
+        edges_ms: Vec<i64>,
+        floors_bpm: Vec<u16>,
+    ) -> Result<Vec<Vec<i64>>, WatchError> {
+        let store = self.store.lock().unwrap();
+        zone_time(&store, self.device_id, &edges_ms, &floors_bpm)
+    }
+
     pub fn add_note(&self, at_ms: i64, text: String) -> Result<i64, WatchError> {
         let text = text.trim();
         if text.is_empty() {
@@ -2592,6 +2605,42 @@ fn awake_heart(
         .windows(2)
         .map(|edge| waking.at_rest(edge[0], edge[1]))
         .collect())
+}
+
+fn zone_time(
+    store: &Store,
+    device_id: i64,
+    edges_ms: &[i64],
+    floors_bpm: &[u16],
+) -> Result<Vec<Vec<i64>>, WatchError> {
+    let (Some(&first), Some(&last)) = (edges_ms.first(), edges_ms.last()) else {
+        return Ok(Vec::new());
+    };
+    let floors: Vec<Bpm> = floors_bpm.iter().map(|floor| Bpm(*floor)).collect();
+    let mut out = vec![vec![0; floors.len()]; edges_ms.len() - 1];
+    let sessions =
+        store.workouts_between(device_id, first.div_euclid(1000), last.div_euclid(1000))?;
+    for row in sessions {
+        let (Some(ended_at), started_ms) = (row.ended_at, row.started_at.to_millis().0) else {
+            continue;
+        };
+        // A session is counted whole on the day it began, like every other
+        // figure about it.
+        let Some(window) = edges_ms
+            .windows(2)
+            .position(|edge| started_ms >= edge[0] && started_ms < edge[1])
+        else {
+            continue;
+        };
+        let beats = beats_between(store, device_id, started_ms, ended_at.to_millis().0)?;
+        for (total, spent) in out[window]
+            .iter_mut()
+            .zip(wpp::heart::zone_time(&beats, &floors))
+        {
+            *total += spent;
+        }
+    }
+    Ok(out)
 }
 
 fn night_trend(

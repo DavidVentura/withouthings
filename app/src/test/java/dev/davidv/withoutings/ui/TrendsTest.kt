@@ -67,7 +67,7 @@ class WeeklyTest {
 
 class DailyTest {
     private fun day(index: Int, steps: Double, worn: Int) =
-        DayTrend(DAY_ONE + index * DAY_MS, steps, null, 0.0, null, null, null, null, worn)
+        DayTrend(DAY_ONE + index * DAY_MS, steps, null, 0.0, null, null, null, null, emptyList(), worn)
 
     @Test
     fun `a day mostly off the wrist is left out and today stays out of the trend`() {
@@ -80,7 +80,7 @@ class DailyTest {
 
 class AwakeTest {
     private fun day(index: Int, readings: UInt) =
-        DayTrend(DAY_ONE + index * DAY_MS, null, null, 0.0, null, AwakeHeart(80u, readings), null, null, 12)
+        DayTrend(DAY_ONE + index * DAY_MS, null, null, 0.0, null, AwakeHeart(80u, readings), null, null, emptyList(), 12)
 
     @Test
     fun `a waking rate counts from the first recorded session and on enough readings`() {
@@ -88,6 +88,24 @@ class AwakeTest {
         assertEquals(false, awakeCounts(day(1, 100u), firstSession))
         assertEquals(true, awakeCounts(day(2, 100u), firstSession))
         assertEquals(false, awakeCounts(day(3, 20u), firstSession))
+    }
+}
+
+class ZonesTest {
+    @Test
+    fun `a week's zone minutes are its days' sessions summed`() {
+        val monday = weekStart(DAY_ONE + 3 * WEEK_MS)
+        fun day(offset: Long, zones: List<Long>) =
+            DayTrend(monday + offset, null, null, 0.0, null, null, null, null, zones, 24)
+        val days = listOf(
+            day(0, listOf(10 * MINUTE, 20 * MINUTE, 0)),
+            day(DAY_MS, listOf(5 * MINUTE, 0, 2 * MINUTE)),
+            day(WEEK_MS, listOf(0, 0, 0)),
+        )
+        val weeks = weeklyZones(days, monday..(monday + 2 * WEEK_MS - 1), monday, 3)
+        assertEquals(listOf(37.0, 0.0), weeks.totals.map { it.value })
+        assertEquals(listOf(15.0, 0.0), weeks.zones[0].map { it.value })
+        assertEquals(listOf(2.0, 0.0), weeks.zones[2].map { it.value })
     }
 }
 

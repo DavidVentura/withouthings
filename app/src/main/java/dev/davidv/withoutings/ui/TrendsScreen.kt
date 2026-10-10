@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -87,6 +88,42 @@ private class TrendCharts(
         val day = if (form is ChartForm.Bars) "week of ${dayAndMonth(reading.atMs)}" else dayAndMonth(reading.atMs)
         return "${grouped(reading.value, decimals)}$unit · $day" +
             (trend?.let { " · trend ${grouped(it.value, decimals)}" } ?: "")
+    }
+
+    @Composable
+    fun ZoneChart(zones: WeeklyZones, labels: List<String>, colors: List<androidx.compose.ui.graphics.Color>) {
+        val readout = scrubAtMs?.let { at ->
+            val index = zones.totals.indexOfLast { at in it.atMs until it.atMs + WEEK_MS }
+            if (index < 0) return@let "—"
+            "${grouped(zones.totals[index].value, 0)} min · week of ${dayAndMonth(zones.totals[index].atMs)} · " +
+                zones.zones.joinToString(" / ") { grouped(it[index].value, 0) }
+        }
+        val high = zones.totals.filter { it.atMs in limit }.maxOfOrNull { it.value } ?: 0.0
+        val axis = 0.0..maxOf(kotlin.math.ceil(high / 30) * 30, 30.0)
+        ChartTitle("Time in heart rate zones", readout ?: "0 – ${grouped(axis.endInclusive, 0)} min a week")
+        ChartCard {
+            ValueChart(
+                points = zones.totals,
+                window = window,
+                axis = axis,
+                decimals = 0,
+                height = BAR_HEIGHT,
+                onWindowChange = onWindowChange,
+                scrubAtMs = scrubAtMs,
+                onScrub = onScrub,
+                form = ChartForm.Bars(WEEK_MS),
+                limit = limit,
+                unit = " min",
+                readout = ChartReadout.Titled,
+                events = events.map { it.copy(label = null) },
+                stack = zones.zones,
+                stackColors = colors,
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                labels.zip(colors).forEach { (label, color) -> LegendSwatch(color, label) }
+            }
+        }
     }
 
     @Composable
@@ -191,6 +228,18 @@ private fun DailyTrends(trends: Trends, charts: TrendCharts) {
     charts.Chart("Steps", steps, 2000.0, 0, "", namesEvents = true)
     charts.Chart("Energy", series { it.calories }, 200.0, 0, " kcal")
     charts.Chart("Active energy", series { it.activeCalories }, 100.0, 0, " kcal")
+
+    val floors = trends.zoneFloorsBpm
+    if (floors.isNotEmpty()) {
+        val primary = MaterialTheme.colorScheme.primary
+        // One hue from light to dark, since the zones are an order and not
+        // three unrelated things.
+        charts.ZoneChart(
+            weeklyZones(trends.days, trends.window, trends.recordedFromMs, floors.size),
+            listOf("moderate", "intense", "peak").zip(floors) { name, floor -> "$name $floor+" },
+            listOf(primary.copy(alpha = 0.3f), primary.copy(alpha = 0.6f), primary),
+        )
+    }
     charts.Chart("Distance", series { day -> day.distanceMetres?.let { it / 1000 } }, 1.0, 1, " km")
     val awake = dailyTrend(
         trends.days,

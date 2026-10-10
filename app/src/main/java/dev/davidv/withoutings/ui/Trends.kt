@@ -39,6 +39,9 @@ data class Trends(
     val nights: List<NightTrend>,
     val days: List<DayTrend>,
     val notes: List<Note>,
+    // Where the moderate, intense and peak zones start, empty where the
+    // wearer's age is unknown.
+    val zoneFloorsBpm: List<Int>,
     // When the first session of any kind was recorded: before it, a week
     // without a session is a week nobody measured.
     val recordedFromMs: Long,
@@ -55,6 +58,9 @@ data class DayTrend(
     val awake: AwakeHeart?,
     val daytime: AwakeHeart?,
     val overnight: AwakeHeart?,
+    // Time in the moderate, intense and peak zones over the day's sessions,
+    // empty where the wearer's age is unknown and there are no zones.
+    val zoneMs: List<Long>,
     val wornHours: Int,
 )
 
@@ -143,11 +149,32 @@ fun sessionsPerWeek(startsMs: List<Long>, window: LongRange): List<ChartPoint> {
 // than were done in it, so it gets no bar. The week still running gets one, as
 // far as it has got.
 fun weeklyCounts(startsMs: List<Long>, window: LongRange, recordedFromMs: Long): List<ChartPoint> {
+    val from = wholeWeeksFrom(window, recordedFromMs) ?: return emptyList()
+    return sessionsPerWeek(startsMs, from..window.last)
+}
+
+private fun wholeWeeksFrom(window: LongRange, recordedFromMs: Long): Long? {
     val recordingWeek = weekStart(recordedFromMs)
     val firstWhole = if (recordingWeek == recordedFromMs) recordingWeek else weekStart(recordingWeek + WEEK_MS + HOUR)
-    val from = maxOf(window.first, firstWhole)
-    if (from > window.last) return emptyList()
-    return sessionsPerWeek(startsMs, from..window.last)
+    return maxOf(window.first, firstWhole).takeIf { it <= window.last }
+}
+
+/** One series per zone of minutes a week, and the weeks' totals. */
+data class WeeklyZones(val totals: List<ChartPoint>, val zones: List<List<ChartPoint>>)
+
+// Weeks as the session counts have them, and for the same reason: a day's
+// minutes swing with whatever was trained that day.
+fun weeklyZones(days: List<DayTrend>, window: LongRange, recordedFromMs: Long, zones: Int): WeeklyZones {
+    val from = wholeWeeksFrom(window, recordedFromMs) ?: return WeeklyZones(emptyList(), List(zones) { emptyList() })
+    val weeks = generateSequence(weekStart(from)) { weekStart(it + WEEK_MS + HOUR) }.takeWhile { it <= window.last }.toList()
+    val byWeek = days.filter { it.zoneMs.size == zones }.groupBy { weekStart(it.dayMs) }
+    val perZone = (0 until zones).map { zone ->
+        weeks.map { week ->
+            ChartPoint(week, (byWeek[week].orEmpty().sumOf { it.zoneMs[zone] }).toDouble() / MINUTE)
+        }
+    }
+    val totals = weeks.mapIndexed { index, week -> ChartPoint(week, perZone.sumOf { it[index].value }) }
+    return WeeklyZones(totals, perZone)
 }
 
 // Fitted to the readings so the slope a trend has is visible; a fixed range wide

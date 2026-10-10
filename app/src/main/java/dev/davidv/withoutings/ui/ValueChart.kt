@@ -144,6 +144,10 @@ fun ValueChart(
     unit: String = "",
     trend: List<ChartPoint> = emptyList(),
     events: List<ChartEvent> = emptyList(),
+    // Bars split into parts drawn bottom up, one list per part keyed like
+    // `points`, which then carry each bar's total.
+    stack: List<List<ChartPoint>> = emptyList(),
+    stackColors: List<Color> = emptyList(),
     lineColor: Color = AppTheme.colors.dataStroke,
     fillColor: Color = MaterialTheme.colorScheme.primary,
 ) {
@@ -283,14 +287,25 @@ fun ValueChart(
                 is ChartForm.Line ->
                     drawTrace(nearby, connectWithin, ::x, ::y, plotHeight, lineColor, fillColor, tokens)
 
-                is ChartForm.Bars -> drawBars(
-                    nearby,
-                    size.width * form.widthMs.toFloat() / spanMs,
-                    ::x,
-                    ::y,
-                    plotHeight,
-                    fillColor,
-                )
+                is ChartForm.Bars -> if (stack.isEmpty()) {
+                    drawBars(
+                        nearby,
+                        size.width * form.widthMs.toFloat() / spanMs,
+                        ::x,
+                        ::y,
+                        plotHeight,
+                        fillColor,
+                    )
+                } else {
+                    drawStack(
+                        stack,
+                        stackColors,
+                        size.width * form.widthMs.toFloat() / spanMs,
+                        ::x,
+                        ::y,
+                        plotHeight,
+                    )
+                }
 
                 is ChartForm.Scatter -> drawScatter(
                     nearby,
@@ -507,6 +522,36 @@ private fun DrawScope.drawBars(
                 size = Size(width, plotHeight - top),
                 cornerRadius = radius,
             )
+        }
+    }
+}
+
+private fun DrawScope.drawStack(
+    stack: List<List<ChartPoint>>,
+    colors: List<Color>,
+    pitch: Float,
+    x: (Long) -> Float,
+    y: (Double) -> Float,
+    plotHeight: Float,
+) {
+    check(colors.size == stack.size) { "a colour for every part" }
+    val gap = (pitch * BAR_GAP_FRACTION).coerceAtMost(2.dp.toPx())
+    val width = (pitch - gap).coerceAtLeast(1f)
+    // The surface shows between parts so each reads as its own length.
+    val seam = 2.dp.toPx()
+    val below = mutableMapOf<Long, Double>()
+    clipRect(left = 0f, top = 0f, right = size.width, bottom = plotHeight) {
+        stack.zip(colors).forEach { (part, color) ->
+            part.forEach { point ->
+                val base = below[point.atMs] ?: 0.0
+                val top = base + point.value
+                below[point.atMs] = top
+                if (point.value <= 0) return@forEach
+                val bottomPx = if (base == 0.0) plotHeight else y(base) - seam / 2
+                val topPx = y(top)
+                if (bottomPx - topPx <= 0f) return@forEach
+                drawRect(color, Offset(x(point.atMs) + gap / 2, topPx), Size(width, bottomPx - topPx))
+            }
         }
     }
 }

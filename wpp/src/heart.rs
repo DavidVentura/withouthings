@@ -73,6 +73,32 @@ pub fn effort(beats: &[Beat]) -> Option<Effort> {
     })
 }
 
+/// Time spent in each band between consecutive floors, the last open above,
+/// with the stretches the sensor lost the wrist left out like everywhere else.
+/// Time under the first floor is not any band's.
+pub fn zone_time(beats: &[Beat], floors: &[Bpm]) -> Vec<i64> {
+    assert!(
+        beats.is_sorted_by_key(|beat| beat.at.0),
+        "beats out of order"
+    );
+    assert!(floors.is_sorted(), "zone floors out of order");
+    let mut out = vec![0; floors.len()];
+    if beats.is_empty() {
+        return out;
+    }
+    let held = held_ms(beats);
+    let lost = dropouts(beats, &held);
+    for ((beat, held), lost) in beats.iter().zip(&held).zip(&lost) {
+        if *lost {
+            continue;
+        }
+        if let Some(zone) = floors.iter().rposition(|floor| beat.rate >= *floor) {
+            out[zone] += held;
+        }
+    }
+    out
+}
+
 /// Asleep the watch measures every few minutes on its own schedule, so each
 /// reading is one vote.
 pub fn asleep(beats: &[Beat]) -> Option<Asleep> {
@@ -264,6 +290,32 @@ mod tests {
     fn nothing_measured_is_no_effort() {
         assert_eq!(effort(&[]), None);
         assert_eq!(effort(&trace(0, 1, &[120])), None);
+    }
+
+    #[test]
+    fn time_falls_in_the_band_its_rate_reached() {
+        let beats = [
+            trace(0, 1, &[80; 60]),
+            trace(60, 1, &[100; 120]),
+            trace(180, 1, &[140; 180]),
+            trace(360, 1, &[175; 61]),
+        ]
+        .concat();
+        let floors = [Bpm(94), Bpm(131), Bpm(168)];
+        assert_eq!(zone_time(&beats, &floors), vec![120_000, 180_000, 60_000]);
+        assert_eq!(zone_time(&[], &floors), vec![0, 0, 0]);
+    }
+
+    #[test]
+    fn a_lost_wrist_is_in_no_zone() {
+        let beats = [
+            trace(0, 1, &[140; 600]),
+            trace(600, 1, &[45; 300]),
+            trace(900, 1, &[140; 301]),
+        ]
+        .concat();
+        let floors = [Bpm(40), Bpm(131)];
+        assert_eq!(zone_time(&beats, &floors), vec![0, 900_000]);
     }
 
     #[test]
