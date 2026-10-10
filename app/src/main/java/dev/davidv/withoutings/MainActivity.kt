@@ -559,7 +559,14 @@ private fun Navigation(
             }
 
             composable(Routes.AFIB_ALERT) {
-                AfibAlertScreen(alert = afibAlert, onBack = { nav.popBackStack() })
+                AfibAlertScreen(
+                    alert = afibAlert,
+                    onOpenEcg = {
+                        model.showEcg(it)
+                        nav.navigate(Routes.ECG)
+                    },
+                    onBack = { nav.popBackStack() },
+                )
             }
 
             composable(Routes.ECG) {

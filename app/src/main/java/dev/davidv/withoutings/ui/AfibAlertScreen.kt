@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MonitorHeart
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -15,13 +18,11 @@ import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.ui.theme.AppTheme
 import uniffi.wpp_ffi.AfibAlert
 import uniffi.wpp_ffi.AfibReading
-
-// Beat intervals the chart always spans, so readings on one screen compare by
-// eye: 300 ms is 200 bpm, 1500 ms is 40 bpm.
-private val INTERVAL_AXIS = 300.0..1500.0
+import uniffi.wpp_ffi.BeatIntervalKind
+import uniffi.wpp_ffi.PulseAnalysis
 
 @Composable
-fun AfibAlertScreen(alert: AfibAlert?, onBack: () -> Unit) {
+fun AfibAlertScreen(alert: AfibAlert?, onOpenEcg: (Long) -> Unit, onBack: () -> Unit) {
     DetailScaffold(
         title = "Irregular rhythm alert",
         subtitle = alert?.let { "${fullDate(it.measuredAtMs)} · ${clock(it.measuredAtMs)}" },
@@ -37,6 +38,15 @@ fun AfibAlertScreen(alert: AfibAlert?, onBack: () -> Unit) {
             Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(AppTheme.space.blockLoose),
         ) {
+            SummaryCard(alert.readings)
+            alert.ecgAfter?.let { ecg ->
+                EntityRow(
+                    icon = Icons.Rounded.MonitorHeart,
+                    title = "Electrocardiogram after the alert",
+                    meta = ecgMeta(ecg),
+                    accent = false,
+                ) { onOpenEcg(ecg.id) }
+            }
             val (confirming, earlier) = alert.readings.partition { it.id == alert.id }
             confirming.forEach { ReadingCard(it, confirming = true) }
             if (earlier.isNotEmpty()) {
@@ -55,16 +65,62 @@ fun AfibAlertScreen(alert: AfibAlert?, onBack: () -> Unit) {
     }
 }
 
+private fun groupOf(analysis: PulseAnalysis): String = when (analysis) {
+    is PulseAnalysis.Assessed -> patternLabel(analysis.rhythm.pattern)
+    is PulseAnalysis.Shifted -> "Rate changed"
+    else -> "Unreadable"
+}
+
+@Composable
+private fun SummaryCard(readings: List<AfibReading>) {
+    if (readings.isEmpty()) return
+    val groups = readings.groupingBy { groupOf(it.analysis) }.eachCount()
+        .entries.sortedByDescending { it.value }
+    val (top, topCount) = groups.first()
+    val early = readings.sumOf { reading ->
+        (reading.analysis as? PulseAnalysis.Assessed)?.rhythm?.earlyBeats?.toInt() ?: 0
+    }
+    val merged = readings.sumOf { reading -> reading.intervals.count { it.kind == BeatIntervalKind.MERGED } }
+    val asleep = readings.count { it.asleep }
+    val lines = listOfNotNull(
+        "$asleep of ${readings.size} readings while asleep",
+        groups.joinToString(" · ") { (label, count) -> "$count ${label.lowercase()}" },
+        when (early) {
+            0 -> null
+            1 -> "1 early beat across the readings"
+            else -> "$early early beats across the readings"
+        },
+        when (merged) {
+            0 -> null
+            1 -> "1 pulse the sensor counted twice, merged back"
+            else -> "$merged pulses the sensor counted twice, merged back"
+        },
+    )
+    ChartCard(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            SpeculativeEyebrow()
+            Text(
+                if (topCount * 2 > readings.size) "Mostly ${top.lowercase()}" else "Mixed",
+                style = AppTheme.type.resultTitle,
+            )
+            lines.forEach {
+                Text(it, style = AppTheme.type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
 @Composable
 private fun ReadingCard(reading: AfibReading, confirming: Boolean) {
-    val intervals = reading.beatIntervalsMs
-    val beats = intervals.runningFold(0L) { at, interval -> at + interval.toLong() }.drop(1)
-    val points = intervals.zip(beats).map { (interval, at) ->
-        ChartPoint(reading.measuredAtMs + at, interval.toDouble())
-    }
-    val end = reading.measuredAtMs + (beats.lastOrNull() ?: 0L)
+    val intervals = reading.intervals
     ChartCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(horizontal = 8.dp)) {
+        Column(
+            Modifier.padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             Text(
                 if (confirming) "${clock(reading.measuredAtMs)} · confirmed" else clock(reading.measuredAtMs),
                 style = AppTheme.type.rowTitle,
@@ -72,23 +128,27 @@ private fun ReadingCard(reading: AfibReading, confirming: Boolean) {
             Text(
                 listOfNotNull(
                     fullDate(reading.measuredAtMs),
+                    if (reading.asleep) "asleep" else "awake",
                     reading.heartRate?.let { "$it bpm" },
                     "${intervals.size} beats in ${reading.seconds} s",
-                    intervals.minOrNull()?.let { low -> "${low}–${intervals.max()} ms" },
                 ).joinToString(" · "),
                 style = AppTheme.type.rowMeta,
                 color = AppTheme.colors.onSurfaceTertiary,
             )
+            Spacer(Modifier.height(4.dp))
+            SpeculativeEyebrow()
+            Text(pulseLabel(reading.analysis), style = AppTheme.type.rowTitle)
+            pulseLines(reading).forEach {
+                Text(it, style = AppTheme.type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        Spacer(Modifier.height(6.dp))
-        ValueChart(
-            points = points,
-            window = reading.measuredAtMs..end.coerceAtLeast(reading.measuredAtMs + 1),
-            axis = INTERVAL_AXIS,
-            decimals = 0,
-            height = 110.dp,
-            showTimeAxis = false,
-            unit = " ms",
-        )
+        Spacer(Modifier.height(8.dp))
+        Column(
+            Modifier.padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            IntervalPlots(intervals, (reading.analysis as? PulseAnalysis.Assessed)?.rhythm)
+            IntervalLegend(intervals)
+        }
     }
 }

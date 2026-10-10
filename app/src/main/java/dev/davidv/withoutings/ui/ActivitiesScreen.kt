@@ -138,7 +138,7 @@ fun ActivitiesScreen(
     }
 }
 
-private fun ecgMeta(summary: EcgSummary): String = listOfNotNull(
+fun ecgMeta(summary: EcgSummary): String = listOfNotNull(
     clock(summary.measuredAtMs),
     "${summary.seconds.toInt()} s".takeIf { summary.seconds.toInt() != STANDARD_ECG_SECONDS },
     summary.heartRate?.let { "$it bpm" },

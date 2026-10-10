@@ -12,6 +12,7 @@ pub mod heart;
 pub mod image;
 pub mod objects;
 pub mod pairing;
+pub mod rhythm;
 pub mod signal;
 pub mod sleep;
 pub mod spiflash;

@@ -570,14 +570,87 @@ pub struct AfibEpisode {
     pub alerted: Option<bool>,
 }
 
-/// One background reading, with the intervals between the beats it found.
+/// One background reading, with the intervals between the beats it found
+/// once split beats are taken back together.
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct AfibReading {
     pub id: i64,
     pub measured_at_ms: i64,
     pub seconds: u32,
     pub heart_rate: Option<u32>,
-    pub beat_intervals_ms: Vec<u32>,
+    pub intervals: Vec<BeatInterval>,
+    pub analysis: PulseAnalysis,
+    pub asleep: bool,
+    pub watch_breaths_per_minute: Option<u32>,
+}
+
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BeatIntervalKind {
+    Beat,
+    Merged,
+    Early,
+    Pause,
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct BeatInterval {
+    pub ms: u32,
+    pub kind: BeatIntervalKind,
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct WavePoint {
+    pub at_ms: u32,
+    pub ms: f64,
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct BreathingWave {
+    pub per_minute: f64,
+    pub share: f64,
+    pub chance: f64,
+    pub curve: Vec<WavePoint>,
+}
+
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RhythmPattern {
+    Steady,
+    Breathing,
+    Variable,
+    Irregular,
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct RhythmAnalysis {
+    pub pattern: RhythmPattern,
+    pub wave: Option<BreathingWave>,
+    pub rate: u32,
+    pub early_beats: u32,
+}
+
+#[derive(uniffi::Enum, Debug, Clone, PartialEq)]
+pub enum PulseAnalysis {
+    NoWatchRate,
+    TooFew,
+    Disagrees { counted: u32, watch: u32 },
+    Shifted { from: u32, to: u32 },
+    Assessed { rhythm: RhythmAnalysis },
+}
+
+#[derive(uniffi::Enum, Debug, Clone, PartialEq)]
+pub enum EcgAnalysis {
+    TooFew,
+    Noisy,
+    Shifted {
+        from: u32,
+        to: u32,
+    },
+    Assessed {
+        rhythm: RhythmAnalysis,
+        beats: u32,
+        p_waves: u32,
+        unusual_early_beats: u32,
+    },
 }
 
 /// A confirmed reading and the readings the watch counted towards it, oldest
@@ -593,6 +666,7 @@ pub struct AfibAlert {
     pub counted: u32,
     pub empty: u32,
     pub readings: Vec<AfibReading>,
+    pub ecg_after: Option<EcgSummary>,
 }
 
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
@@ -603,6 +677,7 @@ pub struct EcgRecording {
     pub leads: Vec<EcgLead>,
     pub heart_rate: Option<u32>,
     pub rhythm: Option<EcgRhythm>,
+    pub analysis: EcgAnalysis,
 }
 
 #[uniffi::export(callback_interface)]
@@ -1862,21 +1937,7 @@ impl WatchService {
         Ok(store
             .ecgs(self.device_id)?
             .into_iter()
-            .map(|(id, measured_at, signal_type, hz, bytes)| {
-                let leads = wpp::signal::SignalKind::from_type_id(signal_type as u16)
-                    .map(|k| k.leads().len())
-                    .unwrap_or(1);
-                let per_lead = bytes / 2 / leads.max(1) as i64;
-                let verdict = verdict_of(&store, id);
-                EcgSummary {
-                    id,
-                    measured_at_ms: measured_at,
-                    seconds: per_lead as f64 / (hz.max(1) as f64),
-                    leads: leads as u32,
-                    heart_rate: verdict.0,
-                    rhythm: verdict.1,
-                }
-            })
+            .map(|row| ecg_summary(&store, row))
             .collect())
     }
 
@@ -1920,28 +1981,20 @@ impl WatchService {
         let recorded = |row: &&wpp_store::AfibReadingRow| {
             row.duration_secs > 0 && row.samples.iter().any(|b| *b != 0)
         };
+        let asleep = asleep_spans(&store, self.device_id, from_ms, anchor.measured_at_ms)?;
         let readings = counted
             .iter()
             .filter(recorded)
-            .map(|row| {
-                let intervals = wpp::signal::beat_intervals_ms(
-                    &row.samples,
-                    row.sample_bytes as usize,
-                    row.sampling_hz as u16,
-                );
-                let heart_rate = (!intervals.is_empty()).then(|| {
-                    let mean = intervals.iter().sum::<u32>() / intervals.len() as u32;
-                    60_000 / mean.max(1)
-                });
-                AfibReading {
-                    id: row.id,
-                    measured_at_ms: row.measured_at_ms,
-                    seconds: row.duration_secs as u32,
-                    heart_rate,
-                    beat_intervals_ms: intervals,
-                }
+            .map(|row| afib_reading(&store, self.device_id, row, &asleep))
+            .collect::<Result<Vec<_>, WatchError>>()?;
+        let ecg_after = store
+            .ecgs(self.device_id)?
+            .into_iter()
+            .filter(|(_, at, ..)| {
+                (anchor.measured_at_ms..=anchor.measured_at_ms + ECG_AFTER_ALERT_MS).contains(at)
             })
-            .collect();
+            .min_by_key(|(_, at, ..)| *at)
+            .map(|row| ecg_summary(&store, row));
         Ok(Some(AfibAlert {
             id,
             measured_at_ms: anchor.measured_at_ms,
@@ -1950,6 +2003,7 @@ impl WatchService {
             counted: counted.len() as u32,
             empty: counted.iter().filter(|row| !recorded(row)).count() as u32,
             readings,
+            ecg_after,
         }))
     }
 
@@ -1968,12 +2022,28 @@ impl WatchService {
                 millivolts: Vec::new(),
             })
             .collect();
+        let mut counts: Vec<Vec<i16>> = vec![Vec::new(); lead_count];
         for (index, pair) in samples.chunks_exact(2).enumerate() {
-            let counts = i16::from_le_bytes([pair[0], pair[1]]);
-            leads[index % lead_count]
-                .millivolts
-                .push(Millivolts::from_counts(counts).0);
+            counts[index % lead_count].push(i16::from_le_bytes([pair[0], pair[1]]));
         }
+        for (lead, counts) in leads.iter_mut().zip(&counts) {
+            lead.millivolts = counts
+                .iter()
+                .map(|c| Millivolts::from_counts(*c).0)
+                .collect();
+        }
+        // The raw lead clips on this watch while the filtered one holds the
+        // whole complex.
+        let analysed = wpp::signal::SignalKind::from_type_id(signal_type as u16)
+            .and_then(|kind| {
+                kind.leads().iter().position(|l| {
+                    matches!(
+                        l,
+                        wpp::signal::Lead::DiFiltered | wpp::signal::Lead::DiiFiltered
+                    )
+                })
+            })
+            .unwrap_or(0);
         let verdict = verdict_of(&store, id);
         Ok(Some(EcgRecording {
             id,
@@ -1982,6 +2052,7 @@ impl WatchService {
             leads,
             heart_rate: verdict.0,
             rhythm: verdict.1,
+            analysis: ecg_analysis(&wpp::rhythm::read_ecg(&counts[analysed], hz as u16)),
         }))
     }
 }
@@ -2000,6 +2071,171 @@ fn ppg_rhythm(code: i64) -> Option<PpgRhythm> {
         wpp::signal::PpgRhythm::Other => PpgRhythm::Other,
         wpp::signal::PpgRhythm::Noise => PpgRhythm::Noise,
     })
+}
+
+/// The watch asks for an ECG with the alert; one taken within this is taken as
+/// the answer to it.
+const ECG_AFTER_ALERT_MS: i64 = 30 * 60 * 1000;
+
+fn ecg_summary(
+    store: &Store,
+    (id, measured_at, signal_type, hz, bytes): (i64, i64, i64, i64, i64),
+) -> EcgSummary {
+    let leads = wpp::signal::SignalKind::from_type_id(signal_type as u16)
+        .map(|k| k.leads().len())
+        .unwrap_or(1);
+    let per_lead = bytes / 2 / leads.max(1) as i64;
+    let verdict = verdict_of(store, id);
+    EcgSummary {
+        id,
+        measured_at_ms: measured_at,
+        seconds: per_lead as f64 / (hz.max(1) as f64),
+        leads: leads as u32,
+        heart_rate: verdict.0,
+        rhythm: verdict.1,
+    }
+}
+
+fn afib_reading(
+    store: &Store,
+    device_id: i64,
+    row: &wpp_store::AfibReadingRow,
+    asleep: &[SleepSpan],
+) -> Result<AfibReading, WatchError> {
+    use wpp::rhythm::{read_pulse, PulseVerdict, WATCH_RATE_WITHIN_MS};
+    let raw: Vec<wpp::units::Millis> = wpp::signal::beat_intervals_ms(
+        &row.samples,
+        row.sample_bytes as usize,
+        row.sampling_hz as u16,
+    )
+    .into_iter()
+    .map(|ms| wpp::units::Millis(ms as f64))
+    .collect();
+    let watch = store.nearest_sample(
+        device_id,
+        wpp::SampleKind::HeartRate.id(),
+        row.measured_at_ms,
+        WATCH_RATE_WITHIN_MS,
+    )?;
+    let (intervals, analysis) = match watch {
+        None => (
+            raw.iter()
+                .map(|ms| BeatInterval {
+                    ms: ms.0 as u32,
+                    kind: BeatIntervalKind::Beat,
+                })
+                .collect::<Vec<_>>(),
+            PulseAnalysis::NoWatchRate,
+        ),
+        Some(watch) => {
+            let reading = read_pulse(&raw, Bpm(watch as u16));
+            let analysis = match reading.verdict {
+                PulseVerdict::TooFew { .. } => PulseAnalysis::TooFew,
+                PulseVerdict::Disagrees { counted, watch } => PulseAnalysis::Disagrees {
+                    counted: counted.0 as u32,
+                    watch: watch.0 as u32,
+                },
+                PulseVerdict::Shifted(shift) => PulseAnalysis::Shifted {
+                    from: shift.from.0 as u32,
+                    to: shift.to.0 as u32,
+                },
+                PulseVerdict::Assessed(rhythm) => PulseAnalysis::Assessed {
+                    rhythm: rhythm_analysis(&rhythm),
+                },
+            };
+            (
+                reading.intervals.iter().map(beat_interval).collect(),
+                analysis,
+            )
+        }
+    };
+    let heart_rate = (!intervals.is_empty()).then(|| {
+        let mean = intervals.iter().map(|i| i.ms).sum::<u32>() / intervals.len() as u32;
+        60_000 / mean.max(1)
+    });
+    Ok(AfibReading {
+        id: row.id,
+        measured_at_ms: row.measured_at_ms,
+        seconds: row.duration_secs as u32,
+        heart_rate,
+        intervals,
+        analysis,
+        asleep: asleep
+            .iter()
+            .any(|span| (span.from_ms..span.to_ms).contains(&row.measured_at_ms)),
+        watch_breaths_per_minute: store
+            .nearest_sample(
+                device_id,
+                wpp::SampleKind::RespiratoryRate.id(),
+                row.measured_at_ms,
+                WATCH_BREATHS_WITHIN_MS,
+            )?
+            .map(|per_minute| per_minute as u32),
+    })
+}
+
+/// The watch logs a breathing rate about every ten minutes.
+const WATCH_BREATHS_WITHIN_MS: i64 = 10 * 60 * 1000;
+
+fn beat_interval(interval: &wpp::rhythm::Interval) -> BeatInterval {
+    use wpp::rhythm::IntervalKind;
+    BeatInterval {
+        ms: interval.length.0.round() as u32,
+        kind: match interval.kind {
+            IntervalKind::Beat => BeatIntervalKind::Beat,
+            IntervalKind::Merged => BeatIntervalKind::Merged,
+            IntervalKind::Early => BeatIntervalKind::Early,
+            IntervalKind::Pause => BeatIntervalKind::Pause,
+        },
+    }
+}
+
+fn rhythm_analysis(rhythm: &wpp::rhythm::Rhythm) -> RhythmAnalysis {
+    use wpp::rhythm::Pattern;
+    RhythmAnalysis {
+        pattern: match rhythm.pattern {
+            Pattern::Steady => RhythmPattern::Steady,
+            Pattern::Breathing => RhythmPattern::Breathing,
+            Pattern::Variable => RhythmPattern::Variable,
+            Pattern::Irregular => RhythmPattern::Irregular,
+        },
+        wave: rhythm.wave.as_ref().map(|wave| BreathingWave {
+            per_minute: wave.per_minute,
+            share: wave.share,
+            chance: wave.chance,
+            curve: wave
+                .curve
+                .iter()
+                .map(|(at, ms)| WavePoint {
+                    at_ms: at.0.round() as u32,
+                    ms: ms.0,
+                })
+                .collect(),
+        }),
+        rate: rhythm.rate.0 as u32,
+        early_beats: rhythm.early_beats as u32,
+    }
+}
+
+fn ecg_analysis(reading: &wpp::rhythm::EcgReading) -> EcgAnalysis {
+    use wpp::rhythm::{BeatShape, EcgVerdict};
+    match &reading.verdict {
+        EcgVerdict::TooFew { .. } => EcgAnalysis::TooFew,
+        EcgVerdict::Noisy => EcgAnalysis::Noisy,
+        EcgVerdict::Shifted(shift) => EcgAnalysis::Shifted {
+            from: shift.from.0 as u32,
+            to: shift.to.0 as u32,
+        },
+        EcgVerdict::Assessed(rhythm) => EcgAnalysis::Assessed {
+            rhythm: rhythm_analysis(rhythm),
+            beats: reading.beats.len() as u32,
+            p_waves: reading.beats.iter().filter(|b| b.p_wave).count() as u32,
+            unusual_early_beats: reading
+                .early_beats()
+                .filter(|b| b.shape == BeatShape::Unusual)
+                .count() as u32,
+        },
+    }
 }
 
 fn verdict_of(store: &wpp_store::Store, id: i64) -> (Option<u32>, Option<EcgRhythm>) {
@@ -3398,5 +3634,68 @@ mod tests {
         let heart = nights[0].heart.clone().unwrap();
         assert!(heart.median_bpm < 90, "awake readings stay out: {heart:?}");
         assert_eq!(heart.resting_bpm, 50);
+    }
+
+    /// A night reading where the pulse sensor counted most beats twice, as the
+    /// watch kept it: one byte per interval at 100 Hz.
+    const SPLIT_NIGHT_READING: [u8; 57] = [
+        38, 59, 98, 112, 36, 65, 37, 66, 37, 71, 37, 65, 37, 55, 39, 50, 37, 66, 36, 63, 36, 55,
+        34, 48, 37, 73, 37, 75, 36, 60, 35, 48, 37, 55, 37, 63, 37, 65, 36, 55, 35, 57, 36, 66, 38,
+        58, 36, 46, 77, 79, 37, 48, 83, 34, 48, 86, 38,
+    ];
+
+    fn reading_row(at_ms: i64) -> wpp_store::AfibReadingRow {
+        wpp_store::AfibReadingRow {
+            id: 1,
+            measured_at_ms: at_ms,
+            duration_secs: 30,
+            sampling_hz: 100,
+            sample_bytes: 1,
+            samples: SPLIT_NIGHT_READING.to_vec(),
+            attrib: Some(STORED_MEASURE_ATTRIB_CONFIRMED),
+        }
+    }
+
+    #[test]
+    fn a_reading_is_read_against_the_rate_the_watch_logged_for_it() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let at = DAY_ONE + 2 * 3_600_000;
+        store
+            .store(device, &[rate(at + 45_000, 61, Source::Stored)])
+            .unwrap();
+        let asleep = [SleepSpan {
+            from_ms: at - 3_600_000,
+            to_ms: at + 3_600_000,
+        }];
+
+        let reading = afib_reading(&store, device, &reading_row(at), &asleep).unwrap();
+        assert!(reading.asleep);
+        assert!(
+            reading
+                .intervals
+                .iter()
+                .filter(|i| i.kind == BeatIntervalKind::Merged)
+                .count()
+                >= 20
+        );
+        match reading.analysis {
+            PulseAnalysis::Assessed { rhythm } => {
+                assert!((55..=70).contains(&rhythm.rate), "{rhythm:?}");
+                assert_ne!(rhythm.pattern, RhythmPattern::Irregular);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!((55..=70).contains(&reading.heart_rate.unwrap()));
+    }
+
+    #[test]
+    fn a_reading_with_no_rate_logged_for_it_is_left_unchecked() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let reading = afib_reading(&store, device, &reading_row(DAY_ONE), &[]).unwrap();
+        assert_eq!(reading.analysis, PulseAnalysis::NoWatchRate);
+        assert_eq!(reading.intervals.len(), SPLIT_NIGHT_READING.len());
+        assert!(!reading.asleep);
     }
 }

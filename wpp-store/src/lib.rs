@@ -637,6 +637,26 @@ impl Store {
         rows.collect()
     }
 
+    /// The value of `kind` logged closest to `at_ms`, within `within_ms` of it.
+    pub fn nearest_sample(
+        &self,
+        device_id: i64,
+        kind: i64,
+        at_ms: i64,
+        within_ms: i64,
+    ) -> Result<Option<i64>, Error> {
+        self.conn
+            .query_row(
+                "SELECT value FROM sample
+                  WHERE device_id = ?1 AND kind = ?2 AND measured_at BETWEEN ?3 - ?4 AND ?3 + ?4
+                  ORDER BY abs(measured_at - ?3)
+                  LIMIT 1",
+                params![device_id, kind, at_ms, within_ms],
+                |r| r.get(0),
+            )
+            .optional()
+    }
+
     pub fn samples_from(
         &self,
         device_id: i64,

@@ -40,74 +40,73 @@ impl RPeaks {
     }
 }
 
-fn energy(samples: &[i16], sampling_freq: u16) -> Vec<f64> {
-    let derivative: Vec<f64> = (0..samples.len())
-        .map(|i| {
-            let at = |k: usize| samples[i.saturating_sub(k)] as f64;
-            (2.0 * samples[i] as f64 + at(1) - at(3) - 2.0 * at(4)) / 8.0
-        })
-        .collect();
+/// Squaring the slope lifts the QRS, the steepest edge in a beat, well clear of
+/// a T wave that can stand more than half as tall but rises slowly.
+const SLOPE_THRESHOLD: f64 = 0.12;
 
-    let window = ((sampling_freq as f64 * 0.150) as usize).max(1);
-    let mut integrated = Vec::with_capacity(derivative.len());
-    let mut running = 0.0;
-    for i in 0..derivative.len() {
-        running += derivative[i] * derivative[i];
-        if i >= window {
-            running -= derivative[i - window] * derivative[i - window];
-        }
-        integrated.push(running / window as f64);
-    }
-    integrated
-}
+/// Taken over the slopes rather than the largest, so one spike from a moving
+/// electrode does not raise the bar over every beat.
+const SLOPE_REFERENCE_QUANTILE: f64 = 0.995;
+
+/// 180 bpm. A T wave peaks some 250-300 ms after its R, so a shorter wait would
+/// let a tall one count as a beat of its own.
+const REFRACTORY_SECS: f64 = 0.33;
+
+/// How far either side of a steep edge the R peak itself may sit.
+const PEAK_SEARCH_SECS: f64 = 0.06;
+
+/// The baseline an R is measured against, so an inverted complex is found as
+/// readily as an upright one.
+const BASELINE_SECS: f64 = 0.3;
 
 pub fn detect_r_peaks(samples: &[i16], sampling_freq: u16) -> RPeaks {
     let freq = sampling_freq.max(1);
-    let refractory = (freq as f64 * 0.20) as usize;
-    if samples.len() < refractory * 2 {
-        return RPeaks {
-            indices: Vec::new(),
-            sampling_freq: freq,
-        };
+    let at = |secs: f64| (secs * freq as f64) as usize;
+    let none = RPeaks {
+        indices: Vec::new(),
+        sampling_freq: freq,
+    };
+    if samples.len() < at(REFRACTORY_SECS) * 2 {
+        return none;
     }
 
-    let integrated = energy(samples, freq);
-    let mut sorted: Vec<f64> = integrated.iter().copied().filter(|v| *v > 0.0).collect();
-    if sorted.is_empty() {
-        return RPeaks {
-            indices: Vec::new(),
-            sampling_freq: freq,
-        };
-    }
+    let slopes: Vec<f64> = samples
+        .windows(2)
+        .map(|w| (w[1] as f64 - w[0] as f64).powi(2))
+        .collect();
+    let mut sorted = slopes.clone();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let threshold = sorted[sorted.len() * 9 / 10] * 0.5;
+    let reference = sorted[((sorted.len() - 1) as f64 * SLOPE_REFERENCE_QUANTILE) as usize];
+    if reference == 0.0 {
+        return none;
+    }
+    let threshold = reference * SLOPE_THRESHOLD;
 
+    let search = at(PEAK_SEARCH_SECS).max(1);
     let mut indices: Vec<usize> = Vec::new();
-    let mut i = 1;
-    while i < integrated.len() - 1 {
-        if integrated[i] < threshold {
+    let mut i = 0;
+    while i < slopes.len() {
+        if slopes[i] < threshold {
             i += 1;
             continue;
         }
-        let start = i;
-        let mut best = i;
-        while i < integrated.len() && integrated[i] >= threshold {
-            if integrated[i] > integrated[best] {
-                best = i;
+        let mut before: Vec<i16> = samples[i.saturating_sub(at(BASELINE_SECS))..=i].to_vec();
+        before.sort_unstable();
+        let baseline = before[before.len() / 2] as f64;
+        let height = |k: usize| (samples[k] as f64 - baseline).abs();
+        let to = (i + search).min(samples.len());
+        let peak = (i.saturating_sub(search)..to)
+            .max_by(|&a, &b| height(a).partial_cmp(&height(b)).unwrap())
+            .unwrap();
+        match indices.last_mut() {
+            Some(last) if peak.abs_diff(*last) <= at(REFRACTORY_SECS) => {
+                if height(peak) > height(*last) {
+                    *last = peak;
+                }
             }
-            i += 1;
+            _ => indices.push(peak),
         }
-        if i == start {
-            i += 1;
-        }
-        let window = ((freq as f64 * 0.150) as usize).max(1);
-        let from = best.saturating_sub(window);
-        let peak = (from..=best.min(samples.len() - 1))
-            .max_by_key(|&k| samples[k])
-            .unwrap_or(best);
-        if indices.last().is_none_or(|&last| peak - last >= refractory) {
-            indices.push(peak);
-        }
+        i = to;
     }
     RPeaks {
         indices,

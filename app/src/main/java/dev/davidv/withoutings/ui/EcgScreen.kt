@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.ui.theme.AppTheme
+import uniffi.wpp_ffi.EcgAnalysis
 import uniffi.wpp_ffi.EcgRhythm
 import uniffi.wpp_ffi.EcgRecording
 
@@ -66,6 +67,7 @@ fun EcgDetailScreen(
             verticalArrangement = Arrangement.spacedBy(AppTheme.space.blockLoose),
         ) {
             ResultCard(recording.rhythm)
+            AnalysisCard(recording.analysis)
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 Text(
@@ -116,6 +118,42 @@ private fun ResultCard(rhythm: EcgRhythm?) {
             style = AppTheme.type.resultTitle,
             color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
+    }
+}
+
+@Composable
+private fun AnalysisCard(analysis: EcgAnalysis) {
+    val (title, lines) = when (analysis) {
+        EcgAnalysis.TooFew -> "Too short" to listOf("Too few beats to tell a pattern from chance.")
+        is EcgAnalysis.Shifted -> "Rate changed" to listOf(shiftLine(analysis.from, analysis.to))
+        EcgAnalysis.Noisy -> "Too noisy" to listOf(
+            "Too many beats are shaped unlike the rest to read it beat by beat; " +
+                "the electrodes most likely moved."
+        )
+        is EcgAnalysis.Assessed -> rhythmLabel(analysis.rhythm) to rhythmLines(analysis.rhythm, RhythmSource.Ecg) + listOfNotNull(
+            "P wave before ${analysis.pWaves} of ${analysis.beats} beats. Each one is the " +
+                "heart's own pacemaker starting the beat; in AFib there are none.",
+            analysis.rhythm.earlyBeats.toInt().takeIf { it > 0 }?.let { early ->
+                val unusual = analysis.unusualEarlyBeats.toInt()
+                when (unusual) {
+                    0 -> "The early beats have the same shape as the rest, as beats starting in the atria do."
+                    early -> "The early beats are shaped unlike the rest, as beats starting in the ventricles are."
+                    else -> "$unusual of the early beats are shaped unlike the rest."
+                }
+            },
+        )
+    }
+    ChartCard(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            SpeculativeEyebrow()
+            Text(title, style = AppTheme.type.resultTitle)
+            lines.forEach {
+                Text(it, style = AppTheme.type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 
