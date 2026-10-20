@@ -198,8 +198,10 @@ class GattLink(
             .filter { it.uuid.toString().contains(WITHINGS_SERVICE_MARKER) }
             .flatMap { it.characteristics }
             .firstOrNull { c ->
-                c.uuid.toString().uppercase().contains(WITHINGS_CHARACTERISTIC_MARKER) &&
-                    c.uuid.toString().getOrNull(7) == PROTOCOL_HANDLE
+                val id = c.uuid.toString().uppercase()
+                (id.contains(WITHINGS_CHARACTERISTIC_MARKER) ||
+                    id.contains(LEGACY_CHARACTERISTIC_MARKER)) &&
+                    id.getOrNull(7) == PROTOCOL_HANDLE
             }
 
     companion object {
@@ -216,6 +218,9 @@ class GattLink(
 
         private const val WITHINGS_SERVICE_MARKER = "5749-5448"
         private const val WITHINGS_CHARACTERISTIC_MARKER = "494E4753"
+        // Original ScanWatch (1) exposes the protocol channel as
+        // 00000024-5749-5448-005d-000000000000 (write + notify).
+        private const val LEGACY_CHARACTERISTIC_MARKER = "5749-5448-005D"
         private const val PROTOCOL_HANDLE = '4'
         private val CLIENT_CONFIG: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
