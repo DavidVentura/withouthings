@@ -9,6 +9,8 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import java.util.UUID
 
@@ -44,6 +46,10 @@ class GattLink(
     private var framesIn = 0
     private var connectedAt = 0L
 
+    private val handler = Handler(Looper.getMainLooper())
+    private var subscribeAttempts = 0
+    private var ready = false
+
     @SuppressLint("MissingPermission")
     fun connect(device: BluetoothDevice) {
         close()
@@ -70,6 +76,9 @@ class GattLink(
 
     @SuppressLint("MissingPermission")
     fun close() {
+        handler.removeCallbacksAndMessages(null)
+        subscribeAttempts = 0
+        ready = false
         gatt?.close()
         gatt = null
         channel = null
@@ -130,15 +139,38 @@ class GattLink(
             }
             Log.i(TAG, "protocol channel ${characteristic.uuid}")
             channel = characteristic
-            g.setCharacteristicNotification(characteristic, true)
-            characteristic.getDescriptor(CLIENT_CONFIG)?.let {
-                g.writeDescriptor(it, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-            }
+            // The ScanWatch 1 refuses the CCCD write with Insufficient
+            // Authentication until link encryption with the bonded keys has
+            // completed, and it sends a Service Changed indication right after
+            // connecting. Like Gadgetbridge, give it time to settle first.
+            subscribeAttempts = 0
+            handler.removeCallbacksAndMessages(null)
+            handler.postDelayed({ subscribe(g) }, SUBSCRIBE_DELAY_MS)
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onServiceChanged(g: BluetoothGatt) {
+            if (g !== gatt) return
+            Log.i(TAG, "service changed, rediscovering")
+            g.discoverServices()
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) {
-            Log.i(TAG, "notifications enabled, status=$status")
-            listener.onReady()
+            if (g !== gatt) return
+            Log.i(TAG, "notifications enabled, status=$status attempt=$subscribeAttempts")
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                if (!ready) {
+                    ready = true
+                    listener.onReady()
+                }
+                return
+            }
+            if (subscribeAttempts < SUBSCRIBE_MAX_ATTEMPTS) {
+                handler.postDelayed({ subscribe(g) }, SUBSCRIBE_RETRY_MS)
+            } else {
+                Log.e(TAG, "could not enable notifications, dropping the link")
+                runCatching { g.disconnect() }
+            }
         }
 
         override fun onCharacteristicChanged(
@@ -193,6 +225,28 @@ class GattLink(
         }
     }
 
+    @SuppressLint("MissingPermission")
+    private fun subscribe(g: BluetoothGatt) {
+        if (g !== gatt) return
+        val c = channel ?: return
+        subscribeAttempts++
+        g.setCharacteristicNotification(c, true)
+        val d = c.getDescriptor(CLIENT_CONFIG)
+        if (d == null) {
+            Log.e(TAG, "protocol channel has no CCCD")
+            return
+        }
+        val status = g.writeDescriptor(d, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+        Log.i(TAG, "CCCD write attempt $subscribeAttempts queued status=$status")
+        if (status != BluetoothStatusCodes.SUCCESS) {
+            if (subscribeAttempts < SUBSCRIBE_MAX_ATTEMPTS) {
+                handler.postDelayed({ subscribe(g) }, SUBSCRIBE_RETRY_MS)
+            } else {
+                runCatching { g.disconnect() }
+            }
+        }
+    }
+
     private fun findProtocolChannel(g: BluetoothGatt): BluetoothGattCharacteristic? =
         g.services
             .filter { it.uuid.toString().contains(WITHINGS_SERVICE_MARKER) }
@@ -222,6 +276,9 @@ class GattLink(
         // 00000024-5749-5448-005d-000000000000 (write + notify).
         private const val LEGACY_CHARACTERISTIC_MARKER = "5749-5448-005D"
         private const val PROTOCOL_HANDLE = '4'
+        private const val SUBSCRIBE_DELAY_MS = 2000L
+        private const val SUBSCRIBE_RETRY_MS = 1000L
+        private const val SUBSCRIBE_MAX_ATTEMPTS = 3
         private val CLIENT_CONFIG: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
         const val DEVICE_NAME_PREFIX = "ScanWatch"
