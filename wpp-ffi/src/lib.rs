@@ -293,6 +293,173 @@ impl WearPosition {
     }
 }
 
+/// A watch hand that can be set back onto the dial.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatchHand {
+    Minute,
+    Hour,
+    Activity,
+}
+
+impl WatchHand {
+    fn wire(self) -> wpp::hands::Hand {
+        match self {
+            WatchHand::Minute => wpp::hands::Hand::Minute,
+            WatchHand::Hour => wpp::hands::Hand::Hour,
+            WatchHand::Activity => wpp::hands::Hand::Activity,
+        }
+    }
+}
+
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HandsPhase {
+    Idle,
+    /// Asked for while the watch was still being linked; starts once it is.
+    WaitingForWatch,
+    /// The watch was not linked within ten seconds; nothing was sent.
+    TimedOut,
+    Starting,
+    Adjusting,
+    Saving,
+    Saved,
+    Cancelling,
+    Cancelled,
+    Interrupted,
+    Failed,
+}
+
+#[derive(uniffi::Record, Debug, Clone, Copy, PartialEq)]
+pub struct HandsSession {
+    pub phase: HandsPhase,
+    /// Steps moved this session, clockwise positive; one step is a degree.
+    pub minute_steps: i32,
+    pub hour_steps: i32,
+    pub activity_steps: i32,
+    /// Steps still on their way to the watch.
+    pub pending_steps: i32,
+    /// For `Failed`: the refused command and the watch's error code.
+    pub failed_command: u16,
+    pub failed_err: i32,
+}
+
+impl HandsSession {
+    fn of(cal: &wpp::hands::HandsCalibration) -> HandsSession {
+        use wpp::hands::CalState;
+        let (phase, failed_command, failed_err) = match cal.state() {
+            CalState::Idle => (HandsPhase::Idle, 0, 0),
+            CalState::WaitingForWatch => (HandsPhase::WaitingForWatch, 0, 0),
+            CalState::TimedOut => (HandsPhase::TimedOut, 0, 0),
+            CalState::Starting => (HandsPhase::Starting, 0, 0),
+            CalState::Adjusting => (HandsPhase::Adjusting, 0, 0),
+            CalState::Saving => (HandsPhase::Saving, 0, 0),
+            CalState::Saved => (HandsPhase::Saved, 0, 0),
+            CalState::Cancelling => (HandsPhase::Cancelling, 0, 0),
+            CalState::Cancelled => (HandsPhase::Cancelled, 0, 0),
+            CalState::Interrupted => (HandsPhase::Interrupted, 0, 0),
+            CalState::Failed { command, err } => (HandsPhase::Failed, command, err),
+        };
+        let [minute_steps, hour_steps, activity_steps] = cal.moved();
+        HandsSession {
+            phase,
+            minute_steps,
+            hour_steps,
+            activity_steps,
+            pending_steps: cal.pending_steps(),
+            failed_command,
+            failed_err,
+        }
+    }
+}
+
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClockReadState {
+    Never,
+    WaitingForWatch,
+    Asking,
+    Answered,
+    Unanswered,
+    Refused,
+}
+
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClockSetState {
+    None,
+    WaitingForHands,
+    WaitingForWatch,
+    Sending,
+    Set,
+    Unanswered,
+    Refused,
+}
+
+/// What the watch said its clock was, and when the phone last set it. Every
+/// time here came from the watch or from a set the phone sent; none is made
+/// up when the watch has not answered.
+#[derive(uniffi::Record, Debug, Clone, PartialEq)]
+pub struct WatchClockView {
+    pub read_state: ClockReadState,
+    /// The watch's own UTC second from its last `CMD_TIME_GET` answer.
+    pub watch_utc_ms: Option<i64>,
+    pub watch_gmt_offset_seconds: Option<i32>,
+    /// The phone's clock when that answer arrived.
+    pub read_at_ms: Option<i64>,
+    /// Watch minus phone at that moment; positive when the watch is ahead.
+    pub offset_ms: Option<i64>,
+    pub read_err: Option<i32>,
+    pub set_state: ClockSetState,
+    pub set_err: Option<i32>,
+    /// The last `CMD_TIME_SET` sent, the connection's own included.
+    pub last_sync_at_ms: Option<i64>,
+    pub last_sync_gmt_offset_seconds: Option<i32>,
+    pub last_sync_answered: bool,
+    pub last_sync_from_screen: bool,
+    pub last_sync_drift: Option<i32>,
+    /// The custom time the watch is kept at, as a distance from the phone's
+    /// clock; 0 is phone time.
+    pub custom_shift_ms: i64,
+}
+
+impl WatchClockView {
+    fn of(clock: &wpp::clock::WatchClock) -> Self {
+        use wpp::clock::{ReadState as R, SetState as S};
+        let (read_state, read_err) = match clock.read_state() {
+            R::Never => (ClockReadState::Never, None),
+            R::WaitingForWatch => (ClockReadState::WaitingForWatch, None),
+            R::Asking => (ClockReadState::Asking, None),
+            R::Answered => (ClockReadState::Answered, None),
+            R::Unanswered => (ClockReadState::Unanswered, None),
+            R::Refused(e) => (ClockReadState::Refused, Some(e)),
+        };
+        let (set_state, set_err) = match clock.set_state() {
+            S::None => (ClockSetState::None, None),
+            S::WaitingForHands => (ClockSetState::WaitingForHands, None),
+            S::WaitingForWatch => (ClockSetState::WaitingForWatch, None),
+            S::Sending => (ClockSetState::Sending, None),
+            S::Set => (ClockSetState::Set, None),
+            S::Unanswered => (ClockSetState::Unanswered, None),
+            S::Refused(e) => (ClockSetState::Refused, Some(e)),
+        };
+        let reading = clock.reading();
+        let sync = clock.last_sync();
+        Self {
+            read_state,
+            watch_utc_ms: reading.map(|r| r.watch_utc.0 * 1000),
+            watch_gmt_offset_seconds: reading.map(|r| r.gmt_offset),
+            read_at_ms: reading.map(|r| r.received_at.0),
+            offset_ms: reading.map(|r| r.offset_ms()),
+            read_err,
+            set_state,
+            set_err,
+            last_sync_at_ms: sync.map(|s| s.sent_at.0),
+            last_sync_gmt_offset_seconds: sync.map(|s| s.gmt_offset),
+            last_sync_answered: sync.is_some_and(|s| s.answered_at.is_some()),
+            last_sync_from_screen: sync.is_some_and(|s| s.from_screen),
+            last_sync_drift: sync.and_then(|s| s.drift),
+            custom_shift_ms: clock.shift_ms(),
+        }
+    }
+}
+
 #[derive(uniffi::Record, Debug, Clone, Copy, PartialEq)]
 pub struct DstChange {
     pub at_ms: i64,
@@ -339,6 +506,29 @@ pub struct Battery {
     pub percent: u32,
     pub at_ms: i64,
     pub charging: Option<bool>,
+    /// The watch's own verdict from its last battery status, when recent.
+    pub state: Option<BatteryState>,
+}
+
+/// `battery_state` of a battery status, as the watch reports it.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatteryState {
+    Charging,
+    Low,
+    Ok,
+    Critical,
+}
+
+impl BatteryState {
+    fn from_raw(raw: i64) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Charging),
+            1 => Some(Self::Low),
+            2 => Some(Self::Ok),
+            3 => Some(Self::Critical),
+            _ => None,
+        }
+    }
 }
 
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
@@ -923,15 +1113,19 @@ impl WatchService {
                     hardware: identity.hardware,
                     rescue: identity.rescue,
                 }),
-            battery: store.latest(self.device_id, 6)?.map(|(at, value)| Battery {
-                percent: value as u32,
-                at_ms: at,
-                charging: store
+            battery: store.latest(self.device_id, 6)?.map(|(at, value)| {
+                let state = store
                     .latest(self.device_id, 8)
                     .ok()
                     .flatten()
                     .filter(|(state_at, _)| now_ms() - state_at < CHARGE_STATE_FRESH_MS)
-                    .map(|(_, state)| state == CHARGING_STATE),
+                    .map(|(_, state)| state);
+                Battery {
+                    percent: value as u32,
+                    at_ms: at,
+                    charging: state.map(|state| state == CHARGING_STATE),
+                    state: state.and_then(BatteryState::from_raw),
+                }
             }),
             latest_hr: store.latest(self.device_id, 1)?.map(|(at, value)| HrPoint {
                 at_ms: at,
@@ -1413,6 +1607,137 @@ impl WatchService {
             .client
             .set_wear_position(position.wire());
         self.dispatch(actions)
+    }
+
+    /// Opens a hand-setting session: the watch parks its hands at what it
+    /// believes is 12 o'clock. Does nothing until the link is authenticated.
+    pub fn hands_start(&self) -> Result<HandsSession, WatchError> {
+        let (actions, session) = {
+            let mut inner = self.inner.lock().unwrap();
+            let actions = inner.client.hands_start(UnixMillis(now_ms()));
+            (actions, HandsSession::of(inner.client.hands()))
+        };
+        self.dispatch(actions)?;
+        Ok(session)
+    }
+
+    /// Moves one hand by `steps` degrees, clockwise when positive.
+    pub fn hands_nudge(&self, hand: WatchHand, steps: i32) -> Result<HandsSession, WatchError> {
+        let (actions, session) = {
+            let mut inner = self.inner.lock().unwrap();
+            let mut actions = inner.client.hands_tick(UnixMillis(now_ms()));
+            actions.extend(inner.client.hands_nudge(hand.wire(), steps));
+            (actions, HandsSession::of(inner.client.hands()))
+        };
+        self.dispatch(actions)?;
+        Ok(session)
+    }
+
+    /// Keeps where the hands now point as 12 o'clock.
+    pub fn hands_save(&self) -> Result<HandsSession, WatchError> {
+        let (actions, session) = {
+            let mut inner = self.inner.lock().unwrap();
+            let mut actions = inner.client.hands_tick(UnixMillis(now_ms()));
+            actions.extend(inner.client.hands_save());
+            (actions, HandsSession::of(inner.client.hands()))
+        };
+        self.dispatch(actions)?;
+        Ok(session)
+    }
+
+    /// Leaves the calibration as it was before the session.
+    pub fn hands_cancel(&self) -> Result<HandsSession, WatchError> {
+        let (actions, session) = {
+            let mut inner = self.inner.lock().unwrap();
+            let mut actions = inner.client.hands_tick(UnixMillis(now_ms()));
+            actions.extend(inner.client.hands_cancel());
+            (actions, HandsSession::of(inner.client.hands()))
+        };
+        self.dispatch(actions)?;
+        Ok(session)
+    }
+
+    /// Reads the session, first sending anything a silent watch was holding
+    /// back. Called a few times a second while the hand-setting screen is up.
+    pub fn hands_session(&self) -> Result<HandsSession, WatchError> {
+        let (actions, session) = {
+            let mut inner = self.inner.lock().unwrap();
+            let actions = inner.client.hands_tick(UnixMillis(now_ms()));
+            (actions, HandsSession::of(inner.client.hands()))
+        };
+        self.dispatch(actions)?;
+        Ok(session)
+    }
+
+    /// Asks the watch what time it has (`CMD_TIME_GET`), once linked.
+    pub fn clock_read(&self) -> Result<WatchClockView, WatchError> {
+        let (actions, view) = {
+            let mut inner = self.inner.lock().unwrap();
+            let actions = inner.client.clock_read(UnixMillis(now_ms()));
+            (actions, WatchClockView::of(inner.client.clock()))
+        };
+        self.dispatch(actions)?;
+        Ok(view)
+    }
+
+    /// Sets the watch to the phone's clock and zone (`CMD_TIME_SET`, as the
+    /// sync does), then reads it back. Held while a hand session is open.
+    pub fn clock_set_from_phone(
+        &self,
+        gmt_offset: i32,
+        next_change: Option<DstChange>,
+    ) -> Result<WatchClockView, WatchError> {
+        let (actions, view) = {
+            let mut inner = self.inner.lock().unwrap();
+            let actions = inner.client.clock_set_from_phone(
+                UnixMillis(now_ms()),
+                gmt_offset,
+                next_change.map(|c| wpp::client::DstChange {
+                    at: UnixMillis(c.at_ms).to_seconds(),
+                    gmt_offset: c.gmt_offset_seconds,
+                }),
+            );
+            (actions, WatchClockView::of(inner.client.clock()))
+        };
+        self.dispatch(actions)?;
+        Ok(view)
+    }
+
+    /// Sets the watch to a time the user picked: the phone's clock plus
+    /// `shift_ms`, in the phone's zone, then reads it back. Held while a hand
+    /// session is open; later reconnects keep the same shift.
+    pub fn clock_set_custom(
+        &self,
+        gmt_offset: i32,
+        next_change: Option<DstChange>,
+        shift_ms: i64,
+    ) -> Result<WatchClockView, WatchError> {
+        let (actions, view) = {
+            let mut inner = self.inner.lock().unwrap();
+            let actions = inner.client.clock_set_custom(
+                UnixMillis(now_ms()),
+                gmt_offset,
+                next_change.map(|c| wpp::client::DstChange {
+                    at: UnixMillis(c.at_ms).to_seconds(),
+                    gmt_offset: c.gmt_offset_seconds,
+                }),
+                shift_ms,
+            );
+            (actions, WatchClockView::of(inner.client.clock()))
+        };
+        self.dispatch(actions)?;
+        Ok(view)
+    }
+
+    /// The clock as last read, sending anything that was waiting.
+    pub fn watch_clock(&self) -> Result<WatchClockView, WatchError> {
+        let (actions, view) = {
+            let mut inner = self.inner.lock().unwrap();
+            let actions = inner.client.hands_tick(UnixMillis(now_ms()));
+            (actions, WatchClockView::of(inner.client.clock()))
+        };
+        self.dispatch(actions)?;
+        Ok(view)
     }
 
     pub fn set_zone(&self, gmt_offset: i32, next_change: Option<DstChange>) {

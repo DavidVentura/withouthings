@@ -59,6 +59,7 @@ import dev.davidv.withoutings.ui.TodayScreen
 import dev.davidv.withoutings.ui.TrendsScreen
 import dev.davidv.withoutings.ui.WatchActivitiesScreen
 import dev.davidv.withoutings.ui.WatchScreensScreen
+import dev.davidv.withoutings.ui.SetHandsScreen
 import dev.davidv.withoutings.ui.WatchSensorsScreen
 import dev.davidv.withoutings.ui.WatchTab
 import dev.davidv.withoutings.ui.WatchUserScreen
@@ -79,6 +80,7 @@ private object Routes {
     const val WATCH_SENSORS = "watch-sensors"
     const val WATCH_ACTIVITIES = "watch-activities"
     const val WATCH_SCREENS = "watch-screens"
+    const val WATCH_HANDS = "watch-hands"
 }
 
 private const val CLOCK_TICK_MS = 1_000L
@@ -444,6 +446,7 @@ private fun Navigation(
                         model.requestScreens()
                         nav.navigate(Routes.WATCH_SCREENS)
                     },
+                    onOpenHands = { nav.navigate(Routes.WATCH_HANDS) },
                     debugContent = { if (BuildConfig.DEBUG) FlashDumpCard(model) },
                 )
             }
@@ -490,6 +493,28 @@ private fun Navigation(
                     onApply = { model.applyScreens(it) },
                     onAcknowledge = { model.acknowledgeSave() },
                     onBack = { nav.popBackStack() },
+                )
+            }
+
+            composable(Routes.WATCH_HANDS) {
+                val hands by model.hands.collectAsState()
+                val watchClock by model.watchClock.collectAsState()
+                val clockSetAsked by model.clockSetAsked.collectAsState()
+                SetHandsScreen(
+                    link = state.link,
+                    session = hands,
+                    onOpen = { model.openHands() },
+                    onStart = { model.startHands() },
+                    onNudge = { hand, steps -> model.nudgeHand(hand, steps) },
+                    onSave = { model.saveHands() },
+                    onCancel = { model.cancelHands() },
+                    onLeave = { model.endHands() },
+                    onBack = { nav.popBackStack() },
+                    clock = watchClock,
+                    clockSetAsked = clockSetAsked,
+                    onSetClock = { model.setWatchClockFromPhone() },
+                    onSetCustomClock = { model.setWatchClockCustom(it) },
+                    onReadClock = { model.readWatchClock() },
                 )
             }
 

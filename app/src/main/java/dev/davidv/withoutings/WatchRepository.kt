@@ -22,6 +22,9 @@ private fun zone(): Pair<Int, DstChange?> {
     return rules.getOffset(now).totalSeconds to next
 }
 
+/** The phone's GMT offset now and its next change, as the watch takes them. */
+fun phoneZone(): Pair<Int, DstChange?> = zone()
+
 fun declareZone(service: WatchService) {
     val (offset, next) = zone()
     service.setZone(offset, next)

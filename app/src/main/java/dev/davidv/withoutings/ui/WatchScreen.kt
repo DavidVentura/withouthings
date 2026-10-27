@@ -58,6 +58,7 @@ fun WatchTab(
     onOpenSensors: () -> Unit,
     onOpenActivities: () -> Unit,
     onOpenScreens: () -> Unit,
+    onOpenHands: () -> Unit = {},
     debugContent: @Composable () -> Unit = {},
 ) {
     Column(
@@ -80,6 +81,7 @@ fun WatchTab(
             verticalArrangement = Arrangement.spacedBy(AppTheme.space.blockMetric),
         ) {
             DeviceRow(state, nowMs, onOpenBattery)
+            TimeAndHandsEntry(onOpenHands)
 
             Row(
                 Modifier.height(IntrinsicSize.Min),
@@ -131,37 +133,18 @@ fun WatchTab(
 private fun DeviceRow(state: UiState, nowMs: Long, onOpenBattery: () -> Unit) {
     val newest = state.latest.values.maxOfOrNull { it.atMs }
     val device = state.snapshot?.device
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(AppTheme.radius.card))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(horizontal = 15.dp, vertical = 13.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(device?.name ?: "Watch", style = AppTheme.type.rowTitle)
-            state.snapshot?.battery?.let {
-                BatteryPill(
-                    if (it.charging == true) "${it.percent}% ⚡" else "${it.percent}%",
-                    onClick = onOpenBattery,
-                )
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        val link = when {
-            state.link != LinkState.Ready -> "not connected"
-            newest != null -> "synced ${freshness(newest, nowMs)}"
-            else -> "connected, nothing synced yet"
-        }
-        Text(
-            device?.let { "$link · firmware ${it.firmware}" } ?: link,
-            style = AppTheme.type.rowMeta,
-            color = AppTheme.colors.onSurfaceTertiary,
-        )
+    val link = when {
+        state.link != LinkState.Ready -> "not connected"
+        newest != null -> "synced ${freshness(newest, nowMs)}"
+        else -> "connected, nothing synced yet"
     }
+    DeviceCard(
+        name = device?.name ?: "Watch",
+        linkLine = device?.let { "$link · firmware ${it.firmware}" } ?: link,
+        battery = state.snapshot?.battery,
+        nowMs = nowMs,
+        onOpenBattery = onOpenBattery,
+    )
 }
 
 @Composable

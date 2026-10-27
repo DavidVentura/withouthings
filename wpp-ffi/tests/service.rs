@@ -188,6 +188,38 @@ fn a_frame_split_across_notifications_is_reassembled_and_stored() {
 }
 
 #[test]
+fn a_fresh_battery_status_carries_the_watch_s_own_state() {
+    use wpp::objects::BatteryStatus;
+    use wpp::{Command, Frame, WppObject};
+    use wpp_ffi::BatteryState;
+
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+
+    let frame = Frame::new(
+        Command::CMD_BATTERY_STATUS,
+        vec![WppObject::BatteryStatus(BatteryStatus {
+            battery_percent: 9,
+            battery_state: BatteryStatus::BATTERY_STATE_CRITICAL,
+            battery_mv: 3500,
+            reserved: 0,
+        })],
+    );
+    service.on_bytes(frame.to_bytes(), now).unwrap();
+
+    let battery = service.snapshot().unwrap().battery.expect("battery reading");
+    assert_eq!(battery.percent, 9);
+    assert_eq!(battery.state, Some(BatteryState::Critical));
+    assert_eq!(battery.charging, Some(false));
+
+    cleanup(&path);
+}
+
+#[test]
 fn a_notification_is_announced_then_served_when_the_watch_asks() {
     use wpp_ffi::NotificationCategory;
 
@@ -749,6 +781,148 @@ fn a_ride_with_a_route_is_not_charged_at_the_rate_the_heart_read() {
     assert!(
         (by_ground - 75.0).abs() < 12.0,
         "{by_ground} kcal against the 75 the tables give for this ride"
+    );
+
+    cleanup(&path);
+}
+
+#[test]
+fn hand_setting_goes_out_only_on_a_link_and_one_move_at_a_time() {
+    use wpp::{Command, Frame};
+    use wpp_ffi::{HandsPhase, WatchHand};
+
+    // The session runs on the phone's clock, so the replies must arrive on it too.
+    let t0 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+
+    assert_eq!(service.hands_start().unwrap().phase, HandsPhase::WaitingForWatch);
+    assert!(recorder.written.lock().unwrap().is_empty(), "nothing before the watch is linked");
+
+    service.on_connected().unwrap();
+    service.on_bytes(Frame::new(Command::CMD_PROBE, Vec::new()).to_bytes(), t0 + 0).unwrap();
+    recorder.written.lock().unwrap().clear();
+
+    assert_eq!(service.hands_start().unwrap().phase, HandsPhase::Starting);
+    service.on_bytes(Frame::new(Command::CMD_HANDS_CAL_START, Vec::new()).to_bytes(), t0 + 1).unwrap();
+    let session = service.hands_nudge(WatchHand::Minute, -6).unwrap();
+    assert_eq!(session.minute_steps, -6);
+    service.hands_nudge(WatchHand::Minute, -6).unwrap();
+    service.hands_save().unwrap();
+
+    let written: Vec<Frame> = recorder
+        .written
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|bytes| Frame::parse(bytes).expect("valid frame"))
+        .collect();
+    let commands: Vec<u16> = written.iter().map(|f| f.command.opcode()).collect();
+    assert_eq!(
+        commands,
+        vec![Command::CMD_HANDS_CAL_START.0, Command::CMD_HANDS_MOVE.0],
+        "the second tap and the stop wait for the first move's answer"
+    );
+
+    service.on_bytes(Frame::new(Command::CMD_HANDS_MOVE, Vec::new()).to_bytes(), t0 + 2).unwrap();
+    service.on_bytes(Frame::new(Command::CMD_HANDS_MOVE, Vec::new()).to_bytes(), t0 + 3).unwrap();
+    assert_eq!(service.hands_session().unwrap().phase, HandsPhase::Saving);
+    service.on_bytes(Frame::new(Command::CMD_HANDS_CAL_STOP, Vec::new()).to_bytes(), t0 + 4).unwrap();
+    let session = service.hands_session().unwrap();
+    assert_eq!(session.phase, HandsPhase::Saved);
+    assert_eq!(session.minute_steps, -12);
+
+    cleanup(&path);
+}
+
+#[test]
+fn the_watch_clock_is_what_the_watch_answered_and_a_set_goes_out_and_is_read_back() {
+    use wpp::objects::{TimeSet, TimeSetReply};
+    use wpp::{Command, Frame, WppObject};
+    use wpp_ffi::{ClockReadState, ClockSetState};
+
+    let t0 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+
+    let view = service.clock_read().unwrap();
+    assert_eq!(view.read_state, ClockReadState::WaitingForWatch);
+    assert_eq!(view.watch_utc_ms, None, "no time is shown before the watch answers");
+    assert!(recorder.written.lock().unwrap().is_empty());
+
+    service.on_connected().unwrap();
+    service.on_bytes(Frame::new(Command::CMD_PROBE, Vec::new()).to_bytes(), t0).unwrap();
+    recorder.written.lock().unwrap().clear();
+
+    assert_eq!(service.watch_clock().unwrap().read_state, ClockReadState::Asking);
+    let written = recorder.written.lock().unwrap().clone();
+    assert_eq!(written, vec![Frame::new(Command::CMD_TIME_GET, Vec::new()).to_bytes()]);
+
+    let watch_s = (t0 / 1000) - 90;
+    service
+        .on_bytes(
+            Frame::new(
+                Command::CMD_TIME_GET,
+                vec![WppObject::TimeSet(TimeSet {
+                    utc: watch_s as u32,
+                    gmt_offset: 0,
+                    dst_change_time: 0,
+                    next_gmt_offset: 0,
+                })],
+            )
+            .to_bytes(),
+            t0 + 10,
+        )
+        .unwrap();
+    let view = service.watch_clock().unwrap();
+    assert_eq!(view.read_state, ClockReadState::Answered);
+    assert_eq!(view.watch_utc_ms, Some(watch_s * 1000));
+    assert_eq!(view.offset_ms, Some(watch_s * 1000 - (t0 + 10)));
+
+    recorder.written.lock().unwrap().clear();
+    let view = service.clock_set_from_phone(3600, None).unwrap();
+    assert_eq!(view.set_state, ClockSetState::Sending);
+    assert!(view.last_sync_from_screen);
+    let written: Vec<Frame> = recorder
+        .written
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|b| Frame::parse(b).unwrap())
+        .collect();
+    assert_eq!(written.len(), 1);
+    assert_eq!(written[0].command, Command::CMD_TIME_SET);
+    match &written[0].objects[0] {
+        WppObject::TimeSet(t) => {
+            assert_eq!(t.gmt_offset, 3600);
+            assert!((t.utc as i64 - t0 / 1000).abs() <= 5, "the phone's own second");
+        }
+        other => panic!("{other:?}"),
+    }
+
+    recorder.written.lock().unwrap().clear();
+    service
+        .on_bytes(
+            Frame::new(
+                Command::CMD_TIME_SET,
+                vec![WppObject::TimeSetReply(TimeSetReply { drift: 0 })],
+            )
+            .to_bytes(),
+            t0 + 20,
+        )
+        .unwrap();
+    let view = service.watch_clock().unwrap();
+    assert_eq!(view.set_state, ClockSetState::Set);
+    assert_eq!(view.read_state, ClockReadState::Asking, "read back after the set");
+    assert_eq!(
+        recorder.written.lock().unwrap().clone(),
+        vec![Frame::new(Command::CMD_TIME_GET, Vec::new()).to_bytes()]
     );
 
     cleanup(&path);
