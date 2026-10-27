@@ -503,6 +503,7 @@ private fun Navigation(
                 SetHandsScreen(
                     link = state.link,
                     session = hands,
+                    onOpen = { model.openHands() },
                     onStart = { model.startHands() },
                     onNudge = { hand, steps -> model.nudgeHand(hand, steps) },
                     onSave = { model.saveHands() },

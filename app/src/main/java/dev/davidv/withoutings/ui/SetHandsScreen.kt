@@ -39,6 +39,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
@@ -120,6 +122,7 @@ fun SetHandsScreen(
     onSetCustomClock: (Long) -> Unit = {},
     onReadClock: () -> Unit = {},
     now: () -> Long = System::currentTimeMillis,
+    onOpen: () -> Unit = {},
 ) {
     val phase = session?.phase
     var hand by rememberSaveable { mutableStateOf(WatchHand.MINUTE) }
@@ -127,11 +130,18 @@ fun SetHandsScreen(
     var savedHere by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
     var stuck by remember { mutableStateOf(false) }
+    // Hands are only adjusted once asked for: until then (and again after
+    // Done or Cancel) the time can be set without a session holding it.
+    // `asked` covers the gap between the tap and the session's first answer.
+    var asked by remember { mutableStateOf(false) }
+    val known = phase != null && phase != HandsPhase.IDLE
+    LaunchedEffect(known) { if (known) asked = false }
+    val engaged = asked || phase == HandsPhase.WAITING_FOR_WATCH || phase == HandsPhase.STARTING ||
+        phase == HandsPhase.ADJUSTING || phase == HandsPhase.SAVING || phase == HandsPhase.CANCELLING
 
-    // The session belongs to this visit: started once on entry (the core
-    // holds it until the watch is linked), undone unless saved however the
+    // A session belongs to this visit and is undone unless saved however the
     // screen goes away.
-    LaunchedEffect(Unit) { onStart() }
+    LaunchedEffect(Unit) { onOpen() }
     DisposableEffect(Unit) { onDispose(onLeave) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val cancel by rememberUpdatedState(onCancel)
@@ -146,8 +156,7 @@ fun SetHandsScreen(
 
     // Never sit on "starting" for ever: whatever the reason (no service, a
     // watch that never links), ten seconds without a session is an error.
-    val starting = phase == null || phase == HandsPhase.IDLE ||
-        phase == HandsPhase.WAITING_FOR_WATCH || phase == HandsPhase.STARTING
+    val starting = asked || phase == HandsPhase.WAITING_FOR_WATCH || phase == HandsPhase.STARTING
     LaunchedEffect(starting, attempt) {
         stuck = false
         if (starting) {
@@ -155,30 +164,29 @@ fun SetHandsScreen(
             stuck = true
         }
     }
-    LaunchedEffect(phase) {
-        // After a time set the hands want checking again, so stay.
-        if (phase == HandsPhase.SAVED && savedHere && !clockSetAsked) {
-            delay(1_200)
-            onBack()
-        }
-    }
+    // Saved, cancelled or lost, the session is over and the screen is back
+    // to idle, with the outcome in the subtitle.
 
-    val adjustable = phase == HandsPhase.ADJUSTING || phase == HandsPhase.STARTING
-    val failed = stuck || phase == HandsPhase.TIMED_OUT || phase == HandsPhase.INTERRUPTED ||
-        phase == HandsPhase.FAILED || phase == HandsPhase.CANCELLED
-    val open = phase == HandsPhase.STARTING || phase == HandsPhase.ADJUSTING ||
-        phase == HandsPhase.SAVING || phase == HandsPhase.CANCELLING
-    val recheck = clockSetAsked && clock?.setState == ClockSetState.SET && !open && !starting
-    val retry = {
+    val active = engaged && !stuck
+    val adjustable = active && (phase == HandsPhase.ADJUSTING || phase == HandsPhase.STARTING)
+    val recheck = clockSetAsked && clock?.setState == ClockSetState.SET && !engaged
+    val begin = {
         stuck = false
         savedHere = false
+        asked = true
         attempt += 1
         onStart()
     }
 
     DetailScaffold(
         title = "Set time and align hands",
-        subtitle = statusLine(phase, stuck, link, session),
+        subtitle = when {
+            stuck -> "No answer · try again"
+            known -> statusLine(phase, false, link, session)
+            asked -> "Starting…"
+            link == LinkState.Ready -> "Hands not being adjusted"
+            else -> "Watch connecting…"
+        },
         onBack = onBack,
         gap = 0.dp,
         trailing = {
@@ -209,10 +217,11 @@ fun SetHandsScreen(
                                 WatchHand.ACTIVITY to "Activity",
                             ),
                             hand,
-                            onSelect = { hand = it },
+                            modifier = Modifier.inert(!active),
+                            onSelect = { if (active) hand = it },
                         )
                         Text(
-                            instruction(hand),
+                            if (active) instruction(hand) else "Tap Adjust hands to move them",
                             Modifier.fillMaxWidth(),
                             style = AppTheme.type.rowMeta,
                             color = AppTheme.colors.onSurfaceTertiary,
@@ -224,7 +233,7 @@ fun SetHandsScreen(
                 },
                 dial = {
                     HandDial(
-                        enabled = adjustable && !stuck,
+                        enabled = adjustable,
                         hand = hand,
                         session = session,
                         onSteps = { onNudge(hand, it) },
@@ -237,35 +246,41 @@ fun SetHandsScreen(
                             Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
                         ) {
-                            StepPill("−1°", adjustable && !stuck) { onNudge(hand, -1) }
-                            StepPill("+1°", adjustable && !stuck) { onNudge(hand, 1) }
+                            StepPill("−1°", adjustable) { onNudge(hand, -1) }
+                            StepPill("+1°", adjustable) { onNudge(hand, 1) }
                         }
-                        if (failed || recheck) {
+                        if (!engaged || stuck) {
                             FilledAction(
                                 when {
+                                    stuck -> "Try again"
                                     recheck -> "Check hands again"
-                                    phase == HandsPhase.CANCELLED -> "Start again"
-                                    else -> "Retry"
+                                    else -> "Adjust hands"
                                 },
                                 Modifier.fillMaxWidth(),
                                 shape = AppTheme.pill,
                                 container = MaterialTheme.colorScheme.primaryContainer,
                                 content = MaterialTheme.colorScheme.onPrimaryContainer,
-                                onClick = retry,
+                                onClick = begin,
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             OutlineAction(
                                 "Cancel",
                                 Modifier.weight(1f).padding(vertical = 2.dp),
-                                enabled = adjustable || phase == HandsPhase.WAITING_FOR_WATCH,
-                                onClick = onCancel,
+                                enabled = engaged && (adjustable || phase == HandsPhase.WAITING_FOR_WATCH || stuck),
+                                onClick = {
+                                    onCancel()
+                                    if (stuck) {
+                                        stuck = false
+                                        asked = false
+                                    }
+                                },
                             )
                             FilledAction(
-                                if (phase == HandsPhase.SAVED) "Saved" else "Done",
+                                "Done",
                                 Modifier.weight(1f),
                                 shape = AppTheme.pill,
-                                enabled = phase == HandsPhase.ADJUSTING && !stuck,
+                                enabled = adjustable && phase == HandsPhase.ADJUSTING,
                                 onClick = {
                                     savedHere = true
                                     onSave()
@@ -278,6 +293,18 @@ fun SetHandsScreen(
         }
     }
 }
+
+/** Greys out and swallows every touch when [inert]. */
+private fun Modifier.inert(inert: Boolean): Modifier =
+    if (!inert) this else this
+        .alpha(0.38f)
+        .pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                }
+            }
+        }
 
 private val DIAL_MIN = 140.dp
 private val DIAL_MAX = 320.dp
@@ -530,7 +557,7 @@ private fun instruction(hand: WatchHand) = when (hand) {
 @Composable
 private fun Details(clock: WatchClockView?, now: () -> Long) {
     val lines = listOf(
-        "Bring all three hands to 12 (activity to 0%), then Done",
+        "Adjust hands, bring all three to 12 (activity 0%), then Done",
         "Cancel or Back keeps the old setting",
         "1° = 10 s on the minute hand, 2 min on the hour hand",
         "The crown may move the last hand moved",
@@ -556,7 +583,7 @@ private fun statusLine(phase: HandsPhase?, stuck: Boolean, link: LinkState, sess
             null, HandsPhase.IDLE -> "Starting…"
             HandsPhase.WAITING_FOR_WATCH ->
                 if (link == LinkState.Ready) "Watch connecting…" else "Waiting for the watch…"
-            HandsPhase.TIMED_OUT -> "Watch not reachable — tap Retry"
+            HandsPhase.TIMED_OUT -> "Watch not reachable"
             HandsPhase.STARTING -> "Hands moving to 12…"
             HandsPhase.ADJUSTING -> if ((session?.pendingSteps ?: 0) != 0) "Moving…" else "Ready"
             HandsPhase.SAVING -> "Saving…"

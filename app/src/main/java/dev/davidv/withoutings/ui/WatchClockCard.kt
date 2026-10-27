@@ -21,6 +21,10 @@ import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -168,9 +172,31 @@ private fun CustomTimeDialog(nowMs: Long, zone: ZoneId, onDismiss: () -> Unit, o
 /** The picker and its zone note; the dial when there is room, else typed fields. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CustomTimeBody(state: TimePickerState, gmtOffsetSeconds: Int, roomy: Boolean) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun CustomTimeFields(state: TimePickerState, roomy: Boolean) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         if (roomy) TimePicker(state) else TimeInput(state)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CustomTimeBody(state: TimePickerState, gmtOffsetSeconds: Int, roomy: Boolean) {
+    // The picker's time fields are fixed-size boxes, so its big digits are
+    // clipped once the font is scaled up. Smaller digits, and no font scaling
+    // inside the picker, keep them whole.
+    val density = LocalDensity.current
+    val type = MaterialTheme.typography
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 1f)) {
+            MaterialTheme(
+                typography = type.copy(
+                    displayLarge = type.displayLarge.copy(fontSize = 40.sp, lineHeight = 48.sp),
+                    displayMedium = type.displayMedium.copy(fontSize = 36.sp, lineHeight = 44.sp),
+                ),
+            ) {
+                CustomTimeFields(state, roomy)
+            }
+        }
         Text(
             "Phone zone, ${gmt(gmtOffsetSeconds)}",
             style = AppTheme.type.rowMeta,

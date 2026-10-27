@@ -995,24 +995,19 @@ class WatchViewModel : ViewModel() {
         }
     }
 
-    /** Opens a session and keeps reading it, a few times a second, until [endHands]. */
-    fun startHands() {
+    /**
+     * The screen opened: reads the watch's clock and keeps reading it (and any
+     * session), a few times a second, until [endHands]. No session is started;
+     * that waits for [startHands].
+     */
+    fun openHands() {
         handsVisit += 1
         handsSaveAsked = false
         handsFresh = false
         _hands.value = null
         _clockSetAsked.value = false
-        val service = WatchRepository.get()
-        if (service == null) {
-            Log.w("Hands", "no watch service to start a session on")
-        } else {
+        WatchRepository.get()?.let { service ->
             viewModelScope.launch(handsLane) {
-                runCatching { service.handsStart() }
-                    .onSuccess {
-                        handsFresh = true
-                        _hands.value = it
-                    }
-                    .onFailure { Log.w("Hands", "start failed", it) }
                 runCatching { service.clockRead() }
                     .onSuccess { _watchClock.value = it }
                     .onFailure { Log.w("Hands", "time read failed", it) }
@@ -1030,6 +1025,27 @@ class WatchViewModel : ViewModel() {
                 }
                 delay(HANDS_POLL_MS)
             }
+        }
+    }
+
+    /** Opens a hand-setting session (CMD_HANDS_CAL_START), asked for on the screen. */
+    fun startHands() {
+        handsSaveAsked = false
+        handsFresh = false
+        _hands.value = null
+        _clockSetAsked.value = false
+        val service = WatchRepository.get()
+        if (service == null) {
+            Log.w("Hands", "no watch service to start a session on")
+            return
+        }
+        viewModelScope.launch(handsLane) {
+            runCatching { service.handsStart() }
+                .onSuccess {
+                    handsFresh = true
+                    _hands.value = it
+                }
+                .onFailure { Log.w("Hands", "start failed", it) }
         }
     }
 
@@ -1051,6 +1067,10 @@ class WatchViewModel : ViewModel() {
      */
     fun endHands() {
         if (!handsSaveAsked) handsCall { it.handsCancel() }
+        // The screen is gone: its session's answers are no longer shown, so a
+        // finished one can't greet the next visit as if it were open.
+        handsFresh = false
+        _hands.value = null
         val visit = handsVisit
         viewModelScope.launch {
             delay(HANDS_SETTLE_MS)
