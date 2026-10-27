@@ -15,7 +15,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Insights
-import androidx.compose.material.icons.rounded.ViewDay
 import androidx.compose.material.icons.rounded.Watch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -30,7 +29,6 @@ import dev.davidv.withoutings.ui.theme.AppTheme
 
 enum class Tab(val route: String, val label: String, val icon: ImageVector) {
     Now("now", "Now", Icons.Rounded.Home),
-    Today("today", "Today", Icons.Rounded.ViewDay),
     Activity("activities", "Activity", Icons.Rounded.FitnessCenter),
     Trends("trends", "Trends", Icons.Rounded.Insights),
     Watch("watch", "Watch", Icons.Rounded.Watch),

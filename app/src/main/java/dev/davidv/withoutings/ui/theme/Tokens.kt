@@ -21,7 +21,6 @@ data class Palette(
     val outline: Color,
     val outlineVariant: Color,
 
-    val onAccentSecondary: Color,
     val onSurfaceTertiary: Color,
     val onSurfaceDim: Color,
     val onSurfaceDisabled: Color,
@@ -63,7 +62,6 @@ val LightPalette = Palette(
     outline = Color(0xFFBFC9C3),
     outlineVariant = Color(0xFFDCE4E0),
 
-    onAccentSecondary = Color(0xFF2C4E46),
     onSurfaceTertiary = Color(0xFF6F7976),
     onSurfaceDim = Color(0xFF8A9490),
     onSurfaceDisabled = Color(0xFFC0C9C5),
@@ -103,7 +101,6 @@ data class Spacing(
     val leading: Dp = 13.dp,
     val bottomNavHeight: Dp = 80.dp,
     val gestureBar: Dp = 12.dp,
-    val railWidth: Dp = 52.dp,
 )
 
 data class Radii(

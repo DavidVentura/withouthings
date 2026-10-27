@@ -55,7 +55,6 @@ import dev.davidv.withoutings.ui.SleepScreen
 import dev.davidv.withoutings.ui.StorageScreen
 import dev.davidv.withoutings.ui.Tab
 import dev.davidv.withoutings.ui.TileSource
-import dev.davidv.withoutings.ui.TodayScreen
 import dev.davidv.withoutings.ui.TrendsScreen
 import dev.davidv.withoutings.ui.WatchActivitiesScreen
 import dev.davidv.withoutings.ui.WatchScreensScreen
@@ -360,21 +359,6 @@ private fun Navigation(
                     onOpenLive = { nav.navigate(Routes.LIVE) },
                     onStartWorkout = { model.startWorkout(it) },
                     onOpenSettings = { nav.navigate(Routes.SETTINGS) },
-                )
-            }
-
-            composable(Tab.Today.route) {
-                TodayScreen(
-                    state = state,
-                    nowMs = nowMs,
-                    onOpenActivity = {
-                        model.showActivity(it)
-                        nav.navigate(Routes.ACTIVITY)
-                    },
-                    onOpenSleep = {
-                        model.showNight()
-                        nav.navigate(Routes.SLEEP)
-                    },
                 )
             }
 
