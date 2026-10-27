@@ -5,7 +5,7 @@ use crate::objects::{
     ActivitySubcategory, AncsStatus, AppProbe, AppProbeOsVersion, Distance, EndTime,
     FeatureTagsDeprecated, Id, InfoType, MeasureCategory, MeasureLiveAppStatus,
     NotificationsDisplayState, Null, Pace, ProbeChallenge, ProbeChallengeResponse, Speed,
-    StartTime, StoredSignalMeta, TimeSet, TrackerUser, TrackerWearPos, VasistasCbt, VasistasType,
+    StartTime, StoredSignalMeta, TrackerUser, TrackerWearPos, VasistasCbt, VasistasType,
     Version, WamScreensList, WamVasistasGet, WorkoutGpsStatus, WorkoutScreenMetadata,
 };
 use crate::signal::{Signal, SignalCollector, SignalStore};
@@ -378,6 +378,8 @@ pub struct Client {
     zone: Option<(i32, Option<DstChange>)>,
     pending_stop: Option<(UnixTime, UnixTime)>,
     features: Vec<Feature>,
+    hands: crate::hands::HandsCalibration,
+    clock: crate::clock::WatchClock,
 }
 
 impl Client {
@@ -424,6 +426,8 @@ impl Client {
             zone: None,
             pending_stop: None,
             features,
+            hands: crate::hands::HandsCalibration::new(),
+            clock: crate::clock::WatchClock::new(),
         }
     }
 
@@ -551,6 +555,15 @@ impl Client {
 
     fn on_tick(&mut self, now: UnixMillis) -> Vec<Action> {
         self.now = Some(now);
+        let mut hands = self.hands.on_tick(now);
+        if self.linked() {
+            hands.extend(self.hands.on_linked(now));
+        }
+        hands.extend(self.clock_pump(now));
+        let hands: Vec<Action> = hands.into_iter().map(Action::Send).collect();
+        if !hands.is_empty() {
+            return hands;
+        }
         let Some(heard) = self.last_heard else {
             return Vec::new();
         };
@@ -569,6 +582,8 @@ impl Client {
 
     fn on_disconnected(&mut self) -> Vec<Action> {
         self.phase = Phase::Idle;
+        self.hands.on_disconnected();
+        self.clock.on_disconnected();
         self.busy_retries = 0;
         self.last_heard = None;
         self.last_spoke = None;
@@ -623,6 +638,19 @@ impl Client {
         self.now = Some(received_at);
         self.last_heard = Some(received_at);
 
+        // A hand-calibration answer (or an error about one) is the session's
+        // alone; the sync must not read an error about a move as its own.
+        if self.hands.claims(&frame) {
+            let mut frames = self.hands.on_frame(&frame, received_at);
+            // A set from the phone held back by the session goes once it ends.
+            frames.extend(self.clock_pump(received_at));
+            return frames.into_iter().map(Action::Send).collect();
+        }
+        if self.clock.claims(&frame) {
+            self.clock.on_frame(&frame, received_at);
+            return Vec::new();
+        }
+
         self.collect_passive(&frame, received_at, &mut records);
         self.collect_history(&frame, &mut records);
         self.live_samples.extend(self.signals.take_live());
@@ -658,6 +686,12 @@ impl Client {
         }
         actions.extend(self.dump.on_frame(&frame).into_iter().map(Action::Send));
         self.spi_flash.on_frame(&frame);
+        actions.extend(
+            self.clock
+                .observe(&frame, received_at)
+                .into_iter()
+                .map(Action::Send),
+        );
 
         // A refused menu write erases the whole store on the watch, so the
         // menu must be re-read after any error.
@@ -768,7 +802,10 @@ impl Client {
                 self.phase = Phase::Syncing;
                 if let (Some(now), Some((gmt_offset, next_change))) = (self.now, self.zone.clone())
                 {
-                    actions.extend(self.set_time(UnixTime(now.0 / 1000), gmt_offset, next_change));
+                    // Phone time, or the custom time asked for on the screen.
+                    let utc = UnixMillis(now.0 + self.clock.shift_ms()).to_seconds();
+                    self.clock.note_set(now, utc, gmt_offset, false);
+                    actions.extend(self.set_time(utc, gmt_offset, next_change));
                 }
                 // Scheduled features are armed for one window at a time, so the
                 // set has to be re-asserted on every connection or a nightly
@@ -1504,19 +1541,65 @@ impl Client {
         gmt_offset: i32,
         next_change: Option<DstChange>,
     ) -> Vec<Action> {
-        let change = next_change.unwrap_or(DstChange {
-            at: UnixTime(0),
+        vec![Action::Send(crate::clock::time_set_frame(
+            now,
             gmt_offset,
-        });
-        vec![Action::Send(Frame::new(
-            Command::CMD_TIME_SET,
-            vec![WppObject::TimeSet(TimeSet {
-                utc: now.0 as u32,
-                gmt_offset,
-                dst_change_time: change.at.0 as u32,
-                next_gmt_offset: change.gmt_offset,
-            })],
+            next_change,
         ))]
+    }
+
+    /// Asks the watch what time it has; sent once the link is up.
+    pub fn clock_read(&mut self, now: UnixMillis) -> Vec<Action> {
+        self.now = Some(now);
+        self.clock.want_read();
+        let frames = self.clock_pump(now);
+        let actions = frames.into_iter().map(Action::Send).collect();
+        self.noted(actions)
+    }
+
+    /// Sets the watch to the phone's clock and zone, then reads it back.
+    /// Held while a hand session is open (the hands are parked at 12) or
+    /// the link is not up.
+    pub fn clock_set_from_phone(
+        &mut self,
+        now: UnixMillis,
+        gmt_offset: i32,
+        next_change: Option<DstChange>,
+    ) -> Vec<Action> {
+        self.now = Some(now);
+        self.set_zone(gmt_offset, next_change);
+        self.clock.want_set(gmt_offset, next_change);
+        let frames = self.clock_pump(now);
+        let actions = frames.into_iter().map(Action::Send).collect();
+        self.noted(actions)
+    }
+
+    /// Sets the watch to the phone's clock moved by `shift_ms` (a time the
+    /// user picked), in the phone's zone; held like [`Self::clock_set_from_phone`].
+    pub fn clock_set_custom(
+        &mut self,
+        now: UnixMillis,
+        gmt_offset: i32,
+        next_change: Option<DstChange>,
+        shift_ms: i64,
+    ) -> Vec<Action> {
+        self.now = Some(now);
+        self.set_zone(gmt_offset, next_change);
+        self.clock.want_set_shifted(gmt_offset, next_change, shift_ms);
+        let frames = self.clock_pump(now);
+        let actions = frames.into_iter().map(Action::Send).collect();
+        self.noted(actions)
+    }
+
+    pub fn clock(&self) -> &crate::clock::WatchClock {
+        &self.clock
+    }
+
+    fn clock_pump(&mut self, now: UnixMillis) -> Vec<Frame> {
+        self.clock.on_tick(now);
+        let linked = self.linked();
+        let hands_open = self.hands.state().is_open();
+        self.clock.pump(now, linked, hands_open)
     }
 
     /// The watch has no read side for this and the write carries the whole
@@ -1579,6 +1662,70 @@ impl Client {
             Vec::new(),
         ))];
         self.noted(actions)
+    }
+
+    fn linked(&self) -> bool {
+        !matches!(
+            self.phase,
+            Phase::Idle | Phase::Probing | Phase::Authenticating | Phase::NotAuthenticated
+        )
+    }
+
+    fn hands_now(&self) -> UnixMillis {
+        self.now.unwrap_or(UnixMillis(0))
+    }
+
+    /// Parks the hands at the watch's idea of 12 o'clock and opens a session
+    /// for moving them. Nothing is sent before the link is authenticated.
+    pub fn hands_start(&mut self, now: UnixMillis) -> Vec<Action> {
+        self.now = Some(now);
+        if !self.linked() {
+            // Just reconnected and not authenticated yet: the start waits for
+            // the link rather than being dropped, which left the screen on
+            // "Starting" for good.
+            self.hands.start_when_linked(now);
+            return Vec::new();
+        }
+        let actions = self.hands.start(now).into_iter().map(Action::Send).collect();
+        self.noted(actions)
+    }
+
+    /// Clockwise when `steps` is positive; one step is a degree of the dial.
+    pub fn hands_nudge(&mut self, hand: crate::hands::Hand, steps: i32) -> Vec<Action> {
+        let now = self.hands_now();
+        let actions = self.hands.nudge(hand, steps, now).into_iter().map(Action::Send).collect();
+        self.noted(actions)
+    }
+
+    pub fn hands_save(&mut self) -> Vec<Action> {
+        let now = self.hands_now();
+        let actions = self.hands.save(now).into_iter().map(Action::Send).collect();
+        self.noted(actions)
+    }
+
+    pub fn hands_cancel(&mut self) -> Vec<Action> {
+        let now = self.hands_now();
+        let actions = self.hands.cancel(now).into_iter().map(Action::Send).collect();
+        self.noted(actions)
+    }
+
+    /// Brings the session's clock up to `now` and sends whatever a command
+    /// left unanswered for too long was holding back. The connection's own
+    /// tick is far too slow for a hand being set by eye, so the screen calls
+    /// this while it is open, and before each tap.
+    pub fn hands_tick(&mut self, now: UnixMillis) -> Vec<Action> {
+        self.now = Some(now);
+        let mut frames = self.hands.on_tick(now);
+        if self.linked() {
+            frames.extend(self.hands.on_linked(now));
+        }
+        frames.extend(self.clock_pump(now));
+        let actions = frames.into_iter().map(Action::Send).collect();
+        self.noted(actions)
+    }
+
+    pub fn hands(&self) -> &crate::hands::HandsCalibration {
+        &self.hands
     }
 
     pub fn factory_reset(&mut self) -> Vec<Action> {
@@ -1784,6 +1931,7 @@ pub fn sha1(data: &[u8]) -> [u8; 20] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::objects::TimeSet;
     use crate::objects::Null;
 
     fn credentials() -> Credentials {
@@ -1879,6 +2027,205 @@ mod tests {
         });
         client
     }
+
+    #[test]
+    fn a_second_session_asked_for_mid_reconnect_starts_once_the_link_is_up() {
+        use crate::hands::{CalState, Hand};
+
+        // The first session saves, and then the link drops and comes back:
+        // the second is asked for while the watch is still being probed.
+        let mut client = authenticated();
+        client.hands_start(UnixMillis(10));
+        client.handle(Event::Frame {
+            received_at: UnixMillis(20),
+            frame: Frame::new(Command::CMD_HANDS_CAL_START, Vec::new()),
+        });
+        client.hands_nudge(Hand::Minute, 3);
+        client.handle(Event::Frame {
+            received_at: UnixMillis(30),
+            frame: Frame::new(Command::CMD_HANDS_MOVE, Vec::new()),
+        });
+        client.hands_save();
+        client.handle(Event::Frame {
+            received_at: UnixMillis(40),
+            frame: Frame::new(Command::CMD_HANDS_CAL_STOP, Vec::new()),
+        });
+        assert_eq!(client.hands().state(), CalState::Saved);
+
+        client.handle(Event::Disconnected);
+        client.handle(Event::Connected);
+        assert!(client.hands_start(UnixMillis(1_000)).is_empty(), "not authenticated yet");
+        assert_eq!(client.hands().state(), CalState::WaitingForWatch);
+
+        client.handle(Event::Frame {
+            received_at: UnixMillis(1_100),
+            frame: Frame::new(Command::CMD_PROBE, Vec::new()),
+        });
+        let actions = client.hands_tick(UnixMillis(1_200));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, Action::Send(f) if f.command == Command::CMD_HANDS_CAL_START)),
+            "{actions:?}"
+        );
+        assert_eq!(client.hands().state(), CalState::Starting);
+        assert_eq!(client.hands().moved(), [0, 0, 0], "a fresh session");
+    }
+
+    fn sends(actions: &[Action], command: Command) -> bool {
+        actions
+            .iter()
+            .any(|a| matches!(a, Action::Send(f) if f.command == command))
+    }
+
+    #[test]
+    fn setting_the_time_from_the_phone_waits_for_the_hand_session_to_end() {
+        use crate::clock::{ReadState, SetState};
+
+        let mut client = authenticated();
+        client.hands_start(UnixMillis(10));
+        client.handle(Event::Frame {
+            received_at: UnixMillis(20),
+            frame: Frame::new(Command::CMD_HANDS_CAL_START, Vec::new()),
+        });
+        let held = client.clock_set_from_phone(UnixMillis(30), 3600, None);
+        assert!(!sends(&held, Command::CMD_TIME_SET), "not while the hands are parked");
+        assert_eq!(client.clock().set_state(), SetState::WaitingForHands);
+
+        client.hands_save();
+        let after_stop = client.handle(Event::Frame {
+            received_at: UnixMillis(1_800_000_000_250),
+            frame: Frame::new(Command::CMD_HANDS_CAL_STOP, Vec::new()),
+        });
+        assert!(sends(&after_stop, Command::CMD_TIME_SET), "{after_stop:?}");
+        assert_eq!(client.clock().set_state(), SetState::Sending);
+        let sync = client.clock().last_sync().unwrap();
+        assert!(sync.from_screen);
+        assert_eq!(sync.gmt_offset, 3600);
+        assert_eq!(sync.phone_utc, UnixTime(1_800_000_000));
+
+        let answered = client.handle(Event::Frame {
+            received_at: UnixMillis(1_800_000_000_400),
+            frame: Frame::new(
+                Command::CMD_TIME_SET,
+                vec![WppObject::TimeSetReply(crate::objects::TimeSetReply { drift: 2 })],
+            ),
+        });
+        assert!(sends(&answered, Command::CMD_TIME_GET), "read back: {answered:?}");
+        assert_eq!(client.clock().set_state(), SetState::Set);
+        assert_eq!(client.clock().read_state(), ReadState::Asking);
+    }
+
+    #[test]
+    fn the_watch_time_is_read_once_linked_and_its_answer_is_kept_from_the_sync() {
+        use crate::clock::ReadState;
+
+        let mut client = Client::new(credentials(), Vec::new(), Vec::new());
+        assert!(client.clock_read(UnixMillis(0)).is_empty(), "nothing goes out unauthenticated");
+        assert_eq!(client.clock().read_state(), ReadState::WaitingForWatch);
+
+        let mut client = authenticated();
+        let asked = client.clock_read(UnixMillis(100));
+        assert!(sends(&asked, Command::CMD_TIME_GET));
+        let answer = client.handle(Event::Frame {
+            received_at: UnixMillis(1_800_000_003_000),
+            frame: Frame::new(
+                Command::CMD_TIME_GET,
+                vec![WppObject::TimeSet(TimeSet {
+                    utc: 1_800_000_001,
+                    gmt_offset: 0,
+                    dst_change_time: 0,
+                    next_gmt_offset: 0,
+                })],
+            ),
+        });
+        assert!(answer.is_empty(), "the sync does not see it: {answer:?}");
+        let reading = client.clock().reading().unwrap();
+        assert_eq!(reading.offset_ms(), -2_000, "the watch is two seconds behind");
+    }
+
+    #[test]
+    fn a_custom_time_survives_the_reconnect_set() {
+        let mut client = authenticated();
+        let sent = client.clock_set_custom(UnixMillis(1_800_000_000_000), 0, None, 3_600_000);
+        assert!(sends(&sent, Command::CMD_TIME_SET));
+        assert_eq!(client.clock().last_sync().unwrap().phone_utc, UnixTime(1_800_003_600));
+
+        client.handle(Event::Disconnected);
+        client.handle(Event::Connected);
+        client.handle(Event::Frame {
+            received_at: UnixMillis(1_800_000_100_000),
+            frame: Frame::new(Command::CMD_PROBE, Vec::new()),
+        });
+        let sync = client.clock().last_sync().unwrap();
+        assert!(!sync.from_screen);
+        assert_eq!(sync.phone_utc, UnixTime(1_800_003_700), "still an hour ahead");
+    }
+
+    #[test]
+    fn the_connections_own_time_set_is_the_last_sync() {
+        let mut client = Client::new(credentials(), Vec::new(), Vec::new());
+        client.set_zone(0, None);
+        client.handle(Event::Connected);
+        client.handle(Event::Frame {
+            received_at: UnixMillis(1_800_000_000_000),
+            frame: Frame::new(Command::CMD_PROBE, Vec::new()),
+        });
+        let sync = client.clock().last_sync().expect("a set goes out after the probe");
+        assert!(!sync.from_screen);
+        assert_eq!(sync.phone_utc, UnixTime(1_800_000_000));
+    }
+
+    #[test]
+    fn hand_calibration_needs_a_link_and_keeps_its_errors_from_the_sync() {
+        use crate::hands::{CalState, Hand};
+        use crate::objects::Cmderror;
+
+        let mut idle = Client::new(credentials(), Vec::new(), Vec::new());
+        assert!(idle.hands_start(UnixMillis(0)).is_empty(), "nothing goes out unauthenticated");
+        assert_eq!(idle.hands().state(), CalState::WaitingForWatch);
+        assert!(idle.hands_tick(UnixMillis(500)).is_empty(), "still not linked");
+
+        let mut client = authenticated();
+        assert_eq!(client.phase(), Phase::Syncing);
+        let actions = client.hands_start(UnixMillis(10));
+        assert!(matches!(&actions[..], [Action::Send(f)] if f.command == Command::CMD_HANDS_CAL_START));
+        assert!(client.hands_nudge(Hand::Minute, 6).is_empty(), "held until the start is answered");
+
+        // An error about the start is the calibration's, not the sync's: the
+        // walk must not move on (no request goes out) because of it.
+        let actions = client.handle(Event::Frame {
+            received_at: UnixMillis(20),
+            frame: Frame::new(
+                Command::CMD_ERROR,
+                vec![WppObject::Cmderror(Cmderror {
+                    cmd: Command::CMD_HANDS_CAL_START.0,
+                    err: Cmderror::ERR_ARG_INVAL,
+                })],
+            ),
+        });
+        assert!(actions.is_empty(), "{actions:?}");
+        assert!(matches!(client.hands().state(), CalState::Failed { command: 286, .. }));
+        assert_eq!(client.phase(), Phase::Syncing);
+
+        // A fresh session runs move then stop, one answer at a time.
+        client.hands_start(UnixMillis(30));
+        client.handle(Event::Frame {
+            received_at: UnixMillis(40),
+            frame: Frame::new(Command::CMD_HANDS_CAL_START, Vec::new()),
+        });
+        let actions = client.hands_nudge(Hand::Hour, -2);
+        assert!(matches!(&actions[..], [Action::Send(f)] if f.command == Command::CMD_HANDS_MOVE));
+        assert!(client.hands_save().is_empty());
+        let actions = client.handle(Event::Frame {
+            received_at: UnixMillis(50),
+            frame: Frame::new(Command::CMD_HANDS_MOVE, Vec::new()),
+        });
+        assert!(matches!(&actions[..], [Action::Send(f)] if f.command == Command::CMD_HANDS_CAL_STOP));
+        client.handle(Event::Disconnected);
+        assert_eq!(client.hands().state(), CalState::Interrupted);
+    }
+
 
     #[test]
     fn a_null_reply_ends_the_category_and_finishes_the_sync() {

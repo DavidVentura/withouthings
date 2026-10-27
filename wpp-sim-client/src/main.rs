@@ -688,6 +688,24 @@ fn hr_measure(link: &mut Link, seconds: u64) -> std::io::Result<()> {
     )
 }
 
+/// A hand-setting session: the hands park at 12, the minute hand goes on a
+/// quarter turn and the hour hand back a twelfth, and the stop keeps it.
+///
+/// Every command waits for its answer, the way the phone's session does, so
+/// a run shows whether the firmware answers each one or stays quiet.
+fn hands(link: &mut Link) -> std::io::Result<()> {
+    use wpp::hands::{move_frame, start_frame, stop_frame, Hand};
+    for step in [
+        Step { label: "hands calibration start", frame: start_frame(), answers: Answers::One },
+        Step { label: "minute hand +90", frame: move_frame(Hand::Minute, 90), answers: Answers::One },
+        Step { label: "hour hand -30", frame: move_frame(Hand::Hour, -30), answers: Answers::One },
+        Step { label: "hands calibration stop", frame: stop_frame(), answers: Answers::One },
+    ] {
+        run(link, &step)?;
+    }
+    Ok(())
+}
+
 /// An alarm the phone sets, and the settings read back.
 fn alarm(link: &mut Link) -> std::io::Result<()> {
     for step in [
@@ -928,6 +946,7 @@ fn main() -> ExitCode {
     let mut body_temp_scenario = false;
     let mut raw_data_scenario = false;
     let mut alarm_scenario = false;
+    let mut hands_scenario = false;
     let mut notify_scenario = false;
     // The notifications to announce over ANCS, each a title and a message, and
     // the ids to take back afterwards.
@@ -992,6 +1011,7 @@ fn main() -> ExitCode {
             "--body-temp" => body_temp_scenario = true,
             "--raw-data" => raw_data_scenario = true,
             "--alarm" => alarm_scenario = true,
+            "--hands" => hands_scenario = true,
             "--notification" => {
                 let text = arguments.next().expect("--notification takes \"<title>|<message>\"");
                 let (title, message) = text.split_once('|').unwrap_or_else(|| {
@@ -1033,7 +1053,7 @@ fn main() -> ExitCode {
                     .expect("--stored takes a stored signal type"),
             ),
             other => {
-                eprintln!("usage: wpp-sim-client [--endpoint host:port | --port n] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--workout <seconds> [--activity <n>]] [--hr-measure <seconds>] [--sleep <seconds>] [--spo2 <seconds>] [--ppg <seconds>] [--body-temp] [--raw-data] [--alarm] [--notify] [--notification \"<title>|<message>\" [--app <bundle id>]] [--dismiss <id>] [--send <command>] [--stored <type>] [--sync] [--update <package> [--version-address <hex>]]");
+                eprintln!("usage: wpp-sim-client [--endpoint host:port | --port n] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--workout <seconds> [--activity <n>]] [--hr-measure <seconds>] [--sleep <seconds>] [--spo2 <seconds>] [--ppg <seconds>] [--body-temp] [--raw-data] [--alarm] [--hands] [--notify] [--notification \"<title>|<message>\" [--app <bundle id>]] [--dismiss <id>] [--send <command>] [--stored <type>] [--sync] [--update <package> [--version-address <hex>]]");
                 eprintln!("unknown argument {other}");
                 return ExitCode::FAILURE;
             }
@@ -1112,6 +1132,7 @@ fn main() -> ExitCode {
         || hr_seconds.is_some()
         || sleep_seconds.is_some()
         || alarm_scenario
+        || hands_scenario
         || notify_scenario
         || !notifications.is_empty()
         || !dismissals.is_empty();
@@ -1143,6 +1164,9 @@ fn main() -> ExitCode {
         }
         if alarm_scenario {
             alarm(&mut link).expect("the link stays up");
+        }
+        if hands_scenario {
+            hands(&mut link).expect("the link stays up");
         }
         if notify_scenario {
             notify(&mut link).expect("the link stays up");
