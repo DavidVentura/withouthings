@@ -2,7 +2,7 @@ use crate::activity::Minute;
 use crate::debug_dump::DebugDump;
 use crate::frame::Channel;
 use crate::objects::{
-    ActivitySubcategory, AncsStatus, AppProbe, AppProbeOsVersion, Distance, EndTime,
+    ActivitySubcategory, AncsStatus, AppProbe, AppProbeOsVersion, Cmderror, Distance, EndTime,
     FeatureTagsDeprecated, Id, InfoType, MeasureCategory, MeasureLiveAppStatus,
     NotificationsDisplayState, Null, Pace, ProbeChallenge, ProbeChallengeResponse, Speed,
     StartTime, StoredSignalMeta, TimeSet, TrackerUser, TrackerWearPos, VasistasCbt, VasistasType,
@@ -13,7 +13,13 @@ use crate::spiflash::{SpiFlash, SpiFlashProgress};
 use crate::units::{UnixMillis, UnixTime};
 use crate::{Command, Frame, WppObject};
 
-const ERR_DEVBUSY: i32 = -2;
+pub(crate) fn refuses(frame: &Frame, cmd: Command, err: i32) -> bool {
+    frame.command.opcode() == Command::CMD_ERROR.0
+        && frame
+            .objects
+            .iter()
+            .any(|o| matches!(o, WppObject::Cmderror(e) if e.cmd == cmd.0 && e.err == err))
+}
 
 pub(crate) fn rejects_probe(frame: &Frame) -> bool {
     frame.objects.iter().any(|o| {
@@ -797,7 +803,7 @@ impl Client {
                 let busy = frame
                     .objects
                     .iter()
-                    .any(|o| matches!(o, WppObject::Cmderror(e) if e.err == ERR_DEVBUSY));
+                    .any(|o| matches!(o, WppObject::Cmderror(e) if e.err == Cmderror::ERR_DEVBUSY));
                 if busy && self.busy_retries < MAX_BUSY_RETRIES {
                     self.busy_retries += 1;
                     actions.extend(self.request_current());
@@ -1648,7 +1654,7 @@ impl Client {
             let busy = frame
                 .objects
                 .iter()
-                .any(|o| matches!(o, WppObject::Cmderror(e) if e.err == ERR_DEVBUSY));
+                .any(|o| matches!(o, WppObject::Cmderror(e) if e.err == Cmderror::ERR_DEVBUSY));
             if busy && self.busy_retries < MAX_BUSY_RETRIES {
                 self.busy_retries += 1;
                 return vec![Action::Send(stored_signal_request(store))];
