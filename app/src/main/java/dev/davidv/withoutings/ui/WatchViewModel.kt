@@ -42,6 +42,9 @@ import uniffi.wpp_ffi.Activity
 import uniffi.wpp_ffi.ActivityTotals
 import uniffi.wpp_ffi.ArmedScan
 import uniffi.wpp_ffi.HealthFeature
+import uniffi.wpp_ffi.HandsSession
+import uniffi.wpp_ffi.WatchClockView
+import uniffi.wpp_ffi.WatchHand
 import uniffi.wpp_ffi.Point
 import uniffi.wpp_ffi.RouteTrack
 import uniffi.wpp_ffi.TrackSummary
@@ -142,6 +145,9 @@ data class HomeState(
 )
 
 const val MS_TO_KMH = 3.6
+
+private const val HANDS_POLL_MS = 250L
+private const val HANDS_SETTLE_MS = 15_000L
 
 private const val DEFAULT_WINDOW_MS = 10 * 60 * 1000L
 
@@ -948,6 +954,151 @@ class WatchViewModel : ViewModel() {
         val service = WatchRepository.get() ?: return
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { service.stopWorkout() }.onFailure { Log.w(TAG, "stop workout", it) }
+        }
+    }
+
+    private val _hands = MutableStateFlow<HandsSession?>(null)
+    val hands: StateFlow<HandsSession?> = _hands.asStateFlow()
+
+    /** The watch's clock as it last answered, kept across visits: it is dated. */
+    private val _watchClock = MutableStateFlow<WatchClockView?>(null)
+    val watchClock: StateFlow<WatchClockView?> = _watchClock.asStateFlow()
+
+    /** A set from the phone was asked for during this visit. */
+    private val _clockSetAsked = MutableStateFlow(false)
+    val clockSetAsked: StateFlow<Boolean> = _clockSetAsked.asStateFlow()
+
+    /**
+     * One lane for the hand-setting calls, so taps reach the watch in the
+     * order they were made and a cancel can never overtake a nudge.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val handsLane = Dispatchers.IO.limitedParallelism(1)
+    private var handsPoll: Job? = null
+    private var handsSaveAsked = false
+    /** Bumped by every visit, so the last visit's clean-up leaves this one alone. */
+    private var handsVisit = 0
+
+    /**
+     * False from a new visit until its start has answered: a read already on
+     * its way from the last session (Saved, Cancelled) must not land in this
+     * one and make the screen think it is finished.
+     */
+    @Volatile private var handsFresh = false
+
+    private fun handsCall(call: (WatchService) -> HandsSession) {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch(handsLane) {
+            runCatching { call(service) }
+                .onSuccess { if (handsFresh) _hands.value = it }
+                .onFailure { Log.w("Hands", "hand-setting call failed", it) }
+        }
+    }
+
+    /** Opens a session and keeps reading it, a few times a second, until [endHands]. */
+    fun startHands() {
+        handsVisit += 1
+        handsSaveAsked = false
+        handsFresh = false
+        _hands.value = null
+        _clockSetAsked.value = false
+        val service = WatchRepository.get()
+        if (service == null) {
+            Log.w("Hands", "no watch service to start a session on")
+        } else {
+            viewModelScope.launch(handsLane) {
+                runCatching { service.handsStart() }
+                    .onSuccess {
+                        handsFresh = true
+                        _hands.value = it
+                    }
+                    .onFailure { Log.w("Hands", "start failed", it) }
+                runCatching { service.clockRead() }
+                    .onSuccess { _watchClock.value = it }
+                    .onFailure { Log.w("Hands", "time read failed", it) }
+            }
+        }
+        if (handsPoll?.isActive == true) return
+        handsPoll = viewModelScope.launch(handsLane) {
+            while (true) {
+                WatchRepository.get()?.let { service ->
+                    if (handsFresh) {
+                        runCatching { service.handsSession() }
+                            .onSuccess { if (handsFresh) _hands.value = it }
+                    }
+                    runCatching { service.watchClock() }.onSuccess { _watchClock.value = it }
+                }
+                delay(HANDS_POLL_MS)
+            }
+        }
+    }
+
+    fun nudgeHand(hand: WatchHand, steps: Int) {
+        if (steps != 0) handsCall { it.handsNudge(hand, steps) }
+    }
+
+    fun saveHands() {
+        handsSaveAsked = true
+        handsCall { it.handsSave() }
+    }
+
+    /**
+     * Leaves the screen: whatever is still open is put back as it was. The
+     * core ignores a cancel once nothing is open, and once a save's stop is
+     * on its way, so this only ever undoes an unfinished session. Reading
+     * carries on for a while so a cancel's move-back fallback still gets its
+     * ticks, then stops unless a new visit has begun.
+     */
+    fun endHands() {
+        if (!handsSaveAsked) handsCall { it.handsCancel() }
+        val visit = handsVisit
+        viewModelScope.launch {
+            delay(HANDS_SETTLE_MS)
+            if (handsVisit == visit) {
+                handsPoll?.cancel()
+                handsPoll = null
+                handsFresh = false
+                _hands.value = null
+            }
+        }
+    }
+
+    fun cancelHands() = handsCall { it.handsCancel() }
+
+    /** Asks the watch for its time again. */
+    fun readWatchClock() {
+        val service = WatchRepository.get() ?: return
+        viewModelScope.launch(handsLane) {
+            runCatching { service.clockRead() }
+                .onSuccess { _watchClock.value = it }
+                .onFailure { Log.w("Hands", "time read failed", it) }
+        }
+    }
+
+    /**
+     * Sets the watch to the phone's time and zone, as the sync does on every
+     * connection. The core holds it while a hand session is open.
+     */
+    fun setWatchClockFromPhone() {
+        val service = WatchRepository.get() ?: return
+        _clockSetAsked.value = true
+        val (offset, next) = dev.davidv.withoutings.phoneZone()
+        viewModelScope.launch(handsLane) {
+            runCatching { service.clockSetFromPhone(offset, next) }
+                .onSuccess { _watchClock.value = it }
+                .onFailure { Log.w("Hands", "time set failed", it) }
+        }
+    }
+
+    /** Sets the watch to a picked time: the phone's clock plus [shiftMs], phone zone. */
+    fun setWatchClockCustom(shiftMs: Long) {
+        val service = WatchRepository.get() ?: return
+        _clockSetAsked.value = true
+        val (offset, next) = dev.davidv.withoutings.phoneZone()
+        viewModelScope.launch(handsLane) {
+            runCatching { service.clockSetCustom(offset, next, shiftMs) }
+                .onSuccess { _watchClock.value = it }
+                .onFailure { Log.w("Hands", "custom time set failed", it) }
         }
     }
 
