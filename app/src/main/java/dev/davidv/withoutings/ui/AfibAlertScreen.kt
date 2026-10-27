@@ -18,7 +18,6 @@ import androidx.compose.ui.unit.dp
 import dev.davidv.withoutings.ui.theme.AppTheme
 import uniffi.wpp_ffi.AfibAlert
 import uniffi.wpp_ffi.AfibReading
-import uniffi.wpp_ffi.BeatIntervalKind
 import uniffi.wpp_ffi.PulseAnalysis
 
 @Composable
@@ -65,90 +64,55 @@ fun AfibAlertScreen(alert: AfibAlert?, onOpenEcg: (Long) -> Unit, onBack: () -> 
     }
 }
 
-private fun groupOf(analysis: PulseAnalysis): String = when (analysis) {
-    is PulseAnalysis.Assessed -> patternLabel(analysis.rhythm.pattern)
-    is PulseAnalysis.Shifted -> "Rate changed"
-    else -> "Unreadable"
-}
-
 @Composable
 private fun SummaryCard(readings: List<AfibReading>) {
     if (readings.isEmpty()) return
-    val groups = readings.groupingBy { groupOf(it.analysis) }.eachCount()
-        .entries.sortedByDescending { it.value }
-    val (top, topCount) = groups.first()
-    val early = readings.sumOf { reading ->
-        (reading.analysis as? PulseAnalysis.Assessed)?.rhythm?.earlyBeats?.toInt() ?: 0
+    val meanings = readings.map { pulseVerdict(it.analysis).meaning }
+    val counts = Meaning.entries.associateWith { meaning -> meanings.count { it == meaning } }
+    val irregular = counts.getValue(Meaning.IRREGULAR)
+    val headline = when {
+        irregular == 1 -> "1 irregular reading"
+        irregular > 1 -> "$irregular irregular readings"
+        counts.getValue(Meaning.NORMAL) * 2 > readings.size -> "Looks normal"
+        else -> "No irregular readings"
     }
-    val merged = readings.sumOf { reading -> reading.intervals.count { it.kind == BeatIntervalKind.MERGED } }
-    val asleep = readings.count { it.asleep }
-    val lines = listOfNotNull(
-        "$asleep of ${readings.size} readings while asleep",
-        groups.joinToString(" · ") { (label, count) -> "$count ${label.lowercase()}" },
-        when (early) {
-            0 -> null
-            1 -> "1 early beat across the readings"
-            else -> "$early early beats across the readings"
-        },
-        when (merged) {
-            0 -> null
-            1 -> "1 pulse the sensor counted twice, merged back"
-            else -> "$merged pulses the sensor counted twice, merged back"
-        },
-    )
     ChartCard(Modifier.fillMaxWidth()) {
-        Column(
-            Modifier.padding(horizontal = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            SpeculativeEyebrow()
+        Column(Modifier.padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Local analysis", style = AppTheme.type.rowMeta, color = AppTheme.colors.onSurfaceTertiary)
+            Text(headline, style = AppTheme.type.resultTitle)
             Text(
-                if (topCount * 2 > readings.size) "Mostly ${top.lowercase()}" else "Mixed",
-                style = AppTheme.type.resultTitle,
+                listOf("${readings.count { it.asleep }} of ${readings.size} asleep")
+                    .plus(counts.filterValues { it > 0 }.map { (meaning, count) -> "$count ${meaning.label.lowercase()}" })
+                    .joinToString(" · "),
+                style = AppTheme.type.body,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            lines.forEach {
-                Text(it, style = AppTheme.type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
         }
     }
 }
 
 @Composable
 private fun ReadingCard(reading: AfibReading, confirming: Boolean) {
-    val intervals = reading.intervals
+    val verdict = pulseVerdict(reading.analysis)
     ChartCard(Modifier.fillMaxWidth()) {
-        Column(
-            Modifier.padding(horizontal = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                if (confirming) "${clock(reading.measuredAtMs)} · confirmed" else clock(reading.measuredAtMs),
-                style = AppTheme.type.rowTitle,
-            )
+        Column(Modifier.padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 listOfNotNull(
-                    fullDate(reading.measuredAtMs),
+                    clock(reading.measuredAtMs),
+                    "confirmed".takeIf { confirming },
                     if (reading.asleep) "asleep" else "awake",
                     reading.heartRate?.let { "$it bpm" },
-                    "${intervals.size} beats in ${reading.seconds} s",
                 ).joinToString(" · "),
                 style = AppTheme.type.rowMeta,
                 color = AppTheme.colors.onSurfaceTertiary,
             )
-            Spacer(Modifier.height(4.dp))
-            SpeculativeEyebrow()
-            Text(pulseLabel(reading.analysis), style = AppTheme.type.rowTitle)
-            pulseLines(reading).forEach {
-                Text(it, style = AppTheme.type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            VerdictText(verdict)
         }
-        Spacer(Modifier.height(8.dp))
-        Column(
-            Modifier.padding(horizontal = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            IntervalPlots(intervals, (reading.analysis as? PulseAnalysis.Assessed)?.rhythm)
-            IntervalLegend(intervals)
+        if (verdict.meaning != Meaning.NOT_USABLE) {
+            Spacer(Modifier.height(8.dp))
+            Column(Modifier.padding(horizontal = 8.dp)) {
+                IntervalPlots(reading.intervalsMs, (reading.analysis as? PulseAnalysis.Assessed)?.rhythm)
+            }
         }
     }
 }

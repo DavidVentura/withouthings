@@ -756,16 +756,6 @@ pub fn read_ecg(samples: &[i16], sampling_freq: u16) -> EcgReading {
     }
 }
 
-impl EcgReading {
-    pub fn early_beats(&self) -> impl Iterator<Item = &EcgBeat> {
-        self.intervals
-            .iter()
-            .zip(self.beats.iter().skip(1))
-            .filter(|(interval, _)| interval.kind == IntervalKind::Early)
-            .map(|(_, beat)| beat)
-    }
-}
-
 fn plain(lengths: &[f64]) -> Vec<Interval> {
     lengths
         .iter()

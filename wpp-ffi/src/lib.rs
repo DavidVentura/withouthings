@@ -576,26 +576,10 @@ pub struct AfibEpisode {
 pub struct AfibReading {
     pub id: i64,
     pub measured_at_ms: i64,
-    pub seconds: u32,
     pub heart_rate: Option<u32>,
-    pub intervals: Vec<BeatInterval>,
+    pub intervals_ms: Vec<u32>,
     pub analysis: PulseAnalysis,
     pub asleep: bool,
-    pub watch_breaths_per_minute: Option<u32>,
-}
-
-#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BeatIntervalKind {
-    Beat,
-    Merged,
-    Early,
-    Pause,
-}
-
-#[derive(uniffi::Record, Debug, Clone, PartialEq)]
-pub struct BeatInterval {
-    pub ms: u32,
-    pub kind: BeatIntervalKind,
 }
 
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
@@ -606,9 +590,6 @@ pub struct WavePoint {
 
 #[derive(uniffi::Record, Debug, Clone, PartialEq)]
 pub struct BreathingWave {
-    pub per_minute: f64,
-    pub share: f64,
-    pub chance: f64,
     pub curve: Vec<WavePoint>,
 }
 
@@ -624,16 +605,14 @@ pub enum RhythmPattern {
 pub struct RhythmAnalysis {
     pub pattern: RhythmPattern,
     pub wave: Option<BreathingWave>,
-    pub rate: u32,
-    pub early_beats: u32,
 }
 
 #[derive(uniffi::Enum, Debug, Clone, PartialEq)]
 pub enum PulseAnalysis {
     NoWatchRate,
     TooFew,
-    Disagrees { counted: u32, watch: u32 },
-    Shifted { from: u32, to: u32 },
+    Disagrees,
+    Shifted,
     Assessed { rhythm: RhythmAnalysis },
 }
 
@@ -641,15 +620,11 @@ pub enum PulseAnalysis {
 pub enum EcgAnalysis {
     TooFew,
     Noisy,
-    Shifted {
-        from: u32,
-        to: u32,
-    },
+    Shifted,
     Assessed {
         rhythm: RhythmAnalysis,
-        beats: u32,
         p_waves: u32,
-        unusual_early_beats: u32,
+        early_beats: u32,
     },
 }
 
@@ -2119,75 +2094,43 @@ fn afib_reading(
     )?;
     let (intervals, analysis) = match watch {
         None => (
-            raw.iter()
-                .map(|ms| BeatInterval {
-                    ms: ms.0 as u32,
-                    kind: BeatIntervalKind::Beat,
-                })
-                .collect::<Vec<_>>(),
+            raw.iter().map(|ms| ms.0.round() as u32).collect::<Vec<_>>(),
             PulseAnalysis::NoWatchRate,
         ),
         Some(watch) => {
             let reading = read_pulse(&raw, Bpm(watch as u16));
             let analysis = match reading.verdict {
                 PulseVerdict::TooFew { .. } => PulseAnalysis::TooFew,
-                PulseVerdict::Disagrees { counted, watch } => PulseAnalysis::Disagrees {
-                    counted: counted.0 as u32,
-                    watch: watch.0 as u32,
-                },
-                PulseVerdict::Shifted(shift) => PulseAnalysis::Shifted {
-                    from: shift.from.0 as u32,
-                    to: shift.to.0 as u32,
-                },
+                PulseVerdict::Disagrees { .. } => PulseAnalysis::Disagrees,
+                PulseVerdict::Shifted(_) => PulseAnalysis::Shifted,
                 PulseVerdict::Assessed(rhythm) => PulseAnalysis::Assessed {
                     rhythm: rhythm_analysis(&rhythm),
                 },
             };
             (
-                reading.intervals.iter().map(beat_interval).collect(),
+                reading
+                    .intervals
+                    .iter()
+                    .map(|interval| interval.length.0.round() as u32)
+                    .collect(),
                 analysis,
             )
         }
     };
     let heart_rate = (!intervals.is_empty()).then(|| {
-        let mean = intervals.iter().map(|i| i.ms).sum::<u32>() / intervals.len() as u32;
+        let mean = intervals.iter().copied().sum::<u32>() / intervals.len() as u32;
         60_000 / mean.max(1)
     });
     Ok(AfibReading {
         id: row.id,
         measured_at_ms: row.measured_at_ms,
-        seconds: row.duration_secs as u32,
         heart_rate,
-        intervals,
+        intervals_ms: intervals,
         analysis,
         asleep: asleep
             .iter()
             .any(|span| (span.from_ms..span.to_ms).contains(&row.measured_at_ms)),
-        watch_breaths_per_minute: store
-            .nearest_sample(
-                device_id,
-                wpp::SampleKind::RespiratoryRate.id(),
-                row.measured_at_ms,
-                WATCH_BREATHS_WITHIN_MS,
-            )?
-            .map(|per_minute| per_minute as u32),
     })
-}
-
-/// The watch logs a breathing rate about every ten minutes.
-const WATCH_BREATHS_WITHIN_MS: i64 = 10 * 60 * 1000;
-
-fn beat_interval(interval: &wpp::rhythm::Interval) -> BeatInterval {
-    use wpp::rhythm::IntervalKind;
-    BeatInterval {
-        ms: interval.length.0.round() as u32,
-        kind: match interval.kind {
-            IntervalKind::Beat => BeatIntervalKind::Beat,
-            IntervalKind::Merged => BeatIntervalKind::Merged,
-            IntervalKind::Early => BeatIntervalKind::Early,
-            IntervalKind::Pause => BeatIntervalKind::Pause,
-        },
-    }
 }
 
 fn rhythm_analysis(rhythm: &wpp::rhythm::Rhythm) -> RhythmAnalysis {
@@ -2200,9 +2143,6 @@ fn rhythm_analysis(rhythm: &wpp::rhythm::Rhythm) -> RhythmAnalysis {
             Pattern::Irregular => RhythmPattern::Irregular,
         },
         wave: rhythm.wave.as_ref().map(|wave| BreathingWave {
-            per_minute: wave.per_minute,
-            share: wave.share,
-            chance: wave.chance,
             curve: wave
                 .curve
                 .iter()
@@ -2212,28 +2152,19 @@ fn rhythm_analysis(rhythm: &wpp::rhythm::Rhythm) -> RhythmAnalysis {
                 })
                 .collect(),
         }),
-        rate: rhythm.rate.0 as u32,
-        early_beats: rhythm.early_beats as u32,
     }
 }
 
 fn ecg_analysis(reading: &wpp::rhythm::EcgReading) -> EcgAnalysis {
-    use wpp::rhythm::{BeatShape, EcgVerdict};
+    use wpp::rhythm::EcgVerdict;
     match &reading.verdict {
         EcgVerdict::TooFew { .. } => EcgAnalysis::TooFew,
         EcgVerdict::Noisy => EcgAnalysis::Noisy,
-        EcgVerdict::Shifted(shift) => EcgAnalysis::Shifted {
-            from: shift.from.0 as u32,
-            to: shift.to.0 as u32,
-        },
+        EcgVerdict::Shifted(_) => EcgAnalysis::Shifted,
         EcgVerdict::Assessed(rhythm) => EcgAnalysis::Assessed {
             rhythm: rhythm_analysis(rhythm),
-            beats: reading.beats.len() as u32,
             p_waves: reading.beats.iter().filter(|b| b.p_wave).count() as u32,
-            unusual_early_beats: reading
-                .early_beats()
-                .filter(|b| b.shape == BeatShape::Unusual)
-                .count() as u32,
+            early_beats: rhythm.early_beats as u32,
         },
     }
 }
@@ -3672,16 +3603,11 @@ mod tests {
         let reading = afib_reading(&store, device, &reading_row(at), &asleep).unwrap();
         assert!(reading.asleep);
         assert!(
-            reading
-                .intervals
-                .iter()
-                .filter(|i| i.kind == BeatIntervalKind::Merged)
-                .count()
-                >= 20
+            reading.intervals_ms.len() <= SPLIT_NIGHT_READING.len() - 20,
+            "split beats are taken back together"
         );
         match reading.analysis {
             PulseAnalysis::Assessed { rhythm } => {
-                assert!((55..=70).contains(&rhythm.rate), "{rhythm:?}");
                 assert_ne!(rhythm.pattern, RhythmPattern::Irregular);
             }
             other => panic!("{other:?}"),
@@ -3695,7 +3621,7 @@ mod tests {
         let device = store.device("a4:7e:fa:44:d6:10").unwrap();
         let reading = afib_reading(&store, device, &reading_row(DAY_ONE), &[]).unwrap();
         assert_eq!(reading.analysis, PulseAnalysis::NoWatchRate);
-        assert_eq!(reading.intervals.len(), SPLIT_NIGHT_READING.len());
+        assert_eq!(reading.intervals_ms.len(), SPLIT_NIGHT_READING.len());
         assert!(!reading.asleep);
     }
 }
