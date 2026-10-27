@@ -1,10 +1,8 @@
-use crate::client::{probe_frame, rejects_probe, Credentials};
-use crate::objects::{AccountKey, AdvKey, ProbeChallenge, ProbeChallengeResponse};
+use crate::client::{probe_frame, refuses, rejects_probe, Credentials};
+use crate::objects::{AccountKey, AdvKey, Cmderror, ProbeChallenge, ProbeChallengeResponse};
 use crate::{Command, Frame, WppObject};
 
 pub const SECRET_LEN: usize = 32;
-
-const ERR_CMDUNKN: i32 = -3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PairingError {
@@ -18,10 +16,16 @@ pub enum PairingState {
     Idle,
     Probing,
     Associating { mac: String },
-    FinishingSetup { mac: String },
+    FinishingSetup { mac: String, keys: AccountKeys },
     Readopting(Credentials),
     Paired(Credentials),
     AlreadyAssociated,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountKeys {
+    Set,
+    Unsupported,
 }
 
 #[derive(Debug)]
@@ -85,34 +89,6 @@ impl Pairing {
             return Vec::new();
         }
 
-        // Older firmware (original ScanWatch) has no account-key association:
-        // it answers CMD_ASSOCIATION_KEYS_SET with CMDUNKN and authenticates
-        // on a bare probe reply, as Gadgetbridge relies on. Skip the keys and
-        // finish setup.
-        if opcode == Command::CMD_ERROR.0 {
-            let refused = |cmd: u16| {
-                frame.objects.iter().any(|o| {
-                    matches!(o, WppObject::Cmderror(e) if e.cmd == cmd && e.err == ERR_CMDUNKN)
-                })
-            };
-            match &self.state {
-                PairingState::Associating { mac }
-                    if refused(Command::CMD_ASSOCIATION_KEYS_SET.0) =>
-                {
-                    self.state = PairingState::FinishingSetup { mac: mac.clone() };
-                    return vec![Frame::new(Command::CMD_SETUP_OK, Vec::new())];
-                }
-                PairingState::FinishingSetup { mac } if refused(Command::CMD_SETUP_OK.0) => {
-                    self.state = PairingState::Paired(Credentials {
-                        mac: mac.clone(),
-                        secret: self.secret.clone(),
-                    });
-                    return Vec::new();
-                }
-                _ => {}
-            }
-        }
-
         match &self.state {
             PairingState::Probing if opcode == Command::CMD_PROBE_CHALLENGE.0 => {
                 let Some(challenge) = frame.objects.iter().find_map(|o| match o {
@@ -166,10 +142,42 @@ impl Pairing {
                 )]
             }
             PairingState::Associating { mac } if opcode == Command::CMD_ASSOCIATION_KEYS_SET.0 => {
-                self.state = PairingState::FinishingSetup { mac: mac.clone() };
+                self.state = PairingState::FinishingSetup {
+                    mac: mac.clone(),
+                    keys: AccountKeys::Set,
+                };
                 vec![Frame::new(Command::CMD_SETUP_OK, Vec::new())]
             }
-            PairingState::FinishingSetup { mac } if opcode == Command::CMD_SETUP_OK.0 => {
+            // Older firmware (original ScanWatch) has no account-key association:
+            // it answers CMD_ASSOCIATION_KEYS_SET with CMDUNKN and authenticates
+            // on a bare probe reply, as Gadgetbridge relies on. Skip the keys and
+            // finish setup.
+            PairingState::Associating { mac }
+                if refuses(
+                    frame,
+                    Command::CMD_ASSOCIATION_KEYS_SET,
+                    Cmderror::ERR_CMDUNKN,
+                ) =>
+            {
+                self.state = PairingState::FinishingSetup {
+                    mac: mac.clone(),
+                    keys: AccountKeys::Unsupported,
+                };
+                vec![Frame::new(Command::CMD_SETUP_OK, Vec::new())]
+            }
+            PairingState::FinishingSetup { mac, .. } if opcode == Command::CMD_SETUP_OK.0 => {
+                self.state = PairingState::Paired(Credentials {
+                    mac: mac.clone(),
+                    secret: self.secret.clone(),
+                });
+                Vec::new()
+            }
+            // Firmware that predates key association may predate SETUP_OK too.
+            // A watch that took the keys and then refuses setup has not paired.
+            PairingState::FinishingSetup {
+                mac,
+                keys: AccountKeys::Unsupported,
+            } if refuses(frame, Command::CMD_SETUP_OK, Cmderror::ERR_CMDUNKN) => {
                 self.state = PairingState::Paired(Credentials {
                     mac: mac.clone(),
                     secret: self.secret.clone(),
@@ -184,7 +192,7 @@ impl Pairing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::objects::{Cmderror, ProbeChallenge, ProbeReply};
+    use crate::objects::{ProbeChallenge, ProbeReply};
 
     const SECRET: &str = "gUf8Np69A4GvJxjY1XOcIHKQm2HcPZnO";
     const MAC: &str = "a4:7e:fa:44:d6:10";
@@ -243,22 +251,33 @@ mod tests {
         );
     }
 
+    fn refusal(cmd: Command, err: i32) -> Frame {
+        Frame::new(
+            Command::CMD_ERROR,
+            vec![WppObject::Cmderror(Cmderror { cmd: cmd.0, err })],
+        )
+    }
+
+    fn paired() -> PairingState {
+        PairingState::Paired(Credentials {
+            mac: MAC.to_string(),
+            secret: SECRET.to_string(),
+        })
+    }
+
     #[test]
     fn a_watch_without_key_association_is_set_up_without_keys() {
         let mut pairing = pairing();
         pairing.on_connected();
         pairing.on_frame(&probe_reply());
-        let next = pairing.on_frame(&Frame::new(
-            Command::CMD_ERROR,
-            vec![WppObject::Cmderror(Cmderror {
-                cmd: Command::CMD_ASSOCIATION_KEYS_SET.0,
-                err: -3,
-            })],
+        let next = pairing.on_frame(&refusal(
+            Command::CMD_ASSOCIATION_KEYS_SET,
+            Cmderror::ERR_CMDUNKN,
         ));
         assert_eq!(next.len(), 1);
         assert_eq!(next[0].command, Command::CMD_SETUP_OK);
         pairing.on_frame(&Frame::new(Command::CMD_SETUP_OK, Vec::new()));
-        assert!(matches!(pairing.state(), PairingState::Paired(_)));
+        assert_eq!(pairing.state(), &paired());
     }
 
     #[test]
@@ -266,16 +285,30 @@ mod tests {
         let mut pairing = pairing();
         pairing.on_connected();
         pairing.on_frame(&probe_reply());
-        let refuse = |cmd: Command| {
-            Frame::new(
-                Command::CMD_ERROR,
-                vec![WppObject::Cmderror(Cmderror { cmd: cmd.0, err: -3 })],
-            )
-        };
-        pairing.on_frame(&refuse(Command::CMD_ASSOCIATION_KEYS_SET));
-        let next = pairing.on_frame(&refuse(Command::CMD_SETUP_OK));
+        pairing.on_frame(&refusal(
+            Command::CMD_ASSOCIATION_KEYS_SET,
+            Cmderror::ERR_CMDUNKN,
+        ));
+        let next = pairing.on_frame(&refusal(Command::CMD_SETUP_OK, Cmderror::ERR_CMDUNKN));
         assert!(next.is_empty());
-        assert!(matches!(pairing.state(), PairingState::Paired(_)));
+        assert_eq!(pairing.state(), &paired());
+    }
+
+    #[test]
+    fn a_refused_setup_ok_after_the_keys_were_taken_does_not_pair() {
+        let mut pairing = pairing();
+        pairing.on_connected();
+        pairing.on_frame(&probe_reply());
+        pairing.on_frame(&Frame::new(Command::CMD_ASSOCIATION_KEYS_SET, Vec::new()));
+        let next = pairing.on_frame(&refusal(Command::CMD_SETUP_OK, Cmderror::ERR_CMDUNKN));
+        assert!(next.is_empty());
+        assert_eq!(
+            pairing.state(),
+            &PairingState::FinishingSetup {
+                mac: MAC.to_string(),
+                keys: AccountKeys::Set,
+            }
+        );
     }
 
     #[test]
@@ -283,13 +316,17 @@ mod tests {
         let mut pairing = pairing();
         pairing.on_connected();
         pairing.on_frame(&probe_reply());
-        let before = format!("{:?}", pairing.state());
-        let next = pairing.on_frame(&Frame::new(
-            Command::CMD_ERROR,
-            vec![WppObject::Cmderror(Cmderror { cmd: Command::CMD_ASSOCIATION_KEYS_SET.0, err: -1 })],
+        let next = pairing.on_frame(&refusal(
+            Command::CMD_ASSOCIATION_KEYS_SET,
+            Cmderror::ERR_FAIL,
         ));
-        assert!(next.iter().all(|f| f.command != Command::CMD_SETUP_OK));
-        assert_eq!(before, format!("{:?}", pairing.state()));
+        assert!(next.is_empty());
+        assert_eq!(
+            pairing.state(),
+            &PairingState::Associating {
+                mac: MAC.to_string(),
+            }
+        );
     }
 
     #[test]
