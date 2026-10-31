@@ -9,9 +9,9 @@ use wpp::client::{
     Category, DeviceIdentity, Feature, FeatureId, FeatureSchedule, Record, SampleKind, Source,
     UserProfile, BATTERY_STATE_CHARGING,
 };
-use wpp::signal::{MeasureType, SampleFormat, Signal, SignalKind};
+use wpp::signal::{MeasureType, Recording, SampleFormat, Signal, SignalKind};
 use wpp::track::Fix;
-use wpp::units::{Duration, Edges, Hundredths, UnixMillis, UnixTime};
+use wpp::units::{Duration, Edges, Hundredths, SamplingHz, UnixMillis, UnixTime};
 
 pub use rusqlite::Error;
 
@@ -148,8 +148,14 @@ pub struct EcgSummaryRow {
     pub id: EcgId,
     pub measured_at: UnixMillis,
     pub kind: SignalKind,
-    pub sampling_hz: i64,
+    pub sampling_hz: SamplingHz,
     pub sample_bytes: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredEcg {
+    pub measured_at: UnixMillis,
+    pub recording: Recording,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1232,23 +1238,19 @@ impl Store {
         )?;
         let rows = stmt.query_map(params![device_id, SampleFormat::DELTA_META], |r| {
             let signal_type: u16 = r.get(2)?;
-            Ok(SignalKind::from_type_id(signal_type).map(|kind| {
-                Ok::<_, Error>(EcgSummaryRow {
-                    id: r.get(0)?,
-                    measured_at: millis(r, 1)?,
-                    kind,
-                    sampling_hz: r.get(3)?,
-                    sample_bytes: r.get(4)?,
-                })
+            let Some(kind) = SignalKind::from_type_id(signal_type) else {
+                return Ok(None);
+            };
+            let hz: u16 = r.get(3)?;
+            Ok(Some(EcgSummaryRow {
+                id: r.get(0)?,
+                measured_at: millis(r, 1)?,
+                kind,
+                sampling_hz: SamplingHz::new(hz).ok_or_else(|| corrupt(3, "sampling rate 0"))?,
+                sample_bytes: r.get(4)?,
             }))
         })?;
-        let mut found = Vec::new();
-        for row in rows {
-            if let Some(summary) = row? {
-                found.push(summary?);
-            }
-        }
-        Ok(found)
+        rows.filter_map(Result::transpose).collect()
     }
 
     pub fn ecg_measures(&self, ecg_id: EcgId) -> Result<Vec<EcgMeasure>, Error> {
@@ -1265,13 +1267,30 @@ impl Store {
         rows.collect()
     }
 
-    pub fn ecg(&self, id: EcgId) -> Result<Option<(i64, i64, i64, i64, Vec<u8>)>, Error> {
+    /// None for an id not on file and for a delta-coded recording, which
+    /// [`Store::ecgs`] does not offer either. Any other row that cannot be
+    /// taken apart is an error.
+    pub fn ecg(&self, id: EcgId) -> Result<Option<StoredEcg>, Error> {
         self.conn
             .query_row(
-                "SELECT measured_at, signal_type, sampling_hz, lead_count, samples
+                "SELECT measured_at, signal_type, format, sampling_hz, lead_count, samples
                    FROM ecg WHERE id = ?1 AND format != ?2",
                 params![id, SampleFormat::DELTA_META],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                |r| {
+                    let samples: Vec<u8> = r.get(5)?;
+                    let recording = Recording::decode(
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        &samples,
+                    )
+                    .map_err(|err| corrupt(5, err))?;
+                    Ok(StoredEcg {
+                        measured_at: millis(r, 0)?,
+                        recording,
+                    })
+                },
             )
             .optional()
     }
@@ -1471,7 +1490,7 @@ fn store_ecg(
             measured_at,
             signal.meta.r#type,
             signal.meta.sampling_freq,
-            signal.lead_count() as i64,
+            signal.meta.channel,
             signal.meta.resolution,
             signal.meta.format,
             offset,
@@ -2347,6 +2366,40 @@ mod tests {
 
         assert_eq!(store.count("workout").unwrap(), 0);
         assert_eq!(store.count("marker").unwrap(), 1, "the one before it stays");
+    }
+
+    #[test]
+    fn an_ecg_row_that_cannot_be_a_recording_is_an_error_rather_than_a_clamp() {
+        use wpp::objects::{StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend};
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let signal = Signal {
+            meta: StoredSignalMeta {
+                r#type: 7,
+                sampling_freq: 300,
+                format: 0,
+                size: 2,
+                resolution: 14,
+                channel: 0,
+            },
+            extend: StoredSignalMetaExtend::default(),
+            units: None,
+            measure: Some(StoredMeasureMeta::default()),
+            measures: Vec::new(),
+            data: vec![1, 0],
+        };
+        store
+            .store(
+                device,
+                &[Record::Ecg {
+                    measured_at: UnixTime(1000),
+                    signal: Box::new(signal),
+                }],
+            )
+            .unwrap();
+
+        let id = store.ecgs(device).unwrap()[0].id;
+        assert!(store.ecg(id).is_err());
     }
 
     #[test]

@@ -1,14 +1,14 @@
-use crate::units::{Bpm, Millis};
+use crate::units::{Bpm, Millis, SamplingHz};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RPeaks {
     pub indices: Vec<usize>,
-    pub sampling_freq: u16,
+    pub sampling_freq: SamplingHz,
 }
 
 impl RPeaks {
     pub fn rr_intervals(&self) -> Vec<Millis> {
-        let freq = self.sampling_freq.max(1) as f64;
+        let freq = self.sampling_freq.as_f64();
         self.indices
             .windows(2)
             .map(|w| Millis((w[1] - w[0]) as f64 * 1000.0 / freq))
@@ -59,12 +59,11 @@ const PEAK_SEARCH_SECS: f64 = 0.06;
 /// readily as an upright one.
 const BASELINE_SECS: f64 = 0.3;
 
-pub fn detect_r_peaks(samples: &[i16], sampling_freq: u16) -> RPeaks {
-    let freq = sampling_freq.max(1);
-    let at = |secs: f64| (secs * freq as f64) as usize;
+pub fn detect_r_peaks(samples: &[i16], sampling_freq: SamplingHz) -> RPeaks {
+    let at = |secs: f64| (secs * sampling_freq.as_f64()) as usize;
     let none = RPeaks {
         indices: Vec::new(),
-        sampling_freq: freq,
+        sampling_freq,
     };
     if samples.len() < at(REFRACTORY_SECS) * 2 {
         return none;
@@ -110,7 +109,7 @@ pub fn detect_r_peaks(samples: &[i16], sampling_freq: u16) -> RPeaks {
     }
     RPeaks {
         indices,
-        sampling_freq: freq,
+        sampling_freq,
     }
 }
 
@@ -134,7 +133,7 @@ mod tests {
     #[test]
     fn a_synthetic_rhythm_is_recovered() {
         let samples = synthetic(75.0, 30.0, 300);
-        let peaks = detect_r_peaks(&samples, 300);
+        let peaks = detect_r_peaks(&samples, SamplingHz::new(300).unwrap());
         assert_eq!(peaks.heart_rate(), Some(Bpm(75)));
         assert!(peaks.rr_stddev().unwrap().0 < 5.0);
     }
@@ -143,7 +142,7 @@ mod tests {
     fn rates_across_the_physiological_range_are_recovered() {
         for bpm in [45.0, 60.0, 100.0, 150.0] {
             let samples = synthetic(bpm, 30.0, 300);
-            let got = detect_r_peaks(&samples, 300).heart_rate().unwrap();
+            let got = detect_r_peaks(&samples, SamplingHz::new(300).unwrap()).heart_rate().unwrap();
             assert!(
                 (got.0 as f64 - bpm).abs() <= 2.0,
                 "expected ~{bpm} bpm, got {}",
@@ -154,7 +153,7 @@ mod tests {
 
     #[test]
     fn a_lead_too_short_to_hold_a_beat_yields_nothing() {
-        let peaks = detect_r_peaks(&[0, 1, 2], 300);
+        let peaks = detect_r_peaks(&[0, 1, 2], SamplingHz::new(300).unwrap());
         assert!(peaks.indices.is_empty());
         assert_eq!(peaks.heart_rate(), None);
     }

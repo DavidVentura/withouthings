@@ -2,7 +2,9 @@ use crate::objects::{
     StoredMeasureData, StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend,
     UnitConversionParameters,
 };
-use crate::units::UnixTime;
+use std::num::NonZeroUsize;
+
+use crate::units::{LeadCount, SamplingHz, UnixTime};
 use crate::WppObject;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,10 +83,11 @@ pub enum SampleFormat {
 impl SampleFormat {
     pub const DELTA_META: u8 = 3;
 
-    pub fn from_meta(format: u8) -> SampleFormat {
+    pub fn from_meta(format: u8) -> Option<SampleFormat> {
         match format {
-            SampleFormat::DELTA_META => SampleFormat::Delta,
-            _ => SampleFormat::Raw,
+            0..=2 => Some(SampleFormat::Raw),
+            SampleFormat::DELTA_META => Some(SampleFormat::Delta),
+            _ => None,
         }
     }
 }
@@ -156,15 +159,15 @@ impl PpgAfibRule {
 /// The intervals between successive beats of a PPG AFib reading, in
 /// milliseconds. The store writer keeps each as the difference of two peak
 /// positions in samples, `size` bytes little-endian, at the reading's own rate.
-pub fn beat_intervals_ms(samples: &[u8], size: usize, sampling_hz: u16) -> Vec<u32> {
+pub fn beat_intervals_ms(samples: &[u8], size: NonZeroUsize, sampling_hz: SamplingHz) -> Vec<u32> {
     samples
-        .chunks_exact(size.max(1))
+        .chunks_exact(size.get())
         .map(|bytes| {
             let counts = bytes
                 .iter()
                 .rev()
                 .fold(0u32, |value, byte| (value << 8) | u32::from(*byte));
-            counts * 1000 / u32::from(sampling_hz.max(1))
+            counts * 1000 / u32::from(sampling_hz.get())
         })
         .collect()
 }
@@ -204,14 +207,15 @@ pub enum Rhythm {
 }
 
 impl Rhythm {
-    pub fn of(code: i32) -> Rhythm {
+    pub fn of(code: i32) -> Option<Rhythm> {
         match code {
-            0 | 9 | 10 => Rhythm::NoAfib,
-            1 | 11 | 12 => Rhythm::Afib,
-            2 | 8 => Rhythm::Inconclusive,
-            3 | 5 => Rhythm::PoorRecording,
-            6 | 7 => Rhythm::RateOutOfRange,
-            _ => Rhythm::NoResult,
+            0 | 9 | 10 => Some(Rhythm::NoAfib),
+            1 | 11 | 12 => Some(Rhythm::Afib),
+            2 | 8 => Some(Rhythm::Inconclusive),
+            3 | 5 => Some(Rhythm::PoorRecording),
+            6 | 7 => Some(Rhythm::RateOutOfRange),
+            -2 | -1 | 4 => Some(Rhythm::NoResult),
+            _ => None,
         }
     }
 }
@@ -231,10 +235,6 @@ impl Signal {
         SignalKind::from_type_id(self.meta.r#type)
     }
 
-    pub fn format(&self) -> SampleFormat {
-        SampleFormat::from_meta(self.meta.format)
-    }
-
     pub fn sampling_freq(&self) -> u16 {
         self.meta.sampling_freq
     }
@@ -247,33 +247,105 @@ impl Signal {
         self.data.len() == self.declared_size()
     }
 
-    pub fn lead_count(&self) -> usize {
-        self.meta.channel.max(1) as usize
+    pub fn recording(&self) -> Result<Recording, RecordingError> {
+        Recording::decode(
+            self.meta.r#type,
+            self.meta.format,
+            self.meta.sampling_freq,
+            self.meta.channel as usize,
+            &self.data,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordingError {
+    /// Nothing here decodes these, and read as plain samples they are a wrong
+    /// waveform.
+    DeltaCoded,
+    UnknownFormat(u8),
+    NoSamplingRate,
+    NoLeads,
+}
+
+impl std::fmt::Display for RecordingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RecordingError::DeltaCoded => write!(f, "delta-coded samples"),
+            RecordingError::UnknownFormat(code) => write!(f, "unknown sample format {code}"),
+            RecordingError::NoSamplingRate => write!(f, "a sampling rate of zero"),
+            RecordingError::NoLeads => write!(f, "no leads"),
+        }
+    }
+}
+
+impl std::error::Error for RecordingError {}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecordedLead {
+    /// None past the leads the signal type names, or for a type not known.
+    pub lead: Option<Lead>,
+    pub samples: Vec<i16>,
+}
+
+/// A waveform taken apart into its leads, however it arrived.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Recording {
+    pub kind: Option<SignalKind>,
+    pub rate: SamplingHz,
+    leads: Vec<RecordedLead>,
+}
+
+impl Recording {
+    pub fn decode(
+        type_id: u16,
+        format: u8,
+        sampling_hz: u16,
+        lead_count: usize,
+        bytes: &[u8],
+    ) -> Result<Recording, RecordingError> {
+        match SampleFormat::from_meta(format) {
+            None => return Err(RecordingError::UnknownFormat(format)),
+            Some(SampleFormat::Delta) => return Err(RecordingError::DeltaCoded),
+            Some(SampleFormat::Raw) => {}
+        }
+        let rate = SamplingHz::new(sampling_hz).ok_or(RecordingError::NoSamplingRate)?;
+        let count = LeadCount::new(lead_count).ok_or(RecordingError::NoLeads)?.get();
+        let kind = SignalKind::from_type_id(type_id);
+        let names = kind.map_or(&[][..], SignalKind::leads);
+        let mut leads: Vec<RecordedLead> = (0..count)
+            .map(|i| RecordedLead {
+                lead: names.get(i).copied(),
+                samples: Vec::with_capacity(bytes.len() / 2 / count),
+            })
+            .collect();
+        for (index, pair) in bytes.chunks_exact(2).enumerate() {
+            leads[index % count]
+                .samples
+                .push(i16::from_le_bytes([pair[0], pair[1]]));
+        }
+        Ok(Recording { kind, rate, leads })
+    }
+
+    pub fn leads(&self) -> &[RecordedLead] {
+        &self.leads
+    }
+
+    /// The raw lead clips on this watch while the filtered one holds the whole
+    /// complex, so that is the one to read beats from.
+    pub fn analysed(&self) -> &RecordedLead {
+        self.leads
+            .iter()
+            .find(|l| matches!(l.lead, Some(Lead::DiFiltered | Lead::DiiFiltered)))
+            .unwrap_or(&self.leads[0])
     }
 
     pub fn samples_per_lead(&self) -> usize {
-        self.data.len() / 2 / self.lead_count()
+        self.leads[0].samples.len()
     }
 
-    pub fn duration_secs(&self) -> f64 {
-        self.samples_per_lead() as f64 / self.sampling_freq().max(1) as f64
-    }
-
-    pub fn leads(&self) -> Vec<(Option<Lead>, Vec<i16>)> {
-        if self.format() == SampleFormat::Delta {
-            return Vec::new();
-        }
-        let count = self.lead_count();
-        let names = self.kind().map(|k| k.leads()).unwrap_or(&[]);
-        let mut columns: Vec<(Option<Lead>, Vec<i16>)> = (0..count)
-            .map(|i| (names.get(i).copied(), Vec::new()))
-            .collect();
-        for (index, pair) in self.data.chunks_exact(2).enumerate() {
-            columns[index % count]
-                .1
-                .push(i16::from_le_bytes([pair[0], pair[1]]));
-        }
-        columns
+    pub fn seconds(&self) -> f64 {
+        self.samples_per_lead() as f64 / self.rate.as_f64()
     }
 }
 
@@ -415,15 +487,17 @@ mod tests {
             measures: Vec::new(),
             data: vec![0x01, 0x00, 0xff, 0xff, 0x02, 0x00, 0xfe, 0xff],
         };
+        let recording = signal.recording().unwrap();
         assert_eq!(
-            signal.leads(),
-            vec![
-                (Some(Lead::Di), vec![1, 2]),
-                (Some(Lead::DiFiltered), vec![-1, -2]),
+            recording.leads(),
+            &[
+                RecordedLead { lead: Some(Lead::Di), samples: vec![1, 2] },
+                RecordedLead { lead: Some(Lead::DiFiltered), samples: vec![-1, -2] },
             ]
         );
+        assert_eq!(recording.analysed().lead, Some(Lead::DiFiltered));
         assert!(signal.is_complete());
-        assert_eq!(signal.samples_per_lead(), 2);
+        assert_eq!(recording.samples_per_lead(), 2);
     }
 
     #[test]
@@ -485,8 +559,7 @@ mod tests {
             measures: Vec::new(),
             data: vec![1, 2, 3, 4],
         };
-        assert_eq!(signal.format(), SampleFormat::Delta);
-        assert!(signal.leads().is_empty());
+        assert_eq!(signal.recording(), Err(RecordingError::DeltaCoded));
     }
 
     #[test]
@@ -588,8 +661,31 @@ mod afib_rule_tests {
     }
 
     #[test]
+    fn a_row_that_cannot_be_a_recording_says_why() {
+        assert_eq!(Recording::decode(7, 9, 300, 1, &[]), Err(RecordingError::UnknownFormat(9)));
+        assert_eq!(Recording::decode(7, 0, 0, 1, &[]), Err(RecordingError::NoSamplingRate));
+        assert_eq!(Recording::decode(7, 0, 300, 0, &[]), Err(RecordingError::NoLeads));
+    }
+
+    #[test]
+    fn a_lead_count_past_the_names_still_decodes_and_reads_the_first() {
+        let recording = Recording::decode(99, 0, 300, 2, &[1, 0, 2, 0]).unwrap();
+        assert_eq!(recording.leads()[1].lead, None);
+        assert_eq!(recording.analysed().samples, vec![1]);
+    }
+
+    #[test]
+    fn rhythm_codes_outside_the_table_are_not_a_result() {
+        assert_eq!(Rhythm::of(9), Some(Rhythm::NoAfib));
+        assert_eq!(Rhythm::of(-1), Some(Rhythm::NoResult));
+        assert_eq!(Rhythm::of(77), None);
+    }
+
+    #[test]
     fn intervals_are_peak_distances_at_the_readings_rate() {
-        assert_eq!(beat_intervals_ms(&[85, 110], 1, 100), vec![850, 1100]);
-        assert_eq!(beat_intervals_ms(&[0x2c, 0x01], 2, 1000), vec![300]);
+        let size = |bytes| NonZeroUsize::new(bytes).unwrap();
+        let hz = |hz| SamplingHz::new(hz).unwrap();
+        assert_eq!(beat_intervals_ms(&[85, 110], size(1), hz(100)), vec![850, 1100]);
+        assert_eq!(beat_intervals_ms(&[0x2c, 0x01], size(2), hz(1000)), vec![300]);
     }
 }

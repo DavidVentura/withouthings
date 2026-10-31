@@ -818,3 +818,12 @@ fn a_batch_that_cannot_be_kept_asks_for_a_new_connection() {
     assert_eq!(*recorder.reconnects.lock().unwrap(), 1);
     cleanup(&path);
 }
+
+#[test]
+fn window_edges_out_of_order_are_refused() {
+    let recorder = Arc::new(Recorder::default());
+    let (service, path) = service(&recorder);
+    assert!(service.worn_hours(vec![2_000, 1_000]).is_err());
+    assert!(service.worn_hours(Vec::new()).unwrap().is_empty());
+    cleanup(&path);
+}

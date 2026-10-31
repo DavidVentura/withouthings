@@ -2057,50 +2057,37 @@ impl WatchService {
 
     pub fn ecg(&self, id: i64) -> Result<Option<EcgRecording>, WatchError> {
         let store = self.store.lock().unwrap();
-        let Some((measured_at, signal_type, hz, lead_count, samples)) = store.ecg(EcgId(id))? else {
+        let Some(stored) = store.ecg(EcgId(id))? else {
             return Ok(None);
         };
-        let names = wpp::signal::SignalKind::from_type_id(signal_type as u16)
-            .map(|k| k.leads().iter().map(|l| l.name().to_string()).collect())
-            .unwrap_or_else(Vec::new);
-        let lead_count = lead_count.max(1) as usize;
-        let mut leads: Vec<EcgLead> = (0..lead_count)
-            .map(|i| EcgLead {
-                name: names.get(i).cloned().unwrap_or_else(|| format!("CH{i}")),
-                millivolts: Vec::new(),
+        let recording = &stored.recording;
+        let leads = recording
+            .leads()
+            .iter()
+            .enumerate()
+            .map(|(i, column)| EcgLead {
+                name: column
+                    .lead
+                    .map_or_else(|| format!("CH{i}"), |lead| lead.name().to_string()),
+                millivolts: column
+                    .samples
+                    .iter()
+                    .map(|c| Millivolts::from_counts(*c).0)
+                    .collect(),
             })
             .collect();
-        let mut counts: Vec<Vec<i16>> = vec![Vec::new(); lead_count];
-        for (index, pair) in samples.chunks_exact(2).enumerate() {
-            counts[index % lead_count].push(i16::from_le_bytes([pair[0], pair[1]]));
-        }
-        for (lead, counts) in leads.iter_mut().zip(&counts) {
-            lead.millivolts = counts
-                .iter()
-                .map(|c| Millivolts::from_counts(*c).0)
-                .collect();
-        }
-        // The raw lead clips on this watch while the filtered one holds the
-        // whole complex.
-        let analysed = wpp::signal::SignalKind::from_type_id(signal_type as u16)
-            .and_then(|kind| {
-                kind.leads().iter().position(|l| {
-                    matches!(
-                        l,
-                        wpp::signal::Lead::DiFiltered | wpp::signal::Lead::DiiFiltered
-                    )
-                })
-            })
-            .unwrap_or(0);
         let verdict = verdict_of(&store, EcgId(id))?;
         Ok(Some(EcgRecording {
             id,
-            measured_at_ms: measured_at,
-            sampling_hz: hz as u32,
+            measured_at_ms: stored.measured_at.0,
+            sampling_hz: u32::from(recording.rate.get()),
             leads,
             heart_rate: verdict.0,
             rhythm: verdict.1,
-            analysis: ecg_analysis(&wpp::rhythm::read_ecg(&counts[analysed], hz as u16)),
+            analysis: ecg_analysis(&wpp::rhythm::read_ecg(
+                &recording.analysed().samples,
+                recording.rate,
+            )),
         }))
     }
 }
@@ -2132,7 +2119,7 @@ fn ecg_summary(store: &Store, row: wpp_store::EcgSummaryRow) -> Result<EcgSummar
     Ok(EcgSummary {
         id: row.id.0,
         measured_at_ms: row.measured_at.0,
-        seconds: per_lead as f64 / (row.sampling_hz.max(1) as f64),
+        seconds: per_lead as f64 / row.sampling_hz.as_f64(),
         leads: leads as u32,
         heart_rate: verdict.0,
         rhythm: verdict.1,
@@ -2146,11 +2133,12 @@ fn afib_reading(
     asleep: &[SleepSpan],
 ) -> Result<AfibReading, WatchError> {
     use wpp::rhythm::{read_pulse, PulseVerdict, WATCH_RATE_WITHIN_MS};
-    let raw: Vec<wpp::units::Millis> = wpp::signal::beat_intervals_ms(
-        &row.samples,
-        row.sample_bytes as usize,
-        row.sampling_hz as u16,
-    )
+    let corrupt = || WatchError::Storage {
+        reason: format!("reading {} has no sample size or sampling rate", row.id),
+    };
+    let size = std::num::NonZeroUsize::new(row.sample_bytes as usize).ok_or_else(corrupt)?;
+    let hz = wpp::units::SamplingHz::new(row.sampling_hz as u16).ok_or_else(corrupt)?;
+    let raw: Vec<wpp::units::Millis> = wpp::signal::beat_intervals_ms(&row.samples, size, hz)
     .into_iter()
     .map(|ms| wpp::units::Millis(ms as f64))
     .collect();
@@ -2160,7 +2148,7 @@ fn afib_reading(
         row.measured_at,
         wpp::units::Duration::from_millis(WATCH_RATE_WITHIN_MS),
     )?;
-    let (intervals, analysis) = match watch {
+    let (intervals, analysis) = match watch.filter(|bpm| *bpm > 0) {
         None => (
             raw.iter().map(|ms| ms.0.round() as u32).collect::<Vec<_>>(),
             PulseAnalysis::NoWatchRate,
@@ -2245,16 +2233,16 @@ fn verdict_of(store: &Store, id: EcgId) -> Result<(Option<u32>, Option<EcgRhythm
             .find(|measure| measure.kind == kind)
             .map(|measure| measure.value as f64 * 10f64.powi(measure.exponent as i32))
     };
-    let rhythm = reading(wpp::signal::MeasureType::AFIB_RESULT).map(|code| {
-        match wpp::signal::Rhythm::of(code as i32) {
+    let rhythm = reading(wpp::signal::MeasureType::AFIB_RESULT)
+        .and_then(|code| wpp::signal::Rhythm::of(code as i32))
+        .map(|rhythm| match rhythm {
             wpp::signal::Rhythm::NoAfib => EcgRhythm::NoAfib,
             wpp::signal::Rhythm::Afib => EcgRhythm::Afib,
             wpp::signal::Rhythm::Inconclusive => EcgRhythm::Inconclusive,
             wpp::signal::Rhythm::PoorRecording => EcgRhythm::PoorRecording,
             wpp::signal::Rhythm::RateOutOfRange => EcgRhythm::RateOutOfRange,
             wpp::signal::Rhythm::NoResult => EcgRhythm::NoResult,
-        }
-    });
+        });
     let rate = reading(wpp::signal::MeasureType::HEART_RATE)
         .filter(|bpm| *bpm > 0.0)
         .map(|bpm| bpm.round() as u32);

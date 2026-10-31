@@ -1,5 +1,5 @@
 use crate::analysis::detect_r_peaks;
-use crate::units::{Bpm, Millis};
+use crate::units::{Bpm, Millis, SamplingHz};
 
 /// The watch logs the rate of a background measurement within this of the
 /// start of the reading it keeps from it.
@@ -143,9 +143,11 @@ pub struct PulseReading {
     pub verdict: PulseVerdict,
 }
 
+/// `watch` is a rate the watch actually read, so never zero.
 pub fn read_pulse(raw: &[Millis], watch: Bpm) -> PulseReading {
+    assert!(watch.0 > 0, "a watch rate of zero is no reading");
     let lengths: Vec<f64> = raw.iter().map(|m| m.0).filter(|ms| *ms > 0.0).collect();
-    let merged = merge_split_beats(&lengths, 60_000.0 / watch.0.max(1) as f64);
+    let merged = merge_split_beats(&lengths, 60_000.0 / watch.0 as f64);
     let values: Vec<f64> = merged.iter().map(|i| i.length.0).collect();
     if values.len() < MIN_INTERVALS {
         return PulseReading {
@@ -158,7 +160,7 @@ pub fn read_pulse(raw: &[Millis], watch: Bpm) -> PulseReading {
 
     let span: f64 = values.iter().sum();
     let counted = 60_000.0 * values.len() as f64 / span;
-    if !AGREEMENT.contains(&(counted / watch.0.max(1) as f64)) {
+    if !AGREEMENT.contains(&(counted / watch.0 as f64)) {
         return PulseReading {
             intervals: merged,
             verdict: PulseVerdict::Disagrees {
@@ -684,15 +686,15 @@ pub struct EcgReading {
     pub verdict: EcgVerdict,
 }
 
-pub fn read_ecg(samples: &[i16], sampling_freq: u16) -> EcgReading {
-    if sampling_freq < MIN_ECG_HZ {
+pub fn read_ecg(samples: &[i16], sampling_freq: SamplingHz) -> EcgReading {
+    if sampling_freq.get() < MIN_ECG_HZ {
         return EcgReading {
             beats: Vec::new(),
             intervals: Vec::new(),
             verdict: EcgVerdict::TooFew { beats: 0 },
         };
     }
-    let freq = sampling_freq as f64;
+    let freq = sampling_freq.as_f64();
     let at = |secs: f64| (secs * freq) as usize;
     let peaks: Vec<usize> = detect_r_peaks(samples, sampling_freq)
         .indices
@@ -1047,7 +1049,7 @@ mod tests {
                 Some(now)
             })
             .collect();
-        let reading = read_ecg(&ecg(&beats, true, &mut noise), HZ);
+        let reading = read_ecg(&ecg(&beats, true, &mut noise), SamplingHz::new(HZ).unwrap());
         assert_eq!(reading.beats.len(), beats.len());
         assert!(reading
             .beats
@@ -1072,10 +1074,11 @@ mod tests {
     #[test]
     fn a_recording_too_coarse_to_hold_a_beat_is_too_few() {
         let samples: Vec<i16> = (0..3000).map(|i| if i % 25 == 0 { 2000 } else { 0 }).collect();
-        for hz in [0, 1, 25, 49] {
+        for hz in [1, 25, 49] {
+            let hz = SamplingHz::new(hz).unwrap();
             assert_eq!(read_ecg(&samples, hz).verdict, EcgVerdict::TooFew { beats: 0 });
         }
-        read_ecg(&samples, MIN_ECG_HZ);
+        read_ecg(&samples, SamplingHz::new(MIN_ECG_HZ).unwrap());
     }
 
     #[test]
@@ -1088,7 +1091,7 @@ mod tests {
                 Some(now)
             })
             .collect();
-        let reading = read_ecg(&ecg(&beats, false, &mut noise), HZ);
+        let reading = read_ecg(&ecg(&beats, false, &mut noise), SamplingHz::new(HZ).unwrap());
         assert!(reading.beats.iter().all(|b| !b.p_wave));
         match reading.verdict {
             EcgVerdict::Assessed(rhythm) => assert_eq!(rhythm.pattern, Pattern::Irregular),

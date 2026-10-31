@@ -1,10 +1,10 @@
+use std::num::NonZeroUsize;
 use std::process::ExitCode;
 
 use wpp::rhythm::{
     read_ecg, read_pulse, EcgVerdict, IntervalKind, PulseVerdict, Rhythm, WATCH_RATE_WITHIN_MS,
 };
-use wpp::signal::{Lead, SignalKind};
-use wpp::units::{Bpm, Duration, Millis, UnixMillis};
+use wpp::units::{Bpm, Duration, Millis, SamplingHz, UnixMillis};
 use wpp::SampleKind;
 use wpp_store::Store;
 
@@ -47,11 +47,14 @@ fn main() -> ExitCode {
         None => Vec::new(),
     };
     for row in readings.iter().filter(|r| r.duration > Duration::ZERO) {
-        let raw: Vec<Millis> = wpp::signal::beat_intervals_ms(
-            &row.samples,
-            row.sample_bytes as usize,
-            row.sampling_hz as u16,
-        )
+        let (Some(size), Some(hz)) = (
+            NonZeroUsize::new(row.sample_bytes as usize),
+            SamplingHz::new(row.sampling_hz as u16),
+        ) else {
+            println!("pulse {:4} corrupt row", row.id);
+            continue;
+        };
+        let raw: Vec<Millis> = wpp::signal::beat_intervals_ms(&row.samples, size, hz)
         .into_iter()
         .map(|ms| Millis(ms as f64))
         .collect();
@@ -63,7 +66,7 @@ fn main() -> ExitCode {
                 Duration::from_millis(WATCH_RATE_WITHIN_MS),
             )
             .unwrap();
-        let Some(watch) = watch else {
+        let Some(watch) = watch.filter(|bpm| *bpm > 0) else {
             println!("pulse {:4} no watch rate", row.id);
             continue;
         };
@@ -82,22 +85,8 @@ fn main() -> ExitCode {
 
     for row in store.ecgs(device_id).unwrap() {
         let id = row.id.0;
-        let (_, signal_type, hz, lead_count, bytes) = store.ecg(row.id).unwrap().unwrap();
-        let lead_count = lead_count.max(1) as usize;
-        let leads = SignalKind::from_type_id(signal_type as u16)
-            .map(|k| k.leads())
-            .unwrap_or(&[]);
-        let column = leads
-            .iter()
-            .position(|l| matches!(l, Lead::DiFiltered | Lead::DiiFiltered))
-            .unwrap_or(0);
-        let samples: Vec<i16> = bytes
-            .chunks_exact(2)
-            .skip(column)
-            .step_by(lead_count)
-            .map(|pair| i16::from_le_bytes([pair[0], pair[1]]))
-            .collect();
-        let reading = read_ecg(&samples, hz as u16);
+        let stored = store.ecg(row.id).unwrap().unwrap();
+        let reading = read_ecg(&stored.recording.analysed().samples, stored.recording.rate);
         let p_waves = reading.beats.iter().filter(|b| b.p_wave).count();
         let verdict = match &reading.verdict {
             EcgVerdict::Assessed(rhythm) => describe(rhythm),

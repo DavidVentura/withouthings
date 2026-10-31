@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::num::{NonZeroU16, NonZeroUsize};
 use std::ops::{Add, Sub};
 
 use crate::objects::LiveHr;
@@ -93,6 +94,44 @@ impl Add<Duration> for UnixTime {
     type Output = UnixTime;
     fn add(self, by: Duration) -> UnixTime {
         UnixTime(self.0 + by.as_secs())
+    }
+}
+
+/// A sampling rate, which divides everywhere it is used and so cannot be zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SamplingHz(NonZeroU16);
+
+impl SamplingHz {
+    pub const fn new(hz: u16) -> Option<SamplingHz> {
+        match NonZeroU16::new(hz) {
+            Some(hz) => Some(SamplingHz(hz)),
+            None => None,
+        }
+    }
+
+    pub const fn get(self) -> u16 {
+        self.0.get()
+    }
+
+    pub const fn as_f64(self) -> f64 {
+        self.0.get() as f64
+    }
+}
+
+/// How many leads a recording interleaves; a modulus when it is taken apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LeadCount(NonZeroUsize);
+
+impl LeadCount {
+    pub const fn new(leads: usize) -> Option<LeadCount> {
+        match NonZeroUsize::new(leads) {
+            Some(leads) => Some(LeadCount(leads)),
+            None => None,
+        }
+    }
+
+    pub const fn get(self) -> usize {
+        self.0.get()
     }
 }
 
