@@ -383,6 +383,49 @@ pub struct Feature {
     pub schedule: FeatureSchedule,
 }
 
+impl Record {
+    fn live_sample(at: UnixMillis, kind: SampleKind, value: i64) -> Record {
+        Record::Sample {
+            measured_at: at,
+            kind,
+            value,
+            quality: None,
+            source: Source::Live,
+            window_secs: None,
+            context: None,
+        }
+    }
+
+    fn stored_sample(
+        at: UnixTime,
+        kind: SampleKind,
+        value: i64,
+        quality: Option<i64>,
+        window_secs: Option<i64>,
+        context: Option<i64>,
+    ) -> Record {
+        Record::Sample {
+            measured_at: at.to_millis(),
+            kind,
+            value,
+            quality,
+            source: Source::Stored,
+            window_secs,
+            context,
+        }
+    }
+}
+
+/// The first object of one type in a frame.
+macro_rules! first {
+    ($frame:expr, $variant:ident) => {
+        $frame.objects.iter().find_map(|o| match o {
+            WppObject::$variant(inner) => Some(inner),
+            _ => None,
+        })
+    };
+}
+
 /// What a connection is doing. The data a step needs lives in its variant, so
 /// it cannot outlast the step or be read during another.
 #[derive(Debug, Clone, PartialEq)]
@@ -831,25 +874,22 @@ impl Client {
         let mut answered_ecg = false;
         match frame.command.opcode() {
             c if c == Command::CMD_MEASURE_START.0 => {
-                let category = frame
-                    .objects
-                    .iter()
-                    .find_map(|o| match o {
-                        WppObject::MeasureCategory(m) => Some(m.value),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
-                self.link.measuring = Some(category);
-                self.live_samples.clear();
-                actions.push(Action::Send(Frame::new(
-                    Command::CMD_MEASURE_START.with_channel(Channel::SlaveRequest),
-                    vec![
-                        WppObject::MeasureCategory(MeasureCategory { value: category }),
-                        WppObject::MeasureLiveAppStatus(MeasureLiveAppStatus {
-                            app_live_screen_displayed: 1,
-                        }),
-                    ],
-                )));
+                match first!(frame, MeasureCategory).map(|m| m.value) {
+                    Some(category) => {
+                        self.link.measuring = Some(category);
+                        self.live_samples.clear();
+                        actions.push(Action::Send(Frame::new(
+                            Command::CMD_MEASURE_START.with_channel(Channel::SlaveRequest),
+                            vec![
+                                WppObject::MeasureCategory(MeasureCategory { value: category }),
+                                WppObject::MeasureLiveAppStatus(MeasureLiveAppStatus {
+                                    app_live_screen_displayed: 1,
+                                }),
+                            ],
+                        )));
+                    }
+                    None => self.unhandled.push((c, 0, "CMD_MEASURE_START without a category")),
+                }
             }
             c if c == Command::CMD_STORED_MEASURE_SIGNAL_GET.0
                 && self.link.fetching_ecg
@@ -879,10 +919,7 @@ impl Client {
                     Command::CMD_MEASURE_STOP.with_channel(Channel::SlaveRequest),
                     vec![WppObject::Null(Null {})],
                 )));
-                if let Some(measure) = frame.objects.iter().find_map(|o| match o {
-                    WppObject::StoredMeasureMeta(m) => Some(m.clone()),
-                    _ => None,
-                }) {
+                if let Some(measure) = first!(frame, StoredMeasureMeta).cloned() {
                     // Named by its StoredMeasureMeta alone, the handler reads
                     // the ECG store.
                     self.link.fetching_ecg = true;
@@ -897,10 +934,7 @@ impl Client {
 
         match (&self.link.state, frame.command.opcode()) {
             (State::Probing, c) if c == Command::CMD_PROBE_CHALLENGE.0 => {
-                if let Some(challenge) = frame.objects.iter().find_map(|o| match o {
-                    WppObject::ProbeChallenge(c) => Some(c.clone()),
-                    _ => None,
-                }) {
+                if let Some(challenge) = first!(frame, ProbeChallenge) {
                     self.link.state = State::Authenticating;
                     actions.push(Action::Send(Frame::new(
                         Command::CMD_PROBE_CHALLENGE,
@@ -1031,14 +1065,7 @@ impl Client {
                     records.push(Record::WorkoutEnded {
                         started_at,
                         ended_at,
-                        paused_secs: frame
-                            .objects
-                            .iter()
-                            .find_map(|o| match o {
-                                WppObject::PauseState(p) => Some(p.sum as i64),
-                                _ => None,
-                            })
-                            .unwrap_or(0),
+                        paused_secs: paused_secs(frame),
                     });
                 }
             }
@@ -1083,150 +1110,46 @@ impl Client {
                     );
                 }
                 WppObject::Steps(steps) => {
-                    records.push(Record::Sample {
-                        measured_at: received_at,
-                        kind: SampleKind::Steps,
-                        value: steps.value as i64,
-                        quality: None,
-                        source: Source::Live,
-                        window_secs: None,
-                        context: None,
-                    });
+                    records.push(Record::live_sample(received_at, SampleKind::Steps, steps.value as i64));
                 }
                 WppObject::Stairs(stairs) => {
-                    records.push(Record::Sample {
-                        measured_at: received_at,
-                        kind: SampleKind::Ascent,
-                        value: stairs.value as i64,
-                        quality: None,
-                        source: Source::Live,
-                        window_secs: None,
-                        context: None,
-                    });
+                    records.push(Record::live_sample(received_at, SampleKind::Ascent, stairs.value as i64));
                 }
                 WppObject::Calories(calories) => {
-                    records.push(Record::Sample {
-                        measured_at: received_at,
-                        kind: SampleKind::Calories,
-                        value: calories.value as i64,
-                        quality: None,
-                        source: Source::Live,
-                        window_secs: None,
-                        context: None,
-                    });
+                    records.push(Record::live_sample(received_at, SampleKind::Calories, calories.value as i64));
                 }
                 WppObject::Distance(distance) => {
-                    records.push(Record::Sample {
-                        measured_at: received_at,
-                        kind: SampleKind::Distance,
-                        value: distance.value as i64,
-                        quality: None,
-                        source: Source::Live,
-                        window_secs: None,
-                        context: None,
-                    });
+                    records.push(Record::live_sample(received_at, SampleKind::Distance, distance.value as i64));
                 }
                 WppObject::Duration(duration) => {
-                    records.push(Record::Sample {
-                        measured_at: received_at,
-                        kind: SampleKind::TrackedDuration,
-                        value: duration.value as i64,
-                        quality: None,
-                        source: Source::Live,
-                        window_secs: None,
-                        context: None,
-                    });
+                    records.push(Record::live_sample(received_at, SampleKind::TrackedDuration, duration.value as i64));
                 }
                 WppObject::BatteryStatus(battery) => {
-                    records.push(Record::Sample {
-                        measured_at: received_at,
-                        kind: SampleKind::BatteryPercent,
-                        value: battery.battery_percent as i64,
-                        quality: None,
-                        source: Source::Live,
-                        window_secs: None,
-                        context: None,
-                    });
-                    records.push(Record::Sample {
-                        measured_at: received_at,
-                        kind: SampleKind::BatteryState,
-                        value: battery.battery_state as i64,
-                        quality: None,
-                        source: Source::Live,
-                        window_secs: None,
-                        context: None,
-                    });
-                    records.push(Record::Sample {
-                        measured_at: received_at,
-                        kind: SampleKind::BatteryMillivolts,
-                        value: battery.battery_mv as i64,
-                        quality: None,
-                        source: Source::Live,
-                        window_secs: None,
-                        context: None,
-                    });
+                    records.push(Record::live_sample(received_at, SampleKind::BatteryPercent, battery.battery_percent as i64));
+                    records.push(Record::live_sample(received_at, SampleKind::BatteryState, battery.battery_state as i64));
+                    records.push(Record::live_sample(received_at, SampleKind::BatteryMillivolts, battery.battery_mv as i64));
                 }
                 WppObject::LiveHr(live) if live.hr > 0 => {
-                    records.push(Record::Sample {
-                        measured_at: received_at,
-                        kind: SampleKind::HeartRate,
-                        value: live.hr as i64,
-                        quality: None,
-                        source: Source::Live,
-                        window_secs: None,
-                        context: None,
-                    });
+                    records.push(Record::live_sample(received_at, SampleKind::HeartRate, live.hr as i64));
                 }
                 WppObject::StartTime(start)
-                    if frame.command.opcode() == Command::CMD_WORKOUT_STATUS.0
-                        && frame
-                            .objects
-                            .iter()
-                            .any(|o| matches!(o, WppObject::Status(s) if s.value == 1)) =>
+                    if frame.command.opcode() == Command::CMD_WORKOUT_START.0
+                        || (frame.command.opcode() == Command::CMD_WORKOUT_STATUS.0
+                            && first!(frame, Status).is_some_and(|s| s.value == 1)) =>
                 {
-                    let subcategory = frame
-                        .objects
-                        .iter()
-                        .find_map(|o| match o {
-                            WppObject::ActivitySubcategory(a) => Some(a.value),
-                            _ => None,
-                        })
-                        .unwrap_or(0);
+                    let Some(subcategory) = first!(frame, ActivitySubcategory) else {
+                        self.note_unhandled(frame, object);
+                        continue;
+                    };
                     records.push(Record::WorkoutStarted {
                         started_at: UnixTime(start.value as i64),
-                        subcategory,
-                    });
-                }
-                WppObject::StartTime(start)
-                    if frame.command.opcode() == Command::CMD_WORKOUT_START.0 =>
-                {
-                    let subcategory = frame
-                        .objects
-                        .iter()
-                        .find_map(|o| match o {
-                            WppObject::ActivitySubcategory(a) => Some(a.value),
-                            _ => None,
-                        })
-                        .unwrap_or(0);
-                    records.push(Record::WorkoutStarted {
-                        started_at: UnixTime(start.value as i64),
-                        subcategory,
+                        subcategory: subcategory.value,
                     });
                 }
                 WppObject::EndTime(end) => {
-                    let started = frame.objects.iter().find_map(|o| match o {
-                        WppObject::StartTime(s) => Some(s.value),
-                        _ => None,
-                    });
-                    let paused = frame
-                        .objects
-                        .iter()
-                        .find_map(|o| match o {
-                            WppObject::PauseState(p) => Some(p.sum as i64),
-                            _ => None,
-                        })
-                        .unwrap_or(0);
-                    let Some(started) = started else { continue };
+                    let Some(started) = first!(frame, StartTime).map(|s| s.value) else {
+                        continue;
+                    };
                     let started_at = UnixTime(started as i64);
                     let ended_at = UnixTime(end.value as i64);
                     if ended_at.0 - started_at.0 < MIN_WORKOUT_SECS {
@@ -1242,7 +1165,7 @@ impl Client {
                     records.push(Record::WorkoutEnded {
                         started_at,
                         ended_at,
-                        paused_secs: paused,
+                        paused_secs: paused_secs(frame),
                     });
                 }
                 _ => {}
@@ -1273,77 +1196,29 @@ impl Client {
                 }
                 WppObject::VasistasHeartrate(hr) if hr.heartrate > 0 => {
                     if let Some(time) = at {
-                        records.push(Record::Sample {
-                            measured_at: time.to_millis(),
-                            kind: SampleKind::HeartRate,
-                            value: hr.heartrate as i64,
-                            quality: Some(hr.quality as i64),
-                            source: Source::Stored,
-                            window_secs: window,
-                            context: None,
-                        });
+                        records.push(Record::stored_sample(time, SampleKind::HeartRate, hr.heartrate as i64, Some(hr.quality as i64), window, None));
                     }
                 }
                 WppObject::VasistasCbt(cbt) if cbt.attrib != VasistasCbt::ATTRIB_BASELINE => {
                     if let Some(time) = at {
-                        records.push(Record::Sample {
-                            measured_at: time.to_millis(),
-                            kind: SampleKind::CoreTemperature,
-                            value: cbt.temperature as i64,
-                            quality: None,
-                            source: Source::Stored,
-                            window_secs: window,
-                            context: Some(cbt.attrib as i64),
-                        });
+                        records.push(Record::stored_sample(time, SampleKind::CoreTemperature, cbt.temperature as i64, None, window, Some(cbt.attrib as i64)));
                     }
                 }
                 WppObject::VasistasCbt(_) => {}
                 WppObject::VasistasSpo2(spo2) if spo2.error == 0 && spo2.spo2 > 0 => {
                     if let Some(time) = at {
-                        records.push(Record::Sample {
-                            measured_at: time.to_millis(),
-                            kind: SampleKind::Spo2,
-                            value: spo2.spo2 as i64,
-                            quality: Some(spo2.quality as i64),
-                            source: Source::Stored,
-                            window_secs: window,
-                            context: None,
-                        });
+                        records.push(Record::stored_sample(time, SampleKind::Spo2, spo2.spo2 as i64, Some(spo2.quality as i64), window, None));
                     }
                 }
                 WppObject::VasistasHrv(hrv) => {
                     if let Some(time) = at {
-                        records.push(Record::Sample {
-                            measured_at: time.to_millis(),
-                            kind: SampleKind::HrvSdnn,
-                            value: hrv.sdnn as i64,
-                            quality: Some(hrv.quality as i64),
-                            source: Source::Stored,
-                            window_secs: window,
-                            context: None,
-                        });
-                        records.push(Record::Sample {
-                            measured_at: time.to_millis(),
-                            kind: SampleKind::HrvRmssd,
-                            value: hrv.rmssd as i64,
-                            quality: Some(hrv.quality as i64),
-                            source: Source::Stored,
-                            window_secs: window,
-                            context: None,
-                        });
+                        records.push(Record::stored_sample(time, SampleKind::HrvSdnn, hrv.sdnn as i64, Some(hrv.quality as i64), window, None));
+                        records.push(Record::stored_sample(time, SampleKind::HrvRmssd, hrv.rmssd as i64, Some(hrv.quality as i64), window, None));
                     }
                 }
                 WppObject::VasistasRr(rr) if rr.rr > 0 => {
                     if let Some(time) = at {
-                        records.push(Record::Sample {
-                            measured_at: time.to_millis(),
-                            kind: SampleKind::RespiratoryRate,
-                            value: rr.rr as i64,
-                            quality: None,
-                            source: Source::Stored,
-                            window_secs: window,
-                            context: None,
-                        });
+                        records.push(Record::stored_sample(time, SampleKind::RespiratoryRate, rr.rr as i64, None, window, None));
                     }
                 }
                 WppObject::VasistasHeartrate(_) | WppObject::VasistasRr(_) => {}
@@ -1893,6 +1768,11 @@ fn stream_command(category: Category) -> Command {
     } else {
         Command::CMD_VASISTAS_GET
     }
+}
+
+/// A session that never paused carries no pause object.
+fn paused_secs(frame: &Frame) -> i64 {
+    first!(frame, PauseState).map_or(0, |p| p.sum as i64)
 }
 
 fn stored_signal_request(store: SignalStore) -> Frame {

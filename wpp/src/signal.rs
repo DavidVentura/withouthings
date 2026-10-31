@@ -299,11 +299,6 @@ impl SignalCollector {
         SignalCollector::default()
     }
 
-    pub fn reset(&mut self) {
-        self.pending = Pending::default();
-        self.live_ecg.clear();
-    }
-
     pub fn observe(&mut self, object: &WppObject) {
         match object {
             WppObject::StoredSignalMeta(meta) => {

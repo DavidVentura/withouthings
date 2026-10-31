@@ -34,10 +34,6 @@ impl DebugDump {
         self.select(FIRST_ANCHOR)
     }
 
-    pub fn reset(&mut self) {
-        self.state = State::Idle;
-    }
-
     pub fn on_frame(&mut self, frame: &Frame) -> Vec<Frame> {
         let command = frame.command.opcode();
         let refused = frame.objects.iter().any(|o| {
