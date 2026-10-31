@@ -3110,6 +3110,8 @@ impl WatchService {
                     if let Err(error) = self.store.lock().unwrap().store(self.device_id, &records) {
                         failure.get_or_insert(error.into());
                         unkept = true;
+                        let refetch = self.inner.lock().unwrap().client.handle(Event::StoreFailed);
+                        actions.extend(refetch);
                         continue;
                     }
                     changed = true;
@@ -3124,19 +3126,13 @@ impl WatchService {
             }
         }
 
-        if unkept {
-            if changed {
-                self.transport.changed();
-            }
-            return Err(failure.expect("an unkept record set the failure"));
+        let kept = self.inner.lock().unwrap().client.take_kept_watermarks();
+        if !kept.is_empty() {
+            self.store
+                .lock()
+                .unwrap()
+                .set_watermarks(self.device_id, &kept)?;
         }
-
-        let watermarks = self.inner.lock().unwrap().client.watermarks();
-        let store = self.store.lock().unwrap();
-        for (category, through) in watermarks {
-            store.set_watermark(self.device_id, category, through)?;
-        }
-        drop(store);
 
         if changed {
             self.transport.changed();

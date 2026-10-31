@@ -64,11 +64,13 @@ fn main() -> ExitCode {
         let StreamItem::Frame { frame, .. } = &captured.item else {
             continue;
         };
-        let mut queue = client.handle(Event::Frame {
-            frame: frame.clone(),
-            received_at: captured.received_at,
-        });
-        while let Some(action) = queue.pop() {
+        let mut queue: std::collections::VecDeque<Action> = client
+            .handle(Event::Frame {
+                frame: frame.clone(),
+                received_at: captured.received_at,
+            })
+            .into();
+        while let Some(action) = queue.pop_front() {
             match action {
                 Action::Send(_) => sends += 1,
                 Action::Delete(_) => deletes += 1,
@@ -89,11 +91,9 @@ fn main() -> ExitCode {
         }
     }
 
-    for (category, through) in client.watermarks() {
-        store
-            .set_watermark(device, category, through)
-            .expect("watermark");
-    }
+    store
+        .set_watermarks(device, &client.take_kept_watermarks())
+        .expect("watermark");
 
     println!("frames replayed : {}", items.len());
     println!("store batches   : {batches} ({records} records)");

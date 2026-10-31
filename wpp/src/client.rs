@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::activity::Minute;
 use crate::debug_dump::DebugDump;
 use crate::frame::Channel;
@@ -215,6 +217,9 @@ pub enum Event {
     Stored {
         token: u64,
     },
+    /// The batch could not be kept. Everything unacknowledged is fetched again
+    /// over a new connection.
+    StoreFailed,
     Tick {
         now: UnixMillis,
     },
@@ -378,25 +383,139 @@ pub struct Feature {
     pub schedule: FeatureSchedule,
 }
 
+/// What a connection is doing. The data a step needs lives in its variant, so
+/// it cannot outlast the step or be read during another.
+#[derive(Debug, Clone, PartialEq)]
+enum State {
+    Idle,
+    Probing,
+    Authenticating,
+    NotAuthenticated,
+    Walking(Stream),
+    Draining(Drain),
+    Finished,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Stream {
+    category: Category,
+    through: UnixTime,
+    started_from: UnixTime,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct Drain {
+    store: SignalStore,
+    /// Still to be drained after this one, the last one next.
+    remaining: Vec<SignalStore>,
+    /// The record served is waiting on its delete before the next request.
+    awaiting_delete: bool,
+}
+
+/// Everything a connection owns; a disconnect drops it whole.
+struct Link {
+    state: State,
+    busy_retries: u32,
+    last_heard: Option<UnixMillis>,
+    last_spoke: Option<UnixMillis>,
+    measuring: Option<i16>,
+    /// An ECG asked for by name when its measurement stopped. It runs alongside
+    /// whatever the state is doing.
+    fetching_ecg: bool,
+    signals: SignalCollector,
+    dump: DebugDump,
+    spi_flash: SpiFlash,
+}
+
+impl Link {
+    fn idle() -> Link {
+        Link {
+            state: State::Idle,
+            busy_retries: 0,
+            last_heard: None,
+            last_spoke: None,
+            measuring: None,
+            fetching_ecg: false,
+            signals: SignalCollector::new(),
+            dump: DebugDump::new(),
+            spi_flash: SpiFlash::new(),
+        }
+    }
+}
+
+/// Where each history stream has got to, and how much of that is safely kept.
+///
+/// A stream's position moves as records arrive, but a restart may only resume
+/// from what the store acknowledged, so the two are held apart.
+struct Streams {
+    queue: Vec<(Category, UnixTime)>,
+    done: Vec<(Category, UnixTime)>,
+    total: u32,
+    kept: BTreeMap<Category, UnixTime>,
+    /// Kept positions the shell has not persisted yet.
+    unpersisted: BTreeMap<Category, UnixTime>,
+    in_flight: Vec<(u64, Category, UnixTime)>,
+    /// Moved by the current frame and not yet tied to a store token.
+    moved: Option<(Category, UnixTime)>,
+}
+
+impl Streams {
+    fn new(watermarks: Vec<(Category, UnixTime)>) -> Streams {
+        Streams {
+            total: watermarks.len() as u32,
+            kept: watermarks.iter().copied().collect(),
+            queue: watermarks,
+            done: Vec::new(),
+            unpersisted: BTreeMap::new(),
+            in_flight: Vec::new(),
+            moved: None,
+        }
+    }
+
+    fn keep(&mut self, category: Category, through: UnixTime) {
+        self.kept.insert(category, through);
+        self.unpersisted.insert(category, through);
+    }
+
+    fn acknowledge(&mut self, token: u64) {
+        let (settled, later) = std::mem::take(&mut self.in_flight)
+            .into_iter()
+            .partition(|(pending, _, _)| *pending <= token);
+        self.in_flight = later;
+        let settled: Vec<(u64, Category, UnixTime)> = settled;
+        for (_, category, through) in settled {
+            self.keep(category, through);
+        }
+    }
+
+    /// A frame that moved a stream but carried nothing to store has nothing to
+    /// wait for, except the batches ahead of it.
+    fn settle_moved(&mut self) {
+        let Some((category, through)) = self.moved.take() else {
+            return;
+        };
+        match self.in_flight.last().map(|(token, _, _)| *token) {
+            Some(token) => self.in_flight.push((token, category, through)),
+            None => self.keep(category, through),
+        }
+    }
+
+    fn rewind(&mut self) {
+        self.in_flight.clear();
+        self.moved = None;
+        let kept = &self.kept;
+        for (category, through) in self.queue.iter_mut().chain(self.done.iter_mut()) {
+            *through = kept[category];
+        }
+    }
+}
+
 pub struct Client {
     credentials: Credentials,
-    phase: Phase,
-    queue: Vec<(Category, UnixTime)>,
-    current: Option<(Category, UnixTime)>,
-    done: Vec<(Category, UnixTime)>,
-    batch_high_water: Option<(Category, UnixTime)>,
-    signals: SignalCollector,
+    link: Link,
+    streams: Streams,
     next_token: u64,
     pending_deletes: Vec<(u64, Frame)>,
-    /// Stores still to be drained after the walk, the last one next.
-    stores: Vec<SignalStore>,
-    /// The store the outstanding stored-signal request reads from, and whether
-    /// the record it served is waiting on its delete before the next request.
-    draining: Option<SignalStore>,
-    awaiting_delete: bool,
-    walk_started_from: Option<UnixTime>,
-    busy_retries: u32,
-    stream_total: u32,
     screens: Option<Vec<u8>>,
     activities: Option<Vec<u32>>,
     wear_position: Option<u8>,
@@ -404,14 +523,9 @@ pub struct Client {
     image_formats: Vec<crate::image::ImageFormat>,
     records_emitted: u64,
     unhandled: Vec<(u16, u16, &'static str)>,
-    last_heard: Option<UnixMillis>,
-    last_spoke: Option<UnixMillis>,
-    measuring: Option<i16>,
     live_samples: Vec<i16>,
     refreshes: RateLimit,
     walks: RateLimit,
-    dump: DebugDump,
-    spi_flash: SpiFlash,
     dumps: RateLimit,
     wanted_notifications: Option<bool>,
     zone: Option<Zone>,
@@ -427,23 +541,12 @@ impl Client {
         watermarks: Vec<(Category, UnixTime)>,
         features: Vec<Feature>,
     ) -> Client {
-        let stream_total = watermarks.len() as u32;
         Client {
             credentials,
-            phase: Phase::Idle,
-            queue: watermarks,
-            current: None,
-            done: Vec::new(),
-            batch_high_water: None,
-            signals: SignalCollector::new(),
+            link: Link::idle(),
+            streams: Streams::new(watermarks),
             next_token: 1,
             pending_deletes: Vec::new(),
-            stores: Vec::new(),
-            draining: None,
-            awaiting_delete: false,
-            walk_started_from: None,
-            busy_retries: 0,
-            stream_total,
             screens: None,
             activities: None,
             wear_position: None,
@@ -451,14 +554,9 @@ impl Client {
             image_formats: Vec::new(),
             records_emitted: 0,
             unhandled: Vec::new(),
-            last_heard: None,
-            last_spoke: None,
-            measuring: None,
             live_samples: Vec::new(),
             refreshes: RateLimit::every(MIN_REFRESH_INTERVAL_MS),
             walks: RateLimit::every(MIN_WALK_INTERVAL_MS),
-            dump: DebugDump::new(),
-            spi_flash: SpiFlash::new(),
             dumps: RateLimit::every(MIN_DUMP_INTERVAL_MS),
             wanted_notifications: None,
             zone: None,
@@ -469,13 +567,19 @@ impl Client {
     }
 
     pub fn watermarks(&self) -> Vec<(Category, UnixTime)> {
-        let mut all = self.queue.clone();
-        all.extend(self.done.iter().copied());
-        if let Some(current) = self.current {
+        let mut all = self.streams.queue.clone();
+        all.extend(self.streams.done.iter().copied());
+        if let Some(current) = self.current() {
             all.push(current);
         }
         all.sort_by_key(|(c, _)| *c);
         all
+    }
+
+    /// Positions the store has acknowledged since this was last asked, for the
+    /// shell to persist. Only these are safe to resume from after a restart.
+    pub fn take_kept_watermarks(&mut self) -> Vec<(Category, UnixTime)> {
+        std::mem::take(&mut self.streams.unpersisted).into_iter().collect()
     }
 
     pub fn sync_now(&mut self, now: UnixMillis) -> Vec<Action> {
@@ -486,53 +590,38 @@ impl Client {
     }
 
     fn drain_dump(&mut self, now: UnixMillis) -> Vec<Action> {
-        if self.phase != Phase::Finished
-            || self.measuring.is_some()
-            || self.dump.running()
-            || self.spi_flash.busy()
+        if self.link.state != State::Finished
+            || self.link.measuring.is_some()
+            || self.link.dump.running()
+            || self.link.spi_flash.busy()
+            || !self.dumps.due(now)
         {
             return Vec::new();
         }
-        if !self.dumps.due(now) {
-            return Vec::new();
-        }
         self.dumps.last = Some(now);
-        self.dump.start().into_iter().map(Action::Send).collect()
+        self.link.dump.start().into_iter().map(Action::Send).collect()
     }
 
     pub fn walk_now(&mut self, now: UnixMillis) -> Vec<Action> {
-        if self.measuring.is_some() {
+        if !self.link_quiet() {
             return Vec::new();
         }
-        if self.dump.running() {
+        if self.streams.queue.is_empty() && self.streams.done.is_empty() {
             return Vec::new();
         }
-        if self.spi_flash.busy() {
-            return Vec::new();
-        }
-        if self.phase != Phase::Finished && self.phase != Phase::Syncing {
-            return Vec::new();
-        }
-        if self.current.is_some() || self.draining.is_some() {
-            return Vec::new();
-        }
-        if self.queue.is_empty() && self.done.is_empty() {
-            return Vec::new();
-        }
-        self.phase = Phase::Syncing;
         self.walks.last = Some(now);
         let actions = self.begin_walk(now);
         self.noted(now, actions)
     }
 
     fn begin_walk(&mut self, now: UnixMillis) -> Vec<Action> {
-        self.queue
-            .extend(std::mem::take(&mut self.done).into_iter().rev());
+        let done = std::mem::take(&mut self.streams.done);
+        self.streams.queue.extend(done.into_iter().rev());
         self.request_next(now)
     }
 
     pub fn measuring(&self) -> Option<i16> {
-        self.measuring
+        self.link.measuring
     }
 
     pub fn live_samples(&self) -> &[i16] {
@@ -540,11 +629,25 @@ impl Client {
     }
 
     pub fn phase(&self) -> Phase {
-        self.phase
+        match self.link.state {
+            State::Idle => Phase::Idle,
+            State::Probing => Phase::Probing,
+            State::Authenticating => Phase::Authenticating,
+            State::NotAuthenticated => Phase::NotAuthenticated,
+            State::Walking(_) | State::Draining(_) => Phase::Syncing,
+            State::Finished => Phase::Finished,
+        }
+    }
+
+    fn stream(&self) -> Option<Stream> {
+        match self.link.state {
+            State::Walking(stream) => Some(stream),
+            _ => None,
+        }
     }
 
     pub fn current(&self) -> Option<(Category, UnixTime)> {
-        self.current
+        self.stream().map(|s| (s.category, s.through))
     }
 
     pub fn pending_deletes(&self) -> usize {
@@ -552,11 +655,11 @@ impl Client {
     }
 
     pub fn walk_span(&self) -> Option<(UnixTime, UnixTime)> {
-        Some((self.walk_started_from?, self.current?.1))
+        self.stream().map(|s| (s.started_from, s.through))
     }
 
     pub fn transfer_progress(&self) -> Option<(usize, usize)> {
-        self.signals.transfer_progress()
+        self.link.signals.transfer_progress()
     }
 
     pub fn records_emitted(&self) -> u64 {
@@ -564,10 +667,10 @@ impl Client {
     }
 
     pub fn stream_position(&self) -> (u32, u32) {
-        let remaining = self.queue.len() + usize::from(self.current.is_some());
+        let remaining = self.streams.queue.len() + usize::from(self.stream().is_some());
         (
-            (self.stream_total as usize - remaining) as u32,
-            self.stream_total,
+            self.streams.total - remaining as u32,
+            self.streams.total,
         )
     }
 
@@ -586,27 +689,29 @@ impl Client {
                 self.noted(received_at, actions)
             }
             Event::Stored { token } => self.on_stored(token),
+            Event::StoreFailed => self.on_store_failed(),
             Event::Tick { now } => self.on_tick(now),
         }
     }
 
     fn noted(&mut self, now: UnixMillis, actions: Vec<Action>) -> Vec<Action> {
         if actions.iter().any(|a| matches!(a, Action::Send(_))) {
-            self.last_spoke = Some(now);
+            self.link.last_spoke = Some(now);
         }
         actions
     }
 
     fn on_tick(&mut self, now: UnixMillis) -> Vec<Action> {
-        let Some(heard) = self.last_heard else {
+        let Some(heard) = self.link.last_heard else {
             return Vec::new();
         };
         let awaiting_reply = matches!(
-            self.phase,
+            self.phase(),
             Phase::Probing | Phase::Authenticating | Phase::Syncing
-        ) || self.last_spoke.is_some_and(|spoke| spoke > heard);
+        ) || self.link.last_spoke.is_some_and(|spoke| spoke > heard);
         let quiet_since =
-            self.last_spoke
+            self.link
+                .last_spoke
                 .map_or(heard, |spoke| if spoke.0 > heard.0 { spoke } else { heard });
         if awaiting_reply && now.0 - quiet_since.0 > SILENCE_TIMEOUT_MS {
             return vec![Action::Reconnect];
@@ -615,32 +720,21 @@ impl Client {
     }
 
     fn on_disconnected(&mut self) {
-        self.phase = Phase::Idle;
-        self.busy_retries = 0;
-        self.last_heard = None;
-        self.last_spoke = None;
-        self.measuring = None;
-        if let Some(interrupted) = self.current.take() {
-            self.queue.push(interrupted);
+        let link = std::mem::replace(&mut self.link, Link::idle());
+        if let State::Walking(stream) = link.state {
+            self.streams.queue.push((stream.category, stream.through));
         }
-        self.batch_high_water = None;
-        self.walk_started_from = None;
-        self.stores.clear();
-        self.draining = None;
-        self.awaiting_delete = false;
-        self.signals.reset();
-        self.dump.reset();
-        self.spi_flash.reset();
     }
 
     fn on_connected(&mut self, now: UnixMillis) -> Vec<Action> {
         self.on_disconnected();
-        self.phase = Phase::Probing;
-        self.last_heard = Some(now);
+        self.link.state = State::Probing;
+        self.link.last_heard = Some(now);
         vec![Action::Send(probe_frame())]
     }
 
     fn on_stored(&mut self, token: u64) -> Vec<Action> {
+        self.streams.acknowledge(token);
         let mut actions: Vec<Action> = Vec::new();
         self.pending_deletes.retain(|(pending, frame)| {
             if *pending <= token {
@@ -653,6 +747,17 @@ impl Client {
         actions
     }
 
+    /// Tokens acknowledge everything before them, so nothing still in flight
+    /// can be acknowledged once one batch is lost.
+    fn on_store_failed(&mut self) -> Vec<Action> {
+        self.pending_deletes.clear();
+        self.streams.rewind();
+        if let State::Walking(stream) = &mut self.link.state {
+            stream.through = self.streams.kept[&stream.category];
+        }
+        vec![Action::Reconnect]
+    }
+
     fn store(&mut self, records: Vec<Record>) -> Option<Action> {
         if records.is_empty() {
             return None;
@@ -660,23 +765,26 @@ impl Client {
         let token = self.next_token;
         self.next_token += 1;
         self.records_emitted += records.len() as u64;
+        if let Some((category, through)) = self.streams.moved.take() {
+            self.streams.in_flight.push((token, category, through));
+        }
         Some(Action::Store { token, records })
     }
 
     fn on_frame(&mut self, frame: Frame, received_at: UnixMillis) -> Vec<Action> {
         let mut actions = Vec::new();
         let mut records = Vec::new();
-        self.last_heard = Some(received_at);
+        self.link.last_heard = Some(received_at);
 
         self.collect_passive(&frame, received_at, &mut records);
         self.collect_history(&frame, &mut records);
-        self.live_samples.extend(self.signals.take_live());
+        self.live_samples.extend(self.link.signals.take_live());
         // Before the control flow below reads the frame: a record and the Null
         // that ends its reply can share a frame, and the Null moves the drain
         // on to the next store.
         for signal in self.take_signals() {
             // Nothing is deleted, so the watch still holds it for the next drain.
-            let Some(store) = self.draining else {
+            let Some(store) = self.answering_store() else {
                 self.note_unhandled(&frame, &WppObject::StoredSignalMeta(signal.meta));
                 continue;
             };
@@ -696,13 +804,15 @@ impl Client {
             if let Some(Action::Store { token, records }) = self.store(std::mem::take(&mut records)) {
                 if let Some(delete) = delete {
                     self.pending_deletes.push((token, delete));
-                    self.awaiting_delete = self.phase == Phase::Syncing;
+                    if let State::Draining(drain) = &mut self.link.state {
+                        drain.awaiting_delete = true;
+                    }
                 }
                 actions.push(Action::Store { token, records });
             }
         }
-        actions.extend(self.dump.on_frame(&frame).into_iter().map(Action::Send));
-        self.spi_flash.on_frame(&frame);
+        actions.extend(self.link.dump.on_frame(&frame).into_iter().map(Action::Send));
+        self.link.spi_flash.on_frame(&frame);
 
         // A refused menu write erases the whole store on the watch, so the
         // menu must be re-read after any error.
@@ -718,6 +828,7 @@ impl Client {
             )));
         }
 
+        let mut answered_ecg = false;
         match frame.command.opcode() {
             c if c == Command::CMD_MEASURE_START.0 => {
                 let category = frame
@@ -728,7 +839,7 @@ impl Client {
                         _ => None,
                     })
                     .unwrap_or(0);
-                self.measuring = Some(category);
+                self.link.measuring = Some(category);
                 self.live_samples.clear();
                 actions.push(Action::Send(Frame::new(
                     Command::CMD_MEASURE_START.with_channel(Channel::SlaveRequest),
@@ -741,10 +852,11 @@ impl Client {
                 )));
             }
             c if c == Command::CMD_STORED_MEASURE_SIGNAL_GET.0
-                && self.phase != Phase::Syncing
+                && self.link.fetching_ecg
                 && frame.objects.iter().any(|o| matches!(o, WppObject::Null(_))) =>
             {
-                self.draining = None;
+                self.link.fetching_ecg = false;
+                answered_ecg = true;
             }
             c if c == Command::CMD_SYNC_REQUEST.0 => {
                 actions.push(Action::Send(Frame::new(
@@ -762,7 +874,7 @@ impl Client {
                 }
             }
             c if c == Command::CMD_MEASURE_STOP.0 => {
-                self.measuring = None;
+                self.link.measuring = None;
                 actions.push(Action::Send(Frame::new(
                     Command::CMD_MEASURE_STOP.with_channel(Channel::SlaveRequest),
                     vec![WppObject::Null(Null {})],
@@ -773,7 +885,7 @@ impl Client {
                 }) {
                     // Named by its StoredMeasureMeta alone, the handler reads
                     // the ECG store.
-                    self.draining = Some(SignalStore::Ecg);
+                    self.link.fetching_ecg = true;
                     actions.push(Action::Send(Frame::new(
                         Command::CMD_STORED_MEASURE_SIGNAL_GET,
                         vec![WppObject::StoredMeasureMeta(measure)],
@@ -783,13 +895,13 @@ impl Client {
             _ => {}
         }
 
-        match (self.phase, frame.command.opcode()) {
-            (Phase::Probing, c) if c == Command::CMD_PROBE_CHALLENGE.0 => {
+        match (&self.link.state, frame.command.opcode()) {
+            (State::Probing, c) if c == Command::CMD_PROBE_CHALLENGE.0 => {
                 if let Some(challenge) = frame.objects.iter().find_map(|o| match o {
                     WppObject::ProbeChallenge(c) => Some(c.clone()),
                     _ => None,
                 }) {
-                    self.phase = Phase::Authenticating;
+                    self.link.state = State::Authenticating;
                     actions.push(Action::Send(Frame::new(
                         Command::CMD_PROBE_CHALLENGE,
                         vec![
@@ -804,13 +916,12 @@ impl Client {
                     )));
                 }
             }
-            (Phase::Probing | Phase::Authenticating, c)
+            (State::Probing | State::Authenticating, c)
                 if c == Command::CMD_ERROR.0 && rejects_probe(&frame) =>
             {
-                self.phase = Phase::NotAuthenticated;
+                self.link.state = State::NotAuthenticated;
             }
-            (Phase::Probing | Phase::Authenticating, c) if c == Command::CMD_PROBE.0 => {
-                self.phase = Phase::Syncing;
+            (State::Probing | State::Authenticating, c) if c == Command::CMD_PROBE.0 => {
                 actions.extend(self.send_clock(received_at));
                 // Scheduled features are armed for one window at a time, so the
                 // set has to be re-asserted on every connection or a nightly
@@ -824,10 +935,10 @@ impl Client {
                 )));
                 actions.extend(self.begin_walk(received_at));
             }
-            (Phase::Syncing, _) if self.draining.is_some() => {
+            (State::Draining(_), _) if !answered_ecg => {
                 actions.extend(self.on_store_frame(&frame, received_at));
             }
-            (Phase::Finished, c) if c == Command::CMD_SYNC_REQUEST.0 => {
+            (State::Finished, c) if c == Command::CMD_SYNC_REQUEST.0 => {
                 let walk = self.sync_now(received_at);
                 if walk.is_empty() {
                     actions.extend(self.drain_dump(received_at));
@@ -835,44 +946,33 @@ impl Client {
                     actions.extend(walk);
                 }
             }
-            (Phase::Syncing, c) if c == Command::CMD_ERROR.0 => {
+            (State::Walking(_), c) if c == Command::CMD_ERROR.0 => {
                 let busy = frame
                     .objects
                     .iter()
                     .any(|o| matches!(o, WppObject::Cmderror(e) if e.err == Cmderror::ERR_DEVBUSY));
-                if busy && self.busy_retries < MAX_BUSY_RETRIES {
-                    self.busy_retries += 1;
+                if busy && self.link.busy_retries < MAX_BUSY_RETRIES {
+                    self.link.busy_retries += 1;
                     actions.extend(self.request_current());
                 }
             }
-            (Phase::Syncing, _) => {
-                self.busy_retries = 0;
+            (State::Walking(stream), c) => {
+                let stream = *stream;
+                self.link.busy_retries = 0;
                 let carries_records = frame
                     .objects
                     .iter()
                     .any(|o| matches!(o, WppObject::WamVasistasHead(_)));
-                if let Some((seen, high)) = self.batch_high_water.take() {
-                    if let Some((category, _)) = self.current {
-                        if seen == category {
-                            self.current = Some((category, UnixTime(high.0 + 1)));
-                        }
-                    }
-                }
                 // Other requests on the link also answer with a Null, and only
                 // the outstanding stream's own reply says the stream is over.
-                let answers_stream = self
-                    .current
-                    .is_some_and(|(category, _)| stream_command(category).0 == frame.command.opcode());
-                let closed = answers_stream
+                let closed = stream_command(stream.category).0 == c
                     && !carries_records
                     && frame
                         .objects
                         .iter()
                         .any(|o| matches!(o, WppObject::Null(_)));
                 if closed {
-                    if let Some(finished) = self.current.take() {
-                        self.done.push(finished);
-                    }
+                    self.streams.done.push((stream.category, stream.through));
                     actions.extend(self.request_next(received_at));
                 }
             }
@@ -882,14 +982,26 @@ impl Client {
         if let Some(action) = self.store(records) {
             actions.push(action);
         }
-        if self.phase == Phase::Finished {
+        self.streams.settle_moved();
+        if self.link.state == State::Finished {
             actions.push(Action::Finished);
         }
         actions
     }
 
+    fn answering_store(&self) -> Option<SignalStore> {
+        if self.link.fetching_ecg {
+            return Some(SignalStore::Ecg);
+        }
+        match &self.link.state {
+            State::Draining(drain) => Some(drain.store),
+            _ => None,
+        }
+    }
+
     fn take_signals(&mut self) -> Vec<Signal> {
-        self.signals
+        self.link
+            .signals
             .take_completed()
             .into_iter()
             .filter(|s| s.is_complete())
@@ -933,7 +1045,7 @@ impl Client {
         }
 
         for object in &frame.objects {
-            self.signals.observe(object);
+            self.link.signals.observe(object);
             match object {
                 WppObject::ProbeReply(reply) => {
                     records.push(Record::Identity(DeviceIdentity::of(reply)));
@@ -1288,13 +1400,14 @@ impl Client {
     }
 
     fn note_head(&mut self, at: UnixTime) {
-        let Some((category, _)) = self.current else {
+        let State::Walking(stream) = &mut self.link.state else {
             return;
         };
-        self.batch_high_water = Some(match self.batch_high_water {
-            Some((seen, high)) if seen == category => (category, UnixTime(high.0.max(at.0))),
-            _ => (category, at),
-        });
+        let past = UnixTime(at.0 + 1);
+        if past > stream.through {
+            stream.through = past;
+            self.streams.moved = Some((stream.category, past));
+        }
     }
 
     pub fn take_unhandled(&mut self) -> Vec<(u16, u16, &'static str)> {
@@ -1310,19 +1423,19 @@ impl Client {
     /// [`Client::spi_flash_progress`] and [`Client::spi_flash_take`]; a resend
     /// discards whatever the previous read had gathered.
     pub fn spi_flash_read(&mut self, addr: u32, len: u32) -> Vec<Action> {
-        vec![Action::Send(self.spi_flash.start(addr, len))]
+        vec![Action::Send(self.link.spi_flash.start(addr, len))]
     }
 
     pub fn spi_flash_progress(&self) -> Option<SpiFlashProgress> {
-        self.spi_flash.progress()
+        self.link.spi_flash.progress()
     }
 
     pub fn spi_flash_take(&mut self) -> Option<Vec<u8>> {
-        self.spi_flash.take()
+        self.link.spi_flash.take()
     }
 
     pub fn spi_flash_reset(&mut self) {
-        self.spi_flash.reset();
+        self.link.spi_flash.reset();
     }
 
     pub fn request_screens(&self) -> Vec<Action> {
@@ -1571,12 +1684,11 @@ impl Client {
     /// Nothing is waiting on a reply, so the time set's own reply cannot be
     /// taken for one.
     fn link_quiet(&self) -> bool {
-        self.phase == Phase::Finished
-            && self.measuring.is_none()
-            && !self.dump.running()
-            && !self.spi_flash.busy()
-            && self.current.is_none()
-            && self.draining.is_none()
+        self.link.state == State::Finished
+            && self.link.measuring.is_none()
+            && !self.link.dump.running()
+            && !self.link.spi_flash.busy()
+            && !self.link.fetching_ecg
     }
 
     fn send_clock(&mut self, now: UnixMillis) -> Vec<Action> {
@@ -1645,11 +1757,11 @@ impl Client {
 
     /// The handshake is over and the watch will answer a request.
     fn answers_requests(&self) -> bool {
-        matches!(self.phase, Phase::Syncing | Phase::Finished)
+        matches!(self.phase(), Phase::Syncing | Phase::Finished)
     }
 
     pub fn poll_battery(&mut self, now: UnixMillis) -> Vec<Action> {
-        if self.measuring.is_some() || !self.answers_requests() {
+        if self.link.measuring.is_some() || !self.answers_requests() {
             return Vec::new();
         }
         let actions = vec![Action::Send(Frame::new(
@@ -1668,7 +1780,7 @@ impl Client {
     }
 
     pub fn force_refresh(&mut self, now: UnixMillis) -> Vec<Action> {
-        if self.measuring.is_some() || !self.answers_requests() {
+        if self.link.measuring.is_some() || !self.answers_requests() {
             return Vec::new();
         }
         self.refreshes.last = Some(now);
@@ -1682,31 +1794,30 @@ impl Client {
     }
 
     fn request_next(&mut self, now: UnixMillis) -> Vec<Action> {
-        match self.queue.pop() {
-            Some(next) => {
-                self.walk_started_from = Some(next.1);
-                self.current = Some(next);
-                self.request_current()
-            }
-            None => {
-                let mut actions = vec![Action::Send(Frame::new(Command::CMD_SYNC_OK, Vec::new()))];
-                self.stores = DRAINED_STORES.iter().rev().copied().collect();
-                actions.extend(self.request_next_store(now));
-                actions
-            }
+        if let Some((category, from)) = self.streams.queue.pop() {
+            self.link.state = State::Walking(Stream {
+                category,
+                through: from,
+                started_from: from,
+            });
+            return self.request_current();
         }
+        let mut actions = vec![Action::Send(Frame::new(Command::CMD_SYNC_OK, Vec::new()))];
+        actions.extend(self.request_next_store(DRAINED_STORES.iter().rev().copied().collect(), now));
+        actions
     }
 
-    fn request_next_store(&mut self, now: UnixMillis) -> Vec<Action> {
-        self.awaiting_delete = false;
-        self.draining = self.stores.pop();
-        match self.draining {
-            Some(store) => vec![Action::Send(stored_signal_request(store))],
-            None => {
-                self.phase = Phase::Finished;
-                self.refresh(now)
-            }
-        }
+    fn request_next_store(&mut self, mut remaining: Vec<SignalStore>, now: UnixMillis) -> Vec<Action> {
+        let Some(store) = remaining.pop() else {
+            self.link.state = State::Finished;
+            return self.refresh(now);
+        };
+        self.link.state = State::Draining(Drain {
+            store,
+            remaining,
+            awaiting_delete: false,
+        });
+        vec![Action::Send(stored_signal_request(store))]
     }
 
     /// One record per request: the watch answers with a record and a Null, or
@@ -1714,34 +1825,39 @@ impl Client {
     /// once the host has kept it, and only then is the store asked again, so
     /// the watch never holds more than the one record in flight.
     fn on_store_frame(&mut self, frame: &Frame, now: UnixMillis) -> Vec<Action> {
-        let store = self.draining.expect("the caller checked a store is being drained");
+        let State::Draining(drain) = &mut self.link.state else {
+            panic!("the caller matched a drain");
+        };
+        let store = drain.store;
         let opcode = frame.command.opcode();
         if opcode == Command::CMD_ERROR.0 {
             let busy = frame
                 .objects
                 .iter()
                 .any(|o| matches!(o, WppObject::Cmderror(e) if e.err == Cmderror::ERR_DEVBUSY));
-            if busy && self.busy_retries < MAX_BUSY_RETRIES {
-                self.busy_retries += 1;
+            if busy && self.link.busy_retries < MAX_BUSY_RETRIES {
+                self.link.busy_retries += 1;
                 return vec![Action::Send(stored_signal_request(store))];
             }
-            return self.request_next_store(now);
+            let remaining = std::mem::take(&mut drain.remaining);
+            return self.request_next_store(remaining, now);
         }
-        self.busy_retries = 0;
+        self.link.busy_retries = 0;
         if opcode == Command::CMD_STORED_MEASURE_SIGNAL_DEL.0 {
-            self.awaiting_delete = false;
+            drain.awaiting_delete = false;
             return vec![Action::Send(stored_signal_request(store))];
         }
         let ends_reply = opcode == Command::CMD_STORED_MEASURE_SIGNAL_GET.0
             && frame.objects.iter().any(|o| matches!(o, WppObject::Null(_)));
-        if !ends_reply || self.awaiting_delete {
+        if !ends_reply || drain.awaiting_delete {
             return Vec::new();
         }
-        self.request_next_store(now)
+        let remaining = std::mem::take(&mut drain.remaining);
+        self.request_next_store(remaining, now)
     }
 
     fn request_current(&mut self) -> Vec<Action> {
-        let Some((category, from)) = self.current else {
+        let Some((category, from)) = self.current() else {
             return Vec::new();
         };
         let window = WppObject::WamVasistasGet(WamVasistasGet {
@@ -3747,6 +3863,54 @@ mod tests {
             }],
             "thirty seconds is a session"
         );
+    }
+
+    fn head_with_a_reading(utc: u32) -> Event {
+        use crate::objects::{VasistasCbt, WamVasistasHead};
+        frame(
+            Command::CMD_VASISTAS_GET,
+            vec![
+                WppObject::WamVasistasHead(WamVasistasHead { utc }),
+                WppObject::VasistasCbt(VasistasCbt { algo: 0, attrib: 0, temperature: 37_000 }),
+            ],
+        )
+    }
+
+    fn token_of(actions: &[Action]) -> u64 {
+        actions
+            .iter()
+            .find_map(|a| match a {
+                Action::Store { token, .. } => Some(*token),
+                _ => None,
+            })
+            .expect("a store")
+    }
+
+    #[test]
+    fn a_position_is_only_kept_once_its_records_are() {
+        let mut client = authenticated();
+        client.take_kept_watermarks();
+
+        let actions = client.handle(head_with_a_reading(5_000));
+        assert_eq!(client.current(), Some((Category(8), UnixTime(5_001))));
+        assert!(client.take_kept_watermarks().is_empty(), "not stored yet");
+
+        client.handle(Event::Stored { token: token_of(&actions) });
+        assert_eq!(client.take_kept_watermarks(), vec![(Category(8), UnixTime(5_001))]);
+        assert!(client.take_kept_watermarks().is_empty(), "reported once");
+    }
+
+    #[test]
+    fn a_failed_store_fetches_everything_unacknowledged_again() {
+        let mut client = authenticated();
+        client.handle(head_with_a_reading(5_000));
+        assert_eq!(client.handle(Event::StoreFailed), vec![Action::Reconnect]);
+        assert_eq!(client.current(), Some((Category(8), UnixTime(1_000))));
+        assert!(client.take_kept_watermarks().is_empty());
+
+        let later = client.handle(head_with_a_reading(6_000));
+        client.handle(Event::Stored { token: token_of(&later) });
+        assert_eq!(client.take_kept_watermarks(), vec![(Category(8), UnixTime(6_001))]);
     }
 
     #[test]

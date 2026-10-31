@@ -435,6 +435,18 @@ impl Store {
             .collect()
     }
 
+    pub fn set_watermarks(
+        &self,
+        device_id: i64,
+        watermarks: &[(Category, UnixTime)],
+    ) -> Result<(), Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        for (category, through) in watermarks {
+            self.set_watermark(device_id, *category, *through)?;
+        }
+        tx.commit()
+    }
+
     pub fn set_watermark(
         &self,
         device_id: i64,

@@ -795,3 +795,26 @@ fn bytes_that_cannot_be_kept_do_not_cost_the_frame_its_reply() {
     assert!(!recorder.written.lock().unwrap().is_empty(), "the reply went out");
     cleanup(&path);
 }
+
+#[test]
+fn a_batch_that_cannot_be_kept_asks_for_a_new_connection() {
+    use wpp::objects::Steps;
+    use wpp::{Command, Frame, WppObject};
+
+    let path = db_path();
+    wpp_store::Store::open(&path)
+        .expect("store")
+        .connection()
+        .execute("DROP TABLE sample", [])
+        .unwrap();
+    let recorder = Arc::new(Recorder::default());
+    let service = service_at(&recorder, path.clone());
+
+    let frame = Frame::new(
+        Command::CMD_DISPLAYED_INFO_GET,
+        vec![WppObject::Steps(Steps { value: 10 })],
+    );
+    assert!(service.on_bytes(frame.to_bytes(), 1_700_000_000_000).is_err());
+    assert_eq!(*recorder.reconnects.lock().unwrap(), 1);
+    cleanup(&path);
+}
