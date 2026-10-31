@@ -459,6 +459,7 @@ private fun Navigation(
             composable(Routes.WATCH_ACTIVITIES) {
                 WatchActivitiesScreen(
                     activities = state.activities,
+                    menuKnown = state.activityMenuKnown,
                     saveState = saving,
                     onApply = { model.applyActivities(it) },
                     onAcknowledge = { model.acknowledgeSave() },

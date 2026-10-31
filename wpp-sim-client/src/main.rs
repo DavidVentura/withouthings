@@ -85,7 +85,7 @@ impl Link {
     }
 
     fn send_quietly(&mut self, frame: &Frame) -> std::io::Result<()> {
-        for part in frame.to_wire() {
+        for part in frame.to_wire().expect("the client sends objects a frame can hold") {
             for write in part.to_bytes().chunks(self.write_limit) {
                 let mut message = Vec::with_capacity(write.len() + 2);
                 message.extend_from_slice(&(write.len() as u16).to_be_bytes());

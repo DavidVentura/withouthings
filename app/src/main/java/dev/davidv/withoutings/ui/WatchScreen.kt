@@ -259,6 +259,7 @@ private fun String.saysSomethingBeyond(title: String): Boolean {
 @Composable
 fun WatchActivitiesScreen(
     activities: List<Activity>,
+    menuKnown: Boolean,
     saveState: SaveState,
     onApply: (List<UInt>) -> Unit,
     onAcknowledge: () -> Unit,
@@ -280,7 +281,9 @@ fun WatchActivitiesScreen(
                 style = AppTheme.type.rowMeta,
                 color = AppTheme.colors.onSurfaceTertiary,
             )
-            if (menu.isEmpty()) {
+            if (!menuKnown) {
+                EmptyNote("Waiting for the watch to report its menu.")
+            } else if (menu.isEmpty()) {
                 EmptyNote("Nothing on the menu yet — turn one on below.")
             }
             ReorderableColumn(menu, onReorder = { edited = true; menu = it }) { activity, _ ->
@@ -321,7 +324,7 @@ fun WatchActivitiesScreen(
         }
         SaveFooter(
             saveState = saveState,
-            enabled = edited && menu.isNotEmpty(),
+            enabled = menuKnown && edited && menu.isNotEmpty(),
             onAcknowledge = onAcknowledge,
             onSaved = onBack,
         ) {

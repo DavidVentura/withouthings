@@ -889,11 +889,10 @@ impl WatchService {
                 )
             })
         };
-        for frame in &frames {
-            self.draw(frame);
-        }
+        let drawn = frames.iter().try_for_each(|frame| self.draw(frame));
         self.dispatch(pending)?;
-        kept.map_err(WatchError::from)
+        kept?;
+        drawn
     }
 
     pub fn on_disconnected(&self) {
@@ -1557,6 +1556,13 @@ impl WatchService {
             }
         }
         activities
+    }
+
+    /// What the watch's menu holds, or None until it has said. [`Self::activities`]
+    /// lists every sport either way, so it cannot tell an empty menu from an
+    /// unread one, and saving an unread one would overwrite the watch's.
+    pub fn activity_menu(&self) -> Option<Vec<u32>> {
+        self.inner.lock().unwrap().client.activities()
     }
 
     pub fn set_activities(&self, ids: Vec<u32>) -> Result<(), WatchError> {
@@ -3085,18 +3091,24 @@ impl WatchService {
     fn dispatch(&self, actions: Vec<Action>) -> Result<(), WatchError> {
         let mut actions: std::collections::VecDeque<Action> = actions.into();
         let mut changed = false;
-        let mut failure = None;
+        let mut failure: Option<WatchError> = None;
+        let mut unkept = false;
         while let Some(action) = actions.pop_front() {
             match action {
-                Action::Send(frame) | Action::Delete(frame) => self.write(&frame),
+                Action::Send(frame) | Action::Delete(frame) => {
+                    if let Err(error) = self.write(&frame) {
+                        failure.get_or_insert(error);
+                    }
+                }
                 Action::Finished => changed = true,
                 Action::Reconnect => self.transport.reconnect(),
                 // A token acknowledges every record before it, so nothing later
                 // may be acknowledged past one that was not kept.
-                Action::Store { .. } if failure.is_some() => {}
+                Action::Store { .. } if unkept => {}
                 Action::Store { token, records } => {
                     if let Err(error) = self.store.lock().unwrap().store(self.device_id, &records) {
-                        failure = Some(error);
+                        failure.get_or_insert(error.into());
+                        unkept = true;
                         continue;
                     }
                     changed = true;
@@ -3111,11 +3123,11 @@ impl WatchService {
             }
         }
 
-        if let Some(error) = failure {
+        if unkept {
             if changed {
                 self.transport.changed();
             }
-            return Err(error.into());
+            return Err(failure.expect("an unkept record set the failure"));
         }
 
         let watermarks = self.inner.lock().unwrap().client.watermarks();
@@ -3128,19 +3140,22 @@ impl WatchService {
         if changed {
             self.transport.changed();
         }
+        failure.map_or(Ok(()), Err)
+    }
+
+    fn write(&self, message: &Frame) -> Result<(), WatchError> {
+        let wire = message.to_wire().map_err(|error| WatchError::Protocol {
+            reason: error.to_string(),
+        })?;
+        self.transport.write(wire.iter().map(Frame::to_bytes).collect());
         Ok(())
     }
 
-    fn write(&self, message: &Frame) {
-        self.transport
-            .write(message.to_wire().iter().map(Frame::to_bytes).collect());
-    }
-
-    fn draw(&self, frame: &Frame) {
+    fn draw(&self, frame: &Frame) -> Result<(), WatchError> {
         let glyph = GlyphRequest::parse(frame);
         let icon = IconRequest::parse(frame);
         if glyph.is_none() && icon.is_none() {
-            return;
+            return Ok(());
         }
         let formats = self.inner.lock().unwrap().client.image_formats().to_vec();
 
@@ -3151,8 +3166,7 @@ impl WatchService {
                 .iter()
                 .map(|g| self.rasterizer.glyph(g.codepoint, width, height).pack())
                 .collect();
-            self.write(&request.reply(&bitmaps));
-            return;
+            return self.write(&request.reply(&bitmaps));
         }
         if let Some(request) = icon {
             let (width, height) = request.size(&formats);
@@ -3160,8 +3174,9 @@ impl WatchService {
                 .rasterizer
                 .icon(request.app_id.clone(), width, height)
                 .pack();
-            self.write(&request.reply(&drawn));
+            return self.write(&request.reply(&drawn));
         }
+        Ok(())
     }
 }
 
@@ -3415,8 +3430,8 @@ impl PairingService {
             (frames, moved)
         };
         for message in frames {
-            self.transport
-                .write(message.to_wire().iter().map(Frame::to_bytes).collect());
+            let wire = message.to_wire().expect("pairing objects fit a frame");
+            self.transport.write(wire.iter().map(Frame::to_bytes).collect());
         }
         if moved {
             self.transport.changed();

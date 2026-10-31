@@ -4274,7 +4274,9 @@ mod workout_screen_tests {
     #[test]
     fn no_frame_reaches_the_size_that_reboots_the_watch() {
         let client = authenticated();
-        let frames = written(&client, &[screen(16, "Weights"), screen(2, "Running")]).to_wire();
+        let frames = written(&client, &[screen(16, "Weights"), screen(2, "Running")])
+            .to_wire()
+            .unwrap();
         assert!(frames.len() > 1, "one frame would overflow the watch");
         for frame in &frames {
             let encoded = frame.to_bytes().len();
@@ -4315,6 +4317,7 @@ mod workout_screen_tests {
         let message = written(&client, &[screen(16, "Weights"), screen(2, "Running")]);
         let split: Vec<WppObject> = message
             .to_wire()
+            .unwrap()
             .into_iter()
             .flat_map(|f| f.objects)
             .collect();

@@ -461,7 +461,7 @@ mod tests {
             height: 3,
         };
         let icon = Mono::pack(&[WHITE; 9], 3, 3);
-        for frame in request.reply(&icon).to_wire() {
+        for frame in request.reply(&icon).to_wire().unwrap() {
             assert_eq!(Frame::parse(&frame.to_bytes()).unwrap(), frame);
         }
     }
@@ -476,7 +476,8 @@ mod tests {
         };
         let frames = request
             .reply(&Mono::pack(&[WHITE; 34 * 34], 34, 34))
-            .to_wire();
+            .to_wire()
+            .unwrap();
         assert!(
             frames.len() > 1,
             "170 bytes of icon cannot ride in one frame"

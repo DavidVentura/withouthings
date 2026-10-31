@@ -95,6 +95,25 @@ impl core::fmt::Display for FrameError {
 
 impl std::error::Error for FrameError {}
 
+/// The watch accumulates split frames, but an object cannot itself be split.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObjectTooLarge {
+    pub object: &'static str,
+    pub frame_bytes: usize,
+}
+
+impl std::fmt::Display for ObjectTooLarge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} needs a frame of {} bytes, over the {MAX_FRAME_BYTES} the watch survives",
+            self.object, self.frame_bytes
+        )
+    }
+}
+
+impl std::error::Error for ObjectTooLarge {}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frame {
     pub command: Command,
@@ -111,15 +130,21 @@ impl Frame {
         Frame { command, objects }
     }
 
-    pub fn to_wire(&self) -> Vec<Frame> {
+    pub fn to_wire(&self) -> Result<Vec<Frame>, ObjectTooLarge> {
         if HEADER_LEN + self.payload_len() <= MAX_FRAME_BYTES {
-            return vec![self.clone()];
+            return Ok(vec![self.clone()]);
         }
         let mut frames = Vec::new();
         let mut batch: Vec<WppObject> = Vec::new();
         let mut used = HEADER_LEN;
         for object in &self.objects {
             let cost = OBJECT_HEADER_LEN + object.data_size();
+            if HEADER_LEN + cost > MAX_FRAME_BYTES {
+                return Err(ObjectTooLarge {
+                    object: object.type_name(),
+                    frame_bytes: HEADER_LEN + cost,
+                });
+            }
             if !batch.is_empty() && used + cost > MAX_FRAME_BYTES {
                 frames.push(Frame::new(self.command, std::mem::take(&mut batch)));
                 used = HEADER_LEN;
@@ -130,7 +155,7 @@ impl Frame {
         if !batch.is_empty() {
             frames.push(Frame::new(self.command, batch));
         }
-        frames
+        Ok(frames)
     }
 
     pub fn payload_len(&self) -> usize {
@@ -261,7 +286,7 @@ mod tests {
     #[test]
     fn the_limit_counts_the_header_too() {
         assert_eq!(sized(MAX_FRAME_BYTES).to_bytes().len(), MAX_FRAME_BYTES);
-        assert_eq!(sized(MAX_FRAME_BYTES).to_wire().len(), 1);
+        assert_eq!(sized(MAX_FRAME_BYTES).to_wire().unwrap().len(), 1);
     }
 
     #[test]
@@ -275,7 +300,7 @@ mod tests {
                 WppObject::ImageData(ImageData { data: Vec::new() }),
             ],
         );
-        let wire = frame.to_wire();
+        let wire = frame.to_wire().unwrap();
         assert_eq!(wire.len(), 2, "a frame past the limit has to be split");
         assert_eq!(wire[0].to_bytes().len(), MAX_FRAME_BYTES);
         for piece in &wire {
@@ -284,11 +309,9 @@ mod tests {
     }
 
     #[test]
-    fn an_object_larger_than_a_frame_goes_rather_than_vanishing() {
+    fn an_object_larger_than_a_frame_is_refused_rather_than_rebooting_the_watch() {
         let frame = sized(MAX_FRAME_BYTES + 1);
         assert_eq!(frame.objects.len(), 1);
-        let wire = frame.to_wire();
-        assert_eq!(wire.len(), 1);
-        assert_eq!(wire[0].objects, frame.objects);
+        assert_eq!(frame.to_wire().unwrap_err().frame_bytes, MAX_FRAME_BYTES + 1);
     }
 }
