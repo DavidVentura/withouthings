@@ -5,25 +5,24 @@ use wpp::ancs::{self, NotificationCenter, NotificationId};
 use wpp::capture::{FrameReassembler, StreamItem};
 use wpp::client::{
     Action, Category, Client, Credentials, Event, Feature, FeatureId, FeatureSchedule, Phase,
-    Source,
+    SampleKind, Source, BATTERY_STATE_CHARGING,
 };
 use wpp::energy::{self, Beat, Reading, Wearer};
 use wpp::image::{GlyphRequest, IconRequest, Mono};
 use wpp::pairing::{Pairing, PairingState};
 use wpp::track::{self, Limits, Track};
 use wpp::units::{
-    Bpm, Celsius, Kilocalories, Met, Metres, MetresPerSecond, Millivolts, UnixMillis, UnixTime,
+    Bpm, Kilocalories, Met, Metres, MetresPerSecond, Millivolts, UnixMillis, UnixTime,
 };
 use wpp::Frame;
-use wpp_store::{Store, Trim, WorkoutRow};
+use wpp_store::{DeviceId, EcgId, SeriesPoint, SetBoundary, Store, Trim, WorkoutId, WorkoutRow};
 
 uniffi::setup_scaffolding!();
 
-fn origin_of(source: i64) -> Origin {
-    if source == 1 {
-        Origin::Live
-    } else {
-        Origin::Stored
+fn origin_of(source: Source) -> Origin {
+    match source {
+        Source::Live => Origin::Live,
+        Source::Stored => Origin::Stored,
     }
 }
 
@@ -80,20 +79,20 @@ pub enum Metric {
 }
 
 impl Metric {
-    fn kind(self) -> i64 {
+    fn kind(self) -> SampleKind {
         match self {
-            Metric::HeartRate => 1,
-            Metric::Temperature => 2,
-            Metric::HrvSdnn => 3,
-            Metric::HrvRmssd => 4,
-            Metric::RespiratoryRate => 5,
-            Metric::Battery => 6,
-            Metric::Steps => 7,
-            Metric::Spo2 => 11,
-            Metric::Ascent => 12,
-            Metric::Calories => 13,
-            Metric::Distance => 14,
-            Metric::TrackedDuration => 15,
+            Metric::HeartRate => SampleKind::HeartRate,
+            Metric::Temperature => SampleKind::CoreTemperature,
+            Metric::HrvSdnn => SampleKind::HrvSdnn,
+            Metric::HrvRmssd => SampleKind::HrvRmssd,
+            Metric::RespiratoryRate => SampleKind::RespiratoryRate,
+            Metric::Battery => SampleKind::BatteryPercent,
+            Metric::Steps => SampleKind::Steps,
+            Metric::Spo2 => SampleKind::Spo2,
+            Metric::Ascent => SampleKind::Ascent,
+            Metric::Calories => SampleKind::Calories,
+            Metric::Distance => SampleKind::Distance,
+            Metric::TrackedDuration => SampleKind::TrackedDuration,
         }
     }
 
@@ -105,6 +104,10 @@ impl Metric {
             Metric::Spo2 => 10.0,
             _ => 1.0,
         }
+    }
+
+    fn reading(self, stored: i64) -> f64 {
+        stored as f64 / self.scale()
     }
 }
 
@@ -766,7 +769,7 @@ pub struct WatchService {
     transport: Box<dyn Transport>,
     ancs: Box<dyn AncsLink>,
     rasterizer: Box<dyn Rasterizer>,
-    device_id: i64,
+    device_id: DeviceId,
     notifications: Mutex<NotificationCenter>,
     live_distance: Mutex<Option<LiveDistance>>,
 }
@@ -881,7 +884,7 @@ impl WatchService {
                 let command = Frame::declared_command(bytes).unwrap_or(0);
                 store.store_undecoded(
                     self.device_id,
-                    received_at_ms,
+                    UnixMillis(received_at_ms),
                     command as i64,
                     bytes,
                     Frame::splice_offset(bytes).map(|at| at as i64),
@@ -975,35 +978,40 @@ impl WatchService {
                     hardware: identity.hardware,
                     rescue: identity.rescue,
                 }),
-            battery: store.latest(self.device_id, 6)?.map(|(at, value)| Battery {
-                percent: value as u32,
-                at_ms: at,
-                charging: store
-                    .latest(self.device_id, 8)
-                    .ok()
-                    .flatten()
-                    .filter(|(state_at, _)| now_ms() - state_at < CHARGE_STATE_FRESH_MS)
-                    .map(|(_, state)| state == CHARGING_STATE),
-            }),
-            latest_hr: store.latest(self.device_id, 1)?.map(|(at, value)| HrPoint {
-                at_ms: at,
-                bpm: value as u16,
-                origin: Origin::Stored,
-            }),
-            latest_temperature: store
-                .latest(self.device_id, 2)?
-                .map(|(at, value)| Temperature {
-                    celsius: Celsius(value as f64 / 1000.0).0,
-                    at_ms: at,
+            battery: match store.latest(self.device_id, SampleKind::BatteryPercent)? {
+                None => None,
+                Some(level) => Some(Battery {
+                    percent: level.value as u32,
+                    at_ms: level.at.0,
+                    charging: store
+                        .latest(self.device_id, SampleKind::BatteryState)?
+                        .filter(|state| now_ms() - state.at.0 < CHARGE_STATE_FRESH_MS)
+                        .map(|state| state.value == BATTERY_STATE_CHARGING),
                 }),
-            steps: store.latest(self.device_id, 7)?.map(|(at, value)| Steps {
-                count: value as u32,
-                day_start_ms: at,
-            }),
+            },
+            latest_hr: store
+                .latest(self.device_id, SampleKind::HeartRate)?
+                .map(|point| HrPoint {
+                    at_ms: point.at.0,
+                    bpm: point.value as u16,
+                    origin: Origin::Stored,
+                }),
+            latest_temperature: store
+                .latest(self.device_id, SampleKind::CoreTemperature)?
+                .map(|point| Temperature {
+                    celsius: Metric::Temperature.reading(point.value),
+                    at_ms: point.at.0,
+                }),
+            steps: store
+                .latest(self.device_id, SampleKind::Steps)?
+                .map(|point| Steps {
+                    count: point.value as u32,
+                    day_start_ms: point.at.0,
+                }),
             active_workout: match store.active_workout(self.device_id)? {
                 None => None,
                 Some(active) => Some(WorkoutSummary {
-                    id: active.id,
+                    id: active.id.0,
                     started_at_ms: active.started_at.0 * 1000,
                     ended_at_ms: None,
                     subcategory: active.subcategory as i32,
@@ -1034,12 +1042,18 @@ impl WatchService {
     ) -> Result<Vec<HrPoint>, WatchError> {
         let store = self.store.lock().unwrap();
         Ok(store
-            .series(self.device_id, 1, from_ms, to_ms, max_points)?
+            .series(
+                self.device_id,
+                SampleKind::HeartRate,
+                UnixMillis(from_ms),
+                UnixMillis(to_ms),
+                max_points,
+            )?
             .into_iter()
-            .map(|(at, value, source)| HrPoint {
-                at_ms: at,
-                bpm: value as u16,
-                origin: origin_of(source),
+            .map(|point| HrPoint {
+                at_ms: point.at.0,
+                bpm: point.value as u16,
+                origin: origin_of(point.source),
             })
             .collect())
     }
@@ -1052,19 +1066,30 @@ impl WatchService {
         max_points: u32,
     ) -> Result<Vec<Point>, WatchError> {
         let store = self.store.lock().unwrap();
-        let scale = metric.scale();
-        let found = store.series(self.device_id, metric.kind(), from_ms, to_ms, max_points)?;
-        let counter: Vec<Reading> = found
-            .iter()
-            .map(|(at, value, _)| Reading {
-                at: UnixMillis(*at),
-                total: Kilocalories(*value as f64 / scale),
-            })
-            .collect();
-        Ok(expenditure(&store, self.device_id, metric, &counter)?
+        let found = store.series(
+            self.device_id,
+            metric.kind(),
+            UnixMillis(from_ms),
+            UnixMillis(to_ms),
+            max_points,
+        )?;
+        if metric != Metric::Calories {
+            return Ok(found
+                .iter()
+                .map(|point| Point {
+                    at_ms: point.at.0,
+                    value: metric.reading(point.value),
+                    origin: origin_of(point.source),
+                })
+                .collect());
+        }
+        let counter: Vec<Reading> = found.iter().map(|p| calorie_reading(p.at, p.value)).collect();
+        let lifted = expenditure(&store, self.device_id, &counter)?;
+        assert_eq!(lifted.len(), found.len(), "one lifted reading per stored one");
+        Ok(lifted
             .into_iter()
             .zip(&found)
-            .map(|(reading, (_, _, source))| Point {
+            .map(|(reading, SeriesPoint { source, .. })| Point {
                 at_ms: reading.at.0,
                 value: reading.total.0,
                 origin: origin_of(*source),
@@ -1077,50 +1102,54 @@ impl WatchService {
         metric: Metric,
         edges_ms: Vec<i64>,
     ) -> Result<Vec<Option<f64>>, WatchError> {
+        let edges = edges_of(edges_ms)?;
         let store = self.store.lock().unwrap();
-        let scale = metric.scale();
         if metric != Metric::Calories {
             return Ok(store
-                .windowed_max(self.device_id, metric.kind(), &edges_ms)?
+                .windowed_max(self.device_id, metric.kind(), &edges)?
                 .into_iter()
-                .map(|found| found.map(|value| value as f64 / scale))
+                .map(|found| found.map(|value| metric.reading(value)))
                 .collect());
         }
-        let (Some(&first), Some(&last)) = (edges_ms.first(), edges_ms.last()) else {
+        let Some((first, last)) = edges.span() else {
             return Ok(Vec::new());
         };
         let counter: Vec<Reading> = store
-            .samples_between(self.device_id, metric.kind(), first, last - 1)?
+            .samples_between(
+                self.device_id,
+                metric.kind(),
+                first,
+                last - wpp::units::Duration::from_millis(1),
+            )?
             .into_iter()
-            .map(|(at, value)| Reading {
-                at: UnixMillis(at),
-                total: Kilocalories(value as f64 / scale),
-            })
+            .map(|point| calorie_reading(point.at, point.value))
             .collect();
-        let lifted = expenditure(&store, self.device_id, metric, &counter)?;
-        let mut found = vec![None; edges_ms.len() - 1];
-        let mut window = 0;
+        let lifted = expenditure(&store, self.device_id, &counter)?;
+        let mut found = vec![None; edges.windows()];
         for reading in lifted {
-            while reading.at.0 >= edges_ms[window + 1] {
-                window += 1;
+            if let Some(window) = edges.window_of(reading.at) {
+                found[window] = Some(
+                    found[window].map_or(reading.total.0, |seen: f64| seen.max(reading.total.0)),
+                );
             }
-            found[window] =
-                Some(found[window].map_or(reading.total.0, |seen: f64| seen.max(reading.total.0)));
         }
         Ok(found)
     }
 
     pub fn latest_value(&self, metric: Metric) -> Result<Option<Point>, WatchError> {
         let store = self.store.lock().unwrap();
-        let scale = metric.scale();
-        let Some((at, value)) = store.latest(self.device_id, metric.kind())? else {
+        let Some(latest) = store.latest(self.device_id, metric.kind())? else {
             return Ok(None);
         };
-        let counter = [Reading {
-            at: UnixMillis(at),
-            total: Kilocalories(value as f64 / scale),
-        }];
-        let lifted = expenditure(&store, self.device_id, metric, &counter)?;
+        if metric != Metric::Calories {
+            return Ok(Some(Point {
+                at_ms: latest.at.0,
+                value: metric.reading(latest.value),
+                origin: Origin::Stored,
+            }));
+        }
+        let counter = [calorie_reading(latest.at, latest.value)];
+        let lifted = expenditure(&store, self.device_id, &counter)?;
         Ok(lifted.first().map(|reading| Point {
             at_ms: reading.at.0,
             value: reading.total.0,
@@ -1132,7 +1161,10 @@ impl WatchService {
         let store = self.store.lock().unwrap();
         Ok(store
             .extent(self.device_id, metric.kind())?
-            .map(|(from_ms, to_ms)| Extent { from_ms, to_ms }))
+            .map(|(from, to)| Extent {
+                from_ms: from.0,
+                to_ms: to.0,
+            }))
     }
 
     pub fn workouts(&self, limit: u32) -> Result<Vec<WorkoutSummary>, WatchError> {
@@ -1156,8 +1188,8 @@ impl WatchService {
         store
             .workouts_between(
                 self.device_id,
-                from_ms.div_euclid(1000),
-                to_ms.div_euclid(1000),
+                UnixMillis(from_ms).to_seconds(),
+                UnixMillis(to_ms).to_seconds(),
             )?
             .into_iter()
             .map(|row| summarise(&store, self.device_id, user.as_ref(), row))
@@ -1167,13 +1199,14 @@ impl WatchService {
     /// Hours of each window the watch measured a heart rate in, which is the
     /// hours it was on a wrist.
     pub fn worn_hours(&self, edges_ms: Vec<i64>) -> Result<Vec<u32>, WatchError> {
+        let edges = edges_of(edges_ms)?;
         let store = self.store.lock().unwrap();
-        Ok(store.windowed_hours(self.device_id, Metric::HeartRate.kind(), &edges_ms)?)
+        Ok(store.windowed_hours(self.device_id, SampleKind::HeartRate, &edges)?)
     }
 
     pub fn delete_workout(&self, id: i64) -> Result<(), WatchError> {
         let store = self.store.lock().unwrap();
-        store.delete_workout(self.device_id, id)?;
+        store.delete_workout(self.device_id, WorkoutId(id))?;
         drop(store);
         self.transport.changed();
         Ok(())
@@ -1184,13 +1217,13 @@ impl WatchService {
     pub fn trim_workout(&self, id: i64, ended_at_ms: i64) -> Result<WorkoutSummary, WatchError> {
         let store = self.store.lock().unwrap();
         let ended_at = UnixMillis(ended_at_ms).to_seconds();
-        if store.trim_workout(self.device_id, id, ended_at)? == Trim::OutsideSession {
+        if store.trim_workout(self.device_id, WorkoutId(id), ended_at)? == Trim::OutsideSession {
             return Err(WatchError::Refused {
                 reason: format!("{ended_at_ms} is not inside session {id}"),
             });
         }
         let user = store.watch_user(self.device_id)?;
-        let Some(row) = store.workout(self.device_id, id)? else {
+        let Some(row) = store.workout(self.device_id, WorkoutId(id))? else {
             return Err(WatchError::Refused {
                 reason: format!("no session {id}"),
             });
@@ -1205,8 +1238,8 @@ impl WatchService {
         let store = self.store.lock().unwrap();
         let minutes = store.activity_minutes(
             self.device_id,
-            from_ms.div_euclid(1000),
-            to_ms.div_euclid(1000),
+            UnixMillis(from_ms).to_seconds(),
+            UnixMillis(to_ms).to_seconds(),
         )?;
         let summed = activity::totals(&minutes);
         Ok(ActivityTotals {
@@ -1224,8 +1257,8 @@ impl WatchService {
         let store = self.store.lock().unwrap();
         let minutes = store.activity_minutes(
             self.device_id,
-            from_ms.div_euclid(1000),
-            to_ms.div_euclid(1000),
+            UnixMillis(from_ms).to_seconds(),
+            UnixMillis(to_ms).to_seconds(),
         )?;
         drop(store);
 
@@ -1246,15 +1279,15 @@ impl WatchService {
         to_ms: i64,
     ) -> Result<Vec<DetectedActivity>, WatchError> {
         let store = self.store.lock().unwrap();
-        let from_secs = from_ms.div_euclid(1000);
-        let to_secs = to_ms.div_euclid(1000);
-        let minutes = store.activity_minutes(self.device_id, from_secs, to_secs)?;
+        let from = UnixMillis(from_ms).to_seconds();
+        let to = UnixMillis(to_ms).to_seconds();
+        let minutes = store.activity_minutes(self.device_id, from, to)?;
         // A workout still running has no end, and its minutes are as much its
         // own as a finished one's.
         let recorded: Vec<std::ops::Range<UnixTime>> = store
-            .workouts_between(self.device_id, from_secs, to_secs)?
+            .workouts_between(self.device_id, from, to)?
             .iter()
-            .map(|row| row.started_at..row.ended_at.unwrap_or(UnixTime(to_secs)))
+            .map(|row| row.started_at..row.ended_at.unwrap_or(to))
             .collect();
         Ok(activity::detect(&minutes, &recorded)
             .into_iter()
@@ -1746,8 +1779,11 @@ impl WatchService {
         let store = self.store.lock().unwrap();
         store.mark_set(
             self.device_id,
-            at_ms,
-            if edge == SetEdge::End { 1 } else { 0 },
+            UnixMillis(at_ms),
+            match edge {
+                SetEdge::Start => SetBoundary::Start,
+                SetEdge::End => SetBoundary::End,
+            },
         )?;
         drop(store);
         self.transport.changed();
@@ -1792,7 +1828,7 @@ impl WatchService {
             return Ok(None);
         };
         let store = self.store.lock().unwrap();
-        let fixes = store.track_points(self.device_id, from_ms, to_ms)?;
+        let fixes = store.track_points(self.device_id, UnixMillis(from_ms), UnixMillis(to_ms))?;
         drop(store);
 
         let cleaned = track::clean(&fixes, limits);
@@ -1855,7 +1891,7 @@ impl WatchService {
         floors_bpm: Vec<u16>,
     ) -> Result<Vec<Vec<i64>>, WatchError> {
         let store = self.store.lock().unwrap();
-        zone_time(&store, self.device_id, &edges_ms, &floors_bpm)
+        zone_time(&store, self.device_id, &edges_of(edges_ms)?, &floors_bpm)
     }
 
     pub fn add_note(&self, at_ms: i64, text: String) -> Result<i64, WatchError> {
@@ -1866,7 +1902,7 @@ impl WatchService {
             });
         }
         let store = self.store.lock().unwrap();
-        Ok(store.add_note(at_ms, text)?)
+        Ok(store.add_note(UnixMillis(at_ms), text)?)
     }
 
     pub fn notes(&self) -> Result<Vec<Note>, WatchError> {
@@ -1874,7 +1910,11 @@ impl WatchService {
         Ok(store
             .notes()?
             .into_iter()
-            .map(|(id, at_ms, text)| Note { id, at_ms, text })
+            .map(|note| Note {
+                id: note.id,
+                at_ms: note.at.0,
+                text: note.text,
+            })
             .collect())
     }
 
@@ -1885,25 +1925,29 @@ impl WatchService {
 
     pub fn awake_heart(&self, edges_ms: Vec<i64>) -> Result<Vec<Option<AwakeHeart>>, WatchError> {
         let store = self.store.lock().unwrap();
-        awake_heart(&store, self.device_id, &edges_ms)
+        awake_heart(&store, self.device_id, &edges_of(edges_ms)?)
     }
 
     pub fn has_staging(&self, from_ms: i64, to_ms: i64) -> Result<bool, WatchError> {
         let store = self.store.lock().unwrap();
-        Ok(store.has_staging(self.device_id, from_ms / 1000, to_ms / 1000)?)
+        Ok(store.has_staging(
+            self.device_id,
+            UnixMillis(from_ms).to_seconds(),
+            UnixMillis(to_ms).to_seconds(),
+        )?)
     }
 
     pub fn charging(&self, from_ms: i64, to_ms: i64) -> Result<Vec<Marker>, WatchError> {
         let store = self.store.lock().unwrap();
         let mut out = Vec::new();
-        for (start, end) in store.charge_periods(self.device_id, from_ms, to_ms)? {
+        for period in store.charge_periods(self.device_id, UnixMillis(from_ms), UnixMillis(to_ms))? {
             out.push(Marker {
-                at_ms: start,
+                at_ms: period.from.0,
                 edge: SetEdge::Start,
             });
-            if let Some(end) = end {
+            if let Some(end) = period.to {
                 out.push(Marker {
-                    at_ms: end,
+                    at_ms: end.0,
                     edge: SetEdge::End,
                 });
             }
@@ -1914,14 +1958,13 @@ impl WatchService {
     pub fn markers(&self, from_ms: i64, to_ms: i64) -> Result<Vec<Marker>, WatchError> {
         let store = self.store.lock().unwrap();
         Ok(store
-            .markers(self.device_id, from_ms, to_ms)?
+            .markers(self.device_id, UnixMillis(from_ms), UnixMillis(to_ms))?
             .into_iter()
-            .map(|(at_ms, edge)| Marker {
-                at_ms,
-                edge: if edge == 1 {
-                    SetEdge::End
-                } else {
-                    SetEdge::Start
+            .map(|marker| Marker {
+                at_ms: marker.at.0,
+                edge: match marker.boundary {
+                    SetBoundary::Start => SetEdge::Start,
+                    SetBoundary::End => SetEdge::End,
                 },
             })
             .collect())
@@ -1943,7 +1986,7 @@ impl WatchService {
             .ecgs(self.device_id)?
             .into_iter()
             .map(|row| ecg_summary(&store, row))
-            .collect())
+            .collect::<Result<_, _>>()?)
     }
 
     pub fn afib_episodes(&self) -> Result<Vec<AfibEpisode>, WatchError> {
@@ -1953,8 +1996,8 @@ impl WatchService {
             .into_iter()
             .map(|row| AfibEpisode {
                 id: row.id,
-                measured_at_ms: row.measured_at_ms,
-                seconds: row.duration_secs as u32,
+                measured_at_ms: row.measured_at.0,
+                seconds: row.duration.as_secs() as u32,
                 rhythm: row.verdict.and_then(ppg_rhythm),
                 alerted: row.attrib.map(|a| a == STORED_MEASURE_ATTRIB_CONFIRMED),
             })
@@ -1971,22 +2014,23 @@ impl WatchService {
         else {
             return Ok(None);
         };
-        let from_ms = anchor.measured_at_ms - PpgAfibRule::WINDOW_SECS * 1000;
-        let rows = store.afib_readings_up_to(self.device_id, id, from_ms)?;
+        let anchored_at = anchor.measured_at;
+        let from = anchored_at - wpp::units::Duration::from_secs(PpgAfibRule::WINDOW_SECS);
+        let rows = store.afib_readings_up_to(self.device_id, id, from)?;
         let marks: Vec<(wpp::units::UnixTime, bool)> = rows
             .iter()
             .map(|row| {
                 (
-                    wpp::units::UnixTime(row.measured_at_ms / 1000),
+                    row.measured_at.to_seconds(),
                     row.attrib == Some(STORED_MEASURE_ATTRIB_CONFIRMED),
                 )
             })
             .collect();
         let counted = &rows[PpgAfibRule::counted(&marks, rows.len() - 1)];
         let recorded = |row: &&wpp_store::AfibReadingRow| {
-            row.duration_secs > 0 && row.samples.iter().any(|b| *b != 0)
+            row.duration > wpp::units::Duration::ZERO && row.samples.iter().any(|b| *b != 0)
         };
-        let asleep = asleep_spans(&store, self.device_id, from_ms, anchor.measured_at_ms)?;
+        let asleep = asleep_spans(&store, self.device_id, from.0, anchored_at.0)?;
         let readings = counted
             .iter()
             .filter(recorded)
@@ -1995,14 +2039,13 @@ impl WatchService {
         let ecg_after = store
             .ecgs(self.device_id)?
             .into_iter()
-            .filter(|(_, at, ..)| {
-                (anchor.measured_at_ms..=anchor.measured_at_ms + ECG_AFTER_ALERT_MS).contains(at)
-            })
-            .min_by_key(|(_, at, ..)| *at)
-            .map(|row| ecg_summary(&store, row));
+            .filter(|row| (anchored_at.0..=anchored_at.0 + ECG_AFTER_ALERT_MS).contains(&row.measured_at.0))
+            .min_by_key(|row| row.measured_at)
+            .map(|row| ecg_summary(&store, row))
+            .transpose()?;
         Ok(Some(AfibAlert {
             id,
-            measured_at_ms: anchor.measured_at_ms,
+            measured_at_ms: anchored_at.0,
             run: PpgAfibRule::RUN as u32,
             window_hours: (PpgAfibRule::WINDOW_SECS / 3600) as u32,
             counted: counted.len() as u32,
@@ -2014,7 +2057,7 @@ impl WatchService {
 
     pub fn ecg(&self, id: i64) -> Result<Option<EcgRecording>, WatchError> {
         let store = self.store.lock().unwrap();
-        let Some((measured_at, signal_type, hz, lead_count, samples)) = store.ecg(id)? else {
+        let Some((measured_at, signal_type, hz, lead_count, samples)) = store.ecg(EcgId(id))? else {
             return Ok(None);
         };
         let names = wpp::signal::SignalKind::from_type_id(signal_type as u16)
@@ -2049,7 +2092,7 @@ impl WatchService {
                 })
             })
             .unwrap_or(0);
-        let verdict = verdict_of(&store, id);
+        let verdict = verdict_of(&store, EcgId(id))?;
         Ok(Some(EcgRecording {
             id,
             measured_at_ms: measured_at,
@@ -2082,28 +2125,23 @@ fn ppg_rhythm(code: i64) -> Option<PpgRhythm> {
 /// the answer to it.
 const ECG_AFTER_ALERT_MS: i64 = 30 * 60 * 1000;
 
-fn ecg_summary(
-    store: &Store,
-    (id, measured_at, signal_type, hz, bytes): (i64, i64, i64, i64, i64),
-) -> EcgSummary {
-    let leads = wpp::signal::SignalKind::from_type_id(signal_type as u16)
-        .map(|k| k.leads().len())
-        .unwrap_or(1);
-    let per_lead = bytes / 2 / leads.max(1) as i64;
-    let verdict = verdict_of(store, id);
-    EcgSummary {
-        id,
-        measured_at_ms: measured_at,
-        seconds: per_lead as f64 / (hz.max(1) as f64),
+fn ecg_summary(store: &Store, row: wpp_store::EcgSummaryRow) -> Result<EcgSummary, WatchError> {
+    let leads = row.kind.leads().len();
+    let per_lead = row.sample_bytes / 2 / leads as i64;
+    let verdict = verdict_of(store, row.id)?;
+    Ok(EcgSummary {
+        id: row.id.0,
+        measured_at_ms: row.measured_at.0,
+        seconds: per_lead as f64 / (row.sampling_hz.max(1) as f64),
         leads: leads as u32,
         heart_rate: verdict.0,
         rhythm: verdict.1,
-    }
+    })
 }
 
 fn afib_reading(
     store: &Store,
-    device_id: i64,
+    device_id: DeviceId,
     row: &wpp_store::AfibReadingRow,
     asleep: &[SleepSpan],
 ) -> Result<AfibReading, WatchError> {
@@ -2118,9 +2156,9 @@ fn afib_reading(
     .collect();
     let watch = store.nearest_sample(
         device_id,
-        wpp::SampleKind::HeartRate.id(),
-        row.measured_at_ms,
-        WATCH_RATE_WITHIN_MS,
+        SampleKind::HeartRate,
+        row.measured_at,
+        wpp::units::Duration::from_millis(WATCH_RATE_WITHIN_MS),
     )?;
     let (intervals, analysis) = match watch {
         None => (
@@ -2153,13 +2191,13 @@ fn afib_reading(
     });
     Ok(AfibReading {
         id: row.id,
-        measured_at_ms: row.measured_at_ms,
+        measured_at_ms: row.measured_at.0,
         heart_rate,
         intervals_ms: intervals,
         analysis,
         asleep: asleep
             .iter()
-            .any(|span| (span.from_ms..span.to_ms).contains(&row.measured_at_ms)),
+            .any(|span| (span.from_ms..span.to_ms).contains(&row.measured_at.0)),
     })
 }
 
@@ -2199,15 +2237,13 @@ fn ecg_analysis(reading: &wpp::rhythm::EcgReading) -> EcgAnalysis {
     }
 }
 
-fn verdict_of(store: &wpp_store::Store, id: i64) -> (Option<u32>, Option<EcgRhythm>) {
-    let Ok(measures) = store.ecg_measures(id) else {
-        return (None, None);
-    };
+fn verdict_of(store: &Store, id: EcgId) -> Result<(Option<u32>, Option<EcgRhythm>), WatchError> {
+    let measures = store.ecg_measures(id)?;
     let reading = |kind: wpp::signal::MeasureType| {
         measures
             .iter()
-            .find(|(t, _, _)| *t == kind.0 as i64)
-            .map(|(_, value, exponent)| *value as f64 * 10f64.powi(*exponent as i32))
+            .find(|measure| measure.kind == kind)
+            .map(|measure| measure.value as f64 * 10f64.powi(measure.exponent as i32))
     };
     let rhythm = reading(wpp::signal::MeasureType::AFIB_RESULT).map(|code| {
         match wpp::signal::Rhythm::of(code as i32) {
@@ -2222,10 +2258,8 @@ fn verdict_of(store: &wpp_store::Store, id: i64) -> (Option<u32>, Option<EcgRhyt
     let rate = reading(wpp::signal::MeasureType::HEART_RATE)
         .filter(|bpm| *bpm > 0.0)
         .map(|bpm| bpm.round() as u32);
-    (rate, rhythm)
+    Ok((rate, rhythm))
 }
-
-const CHARGING_STATE: i64 = 0;
 
 const CHARGE_STATE_FRESH_MS: i64 = 180_000;
 
@@ -2584,14 +2618,14 @@ fn limits(id: u32) -> Option<Limits> {
 
 fn summarise(
     store: &Store,
-    device_id: i64,
+    device_id: DeviceId,
     user: Option<&wpp::client::UserProfile>,
     row: WorkoutRow,
 ) -> Result<WorkoutSummary, WatchError> {
     let started_at_ms = row.started_at.0 * 1000;
     let ended_at_ms = row.ended_at.map(|end| end.0 * 1000);
     Ok(WorkoutSummary {
-        id: row.id,
+        id: row.id.0,
         started_at_ms,
         ended_at_ms,
         subcategory: row.subcategory as i32,
@@ -2611,11 +2645,15 @@ fn summarise(
 
 fn read_night(
     store: &Store,
-    device_id: i64,
+    device_id: DeviceId,
     from_ms: i64,
     to_ms: i64,
 ) -> Result<Night, WatchError> {
-    let minutes = store.activity_minutes(device_id, from_ms / 1000, to_ms / 1000)?;
+    let minutes = store.activity_minutes(
+        device_id,
+        UnixMillis(from_ms).to_seconds(),
+        UnixMillis(to_ms).to_seconds(),
+    )?;
 
     let levels: Vec<(i64, i64, SleepStage)> = minutes
         .iter()
@@ -2696,23 +2734,28 @@ fn read_night(
 
 fn asleep_spans(
     store: &Store,
-    device_id: i64,
+    device_id: DeviceId,
     from_ms: i64,
     to_ms: i64,
 ) -> Result<Vec<SleepSpan>, WatchError> {
     const AWAKE_BRIDGE_MS: i64 = 45 * 60 * 1000;
 
-    let minutes = store.sleep_minutes(device_id, from_ms / 1000, to_ms / 1000)?;
+    let minutes = store.sleep_minutes(
+        device_id,
+        UnixMillis(from_ms).to_seconds(),
+        UnixMillis(to_ms).to_seconds(),
+    )?;
     Ok(minutes
         .into_iter()
-        .filter(|(_, _, level)| {
+        .filter(|window| {
             !matches!(
-                activity::SleepLevel::from_wire(*level),
+                activity::SleepLevel::from_wire(window.level),
                 None | Some(activity::SleepLevel::Awake)
             )
         })
-        .fold(Vec::new(), |mut out: Vec<SleepSpan>, (at, duration, _)| {
-            let (from, to) = (at * 1000, (at + duration) * 1000);
+        .fold(Vec::new(), |mut out: Vec<SleepSpan>, window| {
+            let from = window.at.to_millis().0;
+            let to = (window.at + window.duration).to_millis().0;
             match out.last_mut() {
                 Some(last) if from - last.to_ms <= AWAKE_BRIDGE_MS => {
                     last.to_ms = last.to_ms.max(to)
@@ -2736,14 +2779,14 @@ struct Waking {
 }
 
 impl Waking {
-    fn read(store: &Store, device_id: i64, from_ms: i64, to_ms: i64) -> Result<Waking, WatchError> {
-        let (from_secs, to_secs) = (from_ms.div_euclid(1000), to_ms.div_euclid(1000));
+    fn read(store: &Store, device_id: DeviceId, from_ms: i64, to_ms: i64) -> Result<Waking, WatchError> {
+        let (from, to) = (UnixMillis(from_ms).to_seconds(), UnixMillis(to_ms).to_seconds());
         let recorded: Vec<std::ops::Range<UnixTime>> = store
-            .workouts_between(device_id, from_secs, to_secs)?
+            .workouts_between(device_id, from, to)?
             .iter()
-            .map(|row| row.started_at..row.ended_at.unwrap_or(UnixTime(to_secs)))
+            .map(|row| row.started_at..row.ended_at.unwrap_or(to))
             .collect();
-        let minutes = store.activity_minutes(device_id, from_secs, to_secs)?;
+        let minutes = store.activity_minutes(device_id, from, to)?;
         let detected = activity::detect(&minutes, &recorded)
             .into_iter()
             .map(|session| session.started_at..session.ended_at);
@@ -2763,13 +2806,13 @@ impl Waking {
                 device_id,
                 Metric::HeartRate.kind(),
                 Source::Stored,
-                from_ms,
-                to_ms - 1,
+                UnixMillis(from_ms),
+                UnixMillis(to_ms - 1),
             )?
             .into_iter()
-            .map(|(at, bpm)| Beat {
-                at: UnixMillis(at),
-                rate: Bpm(bpm as u16),
+            .map(|point| Beat {
+                at: point.at,
+                rate: Bpm(point.value as u16),
             })
             .collect();
         Ok(Waking { busy, beats })
@@ -2791,42 +2834,39 @@ impl Waking {
 
 fn awake_heart(
     store: &Store,
-    device_id: i64,
-    edges_ms: &[i64],
+    device_id: DeviceId,
+    edges: &wpp::units::Edges,
 ) -> Result<Vec<Option<AwakeHeart>>, WatchError> {
-    let (Some(&first), Some(&last)) = (edges_ms.first(), edges_ms.last()) else {
+    let Some((first, last)) = edges.span() else {
         return Ok(Vec::new());
     };
-    let waking = Waking::read(store, device_id, first, last)?;
-    Ok(edges_ms
+    let waking = Waking::read(store, device_id, first.0, last.0)?;
+    Ok(edges
+        .as_slice()
         .windows(2)
-        .map(|edge| waking.at_rest(edge[0], edge[1]))
+        .map(|edge| waking.at_rest(edge[0].0, edge[1].0))
         .collect())
 }
 
 fn zone_time(
     store: &Store,
-    device_id: i64,
-    edges_ms: &[i64],
+    device_id: DeviceId,
+    edges: &wpp::units::Edges,
     floors_bpm: &[u16],
 ) -> Result<Vec<Vec<i64>>, WatchError> {
-    let (Some(&first), Some(&last)) = (edges_ms.first(), edges_ms.last()) else {
+    let Some((first, last)) = edges.span() else {
         return Ok(Vec::new());
     };
     let floors: Vec<Bpm> = floors_bpm.iter().map(|floor| Bpm(*floor)).collect();
-    let mut out = vec![vec![0; floors.len()]; edges_ms.len() - 1];
-    let sessions =
-        store.workouts_between(device_id, first.div_euclid(1000), last.div_euclid(1000))?;
+    let mut out = vec![vec![0; floors.len()]; edges.windows()];
+    let sessions = store.workouts_between(device_id, first.to_seconds(), last.to_seconds())?;
     for row in sessions {
         let (Some(ended_at), started_ms) = (row.ended_at, row.started_at.to_millis().0) else {
             continue;
         };
         // A session is counted whole on the day it began, like every other
         // figure about it.
-        let Some(window) = edges_ms
-            .windows(2)
-            .position(|edge| started_ms >= edge[0] && started_ms < edge[1])
-        else {
+        let Some(window) = edges.window_of(UnixMillis(started_ms)) else {
             continue;
         };
         let beats = beats_between(store, device_id, started_ms, ended_at.to_millis().0)?;
@@ -2842,7 +2882,7 @@ fn zone_time(
 
 fn night_trend(
     store: &Store,
-    device_id: i64,
+    device_id: DeviceId,
     windows: Vec<SleepSpan>,
 ) -> Result<Vec<NightTrend>, WatchError> {
     let mut out = Vec::new();
@@ -2881,14 +2921,18 @@ fn night_trend(
 
 fn workout_trend(
     store: &Store,
-    device_id: i64,
+    device_id: DeviceId,
     subcategory: i32,
     from_ms: i64,
     to_ms: i64,
 ) -> Result<Vec<WorkoutTrend>, WatchError> {
     let user = store.watch_user(device_id)?;
     store
-        .workouts_between(device_id, from_ms.div_euclid(1000), to_ms.div_euclid(1000))?
+        .workouts_between(
+            device_id,
+            UnixMillis(from_ms).to_seconds(),
+            UnixMillis(to_ms).to_seconds(),
+        )?
         .into_iter()
         .filter(|row| row.subcategory == subcategory as i64 && row.ended_at.is_some())
         .map(|row| {
@@ -2910,16 +2954,21 @@ fn workout_trend(
 
 fn beats_between(
     store: &Store,
-    device_id: i64,
+    device_id: DeviceId,
     from_ms: i64,
     to_ms: i64,
 ) -> Result<Vec<Beat>, WatchError> {
     Ok(store
-        .samples_between(device_id, Metric::HeartRate.kind(), from_ms, to_ms)?
+        .samples_between(
+            device_id,
+            SampleKind::HeartRate,
+            UnixMillis(from_ms),
+            UnixMillis(to_ms),
+        )?
         .into_iter()
-        .map(|(at, bpm)| Beat {
-            at: UnixMillis(at),
-            rate: Bpm(bpm as u16),
+        .map(|point| Beat {
+            at: point.at,
+            rate: Bpm(point.value as u16),
         })
         .collect())
 }
@@ -2940,7 +2989,7 @@ const BMX: u32 = 5;
 /// nothing about its cost: rowing hard on the spot covers no ground.
 fn measured_ceiling(
     store: &Store,
-    device_id: i64,
+    device_id: DeviceId,
     subcategory: u32,
     from_ms: i64,
     to_ms: i64,
@@ -2948,7 +2997,7 @@ fn measured_ceiling(
     let Some(limits) = limits(subcategory) else {
         return Ok(None);
     };
-    let fixes = store.track_points(device_id, from_ms, to_ms)?;
+    let fixes = store.track_points(device_id, UnixMillis(from_ms), UnixMillis(to_ms))?;
     let Some(speed) = track::clean(&fixes, limits).average_speed() else {
         return Ok(None);
     };
@@ -2963,7 +3012,7 @@ fn measured_ceiling(
 /// sixty on a bike is not a harder ride than the sport has in it.
 fn session_ceiling(
     store: &Store,
-    device_id: i64,
+    device_id: DeviceId,
     subcategory: u32,
     from_ms: i64,
     to_ms: i64,
@@ -2977,7 +3026,7 @@ fn session_ceiling(
 
 fn workout_calories(
     store: &Store,
-    device_id: i64,
+    device_id: DeviceId,
     user: Option<&wpp::client::UserProfile>,
     subcategory: u32,
     from_ms: i64,
@@ -2996,7 +3045,7 @@ fn workout_calories(
 /// What each session of the span had earned, session by session.
 fn earned_curves(
     store: &Store,
-    device_id: i64,
+    device_id: DeviceId,
     from_ms: i64,
     to_ms: i64,
 ) -> Result<Vec<Vec<Reading>>, WatchError> {
@@ -3004,7 +3053,11 @@ fn earned_curves(
         return Ok(Vec::new());
     };
     store
-        .workouts_between(device_id, from_ms.div_euclid(1000), to_ms.div_euclid(1000))?
+        .workouts_between(
+            device_id,
+            UnixMillis(from_ms).to_seconds(),
+            UnixMillis(to_ms).to_seconds(),
+        )?
         .into_iter()
         .map(|row| {
             let Some(wearer) = Wearer::of(&user, row.started_at) else {
@@ -3020,9 +3073,25 @@ fn earned_curves(
         .collect()
 }
 
+fn calorie_reading(at: UnixMillis, stored: i64) -> Reading {
+    Reading {
+        at,
+        total: Kilocalories(Metric::Calories.reading(stored)),
+    }
+}
+
+/// None for edges out of order, which only a broken caller can send.
+fn edges_of(edges_ms: Vec<i64>) -> Result<wpp::units::Edges, WatchError> {
+    wpp::units::Edges::new(edges_ms.into_iter().map(UnixMillis).collect()).ok_or_else(|| {
+        WatchError::Refused {
+            reason: "window edges must be in time order".to_string(),
+        }
+    })
+}
+
 /// Energy is the one series the watch does not measure: its counter is a
 /// resting estimate plus what the pedometer saw, so the sessions it never
-/// stepped through are added back here. Every other metric is as stored.
+/// stepped through are added back here.
 ///
 /// The counter's restart is only visible against the reading before it, and a
 /// window rarely opens on one. The day behind the window is read in to make the
@@ -3030,28 +3099,21 @@ fn earned_curves(
 /// rests on the window the caller happened to ask for.
 fn expenditure(
     store: &Store,
-    device_id: i64,
-    metric: Metric,
+    device_id: DeviceId,
     counter: &[Reading],
 ) -> Result<Vec<Reading>, WatchError> {
     let (Some(first), Some(last)) = (counter.first(), counter.last()) else {
         return Ok(Vec::new());
     };
-    if metric != Metric::Calories {
-        return Ok(counter.to_vec());
-    }
     let behind: Vec<Reading> = store
         .samples_between(
             device_id,
-            metric.kind(),
-            first.at.0 - DAY_MS,
-            first.at.0 - 1,
+            SampleKind::Calories,
+            UnixMillis(first.at.0 - DAY_MS),
+            UnixMillis(first.at.0 - 1),
         )?
         .into_iter()
-        .map(|(at, value)| Reading {
-            at: UnixMillis(at),
-            total: Kilocalories(value as f64 / metric.scale()),
-        })
+        .map(|point| calorie_reading(point.at, point.value))
         .collect();
     let opened_at = behind.first().map_or(first.at, |earliest| earliest.at);
     let curves = earned_curves(store, device_id, opened_at.0, last.at.0)?;
@@ -3471,7 +3533,7 @@ mod tests {
     /// A counter reading a quarter of an hour into the day, which is the shape
     /// that broke this: the restart lands past the edge the caller asks from,
     /// so the window opens on a reading with no drop in front of it.
-    fn two_days_and_a_session() -> (Store, i64) {
+    fn two_days_and_a_session() -> (Store, DeviceId) {
         let mut store = Store::open_in_memory().unwrap();
         let device = store.device("a4:7e:fa:44:d6:10").unwrap();
         let mut records = vec![Record::User(UserProfile {
@@ -3503,18 +3565,15 @@ mod tests {
         (store, device)
     }
 
-    fn day_total(store: &Store, device: i64, day: i64) -> f64 {
+    fn day_total(store: &Store, device: DeviceId, day: i64) -> f64 {
         let from = day + ROLLOVER_MS;
         let readings: Vec<Reading> = store
-            .samples_between(device, Metric::Calories.kind(), from, from + DAY_MS - 1)
+            .samples_between(device, Metric::Calories.kind(), UnixMillis(from), UnixMillis(from + DAY_MS - 1))
             .unwrap()
             .into_iter()
-            .map(|(at, value)| Reading {
-                at: UnixMillis(at),
-                total: Kilocalories(value as f64 / 100.0),
-            })
+            .map(|point| calorie_reading(point.at, point.value))
             .collect();
-        expenditure(store, device, Metric::Calories, &readings)
+        expenditure(store, device, &readings)
             .unwrap()
             .iter()
             .map(|reading| reading.total.0)
@@ -3639,8 +3698,8 @@ mod tests {
     fn reading_row(at_ms: i64) -> wpp_store::AfibReadingRow {
         wpp_store::AfibReadingRow {
             id: 1,
-            measured_at_ms: at_ms,
-            duration_secs: 30,
+            measured_at: UnixMillis(at_ms),
+            duration: wpp::units::Duration::from_secs(30),
             sampling_hz: 100,
             sample_bytes: 1,
             samples: SPLIT_NIGHT_READING.to_vec(),

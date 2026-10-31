@@ -338,7 +338,18 @@ impl Source {
             Source::Live => 1,
         }
     }
+
+    pub fn from_id(id: i64) -> Option<Source> {
+        match id {
+            0 => Some(Source::Stored),
+            1 => Some(Source::Live),
+            _ => None,
+        }
+    }
 }
+
+/// The value of a [`SampleKind::BatteryState`] sample while on the charger.
+pub const BATTERY_STATE_CHARGING: i64 = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {

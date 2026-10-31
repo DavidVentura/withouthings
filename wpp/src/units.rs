@@ -179,6 +179,35 @@ impl From<f64> for Met {
     }
 }
 
+/// Boundaries of consecutive windows, in time order, so each instant falls in
+/// at most one of them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Edges(Vec<UnixMillis>);
+
+impl Edges {
+    /// None when out of order. Fewer than two edges hold no window.
+    pub fn new(edges: Vec<UnixMillis>) -> Option<Edges> {
+        edges.windows(2).all(|w| w[0] <= w[1]).then_some(Edges(edges))
+    }
+
+    pub fn windows(&self) -> usize {
+        self.0.len().saturating_sub(1)
+    }
+
+    /// From the first edge up to, and not including, the last; None without a window.
+    pub fn span(&self) -> Option<(UnixMillis, UnixMillis)> {
+        (self.windows() > 0).then(|| (self.0[0], self.0[self.0.len() - 1]))
+    }
+
+    pub fn window_of(&self, at: UnixMillis) -> Option<usize> {
+        self.0.windows(2).position(|w| at >= w[0] && at < w[1])
+    }
+
+    pub fn as_slice(&self) -> &[UnixMillis] {
+        &self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,6 +224,16 @@ mod tests {
         assert_eq!(UnixMillis(1500) - UnixMillis(2000), Duration::from_millis(-500));
         assert_eq!(Duration::from_millis(-500).as_secs(), -1);
         assert_eq!(UnixTime(10) + Duration::from_secs(5), UnixTime(15));
+    }
+
+    #[test]
+    fn edges_refuse_to_run_backwards_and_place_each_instant_once() {
+        assert_eq!(Edges::new(vec![UnixMillis(2), UnixMillis(1)]), None);
+        let edges = Edges::new(vec![UnixMillis(0), UnixMillis(10), UnixMillis(20)]).unwrap();
+        assert_eq!(edges.windows(), 2);
+        assert_eq!(edges.window_of(UnixMillis(10)), Some(1));
+        assert_eq!(edges.window_of(UnixMillis(20)), None);
+        assert_eq!(Edges::new(Vec::new()).unwrap().span(), None);
     }
 
     #[test]

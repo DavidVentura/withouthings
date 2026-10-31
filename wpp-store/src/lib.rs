@@ -2,21 +2,20 @@ mod migrate;
 
 use std::collections::{BTreeSet, HashMap};
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::types::{FromSql, FromSqlResult, ToSqlOutput, ValueRef};
+use rusqlite::{params, Connection, OptionalExtension, ToSql};
 use wpp::activity::Minute;
 use wpp::client::{
-    Category, DeviceIdentity, Feature, FeatureId, FeatureSchedule, Record, Source, UserProfile,
+    Category, DeviceIdentity, Feature, FeatureId, FeatureSchedule, Record, SampleKind, Source,
+    UserProfile, BATTERY_STATE_CHARGING,
 };
-use wpp::signal::{MeasureType, SampleFormat, Signal};
+use wpp::signal::{MeasureType, SampleFormat, Signal, SignalKind};
 use wpp::track::Fix;
-use wpp::units::{Duration, Hundredths, UnixMillis, UnixTime};
+use wpp::units::{Duration, Edges, Hundredths, UnixMillis, UnixTime};
 
 pub use rusqlite::Error;
 
-const CHARGING_KIND: i64 = 8;
-const CHARGING_STATE: i64 = 0;
-
-const LEVEL_MAX_GAP_MS: i64 = 10 * 60 * 1000;
+const LEVEL_MAX_GAP: Duration = Duration::from_millis(10 * 60 * 1000);
 
 /// How far back a window may start and still overlap the span asked for. The
 /// overlap test alone leaves `started_at` unbounded below, so SQLite walks
@@ -29,11 +28,142 @@ pub struct Store {
     conn: Connection,
 }
 
+macro_rules! row_id {
+    ($($name:ident),*) => {
+        $(
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+            pub struct $name(pub i64);
+
+            impl ToSql for $name {
+                fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+                    Ok(ToSqlOutput::from(self.0))
+                }
+            }
+
+            impl FromSql for $name {
+                fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+                    i64::column_result(value).map($name)
+                }
+            }
+        )*
+    };
+}
+
+row_id!(DeviceId, WorkoutId, EcgId);
+
+fn millis(r: &rusqlite::Row<'_>, column: usize) -> Result<UnixMillis, Error> {
+    Ok(UnixMillis(r.get(column)?))
+}
+
+fn seconds(r: &rusqlite::Row<'_>, column: usize) -> Result<UnixTime, Error> {
+    Ok(UnixTime(r.get(column)?))
+}
+
+/// Anything else in a column this crate alone writes means the file is damaged.
+fn corrupt(column: usize, what: impl std::fmt::Display) -> Error {
+    Error::FromSqlConversionFailure(
+        column,
+        rusqlite::types::Type::Integer,
+        format!("unexpected {what}").into(),
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SamplePoint {
+    pub at: UnixMillis,
+    pub value: i64,
+}
+
+impl SamplePoint {
+    fn of(r: &rusqlite::Row<'_>) -> Result<SamplePoint, Error> {
+        Ok(SamplePoint {
+            at: millis(r, 0)?,
+            value: r.get(1)?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeriesPoint {
+    pub at: UnixMillis,
+    pub value: i64,
+    pub source: Source,
+}
+
+impl SeriesPoint {
+    fn of(r: &rusqlite::Row<'_>) -> Result<SeriesPoint, Error> {
+        let source: i64 = r.get(2)?;
+        Ok(SeriesPoint {
+            at: millis(r, 0)?,
+            value: r.get(1)?,
+            source: Source::from_id(source).ok_or_else(|| corrupt(2, format!("source {source}")))?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StageWindow {
+    pub at: UnixTime,
+    pub duration: Duration,
+    pub level: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChargePeriod {
+    pub from: UnixMillis,
+    /// None while still on the charger.
+    pub to: Option<UnixMillis>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetBoundary {
+    Start,
+    End,
+}
+
+impl SetBoundary {
+    fn id(self) -> i64 {
+        match self {
+            SetBoundary::Start => 0,
+            SetBoundary::End => 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarkerRow {
+    pub at: UnixMillis,
+    pub boundary: SetBoundary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoteRow {
+    pub id: i64,
+    pub at: UnixMillis,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EcgSummaryRow {
+    pub id: EcgId,
+    pub measured_at: UnixMillis,
+    pub kind: SignalKind,
+    pub sampling_hz: i64,
+    pub sample_bytes: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EcgMeasure {
+    pub kind: MeasureType,
+    pub value: i64,
+    pub exponent: i64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct AfibEpisodeRow {
     pub id: i64,
-    pub measured_at_ms: i64,
-    pub duration_secs: i64,
+    pub measured_at: UnixMillis,
+    pub duration: Duration,
     /// The type-139 measure as sent, absent when the episode carried none.
     pub verdict: Option<i64>,
     /// StoredMeasureMeta.attrib, absent on rows kept before it was.
@@ -43,8 +173,8 @@ pub struct AfibEpisodeRow {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AfibReadingRow {
     pub id: i64,
-    pub measured_at_ms: i64,
-    pub duration_secs: i64,
+    pub measured_at: UnixMillis,
+    pub duration: Duration,
     pub sampling_hz: i64,
     pub sample_bytes: i64,
     pub samples: Vec<u8>,
@@ -52,13 +182,13 @@ pub struct AfibReadingRow {
 }
 
 pub struct ActiveWorkout {
-    pub id: i64,
+    pub id: WorkoutId,
     pub started_at: UnixTime,
     pub subcategory: i64,
 }
 
 pub struct WorkoutRow {
-    pub id: i64,
+    pub id: WorkoutId,
     pub started_at: UnixTime,
     pub ended_at: Option<UnixTime>,
     pub subcategory: i64,
@@ -92,7 +222,14 @@ impl Store {
         Ok(Store { conn })
     }
 
-    pub fn device(&self, mac: &str) -> Result<i64, Error> {
+    /// The one device a copy of the database is about, for tools reading it.
+    pub fn first_device(&self) -> Result<Option<DeviceId>, Error> {
+        self.conn
+            .query_row("SELECT id FROM device ORDER BY id LIMIT 1", [], |r| r.get(0))
+            .optional()
+    }
+
+    pub fn device(&self, mac: &str) -> Result<DeviceId, Error> {
         self.conn.execute(
             "INSERT OR IGNORE INTO device (mac) VALUES (?1)",
             params![mac],
@@ -103,7 +240,7 @@ impl Store {
             })
     }
 
-    pub fn identity(&self, device_id: i64) -> Result<Option<DeviceIdentity>, Error> {
+    pub fn identity(&self, device_id: DeviceId) -> Result<Option<DeviceIdentity>, Error> {
         self.conn
             .query_row(
                 "SELECT name, firmware, bootloader, hardware, rescue
@@ -122,7 +259,7 @@ impl Store {
             .optional()
     }
 
-    pub fn watch_user(&self, device_id: i64) -> Result<Option<UserProfile>, Error> {
+    pub fn watch_user(&self, device_id: DeviceId) -> Result<Option<UserProfile>, Error> {
         self.conn
             .query_row(
                 "SELECT user_id, weight, height, gender, birth, first_name
@@ -147,7 +284,7 @@ impl Store {
     /// with whatever a previous owner of the pairing set.
     pub fn features_or_seed(
         &mut self,
-        device_id: i64,
+        device_id: DeviceId,
         defaults: &[Feature],
     ) -> Result<Vec<Feature>, Error> {
         let seeded: bool = self.conn.query_row(
@@ -166,7 +303,7 @@ impl Store {
         self.features(device_id)
     }
 
-    pub fn features(&self, device_id: i64) -> Result<Vec<Feature>, Error> {
+    pub fn features(&self, device_id: DeviceId) -> Result<Vec<Feature>, Error> {
         self.conn
             .prepare(
                 "SELECT feature_id, starts_at, expires_at
@@ -191,7 +328,7 @@ impl Store {
 
     /// The write the watch takes carries the whole set, so this replaces rather
     /// than merges: the table has to be able to say a feature is off.
-    pub fn set_features(&mut self, device_id: i64, features: &[Feature]) -> Result<(), Error> {
+    pub fn set_features(&mut self, device_id: DeviceId, features: &[Feature]) -> Result<(), Error> {
         let tx = self.conn.transaction()?;
         tx.execute(
             "DELETE FROM feature WHERE device_id = ?1",
@@ -211,7 +348,7 @@ impl Store {
         tx.commit()
     }
 
-    pub fn store(&mut self, device_id: i64, records: &[Record]) -> Result<(), Error> {
+    pub fn store(&mut self, device_id: DeviceId, records: &[Record]) -> Result<(), Error> {
         let records = thin_levels(self.newest_levels(device_id, records)?, records);
         let tx = self.conn.transaction()?;
         for record in records {
@@ -363,7 +500,7 @@ impl Store {
 
     fn newest_levels(
         &self,
-        device_id: i64,
+        device_id: DeviceId,
         records: &[Record],
     ) -> Result<HashMap<i64, (i64, i64)>, Error> {
         let kinds: BTreeSet<i64> = records
@@ -399,8 +536,8 @@ impl Store {
 
     pub fn store_undecoded(
         &self,
-        device_id: i64,
-        received_at: i64,
+        device_id: DeviceId,
+        received_at: UnixMillis,
         command: i64,
         payload: &[u8],
         splice_at: Option<i64>,
@@ -408,14 +545,14 @@ impl Store {
         self.conn.execute(
             "INSERT INTO undecoded_frame (device_id, received_at, command, payload, splice_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![device_id, received_at, command, payload, splice_at],
+            params![device_id, received_at.0, command, payload, splice_at],
         )?;
         Ok(())
     }
 
     pub fn watermarks(
         &self,
-        device_id: i64,
+        device_id: DeviceId,
         categories: &[Category],
     ) -> Result<Vec<(Category, UnixTime)>, Error> {
         categories
@@ -437,7 +574,7 @@ impl Store {
 
     pub fn set_watermarks(
         &self,
-        device_id: i64,
+        device_id: DeviceId,
         watermarks: &[(Category, UnixTime)],
     ) -> Result<(), Error> {
         let tx = self.conn.unchecked_transaction()?;
@@ -449,7 +586,7 @@ impl Store {
 
     pub fn set_watermark(
         &self,
-        device_id: i64,
+        device_id: DeviceId,
         category: Category,
         through: UnixTime,
     ) -> Result<(), Error> {
@@ -463,33 +600,29 @@ impl Store {
         Ok(())
     }
 
-    pub fn latest(&self, device_id: i64, kind: i64) -> Result<Option<(i64, i64)>, Error> {
+    pub fn latest(&self, device_id: DeviceId, kind: SampleKind) -> Result<Option<SamplePoint>, Error> {
         self.conn
             .query_row(
                 "SELECT measured_at, value FROM sample
                   WHERE device_id = ?1 AND kind = ?2
                   ORDER BY measured_at DESC LIMIT 1",
-                params![device_id, kind],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                params![device_id, kind.id()],
+                SamplePoint::of,
             )
             .optional()
     }
 
-    /// The largest value in each window between consecutive `edges_ms`, so
-    /// `edges_ms` holds one more entry than the result. Reads the samples
-    /// themselves rather than [`Store::series`], whose bucketing may drop the
-    /// peak a window is being asked for.
     /// Distinct hours of each window holding a sample of the kind: a count
     /// of how long something was measured that the sampling rate does not
     /// move, where a count of samples would read a 1 Hz workout as a day of
     /// wearing.
     pub fn windowed_hours(
         &self,
-        device_id: i64,
-        kind: i64,
-        edges_ms: &[i64],
+        device_id: DeviceId,
+        kind: SampleKind,
+        edges: &Edges,
     ) -> Result<Vec<u32>, Error> {
-        let (Some(&first), Some(&last)) = (edges_ms.first(), edges_ms.last()) else {
+        let Some((first, last)) = edges.span() else {
             return Ok(Vec::new());
         };
         let mut stmt = self.conn.prepare(
@@ -498,29 +631,30 @@ impl Store {
                 AND measured_at >= ?2 AND measured_at < ?3
               ORDER BY 1",
         )?;
-        let rows = stmt.query_map(params![device_id, first, last, kind], |r| {
+        let rows = stmt.query_map(params![device_id, first.0, last.0, kind.id()], |r| {
             r.get::<_, i64>(0)
         })?;
 
-        let mut found = vec![0; edges_ms.len() - 1];
-        let mut window = 0;
+        let mut found = vec![0; edges.windows()];
         for row in rows {
-            let at = row? * 3_600_000;
-            while at >= edges_ms[window + 1] {
-                window += 1;
+            let hour = UnixMillis(row? * 3_600_000).max(first);
+            if let Some(window) = edges.window_of(hour) {
+                found[window] += 1;
             }
-            found[window] += 1;
         }
         Ok(found)
     }
 
+    /// The largest value in each window between consecutive edges. Reads the
+    /// samples themselves rather than [`Store::series`], whose bucketing may
+    /// drop the peak a window is being asked for.
     pub fn windowed_max(
         &self,
-        device_id: i64,
-        kind: i64,
-        edges_ms: &[i64],
+        device_id: DeviceId,
+        kind: SampleKind,
+        edges: &Edges,
     ) -> Result<Vec<Option<i64>>, Error> {
-        let (Some(&first), Some(&last)) = (edges_ms.first(), edges_ms.last()) else {
+        let Some((first, last)) = edges.span() else {
             return Ok(Vec::new());
         };
         let mut stmt = self.conn.prepare(
@@ -529,34 +663,31 @@ impl Store {
                 AND measured_at >= ?2 AND measured_at < ?3
               ORDER BY measured_at",
         )?;
-        let rows = stmt.query_map(params![device_id, first, last, kind], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
-        })?;
+        let rows = stmt.query_map(params![device_id, first.0, last.0, kind.id()], SamplePoint::of)?;
 
-        let mut found = vec![None; edges_ms.len() - 1];
-        let mut window = 0;
+        let mut found = vec![None; edges.windows()];
         for row in rows {
-            let (at, value) = row?;
-            while at >= edges_ms[window + 1] {
-                window += 1;
+            let point = row?;
+            if let Some(window) = edges.window_of(point.at) {
+                found[window] =
+                    Some(found[window].map_or(point.value, |seen: i64| seen.max(point.value)));
             }
-            found[window] = Some(found[window].map_or(value, |seen: i64| seen.max(value)));
         }
         Ok(found)
     }
 
     pub fn series(
         &self,
-        device_id: i64,
-        kind: i64,
-        from_ms: i64,
-        to_ms: i64,
+        device_id: DeviceId,
+        kind: SampleKind,
+        from: UnixMillis,
+        to: UnixMillis,
         max_points: u32,
-    ) -> Result<Vec<(i64, i64, i64)>, Error> {
+    ) -> Result<Vec<SeriesPoint>, Error> {
         let total: i64 = self.conn.query_row(
             "SELECT count(*) FROM sample
               WHERE device_id = ?1 AND kind = ?4 AND measured_at BETWEEN ?2 AND ?3",
-            params![device_id, from_ms, to_ms, kind],
+            params![device_id, from.0, to.0, kind.id()],
             |r| r.get(0),
         )?;
 
@@ -567,15 +698,13 @@ impl Store {
                   WHERE device_id = ?1 AND kind = ?4 AND measured_at BETWEEN ?2 AND ?3
                   ORDER BY measured_at",
             )?;
-            let rows = stmt.query_map(params![device_id, from_ms, to_ms, kind], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-            })?;
+            let rows = stmt.query_map(params![device_id, from.0, to.0, kind.id()], SeriesPoint::of)?;
             let inside = rows.collect::<Result<Vec<_>, _>>()?;
-            return self.with_neighbours(device_id, kind, from_ms, to_ms, inside);
+            return self.with_neighbours(device_id, kind, from, to, inside);
         }
 
         let buckets = max_points / 2;
-        let width = ((to_ms - from_ms) / buckets).max(1);
+        let width = ((to - from).as_millis() / buckets).max(1);
         let mut stmt = self.conn.prepare(
             "SELECT measured_at, value, source FROM sample
               WHERE device_id = ?1 AND kind = ?5 AND measured_at BETWEEN ?2 AND ?3
@@ -590,29 +719,27 @@ impl Store {
                 )
               ORDER BY measured_at",
         )?;
-        let rows = stmt.query_map(params![device_id, from_ms, to_ms, width, kind], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        })?;
+        let rows = stmt.query_map(params![device_id, from.0, to.0, width, kind.id()], SeriesPoint::of)?;
         let inside = rows.collect::<Result<Vec<_>, _>>()?;
-        self.with_neighbours(device_id, kind, from_ms, to_ms, inside)
+        self.with_neighbours(device_id, kind, from, to, inside)
     }
 
     fn with_neighbours(
         &self,
-        device_id: i64,
-        kind: i64,
-        from_ms: i64,
-        to_ms: i64,
-        inside: Vec<(i64, i64, i64)>,
-    ) -> Result<Vec<(i64, i64, i64)>, Error> {
+        device_id: DeviceId,
+        kind: SampleKind,
+        from: UnixMillis,
+        to: UnixMillis,
+        inside: Vec<SeriesPoint>,
+    ) -> Result<Vec<SeriesPoint>, Error> {
         let before = self
             .conn
             .query_row(
                 "SELECT measured_at, value, source FROM sample
                   WHERE device_id = ?1 AND kind = ?2 AND measured_at < ?3
                   ORDER BY measured_at DESC LIMIT 1",
-                params![device_id, kind, from_ms],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                params![device_id, kind.id(), from.0],
+                SeriesPoint::of,
             )
             .optional()?;
         let after = self
@@ -621,8 +748,8 @@ impl Store {
                 "SELECT measured_at, value, source FROM sample
                   WHERE device_id = ?1 AND kind = ?2 AND measured_at > ?3
                   ORDER BY measured_at ASC LIMIT 1",
-                params![device_id, kind, to_ms],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                params![device_id, kind.id(), to.0],
+                SeriesPoint::of,
             )
             .optional()?;
 
@@ -635,29 +762,27 @@ impl Store {
 
     pub fn samples_between(
         &self,
-        device_id: i64,
-        kind: i64,
-        from_ms: i64,
-        to_ms: i64,
-    ) -> Result<Vec<(i64, i64)>, Error> {
+        device_id: DeviceId,
+        kind: SampleKind,
+        from: UnixMillis,
+        to: UnixMillis,
+    ) -> Result<Vec<SamplePoint>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT measured_at, value FROM sample
               WHERE device_id = ?1 AND kind = ?2 AND measured_at BETWEEN ?3 AND ?4
               ORDER BY measured_at",
         )?;
-        let rows = stmt.query_map(params![device_id, kind, from_ms, to_ms], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })?;
+        let rows = stmt.query_map(params![device_id, kind.id(), from.0, to.0], SamplePoint::of)?;
         rows.collect()
     }
 
-    /// The value of `kind` logged closest to `at_ms`, within `within_ms` of it.
+    /// The value of `kind` logged closest to `at`, within `within` of it.
     pub fn nearest_sample(
         &self,
-        device_id: i64,
-        kind: i64,
-        at_ms: i64,
-        within_ms: i64,
+        device_id: DeviceId,
+        kind: SampleKind,
+        at: UnixMillis,
+        within: Duration,
     ) -> Result<Option<i64>, Error> {
         self.conn
             .query_row(
@@ -665,7 +790,7 @@ impl Store {
                   WHERE device_id = ?1 AND kind = ?2 AND measured_at BETWEEN ?3 - ?4 AND ?3 + ?4
                   ORDER BY abs(measured_at - ?3)
                   LIMIT 1",
-                params![device_id, kind, at_ms, within_ms],
+                params![device_id, kind.id(), at.0, within.as_millis()],
                 |r| r.get(0),
             )
             .optional()
@@ -673,39 +798,41 @@ impl Store {
 
     pub fn samples_from(
         &self,
-        device_id: i64,
-        kind: i64,
+        device_id: DeviceId,
+        kind: SampleKind,
         source: Source,
-        from_ms: i64,
-        to_ms: i64,
-    ) -> Result<Vec<(i64, i64)>, Error> {
+        from: UnixMillis,
+        to: UnixMillis,
+    ) -> Result<Vec<SamplePoint>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT measured_at, value FROM sample
               WHERE device_id = ?1 AND kind = ?2 AND source = ?5
                 AND measured_at BETWEEN ?3 AND ?4
               ORDER BY measured_at",
         )?;
-        let rows = stmt.query_map(params![device_id, kind, from_ms, to_ms, source.id()], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })?;
+        let rows = stmt.query_map(
+            params![device_id, kind.id(), from.0, to.0, source.id()],
+            SamplePoint::of,
+        )?;
         rows.collect()
     }
 
-    pub fn extent(&self, device_id: i64, kind: i64) -> Result<Option<(i64, i64)>, Error> {
+    pub fn extent(
+        &self,
+        device_id: DeviceId,
+        kind: SampleKind,
+    ) -> Result<Option<(UnixMillis, UnixMillis)>, Error> {
         self.conn
             .query_row(
                 "SELECT min(measured_at), max(measured_at) FROM sample
                   WHERE device_id = ?1 AND kind = ?2",
-                params![device_id, kind],
+                params![device_id, kind.id()],
                 |r| Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, Option<i64>>(1)?)),
             )
-            .map(|(lo, hi)| match (lo, hi) {
-                (Some(lo), Some(hi)) => Some((lo, hi)),
-                _ => None,
-            })
+            .map(|(lo, hi)| Some((UnixMillis(lo?), UnixMillis(hi?))))
     }
 
-    pub fn workouts(&self, device_id: i64, limit: u32) -> Result<Vec<WorkoutRow>, Error> {
+    pub fn workouts(&self, device_id: DeviceId, limit: u32) -> Result<Vec<WorkoutRow>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT id, started_at, ended_at, subcategory FROM workout
               WHERE device_id = ?1 ORDER BY started_at DESC LIMIT ?2",
@@ -718,9 +845,9 @@ impl Store {
     /// stretch of the counter is missing can be worked out from its sessions.
     pub fn workouts_between(
         &self,
-        device_id: i64,
-        from_secs: i64,
-        to_secs: i64,
+        device_id: DeviceId,
+        from: UnixTime,
+        to: UnixTime,
     ) -> Result<Vec<WorkoutRow>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT id, started_at, ended_at, subcategory FROM workout
@@ -728,11 +855,11 @@ impl Store {
                 AND coalesce(ended_at, ?3) >= ?2
               ORDER BY started_at",
         )?;
-        let rows = stmt.query_map(params![device_id, from_secs, to_secs], workout_row)?;
+        let rows = stmt.query_map(params![device_id, from.0, to.0], workout_row)?;
         rows.collect()
     }
 
-    pub fn first_workout(&self, device_id: i64) -> Result<Option<UnixTime>, Error> {
+    pub fn first_workout(&self, device_id: DeviceId) -> Result<Option<UnixTime>, Error> {
         self.conn.query_row(
             "SELECT min(started_at) FROM workout WHERE device_id = ?1",
             params![device_id],
@@ -740,7 +867,7 @@ impl Store {
         )
     }
 
-    pub fn workout(&self, device_id: i64, id: i64) -> Result<Option<WorkoutRow>, Error> {
+    pub fn workout(&self, device_id: DeviceId, id: WorkoutId) -> Result<Option<WorkoutRow>, Error> {
         self.conn
             .query_row(
                 "SELECT id, started_at, ended_at, subcategory FROM workout
@@ -754,14 +881,14 @@ impl Store {
     /// Must match [`Store::activity_minutes`]'s windowing exactly: disagreeing
     /// reports a night as having data and then draws it empty, or skips over
     /// one while it still holds some.
-    pub fn has_staging(&self, device_id: i64, from_secs: i64, to_secs: i64) -> Result<bool, Error> {
+    pub fn has_staging(&self, device_id: DeviceId, from: UnixTime, to: UnixTime) -> Result<bool, Error> {
         self.conn.query_row(
             "SELECT EXISTS (SELECT 1 FROM activity_minute
                              WHERE device_id = ?1 AND started_at <= ?3
                                AND started_at >= ?2 - ?4
                                AND started_at + duration_secs >= ?2
                                AND sleep_level IS NOT NULL)",
-            params![device_id, from_secs, to_secs, LONGEST_WINDOW_SECS],
+            params![device_id, from.0, to.0, LONGEST_WINDOW_SECS],
             |r| r.get(0),
         )
     }
@@ -771,10 +898,10 @@ impl Store {
     /// caller's to decide.
     pub fn sleep_minutes(
         &self,
-        device_id: i64,
-        from_secs: i64,
-        to_secs: i64,
-    ) -> Result<Vec<(i64, i64, i64)>, Error> {
+        device_id: DeviceId,
+        from: UnixTime,
+        to: UnixTime,
+    ) -> Result<Vec<StageWindow>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT started_at, duration_secs, sleep_level
                FROM activity_minute
@@ -785,17 +912,23 @@ impl Store {
               ORDER BY started_at",
         )?;
         let rows = stmt.query_map(
-            params![device_id, from_secs, to_secs, LONGEST_WINDOW_SECS],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            params![device_id, from.0, to.0, LONGEST_WINDOW_SECS],
+            |r| {
+                Ok(StageWindow {
+                    at: seconds(r, 0)?,
+                    duration: Duration::from_secs(r.get(1)?),
+                    level: r.get(2)?,
+                })
+            },
         )?;
         rows.collect()
     }
 
     pub fn activity_minutes(
         &self,
-        device_id: i64,
-        from_secs: i64,
-        to_secs: i64,
+        device_id: DeviceId,
+        from: UnixTime,
+        to: UnixTime,
     ) -> Result<Vec<Minute>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT started_at, duration_secs, steps, distance, ascent, descent,
@@ -808,7 +941,7 @@ impl Store {
               ORDER BY started_at",
         )?;
         let rows = stmt.query_map(
-            params![device_id, from_secs, to_secs, LONGEST_WINDOW_SECS],
+            params![device_id, from.0, to.0, LONGEST_WINDOW_SECS],
             |r| {
                 Ok(Minute {
                     at: UnixTime(r.get(0)?),
@@ -830,7 +963,7 @@ impl Store {
         rows.collect()
     }
 
-    pub fn active_workout(&self, device_id: i64) -> Result<Option<ActiveWorkout>, Error> {
+    pub fn active_workout(&self, device_id: DeviceId) -> Result<Option<ActiveWorkout>, Error> {
         self.conn
             .query_row(
                 "SELECT id, started_at, subcategory FROM workout
@@ -850,7 +983,7 @@ impl Store {
 
     /// A session still running owns everything recorded since it started, as
     /// the views that read it do.
-    pub fn delete_workout(&self, device_id: i64, id: i64) -> Result<(), Error> {
+    pub fn delete_workout(&self, device_id: DeviceId, id: WorkoutId) -> Result<(), Error> {
         let tx = self.conn.unchecked_transaction()?;
         let span: Option<(i64, Option<i64>)> = tx
             .query_row(
@@ -882,7 +1015,12 @@ impl Store {
     /// An end only ever moves earlier: extending one would claim time the watch
     /// never recorded as a session. Sets timed in the stretch cut off go with
     /// it, having nothing left to belong to.
-    pub fn trim_workout(&self, device_id: i64, id: i64, ended_at: UnixTime) -> Result<Trim, Error> {
+    pub fn trim_workout(
+        &self,
+        device_id: DeviceId,
+        id: WorkoutId,
+        ended_at: UnixTime,
+    ) -> Result<Trim, Error> {
         let tx = self.conn.unchecked_transaction()?;
         let Some(WorkoutRow {
             started_at,
@@ -909,30 +1047,36 @@ impl Store {
         tx.execute(
             "DELETE FROM marker
               WHERE device_id = ?1 AND at_ms > ?2 AND at_ms <= ?3",
-            params![device_id, ended_at.0 * 1000, was.0 * 1000],
+            params![device_id, ended_at.to_millis().0, was.to_millis().0],
         )?;
         tx.execute(
             "DELETE FROM track_point
               WHERE device_id = ?1 AND at_ms > ?2 AND at_ms <= ?3",
-            params![device_id, ended_at.0 * 1000, was.0 * 1000],
+            params![device_id, ended_at.to_millis().0, was.to_millis().0],
         )?;
         tx.commit()?;
         Ok(Trim::Applied)
     }
 
-    pub fn add_note(&self, at_ms: i64, text: &str) -> Result<i64, Error> {
+    pub fn add_note(&self, at: UnixMillis, text: &str) -> Result<i64, Error> {
         self.conn.execute(
             "INSERT INTO note (at_ms, text) VALUES (?1, ?2)",
-            params![at_ms, text],
+            params![at.0, text],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
 
-    pub fn notes(&self) -> Result<Vec<(i64, i64, String)>, Error> {
+    pub fn notes(&self) -> Result<Vec<NoteRow>, Error> {
         let mut stmt = self
             .conn
             .prepare("SELECT id, at_ms, text FROM note ORDER BY at_ms")?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        let rows = stmt.query_map([], |r| {
+            Ok(NoteRow {
+                id: r.get(0)?,
+                at: millis(r, 1)?,
+                text: r.get(2)?,
+            })
+        })?;
         rows.collect()
     }
 
@@ -942,32 +1086,45 @@ impl Store {
         Ok(())
     }
 
-    pub fn mark_set(&self, device_id: i64, at_ms: i64, edge: i64) -> Result<(), Error> {
+    pub fn mark_set(
+        &self,
+        device_id: DeviceId,
+        at: UnixMillis,
+        boundary: SetBoundary,
+    ) -> Result<(), Error> {
         self.conn.execute(
             "INSERT INTO marker (device_id, at_ms, edge) VALUES (?1, ?2, ?3)
              ON CONFLICT DO NOTHING",
-            params![device_id, at_ms, edge],
+            params![device_id, at.0, boundary.id()],
         )?;
         Ok(())
     }
 
     pub fn markers(
         &self,
-        device_id: i64,
-        from_ms: i64,
-        to_ms: i64,
-    ) -> Result<Vec<(i64, i64)>, Error> {
+        device_id: DeviceId,
+        from: UnixMillis,
+        to: UnixMillis,
+    ) -> Result<Vec<MarkerRow>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT at_ms, edge FROM marker
               WHERE device_id = ?1 AND at_ms BETWEEN ?2 AND ?3 ORDER BY at_ms",
         )?;
-        let rows = stmt.query_map(params![device_id, from_ms, to_ms], |r| {
-            Ok((r.get(0)?, r.get(1)?))
+        let rows = stmt.query_map(params![device_id, from.0, to.0], |r| {
+            let edge: i64 = r.get(1)?;
+            Ok(MarkerRow {
+                at: millis(r, 0)?,
+                boundary: match edge {
+                    0 => SetBoundary::Start,
+                    1 => SetBoundary::End,
+                    other => return Err(corrupt(1, format!("set edge {other}"))),
+                },
+            })
         })?;
         rows.collect()
     }
 
-    pub fn record_fixes(&mut self, device_id: i64, fixes: &[Fix]) -> Result<(), Error> {
+    pub fn record_fixes(&mut self, device_id: DeviceId, fixes: &[Fix]) -> Result<(), Error> {
         let tx = self.conn.transaction()?;
         {
             let mut stmt = tx.prepare(
@@ -994,9 +1151,9 @@ impl Store {
 
     pub fn track_points(
         &self,
-        device_id: i64,
-        from_ms: i64,
-        to_ms: i64,
+        device_id: DeviceId,
+        from: UnixMillis,
+        to: UnixMillis,
     ) -> Result<Vec<Fix>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT at_ms, lat_e7, lon_e7, altitude_cm, accuracy_cm, speed_mm_s, bearing_cdeg
@@ -1004,7 +1161,7 @@ impl Store {
               WHERE device_id = ?1 AND at_ms BETWEEN ?2 AND ?3
               ORDER BY at_ms",
         )?;
-        let rows = stmt.query_map(params![device_id, from_ms, to_ms], |r| {
+        let rows = stmt.query_map(params![device_id, from.0, to.0], |r| {
             Ok(Fix {
                 at: UnixMillis(r.get(0)?),
                 lat_e7: r.get(1)?,
@@ -1020,10 +1177,10 @@ impl Store {
 
     pub fn charge_periods(
         &self,
-        device_id: i64,
-        from_ms: i64,
-        to_ms: i64,
-    ) -> Result<Vec<(i64, Option<i64>)>, Error> {
+        device_id: DeviceId,
+        from: UnixMillis,
+        to: UnixMillis,
+    ) -> Result<Vec<ChargePeriod>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT measured_at, value FROM sample
               WHERE device_id = ?1 AND kind = ?2
@@ -1033,53 +1190,82 @@ impl Store {
                       WHERE device_id = ?1 AND kind = ?2 AND measured_at < ?3), ?3)
               ORDER BY measured_at",
         )?;
-        let rows = stmt.query_map(params![device_id, CHARGING_KIND, from_ms, to_ms], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
-        })?;
+        let rows = stmt.query_map(
+            params![device_id, SampleKind::BatteryState.id(), from.0, to.0],
+            SamplePoint::of,
+        )?;
 
-        let mut periods: Vec<(i64, Option<i64>)> = Vec::new();
-        let mut open: Option<i64> = None;
+        let mut periods = Vec::new();
+        let mut open: Option<UnixMillis> = None;
         for row in rows {
-            let (at, state) = row?;
-            match (open, state == CHARGING_STATE) {
-                (None, true) => open = Some(at.max(from_ms)),
+            let point = row?;
+            match (open, point.value == BATTERY_STATE_CHARGING) {
+                (None, true) => open = Some(point.at.max(from)),
                 (Some(start), false) => {
-                    periods.push((start, Some(at)));
+                    periods.push(ChargePeriod {
+                        from: start,
+                        to: Some(point.at),
+                    });
                     open = None;
                 }
                 _ => {}
             }
         }
         if let Some(start) = open {
-            periods.push((start, None));
+            periods.push(ChargePeriod {
+                from: start,
+                to: None,
+            });
         }
         Ok(periods)
     }
 
     /// Delta-coded recordings stay on file but are not offered: nothing here
-    /// decodes them, and read as plain samples they are a wrong waveform.
-    pub fn ecgs(&self, device_id: i64) -> Result<Vec<(i64, i64, i64, i64, i64)>, Error> {
+    /// decodes them, and read as plain samples they are a wrong waveform. Nor
+    /// are signal types that are not ECG leads.
+    pub fn ecgs(&self, device_id: DeviceId) -> Result<Vec<EcgSummaryRow>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT id, measured_at, signal_type, sampling_hz, length(samples)
                FROM ecg
-              WHERE device_id = ?1 AND signal_type IN (1, 6, 7, 8, 13) AND format != ?2
+              WHERE device_id = ?1 AND format != ?2
               ORDER BY measured_at DESC",
         )?;
         let rows = stmt.query_map(params![device_id, SampleFormat::DELTA_META], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            let signal_type: u16 = r.get(2)?;
+            Ok(SignalKind::from_type_id(signal_type).map(|kind| {
+                Ok::<_, Error>(EcgSummaryRow {
+                    id: r.get(0)?,
+                    measured_at: millis(r, 1)?,
+                    kind,
+                    sampling_hz: r.get(3)?,
+                    sample_bytes: r.get(4)?,
+                })
+            }))
+        })?;
+        let mut found = Vec::new();
+        for row in rows {
+            if let Some(summary) = row? {
+                found.push(summary?);
+            }
+        }
+        Ok(found)
+    }
+
+    pub fn ecg_measures(&self, ecg_id: EcgId) -> Result<Vec<EcgMeasure>, Error> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT type, value, exponent FROM ecg_measure WHERE ecg_id = ?1")?;
+        let rows = stmt.query_map(params![ecg_id], |r| {
+            Ok(EcgMeasure {
+                kind: MeasureType(r.get(0)?),
+                value: r.get(1)?,
+                exponent: r.get(2)?,
+            })
         })?;
         rows.collect()
     }
 
-    pub fn ecg_measures(&self, ecg_id: i64) -> Result<Vec<(i64, i64, i64)>, Error> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT type, value, exponent FROM ecg_measure WHERE ecg_id = ?1")?;
-        let rows = stmt.query_map(params![ecg_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-        rows.collect()
-    }
-
-    pub fn ecg(&self, id: i64) -> Result<Option<(i64, i64, i64, i64, Vec<u8>)>, Error> {
+    pub fn ecg(&self, id: EcgId) -> Result<Option<(i64, i64, i64, i64, Vec<u8>)>, Error> {
         self.conn
             .query_row(
                 "SELECT measured_at, signal_type, sampling_hz, lead_count, samples
@@ -1091,7 +1277,7 @@ impl Store {
     }
 
     /// Newest first, each with the PPG verdict code when the watch sent one.
-    pub fn afib_episodes(&self, device_id: i64) -> Result<Vec<AfibEpisodeRow>, Error> {
+    pub fn afib_episodes(&self, device_id: DeviceId) -> Result<Vec<AfibEpisodeRow>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT e.id, e.measured_at, e.duration_secs, m.value, e.attrib
                FROM afib_episode e
@@ -1103,8 +1289,8 @@ impl Store {
         let rows = stmt.query_map(params![device_id, MeasureType::PPG_AFIB_RESULT.0], |r| {
             Ok(AfibEpisodeRow {
                 id: r.get(0)?,
-                measured_at_ms: r.get(1)?,
-                duration_secs: r.get(2)?,
+                measured_at: millis(r, 1)?,
+                duration: Duration::from_secs(r.get(2)?),
                 verdict: r.get(3)?,
                 attrib: r.get(4)?,
             })
@@ -1112,14 +1298,14 @@ impl Store {
         rows.collect()
     }
 
-    /// Every reading from `from_ms` up to and including the one `id` names,
+    /// Every reading from `from` up to and including the one `id` names,
     /// oldest first, with its beat intervals as stored; empty if `id` is not
     /// a reading of this device.
     pub fn afib_readings_up_to(
         &self,
-        device_id: i64,
+        device_id: DeviceId,
         id: i64,
-        from_ms: i64,
+        from: UnixMillis,
     ) -> Result<Vec<AfibReadingRow>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT e.id, e.measured_at, e.duration_secs, e.sampling_hz, e.sample_bytes,
@@ -1131,11 +1317,11 @@ impl Store {
                                        WHERE id = ?2 AND device_id = ?1)
               ORDER BY e.measured_at",
         )?;
-        let rows = stmt.query_map(params![device_id, id, from_ms], |r| {
+        let rows = stmt.query_map(params![device_id, id, from.0], |r| {
             Ok(AfibReadingRow {
                 id: r.get(0)?,
-                measured_at_ms: r.get(1)?,
-                duration_secs: r.get(2)?,
+                measured_at: millis(r, 1)?,
+                duration: Duration::from_secs(r.get(2)?),
                 sampling_hz: r.get(3)?,
                 sample_bytes: r.get(4)?,
                 samples: r.get(5)?,
@@ -1158,7 +1344,7 @@ impl Store {
 fn workout_row(r: &rusqlite::Row<'_>) -> Result<WorkoutRow, Error> {
     Ok(WorkoutRow {
         id: r.get(0)?,
-        started_at: UnixTime(r.get(1)?),
+        started_at: seconds(r, 1)?,
         ended_at: r.get::<_, Option<i64>>(2)?.map(UnixTime),
         subcategory: r.get(3)?,
     })
@@ -1183,7 +1369,7 @@ fn thin_levels(mut newest: HashMap<i64, (i64, i64)>, records: &[Record]) -> Vec<
             continue;
         }
         if let Some((last_at, last_value)) = newest.get(&kind.id()) {
-            if value == last_value && measured_at.0 - last_at < LEVEL_MAX_GAP_MS {
+            if value == last_value && *measured_at - UnixMillis(*last_at) < LEVEL_MAX_GAP {
                 continue;
             }
         }
@@ -1213,12 +1399,12 @@ impl KeptTable {
 fn store_kept(
     tx: &rusqlite::Transaction<'_>,
     table: KeptTable,
-    device_id: i64,
+    device_id: DeviceId,
     measured_at: UnixTime,
     signal: &Signal,
 ) -> Result<(), Error> {
     let (records, measures) = table.names();
-    let measured_at = measured_at.0 * 1000;
+    let measured_at = measured_at.to_millis().0;
     let (offset, gain, qfix) = match &signal.units {
         Some(u) => (Some(u.offset), Some(u.gain), Some(u.qfix)),
         None => (None, None, None),
@@ -1265,7 +1451,7 @@ fn store_kept(
 
 fn store_ecg(
     tx: &rusqlite::Transaction<'_>,
-    device_id: i64,
+    device_id: DeviceId,
     measured_at: UnixTime,
     signal: &Signal,
 ) -> Result<(), Error> {
@@ -1315,6 +1501,10 @@ fn store_ecg(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn edges(ms: &[i64]) -> Edges {
+        Edges::new(ms.iter().copied().map(UnixMillis).collect()).unwrap()
+    }
     use wpp::client::{SampleKind, Source};
     use wpp::units::UnixMillis;
 
@@ -1401,7 +1591,7 @@ mod tests {
         ];
         store.store(device, &batch).unwrap();
         store.store(device, &batch).unwrap();
-        let read = store.activity_minutes(device, 0, 10_000).unwrap();
+        let read = store.activity_minutes(device, UnixTime(0), UnixTime(10_000)).unwrap();
         assert_eq!(read.len(), 2);
         assert_eq!(read[0], minute);
     }
@@ -1420,8 +1610,8 @@ mod tests {
                 })],
             )
             .unwrap();
-        assert_eq!(store.activity_minutes(device, 1500, 5000).unwrap().len(), 1);
-        assert_eq!(store.activity_minutes(device, 2000, 5000).unwrap().len(), 0);
+        assert_eq!(store.activity_minutes(device, UnixTime(1500), UnixTime(5000)).unwrap().len(), 1);
+        assert_eq!(store.activity_minutes(device, UnixTime(2000), UnixTime(5000)).unwrap().len(), 0);
     }
 
     #[test]
@@ -1439,9 +1629,9 @@ mod tests {
                 ],
             )
             .unwrap();
-        let kind = SampleKind::HeartRate.id();
+        let kind = SampleKind::HeartRate;
         let found = store
-            .windowed_max(device, kind, &[1000, 2000, 3000, 4000])
+            .windowed_max(device, kind, &edges(&[1000, 2000, 3000, 4000]))
             .unwrap();
         assert_eq!(found, vec![Some(88), Some(71), None]);
     }
@@ -1449,19 +1639,19 @@ mod tests {
     #[test]
     fn notes_come_back_in_time_order_and_go_when_deleted() {
         let store = Store::open_in_memory().unwrap();
-        let later = store.add_note(2000, "30 mg").unwrap();
-        let earlier = store.add_note(1000, "20 mg").unwrap();
+        let later = store.add_note(UnixMillis(2000), "30 mg").unwrap();
+        let earlier = store.add_note(UnixMillis(1000), "20 mg").unwrap();
         assert_eq!(
             store.notes().unwrap(),
             vec![
-                (earlier, 1000, "20 mg".to_string()),
-                (later, 2000, "30 mg".to_string())
+                NoteRow { id: earlier, at: UnixMillis(1000), text: "20 mg".to_string() },
+                NoteRow { id: later, at: UnixMillis(2000), text: "30 mg".to_string() },
             ]
         );
         store.delete_note(earlier).unwrap();
         assert_eq!(store.notes().unwrap().len(), 1);
         assert!(
-            store.add_note(3000, "").is_err(),
+            store.add_note(UnixMillis(3000), "").is_err(),
             "an empty note says nothing"
         );
     }
@@ -1477,9 +1667,9 @@ mod tests {
         records.push(sample(3 * HOUR + 600_000, 60, Source::Stored));
         records.push(sample(5 * HOUR, 60, Source::Stored));
         store.store(device, &records).unwrap();
-        let kind = SampleKind::HeartRate.id();
+        let kind = SampleKind::HeartRate;
         let found = store
-            .windowed_hours(device, kind, &[0, 4 * HOUR, 8 * HOUR])
+            .windowed_hours(device, kind, &edges(&[0, 4 * HOUR, 8 * HOUR]))
             .unwrap();
         assert_eq!(found, vec![2, 1]);
     }
@@ -1542,8 +1732,8 @@ mod tests {
             store.afib_episodes(device).unwrap(),
             vec![AfibEpisodeRow {
                 id: 1,
-                measured_at_ms: 1_785_509_120_000,
-                duration_secs: 29,
+                measured_at: UnixMillis(1_785_509_120_000),
+                duration: Duration::from_secs(29),
                 verdict: Some(1),
                 attrib: Some(0),
             }]
@@ -1596,15 +1786,15 @@ mod tests {
             .find(|row| row.attrib == Some(7))
             .unwrap();
         let rows = store
-            .afib_readings_up_to(device, confirmed.id, 1_500_000)
+            .afib_readings_up_to(device, confirmed.id, UnixMillis(1_500_000))
             .unwrap();
         assert_eq!(
             rows.iter()
-                .map(|r| (r.measured_at_ms, r.attrib))
+                .map(|r| (r.measured_at.0, r.attrib))
                 .collect::<Vec<_>>(),
             vec![(2_000_000, Some(7))]
         );
-        let rows = store.afib_readings_up_to(device, confirmed.id, 0).unwrap();
+        let rows = store.afib_readings_up_to(device, confirmed.id, UnixMillis(0)).unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].samples, vec![85, 110]);
     }
@@ -1761,9 +1951,9 @@ mod tests {
                 ],
             )
             .unwrap();
-        store.mark_set(device, 1_020_000, 0).unwrap();
-        store.mark_set(device, 1_040_000, 1).unwrap();
-        store.mark_set(device, 1_200_000, 0).unwrap();
+        store.mark_set(device, UnixMillis(1_020_000), SetBoundary::Start).unwrap();
+        store.mark_set(device, UnixMillis(1_040_000), SetBoundary::End).unwrap();
+        store.mark_set(device, UnixMillis(1_200_000), SetBoundary::Start).unwrap();
 
         let id = store.workouts(device, 10).unwrap()[0].id;
         store.delete_workout(device, id).unwrap();
@@ -1801,7 +1991,7 @@ mod tests {
         store.delete_workout(device, id).unwrap();
 
         assert_eq!(
-            store.track_points(device, 0, i64::MAX).unwrap(),
+            store.track_points(device, UnixMillis(0), UnixMillis(i64::MAX)).unwrap(),
             vec![at(1_200_000)],
             "only the fixes inside the session go with it"
         );
@@ -1821,7 +2011,7 @@ mod tests {
         store.record_fixes(device, &[at(1_000_000), bare]).unwrap();
 
         assert_eq!(
-            store.track_points(device, 0, i64::MAX).unwrap(),
+            store.track_points(device, UnixMillis(0), UnixMillis(i64::MAX)).unwrap(),
             vec![at(1_000_000), bare]
         );
     }
@@ -1856,9 +2046,9 @@ mod tests {
                 ],
             )
             .unwrap();
-        store.mark_set(device, 1_050_000, 0).unwrap();
-        store.mark_set(device, 1_060_000, 1).unwrap();
-        store.mark_set(device, 1_250_000, 0).unwrap();
+        store.mark_set(device, UnixMillis(1_050_000), SetBoundary::Start).unwrap();
+        store.mark_set(device, UnixMillis(1_060_000), SetBoundary::End).unwrap();
+        store.mark_set(device, UnixMillis(1_250_000), SetBoundary::Start).unwrap();
         store
             .record_fixes(device, &[at(1_050_000), at(1_150_000), at(1_250_000)])
             .unwrap();
@@ -1873,7 +2063,7 @@ mod tests {
         );
         assert_eq!(store.count("marker").unwrap(), 2);
         assert_eq!(
-            store.track_points(device, 0, i64::MAX).unwrap(),
+            store.track_points(device, UnixMillis(0), UnixMillis(i64::MAX)).unwrap(),
             vec![at(1_050_000)],
             "the route past the new end goes with the sets"
         );
@@ -1988,19 +2178,19 @@ mod tests {
             )
             .unwrap();
 
-        let kind = wpp::client::SampleKind::HeartRate.id();
-        let series = store.series(device, kind, 2_500, 3_500, 100).unwrap();
-        let times: Vec<i64> = series.iter().map(|(t, _, _)| *t).collect();
+        let kind = SampleKind::HeartRate;
+        let series = store.series(device, kind, UnixMillis(2_500), UnixMillis(3_500), 100).unwrap();
+        let times: Vec<i64> = series.iter().map(|p| p.at.0).collect();
         assert_eq!(times, vec![2_000, 3_000, 4_000], "one either side of 3000");
 
-        let head = store.series(device, kind, 0, 1_500, 100).unwrap();
+        let head = store.series(device, kind, UnixMillis(0), UnixMillis(1_500), 100).unwrap();
         assert_eq!(
-            head.iter().map(|(t, _, _)| *t).collect::<Vec<_>>(),
+            head.iter().map(|p| p.at.0).collect::<Vec<_>>(),
             vec![1_000, 2_000]
         );
-        let tail = store.series(device, kind, 4_500, 9_000, 100).unwrap();
+        let tail = store.series(device, kind, UnixMillis(4_500), UnixMillis(9_000), 100).unwrap();
         assert_eq!(
-            tail.iter().map(|(t, _, _)| *t).collect::<Vec<_>>(),
+            tail.iter().map(|p| p.at.0).collect::<Vec<_>>(),
             vec![4_000, 5_000]
         );
     }
@@ -2033,14 +2223,17 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            store.charge_periods(device, 0, 6_000).unwrap(),
-            vec![(2_000, Some(4_000)), (5_000, None)],
+            store.charge_periods(device, UnixMillis(0), UnixMillis(6_000)).unwrap(),
+            vec![
+                ChargePeriod { from: UnixMillis(2_000), to: Some(UnixMillis(4_000)) },
+                ChargePeriod { from: UnixMillis(5_000), to: None },
+            ],
             "the last charge is still running, so it has no end"
         );
 
         assert_eq!(
-            store.charge_periods(device, 2_500, 4_500).unwrap(),
-            vec![(2_500, Some(4_000))]
+            store.charge_periods(device, UnixMillis(2_500), UnixMillis(4_500)).unwrap(),
+            vec![ChargePeriod { from: UnixMillis(2_500), to: Some(UnixMillis(4_000)) }]
         );
     }
 
@@ -2066,10 +2259,10 @@ mod tests {
         store.store(device, &batch).unwrap();
 
         let kept: Vec<(i64, i64)> = store
-            .series(device, SampleKind::BatteryPercent.id(), 0, 1_800_000, 1000)
+            .series(device, SampleKind::BatteryPercent, UnixMillis(0), UnixMillis(1_800_000), 1000)
             .unwrap()
             .iter()
-            .map(|(at, value, _)| (*at, *value))
+            .map(|p| (p.at.0, p.value))
             .collect();
         assert_eq!(
             kept,
@@ -2129,7 +2322,7 @@ mod tests {
     #[test]
     fn foreign_keys_are_enforced() {
         let mut store = Store::open_in_memory().unwrap();
-        let err = store.store(999, &[sample(1000, 62, Source::Stored)]);
+        let err = store.store(DeviceId(999), &[sample(1000, 62, Source::Stored)]);
         assert!(err.is_err(), "an unknown device must be rejected");
     }
 
@@ -2146,8 +2339,8 @@ mod tests {
                 }],
             )
             .unwrap();
-        store.mark_set(device, 900_000, 0).unwrap();
-        store.mark_set(device, 1_020_000, 0).unwrap();
+        store.mark_set(device, UnixMillis(900_000), SetBoundary::Start).unwrap();
+        store.mark_set(device, UnixMillis(1_020_000), SetBoundary::Start).unwrap();
 
         let id = store.workouts(device, 10).unwrap()[0].id;
         store.delete_workout(device, id).unwrap();

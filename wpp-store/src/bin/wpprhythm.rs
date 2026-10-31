@@ -4,7 +4,7 @@ use wpp::rhythm::{
     read_ecg, read_pulse, EcgVerdict, IntervalKind, PulseVerdict, Rhythm, WATCH_RATE_WITHIN_MS,
 };
 use wpp::signal::{Lead, SignalKind};
-use wpp::units::{Bpm, Millis};
+use wpp::units::{Bpm, Duration, Millis, UnixMillis};
 use wpp::SampleKind;
 use wpp_store::Store;
 
@@ -39,19 +39,14 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let device_id: i64 = store
-        .connection()
-        .query_row("SELECT id FROM device ORDER BY id LIMIT 1", [], |r| {
-            r.get(0)
-        })
-        .expect("no device");
+    let device_id = store.first_device().unwrap().expect("no device");
 
     let newest = store.afib_episodes(device_id).unwrap();
     let readings = match newest.first() {
-        Some(row) => store.afib_readings_up_to(device_id, row.id, 0).unwrap(),
+        Some(row) => store.afib_readings_up_to(device_id, row.id, UnixMillis(0)).unwrap(),
         None => Vec::new(),
     };
-    for row in readings.iter().filter(|r| r.duration_secs > 0) {
+    for row in readings.iter().filter(|r| r.duration > Duration::ZERO) {
         let raw: Vec<Millis> = wpp::signal::beat_intervals_ms(
             &row.samples,
             row.sample_bytes as usize,
@@ -63,9 +58,9 @@ fn main() -> ExitCode {
         let watch = store
             .nearest_sample(
                 device_id,
-                SampleKind::HeartRate.id(),
-                row.measured_at_ms,
-                WATCH_RATE_WITHIN_MS,
+                SampleKind::HeartRate,
+                row.measured_at,
+                Duration::from_millis(WATCH_RATE_WITHIN_MS),
             )
             .unwrap();
         let Some(watch) = watch else {
@@ -85,8 +80,9 @@ fn main() -> ExitCode {
         println!("pulse {:4} merged {merged:2} {verdict}", row.id);
     }
 
-    for (id, ..) in store.ecgs(device_id).unwrap() {
-        let (_, signal_type, hz, lead_count, bytes) = store.ecg(id).unwrap().unwrap();
+    for row in store.ecgs(device_id).unwrap() {
+        let id = row.id.0;
+        let (_, signal_type, hz, lead_count, bytes) = store.ecg(row.id).unwrap().unwrap();
         let lead_count = lead_count.max(1) as usize;
         let leads = SignalKind::from_type_id(signal_type as u16)
             .map(|k| k.leads())
