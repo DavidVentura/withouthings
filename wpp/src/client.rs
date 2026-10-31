@@ -46,6 +46,23 @@ pub fn probe_frame() -> Frame {
     )
 }
 
+/// An action taken on its own schedule, and not again until an interval is up.
+#[derive(Debug, Clone, Copy)]
+struct RateLimit {
+    interval_ms: i64,
+    last: Option<UnixMillis>,
+}
+
+impl RateLimit {
+    const fn every(interval_ms: i64) -> RateLimit {
+        RateLimit { interval_ms, last: None }
+    }
+
+    fn due(&self, now: UnixMillis) -> bool {
+        self.last.map_or(true, |last| now.0 - last.0 >= self.interval_ms)
+    }
+}
+
 const MAX_BUSY_RETRIES: u32 = 20;
 const MIN_REFRESH_INTERVAL_MS: i64 = 300_000;
 const MIN_WALK_INTERVAL_MS: i64 = 900_000;
@@ -187,7 +204,9 @@ pub struct LiveRoute {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
-    Connected,
+    Connected {
+        now: UnixMillis,
+    },
     Disconnected,
     Frame {
         frame: Frame,
@@ -385,16 +404,15 @@ pub struct Client {
     image_formats: Vec<crate::image::ImageFormat>,
     records_emitted: u64,
     unhandled: Vec<(u16, u16, &'static str)>,
-    now: Option<UnixMillis>,
     last_heard: Option<UnixMillis>,
     last_spoke: Option<UnixMillis>,
     measuring: Option<i16>,
     live_samples: Vec<i16>,
-    last_refresh: Option<UnixMillis>,
-    last_walk: Option<UnixMillis>,
+    refreshes: RateLimit,
+    walks: RateLimit,
     dump: DebugDump,
     spi_flash: SpiFlash,
-    last_dump: Option<UnixMillis>,
+    dumps: RateLimit,
     wanted_notifications: Option<bool>,
     zone: Option<Zone>,
     /// When the watch was last given the time, and in which zone.
@@ -433,16 +451,15 @@ impl Client {
             image_formats: Vec::new(),
             records_emitted: 0,
             unhandled: Vec::new(),
-            now: None,
             last_heard: None,
             last_spoke: None,
             measuring: None,
             live_samples: Vec::new(),
-            last_refresh: None,
-            last_walk: None,
+            refreshes: RateLimit::every(MIN_REFRESH_INTERVAL_MS),
+            walks: RateLimit::every(MIN_WALK_INTERVAL_MS),
             dump: DebugDump::new(),
             spi_flash: SpiFlash::new(),
-            last_dump: None,
+            dumps: RateLimit::every(MIN_DUMP_INTERVAL_MS),
             wanted_notifications: None,
             zone: None,
             clock_sent: None,
@@ -461,17 +478,14 @@ impl Client {
         all
     }
 
-    pub fn sync_now(&mut self) -> Vec<Action> {
-        if let (Some(now), Some(last)) = (self.now, self.last_walk) {
-            if now.0 - last.0 < MIN_WALK_INTERVAL_MS {
-                return Vec::new();
-            }
+    pub fn sync_now(&mut self, now: UnixMillis) -> Vec<Action> {
+        if !self.walks.due(now) {
+            return Vec::new();
         }
-        let actions = self.walk_now();
-        self.noted(actions)
+        self.walk_now(now)
     }
 
-    fn drain_dump(&mut self) -> Vec<Action> {
+    fn drain_dump(&mut self, now: UnixMillis) -> Vec<Action> {
         if self.phase != Phase::Finished
             || self.measuring.is_some()
             || self.dump.running()
@@ -479,16 +493,14 @@ impl Client {
         {
             return Vec::new();
         }
-        if let (Some(now), Some(last)) = (self.now, self.last_dump) {
-            if now.0 - last.0 < MIN_DUMP_INTERVAL_MS {
-                return Vec::new();
-            }
+        if !self.dumps.due(now) {
+            return Vec::new();
         }
-        self.last_dump = self.now;
+        self.dumps.last = Some(now);
         self.dump.start().into_iter().map(Action::Send).collect()
     }
 
-    pub fn walk_now(&mut self) -> Vec<Action> {
+    pub fn walk_now(&mut self, now: UnixMillis) -> Vec<Action> {
         if self.measuring.is_some() {
             return Vec::new();
         }
@@ -508,15 +520,15 @@ impl Client {
             return Vec::new();
         }
         self.phase = Phase::Syncing;
-        self.last_walk = self.now;
-        let actions = self.begin_walk();
-        self.noted(actions)
+        self.walks.last = Some(now);
+        let actions = self.begin_walk(now);
+        self.noted(now, actions)
     }
 
-    fn begin_walk(&mut self) -> Vec<Action> {
+    fn begin_walk(&mut self, now: UnixMillis) -> Vec<Action> {
         self.queue
             .extend(std::mem::take(&mut self.done).into_iter().rev());
-        self.request_next()
+        self.request_next(now)
     }
 
     pub fn measuring(&self) -> Option<i16> {
@@ -560,25 +572,32 @@ impl Client {
     }
 
     pub fn handle(&mut self, event: Event) -> Vec<Action> {
-        let actions = match event {
-            Event::Connected => self.on_connected(),
-            Event::Disconnected => self.on_disconnected(),
-            Event::Frame { frame, received_at } => self.on_frame(frame, received_at),
+        match event {
+            Event::Connected { now } => {
+                let actions = self.on_connected(now);
+                self.noted(now, actions)
+            }
+            Event::Disconnected => {
+                self.on_disconnected();
+                Vec::new()
+            }
+            Event::Frame { frame, received_at } => {
+                let actions = self.on_frame(frame, received_at);
+                self.noted(received_at, actions)
+            }
             Event::Stored { token } => self.on_stored(token),
             Event::Tick { now } => self.on_tick(now),
-        };
-        self.noted(actions)
+        }
     }
 
-    fn noted(&mut self, actions: Vec<Action>) -> Vec<Action> {
+    fn noted(&mut self, now: UnixMillis, actions: Vec<Action>) -> Vec<Action> {
         if actions.iter().any(|a| matches!(a, Action::Send(_))) {
-            self.last_spoke = self.now;
+            self.last_spoke = Some(now);
         }
         actions
     }
 
     fn on_tick(&mut self, now: UnixMillis) -> Vec<Action> {
-        self.now = Some(now);
         let Some(heard) = self.last_heard else {
             return Vec::new();
         };
@@ -595,7 +614,7 @@ impl Client {
         Vec::new()
     }
 
-    fn on_disconnected(&mut self) -> Vec<Action> {
+    fn on_disconnected(&mut self) {
         self.phase = Phase::Idle;
         self.busy_retries = 0;
         self.last_heard = None;
@@ -612,13 +631,12 @@ impl Client {
         self.signals.reset();
         self.dump.reset();
         self.spi_flash.reset();
-        Vec::new()
     }
 
-    fn on_connected(&mut self) -> Vec<Action> {
+    fn on_connected(&mut self, now: UnixMillis) -> Vec<Action> {
         self.on_disconnected();
         self.phase = Phase::Probing;
-        self.last_heard = self.now;
+        self.last_heard = Some(now);
         vec![Action::Send(probe_frame())]
     }
 
@@ -648,7 +666,6 @@ impl Client {
     fn on_frame(&mut self, frame: Frame, received_at: UnixMillis) -> Vec<Action> {
         let mut actions = Vec::new();
         let mut records = Vec::new();
-        self.now = Some(received_at);
         self.last_heard = Some(received_at);
 
         self.collect_passive(&frame, received_at, &mut records);
@@ -794,26 +811,26 @@ impl Client {
             }
             (Phase::Probing | Phase::Authenticating, c) if c == Command::CMD_PROBE.0 => {
                 self.phase = Phase::Syncing;
-                actions.extend(self.send_clock());
+                actions.extend(self.send_clock(received_at));
                 // Scheduled features are armed for one window at a time, so the
                 // set has to be re-asserted on every connection or a nightly
                 // one never runs again. The reference app does the same.
-                actions.extend(self.write_features());
+                actions.extend(self.write_features(received_at));
                 // The watch repeats the start push every couple of seconds,
                 // so this only saves waiting for the next one.
                 actions.push(Action::Send(Frame::new(
                     Command::CMD_WORKOUT_STATUS,
                     Vec::new(),
                 )));
-                actions.extend(self.begin_walk());
+                actions.extend(self.begin_walk(received_at));
             }
             (Phase::Syncing, _) if self.draining.is_some() => {
-                actions.extend(self.on_store_frame(&frame));
+                actions.extend(self.on_store_frame(&frame, received_at));
             }
             (Phase::Finished, c) if c == Command::CMD_SYNC_REQUEST.0 => {
-                let walk = self.sync_now();
+                let walk = self.sync_now(received_at);
                 if walk.is_empty() {
-                    actions.extend(self.drain_dump());
+                    actions.extend(self.drain_dump(received_at));
                 } else {
                     actions.extend(walk);
                 }
@@ -856,7 +873,7 @@ impl Client {
                     if let Some(finished) = self.current.take() {
                         self.done.push(finished);
                     }
-                    actions.extend(self.request_next());
+                    actions.extend(self.request_next(received_at));
                 }
             }
             _ => {}
@@ -1530,7 +1547,6 @@ impl Client {
     /// [`CLOCK_RESEND_INTERVAL_MS`] ago; a sync in progress puts that off to
     /// a later call.
     pub fn set_zone(&mut self, zone: Zone, now: UnixMillis) -> Vec<Action> {
-        self.now = Some(now);
         self.zone = Some(zone);
         let due = match self.clock_sent {
             None => true,
@@ -1539,7 +1555,7 @@ impl Client {
         if !due || !self.link_quiet() {
             return Vec::new();
         }
-        self.send_clock()
+        self.send_clock(now)
     }
 
     /// The phone's clock was set by hand or by the network, so whatever the
@@ -1563,8 +1579,8 @@ impl Client {
             && self.draining.is_none()
     }
 
-    fn send_clock(&mut self) -> Vec<Action> {
-        let (Some(now), Some(zone)) = (self.now, self.zone) else {
+    fn send_clock(&mut self, now: UnixMillis) -> Vec<Action> {
+        let Some(zone) = self.zone else {
             return Vec::new();
         };
         self.clock_sent = Some((now, zone));
@@ -1594,18 +1610,16 @@ impl Client {
 
     /// The watch has no read side for this and the write carries the whole
     /// set: anything left out is silently switched off.
-    pub fn set_features(&mut self, features: Vec<Feature>) -> Vec<Action> {
+    pub fn set_features(&mut self, features: Vec<Feature>, now: UnixMillis) -> Vec<Action> {
         self.features = features;
-        self.write_features()
+        self.write_features(now)
     }
 
     /// A window the watch has already run out is off, and resending it would
     /// arm it a second time.
-    fn write_features(&mut self) -> Vec<Action> {
-        if let Some(now) = self.now {
-            let now = now.to_seconds();
-            self.features.retain(|f| !f.schedule.expired_at(now));
-        }
+    fn write_features(&mut self, now: UnixMillis) -> Vec<Action> {
+        let now = now.to_seconds();
+        self.features.retain(|f| !f.schedule.expired_at(now));
         let mut objects: Vec<WppObject> = vec![WppObject::Id(Id { value: 0 })];
         objects.extend(self.features.iter().map(|feature| {
             let (start_time, end_time) = feature.schedule.wire();
@@ -1622,58 +1636,43 @@ impl Client {
         ))]
     }
 
-    pub fn refresh(&mut self) -> Vec<Action> {
-        if matches!(
-            self.phase,
-            Phase::Idle | Phase::Probing | Phase::Authenticating
-        ) {
+    pub fn refresh(&mut self, now: UnixMillis) -> Vec<Action> {
+        if !self.refreshes.due(now) {
             return Vec::new();
         }
-        if let (Some(now), Some(last)) = (self.now, self.last_refresh) {
-            if now.0 - last.0 < MIN_REFRESH_INTERVAL_MS {
-                return Vec::new();
-            }
-        }
-        let actions = self.force_refresh();
-        self.noted(actions)
+        self.force_refresh(now)
     }
 
-    pub fn poll_battery(&mut self) -> Vec<Action> {
-        if self.measuring.is_some()
-            || matches!(
-                self.phase,
-                Phase::Idle | Phase::Probing | Phase::Authenticating
-            )
-        {
+    /// The handshake is over and the watch will answer a request.
+    fn answers_requests(&self) -> bool {
+        matches!(self.phase, Phase::Syncing | Phase::Finished)
+    }
+
+    pub fn poll_battery(&mut self, now: UnixMillis) -> Vec<Action> {
+        if self.measuring.is_some() || !self.answers_requests() {
             return Vec::new();
         }
         let actions = vec![Action::Send(Frame::new(
             Command::CMD_BATTERY_STATUS,
             Vec::new(),
         ))];
-        self.noted(actions)
+        self.noted(now, actions)
     }
 
-    pub fn factory_reset(&mut self) -> Vec<Action> {
+    pub fn factory_reset(&mut self, now: UnixMillis) -> Vec<Action> {
         let actions = vec![Action::Send(Frame::new(
             Command::CMD_FACTORY_RESET,
             Vec::new(),
         ))];
-        self.noted(actions)
+        self.noted(now, actions)
     }
 
-    pub fn force_refresh(&mut self) -> Vec<Action> {
-        if self.measuring.is_some() {
+    pub fn force_refresh(&mut self, now: UnixMillis) -> Vec<Action> {
+        if self.measuring.is_some() || !self.answers_requests() {
             return Vec::new();
         }
-        if matches!(
-            self.phase,
-            Phase::Idle | Phase::Probing | Phase::Authenticating
-        ) {
-            return Vec::new();
-        }
-        self.last_refresh = self.now;
-        self.noted(vec![
+        self.refreshes.last = Some(now);
+        self.noted(now, vec![
             Action::Send(Frame::new(
                 Command::CMD_DISPLAYED_INFO_GET,
                 vec![WppObject::InfoType(InfoType { value: 4 })],
@@ -1682,7 +1681,7 @@ impl Client {
         ])
     }
 
-    fn request_next(&mut self) -> Vec<Action> {
+    fn request_next(&mut self, now: UnixMillis) -> Vec<Action> {
         match self.queue.pop() {
             Some(next) => {
                 self.walk_started_from = Some(next.1);
@@ -1692,20 +1691,20 @@ impl Client {
             None => {
                 let mut actions = vec![Action::Send(Frame::new(Command::CMD_SYNC_OK, Vec::new()))];
                 self.stores = DRAINED_STORES.iter().rev().copied().collect();
-                actions.extend(self.request_next_store());
+                actions.extend(self.request_next_store(now));
                 actions
             }
         }
     }
 
-    fn request_next_store(&mut self) -> Vec<Action> {
+    fn request_next_store(&mut self, now: UnixMillis) -> Vec<Action> {
         self.awaiting_delete = false;
         self.draining = self.stores.pop();
         match self.draining {
             Some(store) => vec![Action::Send(stored_signal_request(store))],
             None => {
                 self.phase = Phase::Finished;
-                self.refresh()
+                self.refresh(now)
             }
         }
     }
@@ -1714,7 +1713,7 @@ impl Client {
     /// with a Null alone once the store is empty. A served record is deleted
     /// once the host has kept it, and only then is the store asked again, so
     /// the watch never holds more than the one record in flight.
-    fn on_store_frame(&mut self, frame: &Frame) -> Vec<Action> {
+    fn on_store_frame(&mut self, frame: &Frame, now: UnixMillis) -> Vec<Action> {
         let store = self.draining.expect("the caller checked a store is being drained");
         let opcode = frame.command.opcode();
         if opcode == Command::CMD_ERROR.0 {
@@ -1726,7 +1725,7 @@ impl Client {
                 self.busy_retries += 1;
                 return vec![Action::Send(stored_signal_request(store))];
             }
-            return self.request_next_store();
+            return self.request_next_store(now);
         }
         self.busy_retries = 0;
         if opcode == Command::CMD_STORED_MEASURE_SIGNAL_DEL.0 {
@@ -1738,7 +1737,7 @@ impl Client {
         if !ends_reply || self.awaiting_delete {
             return Vec::new();
         }
-        self.request_next_store()
+        self.request_next_store(now)
     }
 
     fn request_current(&mut self) -> Vec<Action> {
@@ -1909,7 +1908,7 @@ mod tests {
             vec![(Category(8), UnixTime(1000))],
             Vec::new(),
         );
-        let actions = client.handle(Event::Connected);
+        let actions = client.handle(Event::Connected { now: UnixMillis(0) });
         assert!(matches!(actions[0], Action::Send(ref f) if f.command == Command::CMD_PROBE));
 
         let challenge = Frame::new(
@@ -1939,7 +1938,7 @@ mod tests {
             vec![(Category(8), UnixTime(1000))],
             Vec::new(),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(Event::Frame {
             received_at: UnixMillis(0),
             frame: Frame::new(
@@ -2433,7 +2432,7 @@ mod tests {
             vec![(Category::BODY, UnixTime(4000))],
             Vec::new(),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(frame(
             Command::CMD_PROBE_CHALLENGE,
             vec![WppObject::ProbeChallenge(ProbeChallenge {
@@ -2472,7 +2471,7 @@ mod tests {
             vec![(Category::ACTIVITY, UnixTime(4000))],
             Vec::new(),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(frame(
             Command::CMD_PROBE_CHALLENGE,
             vec![WppObject::ProbeChallenge(ProbeChallenge {
@@ -2514,7 +2513,7 @@ mod tests {
             vec![(Category::ACTIVITY, UnixTime(0))],
             Vec::new(),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(frame(Command::CMD_PROBE, vec![]));
         let actions = client.handle(frame(
             Command::CMD_WAM_VASISTAS_GET,
@@ -2564,7 +2563,7 @@ mod tests {
             vec![(Category::ACTIVITY, UnixTime(0))],
             Vec::new(),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(frame(Command::CMD_PROBE, vec![]));
         let actions = client.handle(frame(
             Command::CMD_WAM_VASISTAS_GET,
@@ -2604,7 +2603,7 @@ mod tests {
             vec![(Category::BODY, UnixTime(0))],
             Vec::new(),
         );
-        let actions = client.handle(Event::Connected);
+        let actions = client.handle(Event::Connected { now: UnixMillis(0) });
         assert_eq!(sent(&actions), vec![Command::CMD_PROBE]);
     }
 
@@ -2633,7 +2632,7 @@ mod tests {
             vec![(Category::BODY, UnixTime(4000))],
             Vec::new(),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(frame(
             Command::CMD_PROBE_CHALLENGE,
             vec![WppObject::ProbeChallenge(ProbeChallenge {
@@ -2665,7 +2664,7 @@ mod tests {
             "a finished stream keeps its watermark"
         );
 
-        let actions = client.sync_now();
+        let actions = client.sync_now(UnixMillis(0));
         assert_eq!(sent(&actions), vec![Command::CMD_BODY_VASISTAS_GET]);
         assert_eq!(client.current(), Some((Category::BODY, UnixTime(5001))));
     }
@@ -2733,7 +2732,7 @@ mod tests {
             "acknowledged, then the drain opens"
         );
 
-        assert!(client.walk_now().is_empty());
+        assert!(client.walk_now(UnixMillis(3_000)).is_empty());
     }
 
     #[test]
@@ -2935,7 +2934,7 @@ mod tests {
                     end: UnixTime(200),
                 },
             },
-        ]);
+        ], UnixMillis(0));
         let Action::Send(frame) = &actions[0] else {
             panic!()
         };
@@ -2973,7 +2972,7 @@ mod tests {
             vec![(Category(8), UnixTime(1000))],
             vec![permanent(20)],
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(Event::Frame {
             received_at: UnixMillis(0),
             frame: Frame::new(
@@ -3014,7 +3013,7 @@ mod tests {
                 },
             ],
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(Event::Frame {
             received_at: UnixMillis(300_000),
             frame: Frame::new(
@@ -3132,7 +3131,7 @@ mod tests {
             vec![(Category(11), UnixTime(1_000)), (Category(6), UnixTime(1_000))],
             Vec::new(),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(frame(Command::CMD_PROBE, Vec::new()));
         assert_eq!(client.current(), Some((Category(6), UnixTime(1_000))));
 
@@ -3160,7 +3159,7 @@ mod tests {
     fn a_reconnect_walks_the_streams_a_finished_sync_had_done() {
         let mut client = synced();
         client.handle(Event::Disconnected);
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         let actions = client.handle(frame(Command::CMD_PROBE, Vec::new()));
         assert!(client.current().is_some(), "{:?}", sent(&actions));
         assert!(!sent(&actions).contains(&Command::CMD_SYNC_OK));
@@ -3212,7 +3211,7 @@ mod tests {
     fn a_busy_watch_during_the_handshake_is_not_a_refusal() {
         use crate::objects::Cmderror;
         let mut client = Client::new(credentials(), Vec::new(), Vec::new());
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(frame(
             Command::CMD_ERROR,
             vec![WppObject::Cmderror(Cmderror {
@@ -3231,7 +3230,7 @@ mod tests {
             vec![(Category::BODY, UnixTime(0))],
             Vec::new(),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(frame(
             Command::CMD_PROBE_CHALLENGE,
             vec![WppObject::ProbeChallenge(ProbeChallenge {
@@ -3256,7 +3255,7 @@ mod tests {
             vec![(Category::BODY, UnixTime(0))],
             Vec::new(),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         assert_eq!(client.phase(), Phase::Probing);
 
         let actions = client.handle(frame(
@@ -3282,7 +3281,7 @@ mod tests {
             vec![(Category::BODY, UnixTime(0))],
             Vec::new(),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
 
         client.handle(frame(
             Command::CMD_ERROR,
@@ -3312,7 +3311,7 @@ mod tests {
             vec![(Category::BODY, UnixTime(0))],
             Vec::new(),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(frame(
             Command::CMD_PROBE_CHALLENGE,
             vec![WppObject::ProbeChallenge(ProbeChallenge {
@@ -3350,24 +3349,19 @@ mod tests {
     #[test]
     fn the_automatic_refresh_is_rate_limited_but_an_explicit_one_is_not() {
         let mut client = authenticated();
-        let at = |ms: i64| Event::Frame {
-            frame: Frame::new(Command::CMD_SYNC_REQUEST, Vec::new()),
-            received_at: UnixMillis(ms),
-        };
-
-        client.handle(at(0));
-        assert!(!client.refresh().is_empty(), "the first one goes out");
-        client.handle(at(MIN_REFRESH_INTERVAL_MS / 2));
-        assert!(client.refresh().is_empty(), "half an interval is too soon");
-        client.handle(at(MIN_REFRESH_INTERVAL_MS + 1));
+        let at = |ms: i64| UnixMillis(ms);
+        assert!(!client.refresh(at(0)).is_empty(), "the first one goes out");
         assert!(
-            !client.refresh().is_empty(),
+            client.refresh(at(MIN_REFRESH_INTERVAL_MS / 2)).is_empty(),
+            "half an interval is too soon"
+        );
+        assert!(
+            !client.refresh(at(MIN_REFRESH_INTERVAL_MS + 1)).is_empty(),
             "an interval on it is due again"
         );
 
-        client.handle(at(MIN_REFRESH_INTERVAL_MS + 2));
-        assert!(client.refresh().is_empty());
-        assert!(!client.force_refresh().is_empty());
+        assert!(client.refresh(at(MIN_REFRESH_INTERVAL_MS + 2)).is_empty());
+        assert!(!client.force_refresh(at(MIN_REFRESH_INTERVAL_MS + 2)).is_empty());
     }
 
     #[test]
@@ -3377,31 +3371,29 @@ mod tests {
             frame: Frame::new(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]),
             received_at: UnixMillis(ms),
         };
-        let idle = |ms: i64| Event::Frame {
-            frame: Frame::new(Command::CMD_BATTERY_STATUS, Vec::new()),
-            received_at: UnixMillis(ms),
-        };
 
         client.handle(done(0));
         stores_empty(&mut client, 0);
         assert_eq!(client.phase(), Phase::Finished);
-        client.handle(idle(1_000));
         assert!(
-            !client.sync_now().is_empty(),
+            !client.sync_now(UnixMillis(1_000)).is_empty(),
             "the first walk is not limited"
         );
 
         client.handle(done(2_000));
         stores_empty(&mut client, 2_000);
-        assert!(client.sync_now().is_empty(), "seconds later is too soon");
+        assert!(client.sync_now(UnixMillis(2_000)).is_empty(), "seconds later is too soon");
 
-        client.handle(idle(MIN_WALK_INTERVAL_MS + 2_000));
-        assert!(!client.sync_now().is_empty(), "an interval on it is due");
+        assert!(
+            !client.sync_now(UnixMillis(MIN_WALK_INTERVAL_MS + 2_000)).is_empty(),
+            "an interval on it is due"
+        );
 
         client.handle(done(MIN_WALK_INTERVAL_MS + 3_000));
         stores_empty(&mut client, MIN_WALK_INTERVAL_MS + 3_000);
-        assert!(client.sync_now().is_empty());
-        assert!(!client.walk_now().is_empty(), "the button still means now");
+        let then = UnixMillis(MIN_WALK_INTERVAL_MS + 3_000);
+        assert!(client.sync_now(then).is_empty());
+        assert!(!client.walk_now(then).is_empty(), "the button still means now");
     }
 
     #[test]
@@ -3482,7 +3474,7 @@ mod tests {
             },
             UnixMillis(1_784_999_000_000),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
 
         let sent = |actions: &[Action]| -> Vec<Frame> {
             actions
@@ -3758,6 +3750,16 @@ mod tests {
     }
 
     #[test]
+    fn a_connection_that_never_answers_is_noticed() {
+        let mut client = Client::new(credentials(), Vec::new(), Vec::new());
+        client.handle(Event::Connected { now: UnixMillis(5_000) });
+        assert_eq!(
+            client.handle(Event::Tick { now: UnixMillis(5_000 + SILENCE_TIMEOUT_MS + 1) }),
+            vec![Action::Reconnect]
+        );
+    }
+
+    #[test]
     fn a_walk_that_stops_replying_is_noticed() {
         let mut client = authenticated();
         assert_eq!(client.phase(), Phase::Syncing);
@@ -3820,7 +3822,7 @@ mod tests {
         ));
         assert_eq!(client.measuring(), Some(1));
 
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         assert_eq!(client.measuring(), None, "a new link has no measurement");
 
         client.handle(Event::Frame {
@@ -3878,9 +3880,10 @@ mod tests {
         ));
         assert_eq!(client.live_samples(), &[-126, 16]);
 
-        assert!(client.sync_now().is_empty(), "no walk during a measurement");
-        assert!(client.walk_now().is_empty(), "not even an explicit one");
-        assert!(client.force_refresh().is_empty(), "nor the daily totals");
+        let now = UnixMillis(MIN_WALK_INTERVAL_MS);
+        assert!(client.sync_now(now).is_empty(), "no walk during a measurement");
+        assert!(client.walk_now(now).is_empty(), "not even an explicit one");
+        assert!(client.force_refresh(now).is_empty(), "nor the daily totals");
 
         use crate::objects::StoredMeasureMeta;
         let stopped = client.handle(frame(
@@ -3927,7 +3930,7 @@ mod tests {
         stores_empty(&mut client, 20_000);
 
         client.handle(tick(1_000_000));
-        assert!(!client.walk_now().is_empty(), "the walk asks for something");
+        assert!(!client.walk_now(UnixMillis(1_000_000)).is_empty(), "the walk asks for something");
 
         assert!(
             client
@@ -4004,7 +4007,7 @@ mod tests {
             ],
             Vec::new(),
         );
-        client.handle(Event::Connected);
+        client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(frame(
             Command::CMD_PROBE_CHALLENGE,
             vec![WppObject::ProbeChallenge(ProbeChallenge {
@@ -4097,7 +4100,7 @@ mod tests {
     #[test]
     fn a_factory_reset_is_the_bare_command() {
         let mut client = authenticated();
-        let actions = client.factory_reset();
+        let actions = client.factory_reset(UnixMillis(0));
         let Action::Send(frame) = &actions[0] else {
             panic!("expected a send, got {actions:?}")
         };
@@ -4116,7 +4119,7 @@ mod tests {
         );
         assert_eq!(client.phase(), Phase::Idle);
 
-        let actions = client.handle(Event::Connected);
+        let actions = client.handle(Event::Connected { now: UnixMillis(0) });
         assert_eq!(sent(&actions), vec![Command::CMD_PROBE]);
         assert_eq!(client.phase(), Phase::Probing);
 

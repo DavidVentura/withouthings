@@ -815,7 +815,7 @@ impl WatchService {
         let actions = {
             let mut inner = self.inner.lock().unwrap();
             inner.reassembler.reset();
-            inner.client.handle(Event::Connected)
+            inner.client.handle(Event::Connected { now: UnixMillis(now_ms()) })
         };
         self.dispatch(actions)
     }
@@ -823,7 +823,7 @@ impl WatchService {
     pub fn poll_battery(&self) -> Result<(), WatchError> {
         let actions = {
             let mut inner = self.inner.lock().unwrap();
-            inner.client.poll_battery()
+            inner.client.poll_battery(UnixMillis(now_ms()))
         };
         self.dispatch(actions)
     }
@@ -905,20 +905,21 @@ impl WatchService {
     }
 
     pub fn sync_now(&self) -> Result<(), WatchError> {
-        let actions = self.inner.lock().unwrap().client.sync_now();
+        let actions = self.inner.lock().unwrap().client.sync_now(UnixMillis(now_ms()));
         self.dispatch(actions)
     }
 
     pub fn factory_reset(&self) -> Result<(), WatchError> {
-        let actions = self.inner.lock().unwrap().client.factory_reset();
+        let actions = self.inner.lock().unwrap().client.factory_reset(UnixMillis(now_ms()));
         self.dispatch(actions)
     }
 
     pub fn request_refresh(&self) -> Result<(), WatchError> {
         let actions = {
             let mut inner = self.inner.lock().unwrap();
-            let mut actions = inner.client.force_refresh();
-            actions.extend(inner.client.walk_now());
+            let now = UnixMillis(now_ms());
+            let mut actions = inner.client.force_refresh(now);
+            actions.extend(inner.client.walk_now(now));
             actions
         };
         self.dispatch(actions)
@@ -3084,7 +3085,7 @@ impl WatchService {
             .lock()
             .unwrap()
             .set_features(self.device_id, &features)?;
-        let actions = self.inner.lock().unwrap().client.set_features(features);
+        let actions = self.inner.lock().unwrap().client.set_features(features, UnixMillis(now_ms()));
         self.dispatch(actions)
     }
 

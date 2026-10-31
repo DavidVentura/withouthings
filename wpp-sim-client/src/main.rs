@@ -295,7 +295,7 @@ fn stored(link: &mut Link, signal_type: u16) -> std::io::Result<()> {
 /// and the stores drained after the walk.
 fn sync(link: &mut Link, credentials: Credentials) -> std::io::Result<bool> {
     let mut client = Client::new(credentials, Vec::new(), Vec::new());
-    let mut pending: std::collections::VecDeque<Action> = client.handle(Event::Connected).into();
+    let mut pending: std::collections::VecDeque<Action> = client.handle(Event::Connected { now: wall_clock() }).into();
     let deadline = Instant::now() + SYNC_TIMEOUT;
     while Instant::now() < deadline {
         while let Some(action) = pending.pop_front() {
@@ -319,12 +319,7 @@ fn sync(link: &mut Link, credentials: Credentials) -> std::io::Result<bool> {
                 }
             }
         }
-        let now = UnixMillis(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as i64,
-        );
+        let now = wall_clock();
         pending.extend(match link.receive(SYNC_POLL)? {
             Some(frame) => {
                 report(&frame);
@@ -335,6 +330,15 @@ fn sync(link: &mut Link, credentials: Credentials) -> std::io::Result<bool> {
     }
     println!("the sync did not finish within {}s", SYNC_TIMEOUT.as_secs());
     Ok(false)
+}
+
+fn wall_clock() -> UnixMillis {
+    UnixMillis(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64,
+    )
 }
 
 fn describe(record: &Record) -> String {
