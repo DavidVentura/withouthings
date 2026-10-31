@@ -10,6 +10,6 @@ name = "wpp_ffi"
 [dependencies]
 wpp = { path = "../wpp" }
 wpp-store = { path = "../wpp-store" }
-uniffi = { version = "0.28", features = ["cli"] }
+uniffi = { workspace = true }
 thiserror = "1"
 

@@ -1,0 +1,9 @@
+[package]
+name = "uniffi-bindgen"
+version = "0.1.0"
+edition = "2021"
+
+# Its own package so building it does not compile the app's crates a second
+# time for the host.
+[dependencies]
+uniffi = { workspace = true, features = ["cli"] }

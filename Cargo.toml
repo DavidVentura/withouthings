@@ -1,3 +1,7 @@
 [workspace]
-members = ["wpp", "wpp-store", "wpp-ffi", "wpp-sim-client"]
+members = ["wpp", "wpp-store", "wpp-ffi", "wpp-sim-client", "uniffi-bindgen"]
 resolver = "2"
+
+[workspace.dependencies]
+# The bindings generator must match the scaffolding the library was built with.
+uniffi = "0.28"
