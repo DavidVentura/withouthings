@@ -10,11 +10,14 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.util.Log
+import androidx.core.content.ContextCompat
 import dev.davidv.withoutings.DbLocation
 import dev.davidv.withoutings.LinkState
 import dev.davidv.withoutings.Settings
@@ -43,6 +46,28 @@ class WatchConnectionService : Service() {
         super.onCreate()
         recorder = LocationRecorder(this) { service }
         declareTypes("Connecting")
+        ContextCompat.registerReceiver(
+            this,
+            clockChanges,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_TIMEZONE_CHANGED)
+                addAction(Intent.ACTION_TIME_CHANGED)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+    }
+
+    private val clockChanges = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_TIMEZONE_CHANGED ->
+                    runCatching { service?.let { svc -> declareZone(svc) } }
+                        .onFailure { Log.w(TAG, "zone change", it) }
+                Intent.ACTION_TIME_CHANGED ->
+                    runCatching { service?.phoneClockChanged() }
+                        .onFailure { Log.w(TAG, "clock change", it) }
+            }
+        }
     }
 
     /**
@@ -211,6 +236,9 @@ class WatchConnectionService : Service() {
     private val tick = object : Runnable {
         override fun run() {
             runCatching { service?.tick() }.onFailure { Log.e(TAG, "tick", it) }
+            // The zone's offset moves at a DST change without any broadcast.
+            runCatching { service?.let { svc -> declareZone(svc) } }
+                .onFailure { Log.w(TAG, "clock sync", it) }
             runCatching {
                 service?.unhandledObjects()?.forEach { Log.w(TAG, "unread: $it") }
             }.onFailure { Log.e(TAG, "unhandled", it) }
@@ -378,6 +406,7 @@ class WatchConnectionService : Service() {
 
     @SuppressLint("MissingPermission")
     override fun onDestroy() {
+        unregisterReceiver(clockChanges)
         handler.removeCallbacksAndMessages(null)
         recorder?.disarm()
         recorder = null

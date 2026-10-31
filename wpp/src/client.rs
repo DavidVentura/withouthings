@@ -48,6 +48,8 @@ const MIN_REFRESH_INTERVAL_MS: i64 = 300_000;
 const MIN_WALK_INTERVAL_MS: i64 = 900_000;
 const MIN_DUMP_INTERVAL_MS: i64 = 900_000;
 const SILENCE_TIMEOUT_MS: i64 = 90_000;
+/// A link can stay up for days, and the watch's own clock drifts in that time.
+const CLOCK_RESEND_INTERVAL_MS: i64 = 6 * 3_600_000;
 const SCREEN_SLOTS: usize = 24;
 const ACTIVITY_SLOTS: usize = 8;
 const MIN_WORKOUT_SECS: i64 = 30;
@@ -131,6 +133,13 @@ impl UserProfile {
 pub struct DstChange {
     pub at: UnixTime,
     pub gmt_offset: i32,
+}
+
+/// The phone's time zone as the watch is told it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Zone {
+    pub gmt_offset: i32,
+    pub next_change: Option<DstChange>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -381,7 +390,9 @@ pub struct Client {
     spi_flash: SpiFlash,
     last_dump: Option<UnixMillis>,
     wanted_notifications: Option<bool>,
-    zone: Option<(i32, Option<DstChange>)>,
+    zone: Option<Zone>,
+    /// When the watch was last given the time, and in which zone.
+    clock_sent: Option<(UnixMillis, Zone)>,
     pending_stop: Option<(UnixTime, UnixTime)>,
     features: Vec<Feature>,
 }
@@ -428,6 +439,7 @@ impl Client {
             last_dump: None,
             wanted_notifications: None,
             zone: None,
+            clock_sent: None,
             pending_stop: None,
             features,
         }
@@ -772,10 +784,7 @@ impl Client {
             }
             (Phase::Probing | Phase::Authenticating, c) if c == Command::CMD_PROBE.0 => {
                 self.phase = Phase::Syncing;
-                if let (Some(now), Some((gmt_offset, next_change))) = (self.now, self.zone.clone())
-                {
-                    actions.extend(self.set_time(UnixTime(now.0 / 1000), gmt_offset, next_change));
-                }
+                actions.extend(self.send_clock());
                 // Scheduled features are armed for one window at a time, so the
                 // set has to be re-asserted on every connection or a nightly
                 // one never runs again. The reference app does the same.
@@ -1500,8 +1509,50 @@ impl Client {
         ]
     }
 
-    pub fn set_zone(&mut self, gmt_offset: i32, next_change: Option<DstChange>) {
-        self.zone = Some((gmt_offset, next_change));
+    /// The phone's zone as it is now. The watch is given the time again when
+    /// the zone differs from the one it was last given, or when that was
+    /// [`CLOCK_RESEND_INTERVAL_MS`] ago; a sync in progress puts that off to
+    /// a later call.
+    pub fn set_zone(&mut self, zone: Zone, now: UnixMillis) -> Vec<Action> {
+        self.now = Some(now);
+        self.zone = Some(zone);
+        let due = match self.clock_sent {
+            None => true,
+            Some((at, sent)) => sent != zone || now.0 - at.0 >= CLOCK_RESEND_INTERVAL_MS,
+        };
+        if !due || !self.link_quiet() {
+            return Vec::new();
+        }
+        self.send_clock()
+    }
+
+    /// The phone's clock was set by hand or by the network, so whatever the
+    /// watch was last given is no longer right.
+    pub fn phone_clock_changed(&mut self, now: UnixMillis) -> Vec<Action> {
+        self.clock_sent = None;
+        let Some(zone) = self.zone else {
+            return Vec::new();
+        };
+        self.set_zone(zone, now)
+    }
+
+    /// Nothing is waiting on a reply, so the time set's own reply cannot be
+    /// taken for one.
+    fn link_quiet(&self) -> bool {
+        self.phase == Phase::Finished
+            && self.measuring.is_none()
+            && !self.dump.running()
+            && !self.spi_flash.busy()
+            && self.current.is_none()
+            && self.draining.is_none()
+    }
+
+    fn send_clock(&mut self) -> Vec<Action> {
+        let (Some(now), Some(zone)) = (self.now, self.zone) else {
+            return Vec::new();
+        };
+        self.clock_sent = Some((now, zone));
+        self.set_time(UnixTime(now.0 / 1000), zone.gmt_offset, zone.next_change)
     }
 
     pub fn set_time(
@@ -3305,7 +3356,13 @@ mod tests {
     fn the_clock_is_put_right_as_soon_as_the_watch_will_answer() {
         use crate::objects::{ProbeChallenge, ProbeReply, TimeSet};
         let mut client = Client::new(credentials(), Vec::new(), Vec::new());
-        client.set_zone(7200, None);
+        client.set_zone(
+            Zone {
+                gmt_offset: 7200,
+                next_change: None,
+            },
+            UnixMillis(1_784_999_000_000),
+        );
         client.handle(Event::Connected);
 
         let sent = |actions: &[Action]| -> Vec<Frame> {
@@ -3347,6 +3404,92 @@ mod tests {
                 dst_change_time: 0,
                 next_gmt_offset: 7200,
             })],
+        );
+    }
+
+    fn synced() -> Client {
+        let mut client = authenticated();
+        client.handle(frame(
+            Command::CMD_BODY_VASISTAS_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+        stores_empty(&mut client, 0);
+        assert_eq!(client.phase(), Phase::Finished);
+        client
+    }
+
+    const CET: Zone = Zone {
+        gmt_offset: 3600,
+        next_change: Some(DstChange {
+            at: UnixTime(1_806_454_800),
+            gmt_offset: 7200,
+        }),
+    };
+
+    const JST: Zone = Zone {
+        gmt_offset: 32400,
+        next_change: None,
+    };
+
+    #[test]
+    fn the_clock_follows_the_phone_while_the_link_stays_up() {
+        use crate::objects::TimeSet;
+        let mut client = synced();
+        let t0 = 1_785_000_000_000;
+
+        let first = client.set_zone(CET, UnixMillis(t0));
+        let Some(Action::Send(set)) = first.first() else {
+            panic!("expected the time, got {first:?}")
+        };
+        assert_eq!(
+            set.objects,
+            vec![WppObject::TimeSet(TimeSet {
+                utc: 1_785_000_000,
+                gmt_offset: 3600,
+                dst_change_time: 1_806_454_800,
+                next_gmt_offset: 7200,
+            })]
+        );
+        assert!(
+            client.set_zone(CET, UnixMillis(t0 + 30_000)).is_empty(),
+            "the same zone soon after is left alone"
+        );
+        assert_eq!(
+            sent(&client.set_zone(JST, UnixMillis(t0 + 60_000))),
+            vec![Command::CMD_TIME_SET],
+            "a new zone goes out at once"
+        );
+        let resent = t0 + 60_000 + CLOCK_RESEND_INTERVAL_MS;
+        assert!(client.set_zone(JST, UnixMillis(resent - 1)).is_empty());
+        assert_eq!(
+            sent(&client.set_zone(JST, UnixMillis(resent))),
+            vec![Command::CMD_TIME_SET],
+            "the watch's drift is put right on an interval"
+        );
+        assert_eq!(
+            sent(&client.phone_clock_changed(UnixMillis(resent + 1_000))),
+            vec![Command::CMD_TIME_SET],
+            "a phone clock set by hand is passed on at once"
+        );
+    }
+
+    #[test]
+    fn a_sync_in_progress_puts_the_clock_off() {
+        let mut client = authenticated();
+        assert!(client
+            .set_zone(CET, UnixMillis(1_785_000_000_000))
+            .is_empty());
+        assert!(client
+            .phone_clock_changed(UnixMillis(1_785_000_001_000))
+            .is_empty());
+        client.handle(frame(
+            Command::CMD_BODY_VASISTAS_GET,
+            vec![WppObject::Null(Null {})],
+        ));
+        stores_empty(&mut client, 0);
+        assert_eq!(
+            sent(&client.set_zone(CET, UnixMillis(1_785_000_030_000))),
+            vec![Command::CMD_TIME_SET]
         );
     }
 

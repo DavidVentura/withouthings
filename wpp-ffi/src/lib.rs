@@ -1465,14 +1465,35 @@ impl WatchService {
         self.dispatch(actions)
     }
 
-    pub fn set_zone(&self, gmt_offset: i32, next_change: Option<DstChange>) {
-        self.inner.lock().unwrap().client.set_zone(
+    pub fn set_zone(
+        &self,
+        gmt_offset: i32,
+        next_change: Option<DstChange>,
+    ) -> Result<(), WatchError> {
+        let zone = wpp::client::Zone {
             gmt_offset,
-            next_change.map(|c| wpp::client::DstChange {
+            next_change: next_change.map(|c| wpp::client::DstChange {
                 at: UnixMillis(c.at_ms).to_seconds(),
                 gmt_offset: c.gmt_offset_seconds,
             }),
-        );
+        };
+        let actions = self
+            .inner
+            .lock()
+            .unwrap()
+            .client
+            .set_zone(zone, UnixMillis(now_ms()));
+        self.dispatch(actions)
+    }
+
+    pub fn phone_clock_changed(&self) -> Result<(), WatchError> {
+        let actions = self
+            .inner
+            .lock()
+            .unwrap()
+            .client
+            .phone_clock_changed(UnixMillis(now_ms()));
+        self.dispatch(actions)
     }
 
     pub fn request_device_config(&self) -> Result<(), WatchError> {
