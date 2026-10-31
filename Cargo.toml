@@ -5,3 +5,7 @@ resolver = "2"
 [workspace.dependencies]
 # The bindings generator must match the scaffolding the library was built with.
 uniffi = "0.28"
+
+[profile.release]
+# Every phone build is a release build of the native library.
+incremental = true
