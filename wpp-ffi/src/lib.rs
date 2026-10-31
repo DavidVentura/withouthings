@@ -874,9 +874,11 @@ impl WatchService {
                 }
             }
         }
-        {
+        // Outside any transaction, and the client has already consumed these
+        // frames, so a failure here must not cost it the replies they earned.
+        let kept = {
             let store = self.store.lock().unwrap();
-            for bytes in &undecoded {
+            undecoded.iter().try_for_each(|bytes| {
                 let command = Frame::declared_command(bytes).unwrap_or(0);
                 store.store_undecoded(
                     self.device_id,
@@ -884,13 +886,14 @@ impl WatchService {
                     command as i64,
                     bytes,
                     Frame::splice_offset(bytes).map(|at| at as i64),
-                )?;
-            }
-        }
+                )
+            })
+        };
         for frame in &frames {
             self.draw(frame);
         }
-        self.dispatch(pending)
+        self.dispatch(pending)?;
+        kept.map_err(WatchError::from)
     }
 
     pub fn on_disconnected(&self) {
@@ -2935,16 +2938,35 @@ fn measured_ceiling(
     subcategory: u32,
     from_ms: i64,
     to_ms: i64,
-) -> Option<Met> {
-    let limits = limits(subcategory)?;
-    let fixes = store.track_points(device_id, from_ms, to_ms).ok()?;
-    let speed = track::clean(&fixes, limits).average_speed()?;
-
-    match subcategory {
+) -> Result<Option<Met>, WatchError> {
+    let Some(limits) = limits(subcategory) else {
+        return Ok(None);
+    };
+    let fixes = store.track_points(device_id, from_ms, to_ms)?;
+    let Some(speed) = track::clean(&fixes, limits).average_speed() else {
+        return Ok(None);
+    };
+    Ok(match subcategory {
         CYCLING | BMX => Some(energy::cycling_met(speed)),
         _ if on_foot(subcategory) => Some(energy::on_foot_met(speed)),
         _ => None,
-    }
+    })
+}
+
+/// Never above what the activity itself can reach: a reflected fix reading
+/// sixty on a bike is not a harder ride than the sport has in it.
+fn session_ceiling(
+    store: &Store,
+    device_id: i64,
+    subcategory: u32,
+    from_ms: i64,
+    to_ms: i64,
+) -> Result<Met, WatchError> {
+    let declared = ceiling_of(subcategory);
+    Ok(match measured_ceiling(store, device_id, subcategory, from_ms, to_ms)? {
+        Some(measured) if measured.0 < declared.0 => measured,
+        _ => declared,
+    })
 }
 
 fn workout_calories(
@@ -2961,13 +2983,7 @@ fn workout_calories(
     };
     let beats = beats_between(store, device_id, from_ms, to_ms)?;
 
-    // Never above what the activity itself can reach: a reflected fix reading
-    // sixty on a bike is not a harder ride than the sport has in it.
-    let declared = ceiling_of(subcategory);
-    let ceiling = match measured_ceiling(store, device_id, subcategory, from_ms, to_ms) {
-        Some(measured) if measured.0 < declared.0 => measured,
-        _ => declared,
-    };
+    let ceiling = session_ceiling(store, device_id, subcategory, from_ms, to_ms)?;
     Ok(Some(energy::burned(wearer, ceiling, &beats).0))
 }
 
@@ -2989,12 +3005,11 @@ fn earned_curves(
                 return Ok(Vec::new());
             };
             let ended_ms = row.ended_at.map_or_else(now_ms, |end| end.0 * 1000);
-            let beats = beats_between(store, device_id, row.started_at.0 * 1000, ended_ms)?;
-            Ok(energy::accrued(
-                wearer,
-                ceiling_of(row.subcategory as u32),
-                &beats,
-            ))
+            let started_ms = row.started_at.0 * 1000;
+            let subcategory = row.subcategory as u32;
+            let beats = beats_between(store, device_id, started_ms, ended_ms)?;
+            let ceiling = session_ceiling(store, device_id, subcategory, started_ms, ended_ms)?;
+            Ok(energy::accrued(wearer, ceiling, &beats))
         })
         .collect()
 }
@@ -3070,13 +3085,20 @@ impl WatchService {
     fn dispatch(&self, actions: Vec<Action>) -> Result<(), WatchError> {
         let mut actions: std::collections::VecDeque<Action> = actions.into();
         let mut changed = false;
+        let mut failure = None;
         while let Some(action) = actions.pop_front() {
             match action {
                 Action::Send(frame) | Action::Delete(frame) => self.write(&frame),
                 Action::Finished => changed = true,
                 Action::Reconnect => self.transport.reconnect(),
+                // A token acknowledges every record before it, so nothing later
+                // may be acknowledged past one that was not kept.
+                Action::Store { .. } if failure.is_some() => {}
                 Action::Store { token, records } => {
-                    self.store.lock().unwrap().store(self.device_id, &records)?;
+                    if let Err(error) = self.store.lock().unwrap().store(self.device_id, &records) {
+                        failure = Some(error);
+                        continue;
+                    }
                     changed = true;
                     let released = self
                         .inner
@@ -3087,6 +3109,13 @@ impl WatchService {
                     actions.extend(released);
                 }
             }
+        }
+
+        if let Some(error) = failure {
+            if changed {
+                self.transport.changed();
+            }
+            return Err(error.into());
         }
 
         let watermarks = self.inner.lock().unwrap().client.watermarks();

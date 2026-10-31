@@ -79,9 +79,11 @@ pub enum SampleFormat {
 }
 
 impl SampleFormat {
+    pub const DELTA_META: u8 = 3;
+
     pub fn from_meta(format: u8) -> SampleFormat {
         match format {
-            3 => SampleFormat::Delta,
+            SampleFormat::DELTA_META => SampleFormat::Delta,
             _ => SampleFormat::Raw,
         }
     }

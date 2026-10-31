@@ -352,7 +352,7 @@ fn describe(record: &Record) -> String {
             signal.measure.as_ref().map(|m| m.uid).unwrap_or_default(),
             signal.measures.iter().map(|m| (m.r#type, m.value)).collect::<Vec<_>>(),
         ),
-        Record::Ecg(signal) => format!(
+        Record::Ecg { signal, .. } => format!(
             "ecg uid={:?} samples={}",
             signal.measure.as_ref().map(|m| m.uid),
             signal.data.len()

@@ -716,6 +716,17 @@ fn a_ride_with_a_route_is_not_charged_at_the_rate_the_heart_read() {
                 context: None,
             });
         }
+        for at in [START - 60, START + 700] {
+            records.push(Record::Sample {
+                measured_at: UnixMillis(at * 1000),
+                kind: SampleKind::Calories,
+                value: 0,
+                quality: None,
+                source: Source::Live,
+                window_secs: None,
+                context: None,
+            });
+        }
         store.store(device, &records).unwrap();
     }
 
@@ -751,5 +762,36 @@ fn a_ride_with_a_route_is_not_charged_at_the_rate_the_heart_read() {
         "{by_ground} kcal against the 75 the tables give for this ride"
     );
 
+    let day = service
+        .series(wpp_ffi::Metric::Calories, (START - 60) * 1000, (START + 700) * 1000, 100)
+        .unwrap();
+    let added = day.last().expect("the counter has readings").value;
+    assert!(
+        (added - by_ground).abs() < 1.0,
+        "the day adds {added} kcal for a ride whose card says {by_ground}"
+    );
+
+    cleanup(&path);
+}
+
+#[test]
+fn bytes_that_cannot_be_kept_do_not_cost_the_frame_its_reply() {
+    use wpp::{Command, Frame};
+
+    let path = db_path();
+    wpp_store::Store::open(&path)
+        .expect("store")
+        .connection()
+        .execute("DROP TABLE undecoded_frame", [])
+        .unwrap();
+    let recorder = Arc::new(Recorder::default());
+    let service = service_at(&recorder, path.clone());
+
+    let mut bytes = Frame::new(Command::CMD_SYNC_REQUEST, Vec::new()).to_bytes();
+    bytes.extend_from_slice(&[0xff; 32]);
+    let result = service.on_bytes(bytes, 1_700_000_000_000);
+
+    assert!(result.is_err(), "the failure is still reported");
+    assert!(!recorder.written.lock().unwrap().is_empty(), "the reply went out");
     cleanup(&path);
 }

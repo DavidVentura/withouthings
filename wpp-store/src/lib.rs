@@ -7,7 +7,7 @@ use wpp::activity::Minute;
 use wpp::client::{
     Category, DeviceIdentity, Feature, FeatureId, FeatureSchedule, Record, Source, UserProfile,
 };
-use wpp::signal::{MeasureType, Signal};
+use wpp::signal::{MeasureType, SampleFormat, Signal};
 use wpp::track::Fix;
 use wpp::units::{UnixMillis, UnixTime};
 
@@ -309,7 +309,9 @@ impl Store {
                         ],
                     )?;
                 }
-                Record::Ecg(signal) => store_ecg(&tx, device_id, signal)?,
+                Record::Ecg { measured_at, signal } => {
+                    store_ecg(&tx, device_id, *measured_at, signal)?
+                }
                 Record::PpgAfib {
                     measured_at,
                     signal,
@@ -834,26 +836,29 @@ impl Store {
             .optional()
     }
 
+    /// A session still running owns everything recorded since it started, as
+    /// the views that read it do.
     pub fn delete_workout(&self, device_id: i64, id: i64) -> Result<(), Error> {
         let tx = self.conn.unchecked_transaction()?;
-        tx.execute(
-            "DELETE FROM marker
-              WHERE device_id = ?1
-                AND at_ms >= (SELECT started_at * 1000 FROM workout
-                               WHERE id = ?2 AND device_id = ?1)
-                AND at_ms <= (SELECT COALESCE(ended_at, started_at) * 1000 FROM workout
-                               WHERE id = ?2 AND device_id = ?1)",
-            params![device_id, id],
-        )?;
-        tx.execute(
-            "DELETE FROM track_point
-              WHERE device_id = ?1
-                AND at_ms >= (SELECT started_at * 1000 FROM workout
-                               WHERE id = ?2 AND device_id = ?1)
-                AND at_ms <= (SELECT COALESCE(ended_at, started_at) * 1000 FROM workout
-                               WHERE id = ?2 AND device_id = ?1)",
-            params![device_id, id],
-        )?;
+        let span: Option<(i64, Option<i64>)> = tx
+            .query_row(
+                "SELECT started_at * 1000, ended_at * 1000 FROM workout
+                  WHERE device_id = ?1 AND id = ?2",
+                params![device_id, id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        if let Some((from, to)) = span {
+            for table in ["marker", "track_point"] {
+                tx.execute(
+                    &format!(
+                        "DELETE FROM {table}
+                          WHERE device_id = ?1 AND at_ms >= ?2 AND (?3 IS NULL OR at_ms <= ?3)"
+                    ),
+                    params![device_id, from, to],
+                )?;
+            }
+        }
         tx.execute(
             "DELETE FROM workout WHERE device_id = ?1 AND id = ?2",
             params![device_id, id],
@@ -1039,14 +1044,16 @@ impl Store {
         Ok(periods)
     }
 
+    /// Delta-coded recordings stay on file but are not offered: nothing here
+    /// decodes them, and read as plain samples they are a wrong waveform.
     pub fn ecgs(&self, device_id: i64) -> Result<Vec<(i64, i64, i64, i64, i64)>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT id, measured_at, signal_type, sampling_hz, length(samples)
                FROM ecg
-              WHERE device_id = ?1 AND signal_type IN (1, 6, 7, 8, 13)
+              WHERE device_id = ?1 AND signal_type IN (1, 6, 7, 8, 13) AND format != ?2
               ORDER BY measured_at DESC",
         )?;
-        let rows = stmt.query_map(params![device_id], |r| {
+        let rows = stmt.query_map(params![device_id, SampleFormat::DELTA_META], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
         })?;
         rows.collect()
@@ -1064,8 +1071,8 @@ impl Store {
         self.conn
             .query_row(
                 "SELECT measured_at, signal_type, sampling_hz, lead_count, samples
-                   FROM ecg WHERE id = ?1",
-                params![id],
+                   FROM ecg WHERE id = ?1 AND format != ?2",
+                params![id, SampleFormat::DELTA_META],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .optional()
@@ -1244,13 +1251,13 @@ fn store_kept(
     Ok(())
 }
 
-fn store_ecg(tx: &rusqlite::Transaction<'_>, device_id: i64, signal: &Signal) -> Result<(), Error> {
-    // Protocol timestamps are Unix seconds; every table here is milliseconds.
-    let measured_at = signal
-        .measure
-        .as_ref()
-        .map(|m| m.time as i64 * 1000)
-        .unwrap_or(0);
+fn store_ecg(
+    tx: &rusqlite::Transaction<'_>,
+    device_id: i64,
+    measured_at: UnixTime,
+    signal: &Signal,
+) -> Result<(), Error> {
+    let measured_at = measured_at.to_millis().0;
     let (offset, gain, qfix) = match &signal.units {
         Some(u) => (Some(u.offset), Some(u.gain), Some(u.qfix)),
         None => (None, None, None),
@@ -2112,6 +2119,63 @@ mod tests {
         let mut store = Store::open_in_memory().unwrap();
         let err = store.store(999, &[sample(1000, 62, Source::Stored)]);
         assert!(err.is_err(), "an unknown device must be rejected");
+    }
+
+    #[test]
+    fn deleting_a_running_workout_takes_everything_since_it_started() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[Record::WorkoutStarted {
+                    started_at: UnixTime(1000),
+                    subcategory: 16,
+                }],
+            )
+            .unwrap();
+        store.mark_set(device, 900_000, 0).unwrap();
+        store.mark_set(device, 1_020_000, 0).unwrap();
+
+        let id = store.workouts(device, 10).unwrap()[0].id;
+        store.delete_workout(device, id).unwrap();
+
+        assert_eq!(store.count("workout").unwrap(), 0);
+        assert_eq!(store.count("marker").unwrap(), 1, "the one before it stays");
+    }
+
+    #[test]
+    fn a_delta_coded_ecg_is_kept_but_not_offered() {
+        use wpp::objects::{StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend};
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let signal = Signal {
+            meta: StoredSignalMeta {
+                r#type: 7,
+                sampling_freq: 300,
+                format: SampleFormat::DELTA_META,
+                size: 2,
+                resolution: 14,
+                channel: 1,
+            },
+            extend: StoredSignalMetaExtend::default(),
+            units: None,
+            measure: Some(StoredMeasureMeta::default()),
+            measures: Vec::new(),
+            data: vec![1, 0],
+        };
+        store
+            .store(
+                device,
+                &[Record::Ecg {
+                    measured_at: UnixTime(1000),
+                    signal: Box::new(signal),
+                }],
+            )
+            .unwrap();
+
+        assert_eq!(store.count("ecg").unwrap(), 1);
+        assert!(store.ecgs(device).unwrap().is_empty());
     }
 
     #[test]

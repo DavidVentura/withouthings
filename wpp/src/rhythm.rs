@@ -169,6 +169,12 @@ pub fn read_pulse(raw: &[Millis], watch: Bpm) -> PulseReading {
     }
 
     let (rhythm, kinds) = match assess(&values) {
+        Assessment::TooFew { usable } => {
+            return PulseReading {
+                intervals: merged,
+                verdict: PulseVerdict::TooFew { intervals: usable },
+            }
+        }
         Assessment::Shifted(shift) => {
             return PulseReading {
                 intervals: merged,
@@ -254,6 +260,7 @@ fn merge_split_beats(lengths: &[f64], beat_ms: f64) -> Vec<Interval> {
 }
 
 enum Assessment {
+    TooFew { usable: usize },
     Shifted(Shift),
     Assessed(Rhythm, Vec<IntervalKind>),
 }
@@ -279,6 +286,11 @@ fn assess(lengths: &[f64]) -> Assessment {
         .filter(|(_, kind)| **kind == IntervalKind::Beat)
         .map(|((end, length), _)| (*end, *length))
         .unzip();
+    if underlying.len() < 2 {
+        return Assessment::TooFew {
+            usable: underlying.len(),
+        };
+    }
     let typical = median(&underlying);
     let rmssd = (underlying
         .windows(2)
@@ -345,6 +357,11 @@ fn shift(lengths: &[f64]) -> Option<Shift> {
 /// it when it fits better than the same intervals shuffled do. `times` are when
 /// each interval ended, in ms from the start of the reading.
 fn breathing_wave(times: &[f64], lengths: &[f64], typical: f64) -> Option<Wave> {
+    // The share below is corrected for the fit's parameters, which needs more
+    // intervals than there are parameters.
+    if lengths.len() <= BAND_COLUMNS + 3 {
+        return None;
+    }
     let seconds: Vec<f64> = times.iter().map(|t| t / 1000.0).collect();
     let (intercept, slope) = line(&seconds, lengths);
     let residual: Vec<f64> = seconds
@@ -356,9 +373,11 @@ fn breathing_wave(times: &[f64], lengths: &[f64], typical: f64) -> Option<Wave> 
     let slowest = SLOWEST_BREATHS_PER_MINUTE + BREATHING_DRIFT_PER_MINUTE;
     let fastest = FASTEST_BREATHS_PER_MINUTE.min(60_000.0 / typical / FEWEST_BEATS_PER_BREATH)
         - BREATHING_DRIFT_PER_MINUTE;
-    debug_assert!(fastest > slowest);
+    if fastest <= slowest {
+        return None;
+    }
     let fits: Vec<BandFit> = (0..BREATHING_RATES_TRIED)
-        .map(|k| {
+        .filter_map(|k| {
             let per_minute =
                 slowest + (fastest - slowest) * k as f64 / (BREATHING_RATES_TRIED - 1) as f64;
             BandFit::around(&seconds, per_minute)
@@ -375,8 +394,7 @@ fn breathing_wave(times: &[f64], lengths: &[f64], typical: f64) -> Option<Wave> 
             a.explained_share(&residual)
                 .partial_cmp(&b.explained_share(&residual))
                 .unwrap()
-        })
-        .unwrap();
+        })?;
     let share = best.explained_share(&residual);
 
     let mut shuffled = residual.clone();
@@ -432,6 +450,7 @@ fn line(xs: &[f64], ys: &[f64]) -> (f64, f64) {
 }
 
 const BAND_COLUMNS: usize = 6;
+const SINGULAR_PIVOT: f64 = 1e-9;
 
 /// Sines at a breathing rate and either side of it, at fixed times. Shuffling
 /// only reorders the values, so the system they are solved through is built
@@ -460,7 +479,7 @@ impl BandFit {
         out
     }
 
-    fn around(seconds: &[f64], per_minute: f64) -> BandFit {
+    fn around(seconds: &[f64], per_minute: f64) -> Option<BandFit> {
         let columns: Vec<[f64; BAND_COLUMNS]> = seconds
             .iter()
             .map(|t| BandFit::columns_at(per_minute, *t))
@@ -473,11 +492,11 @@ impl BandFit {
                 }
             }
         }
-        BandFit {
+        Some(BandFit {
             per_minute,
             columns,
-            inverse: invert(normal),
-        }
+            inverse: invert(normal)?,
+        })
     }
 
     fn coefficients(&self, values: &[f64]) -> [f64; BAND_COLUMNS] {
@@ -514,9 +533,10 @@ impl BandFit {
     }
 }
 
-/// Gauss-Jordan with partial pivoting. The sines at three distinct rates over
-/// a dozen beats or more are never collinear.
-fn invert(matrix: [[f64; BAND_COLUMNS]; BAND_COLUMNS]) -> [[f64; BAND_COLUMNS]; BAND_COLUMNS] {
+/// Gauss-Jordan with partial pivoting. None when singular: taking out early
+/// beats can leave evenly spaced intervals, and sines sampled at an alias of
+/// that spacing are collinear.
+fn invert(matrix: [[f64; BAND_COLUMNS]; BAND_COLUMNS]) -> Option<[[f64; BAND_COLUMNS]; BAND_COLUMNS]> {
     let mut a = matrix;
     let mut out = [[0.0; BAND_COLUMNS]; BAND_COLUMNS];
     for (i, row) in out.iter_mut().enumerate() {
@@ -534,6 +554,9 @@ fn invert(matrix: [[f64; BAND_COLUMNS]; BAND_COLUMNS]) -> [[f64; BAND_COLUMNS]; 
         a.swap(column, pivot);
         out.swap(column, pivot);
         let lead = a[column][column];
+        if lead.abs() < SINGULAR_PIVOT {
+            return None;
+        }
         for k in 0..BAND_COLUMNS {
             a[column][k] /= lead;
             out[column][k] /= lead;
@@ -549,7 +572,7 @@ fn invert(matrix: [[f64; BAND_COLUMNS]; BAND_COLUMNS]) -> [[f64; BAND_COLUMNS]; 
             }
         }
     }
-    out
+    Some(out)
 }
 
 /// Fixed seed: the same reading must always read the same way.
@@ -614,6 +637,9 @@ const QRS_SECS: std::ops::Range<f64> = -0.06..0.08;
 const QRS_BASELINE_SECS: std::ops::Range<f64> = -0.06..-0.04;
 
 /// A P wave starts up to 200 ms before the QRS.
+/// Below this the 20 ms baseline windows can hold no sample at all.
+const MIN_ECG_HZ: u16 = 50;
+
 const P_SECS: std::ops::Range<f64> = -0.26..-0.06;
 const P_BASELINE_SECS: std::ops::Range<f64> = -0.08..-0.06;
 
@@ -659,7 +685,14 @@ pub struct EcgReading {
 }
 
 pub fn read_ecg(samples: &[i16], sampling_freq: u16) -> EcgReading {
-    let freq = sampling_freq.max(1) as f64;
+    if sampling_freq < MIN_ECG_HZ {
+        return EcgReading {
+            beats: Vec::new(),
+            intervals: Vec::new(),
+            verdict: EcgVerdict::TooFew { beats: 0 },
+        };
+    }
+    let freq = sampling_freq as f64;
     let at = |secs: f64| (secs * freq) as usize;
     let peaks: Vec<usize> = detect_r_peaks(samples, sampling_freq)
         .indices
@@ -733,6 +766,13 @@ pub fn read_ecg(samples: &[i16], sampling_freq: u16) -> EcgReading {
     }
 
     let (rhythm, kinds) = match assess(&lengths) {
+        Assessment::TooFew { usable } => {
+            return EcgReading {
+                beats,
+                intervals: plain(&lengths),
+                verdict: EcgVerdict::TooFew { beats: usable },
+            }
+        }
         Assessment::Shifted(shift) => {
             return EcgReading {
                 beats,
@@ -1019,6 +1059,23 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn alternating_intervals_are_read_without_a_singular_fit() {
+        let raw: Vec<Millis> = (0..12)
+            .map(|i| Millis(if i % 2 == 0 { 600.0 } else { 1400.0 }))
+            .collect();
+        read_pulse(&raw, Bpm(60));
+    }
+
+    #[test]
+    fn a_recording_too_coarse_to_hold_a_beat_is_too_few() {
+        let samples: Vec<i16> = (0..3000).map(|i| if i % 25 == 0 { 2000 } else { 0 }).collect();
+        for hz in [0, 1, 25, 49] {
+            assert_eq!(read_ecg(&samples, hz).verdict, EcgVerdict::TooFew { beats: 0 });
+        }
+        read_ecg(&samples, MIN_ECG_HZ);
     }
 
     #[test]

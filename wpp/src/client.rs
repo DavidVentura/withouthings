@@ -234,7 +234,10 @@ pub enum Record {
         started_at: UnixTime,
     },
     Activity(Minute),
-    Ecg(Box<Signal>),
+    Ecg {
+        measured_at: UnixTime,
+        signal: Box<Signal>,
+    },
     /// One background reading the PPG classifier called AFib, timed by its
     /// StoredMeasureMeta; the one that raised the alert has attrib 7.
     PpgAfib {
@@ -661,18 +664,16 @@ impl Client {
                 continue;
             };
             let delete = delete_frame(store, &signal);
-            let measured_at = signal.measure.as_ref().map(|m| UnixTime(m.time as i64));
-            let record = match (store, measured_at) {
-                (SignalStore::Ecg, _) => Record::Ecg(Box::new(signal)),
-                (SignalStore::Spo2 | SignalStore::PpgAfib, None) => continue,
-                (SignalStore::Spo2, Some(measured_at)) => Record::Spo2Check {
-                    measured_at,
-                    signal: Box::new(signal),
-                },
-                (SignalStore::PpgAfib, Some(measured_at)) => Record::PpgAfib {
-                    measured_at,
-                    signal: Box::new(signal),
-                },
+            // Undated and unnameable, so it stays on the watch.
+            let Some(measured_at) = signal.measure.as_ref().map(|m| UnixTime(m.time as i64)) else {
+                self.note_unhandled(&frame, &WppObject::StoredSignalMeta(signal.meta));
+                continue;
+            };
+            let signal = Box::new(signal);
+            let record = match store {
+                SignalStore::Ecg => Record::Ecg { measured_at, signal },
+                SignalStore::Spo2 => Record::Spo2Check { measured_at, signal },
+                SignalStore::PpgAfib => Record::PpgAfib { measured_at, signal },
             };
             records.push(record);
             if let Some(Action::Store { token, records }) = self.store(std::mem::take(&mut records)) {
@@ -2294,7 +2295,7 @@ mod tests {
             .iter()
             .find_map(|a| match a {
                 Action::Store { token, records } => {
-                    assert!(matches!(records.as_slice(), [Record::Ecg(_)]));
+                    assert!(matches!(records.as_slice(), [Record::Ecg { .. }]));
                     Some(*token)
                 }
                 _ => None,
@@ -3163,6 +3164,35 @@ mod tests {
         let actions = client.handle(frame(Command::CMD_PROBE, Vec::new()));
         assert!(client.current().is_some(), "{:?}", sent(&actions));
         assert!(!sent(&actions).contains(&Command::CMD_SYNC_OK));
+    }
+
+    #[test]
+    fn a_stored_signal_with_no_date_stays_on_the_watch() {
+        use crate::objects::{StoredSignalData, StoredSignalMeta, StoredSignalMetaExtend};
+        let mut client = authenticated();
+        client.handle(frame(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]));
+        let actions = client.handle(frame(
+            Command::CMD_STORED_MEASURE_SIGNAL_GET,
+            vec![
+                WppObject::StoredSignalMeta(StoredSignalMeta {
+                    r#type: 7,
+                    sampling_freq: 300,
+                    format: 0,
+                    size: 2,
+                    resolution: 14,
+                    channel: 1,
+                }),
+                WppObject::StoredSignalMetaExtend(StoredSignalMetaExtend {
+                    duration: 1,
+                    total_size: 4,
+                    filter_bank: 0,
+                }),
+                WppObject::StoredSignalData(StoredSignalData { samples: vec![1, 0, 2, 0] }),
+            ],
+        ));
+        assert!(stored(&actions).is_empty());
+        assert_eq!(client.pending_deletes(), 0);
+        assert!(!client.take_unhandled().is_empty());
     }
 
     #[test]
