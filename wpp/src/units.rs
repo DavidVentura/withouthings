@@ -1,44 +1,104 @@
-use crate::objects::{
-    BatteryStatus, LiveHr, TimeSet, TrackerUser, VasistasCbt, VasistasHeartrate, VasistasHrv,
-    VasistasRr, WamVasistasAwake, WamVasistasHead, WamVasistasMetCalEarned,
-};
+use std::marker::PhantomData;
+use std::ops::{Add, Sub};
 
-macro_rules! quantity {
-    ($(#[$doc:meta])* $name:ident, $inner:ty) => {
-        $(#[$doc])*
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-        pub struct $name(pub $inner);
+use crate::objects::LiveHr;
 
-        impl $name {
-            pub fn value(self) -> $inner {
-                self.0
-            }
-        }
+macro_rules! measured {
+    ($($name:ident),* $(,)?) => {
+        $(
+            #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+            pub struct $name(pub f64);
+        )*
     };
 }
 
-quantity!(Bpm, u16);
-quantity!(Celsius, f64);
-quantity!(Millivolts, f64);
-quantity!(Millis, f64);
-quantity!(Kilograms, f64);
-quantity!(Centimetres, u16);
-quantity!(BreathsPerMinute, u16);
-quantity!(Metres, f64);
-quantity!(MetresPerSecond, f64);
-quantity!(Kilocalories, f64);
-quantity!(Met, f64);
-quantity!(Years, f64);
-quantity!(UnixTime, i64);
-quantity!(UnixMillis, i64);
+macro_rules! counted {
+    ($($name:ident: $inner:ty),* $(,)?) => {
+        $(
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+            pub struct $name(pub $inner);
+        )*
+    };
+}
+
+measured!(Celsius, Kilograms, Millivolts, Millis, Metres, MetresPerSecond, Kilocalories, Met, Years);
+counted!(Bpm: u16, Centimetres: u16, UnixTime: i64, UnixMillis: i64);
+
+/// A stretch of time, signed because the difference of two clock readings can
+/// be negative. Which of seconds or milliseconds it came in stops mattering
+/// once it is one of these.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Duration {
+    millis: i64,
+}
+
+impl Duration {
+    pub const ZERO: Duration = Duration { millis: 0 };
+
+    pub const fn from_millis(millis: i64) -> Duration {
+        Duration { millis }
+    }
+
+    pub const fn from_secs(secs: i64) -> Duration {
+        Duration {
+            millis: secs * 1000,
+        }
+    }
+
+    pub const fn as_millis(self) -> i64 {
+        self.millis
+    }
+
+    pub const fn as_secs(self) -> i64 {
+        self.millis.div_euclid(1000)
+    }
+}
+
+impl Add for Duration {
+    type Output = Duration;
+    fn add(self, other: Duration) -> Duration {
+        Duration::from_millis(self.millis + other.millis)
+    }
+}
+
+impl Sub for UnixMillis {
+    type Output = Duration;
+    fn sub(self, earlier: UnixMillis) -> Duration {
+        Duration::from_millis(self.0 - earlier.0)
+    }
+}
+
+impl Add<Duration> for UnixMillis {
+    type Output = UnixMillis;
+    fn add(self, by: Duration) -> UnixMillis {
+        UnixMillis(self.0 + by.millis)
+    }
+}
+
+impl Sub<Duration> for UnixMillis {
+    type Output = UnixMillis;
+    fn sub(self, by: Duration) -> UnixMillis {
+        UnixMillis(self.0 - by.millis)
+    }
+}
+
+impl Sub for UnixTime {
+    type Output = Duration;
+    fn sub(self, earlier: UnixTime) -> Duration {
+        Duration::from_secs(self.0 - earlier.0)
+    }
+}
+
+impl Add<Duration> for UnixTime {
+    type Output = UnixTime;
+    fn add(self, by: Duration) -> UnixTime {
+        UnixTime(self.0 + by.as_secs())
+    }
+}
 
 const SECONDS_PER_YEAR: f64 = 365.2425 * 24.0 * 60.0 * 60.0;
 
 impl UnixTime {
-    pub fn with_offset(self, seconds: i32) -> UnixTime {
-        UnixTime(self.0 + seconds as i64)
-    }
-
     pub fn years_since(self, earlier: UnixTime) -> Years {
         Years((self.0 - earlier.0) as f64 / SECONDS_PER_YEAR)
     }
@@ -60,22 +120,6 @@ impl Millivolts {
     pub fn from_counts(counts: i16) -> Millivolts {
         Millivolts(counts as f64 / COUNTS_PER_MILLIVOLT)
     }
-
-    pub fn from_counts_scaled(counts: i16, counts_per_mv: f64) -> Millivolts {
-        Millivolts(counts as f64 / counts_per_mv)
-    }
-}
-
-impl VasistasCbt {
-    pub fn core_temperature(&self) -> Celsius {
-        Celsius(self.temperature as f64 / 1000.0)
-    }
-}
-
-impl VasistasHeartrate {
-    pub fn heart_rate(&self) -> Bpm {
-        Bpm(self.heartrate as u16)
-    }
 }
 
 impl LiveHr {
@@ -84,85 +128,54 @@ impl LiveHr {
     }
 }
 
-impl VasistasHrv {
-    pub fn heart_rate(&self) -> Bpm {
-        Bpm(self.hr as u16)
+/// A figure the watch sends scaled by a hundred, kept as sent so a sum of them
+/// loses nothing; [`Hundredths::value`] is the one place the scale is applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Hundredths<T> {
+    raw: i64,
+    unit: PhantomData<T>,
+}
+
+impl<T> Hundredths<T> {
+    pub const fn new(raw: i64) -> Hundredths<T> {
+        Hundredths {
+            raw,
+            unit: PhantomData,
+        }
     }
 
-    pub fn sdnn(&self) -> Millis {
-        Millis(self.sdnn as f64)
-    }
-
-    pub fn rmssd(&self) -> Millis {
-        Millis(self.rmssd as f64)
+    pub const fn raw(self) -> i64 {
+        self.raw
     }
 }
 
-impl VasistasRr {
-    pub fn respiratory_rate(&self) -> BreathsPerMinute {
-        BreathsPerMinute(self.rr as u16)
+impl<T: From<f64>> Hundredths<T> {
+    pub fn value(self) -> T {
+        T::from(self.raw as f64 / 100.0)
     }
 }
 
-impl BatteryStatus {
-    pub fn voltage(&self) -> Millivolts {
-        Millivolts(self.battery_mv as f64)
+impl<T> std::iter::Sum for Hundredths<T> {
+    fn sum<I: Iterator<Item = Hundredths<T>>>(iter: I) -> Hundredths<T> {
+        Hundredths::new(iter.map(|h| h.raw).sum())
     }
 }
 
-impl TimeSet {
-    pub fn time(&self) -> UnixTime {
-        UnixTime(self.utc as i64)
-    }
-
-    pub fn dst_change_time(&self) -> UnixTime {
-        UnixTime(self.dst_change_time as i64)
+impl From<f64> for Metres {
+    fn from(value: f64) -> Metres {
+        Metres(value)
     }
 }
 
-impl WamVasistasHead {
-    pub fn time(&self) -> UnixTime {
-        UnixTime(self.utc as i64)
+impl From<f64> for Kilocalories {
+    fn from(value: f64) -> Kilocalories {
+        Kilocalories(value)
     }
 }
 
-pub const ACTIVITY_HUNDREDTHS: f64 = 100.0;
-
-impl WamVasistasAwake {
-    pub fn distance(&self) -> Metres {
-        Metres(self.distance as f64 / ACTIVITY_HUNDREDTHS)
-    }
-
-    pub fn ascent(&self) -> Metres {
-        Metres(self.ascent as f64 / ACTIVITY_HUNDREDTHS)
-    }
-
-    pub fn descent(&self) -> Metres {
-        Metres(self.descent as f64 / ACTIVITY_HUNDREDTHS)
-    }
-}
-
-impl WamVasistasMetCalEarned {
-    pub fn calories(&self) -> Kilocalories {
-        Kilocalories(self.calories as f64 / ACTIVITY_HUNDREDTHS)
-    }
-
-    pub fn met(&self) -> Met {
-        Met(self.met as f64 / ACTIVITY_HUNDREDTHS)
-    }
-}
-
-impl TrackerUser {
-    pub fn weight(&self) -> Kilograms {
-        Kilograms(self.weight as f64 / 1000.0)
-    }
-
-    pub fn height(&self) -> Centimetres {
-        Centimetres(self.height as u16)
-    }
-
-    pub fn birth_date(&self) -> UnixTime {
-        UnixTime(self.birth as i64)
+impl From<f64> for Met {
+    fn from(value: f64) -> Met {
+        Met(value)
     }
 }
 
@@ -171,51 +184,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_wire_value_and_the_converted_value_stay_distinct() {
-        let cbt = VasistasCbt {
-            algo: 0,
-            attrib: 1,
-            temperature: 37255,
-        };
-        assert_eq!(cbt.temperature, 37255);
-        assert_eq!(cbt.core_temperature(), Celsius(37.255));
-    }
-
-    #[test]
-    fn heart_rate_needs_no_scaling_but_is_still_typed() {
-        assert_eq!(LiveHr { hr: 82 }.heart_rate(), Bpm(82));
-        assert_eq!(
-            VasistasHeartrate {
-                heartrate: 67,
-                quality: 5,
-                temperature: 0
-            }
-            .heart_rate(),
-            Bpm(67)
-        );
-    }
-
-    #[test]
     fn ecg_counts_are_microvolts() {
         assert_eq!(Millivolts::from_counts(1768), Millivolts(1.768));
         assert_eq!(Millivolts::from_counts(-658), Millivolts(-0.658));
-        assert_eq!(
-            Millivolts::from_counts_scaled(1610, 1610.0),
-            Millivolts(1.0)
-        );
     }
 
     #[test]
-    fn tracker_user_converts_grams_and_centimetres() {
-        let user = TrackerUser {
-            id: 1,
-            weight: 72000,
-            height: 175,
-            gender: 0,
-            birth: 644198400,
-            first_name: String::new(),
-        };
-        assert_eq!(user.weight(), Kilograms(72.0));
-        assert_eq!(user.height(), Centimetres(175));
+    fn clock_arithmetic_keeps_its_unit() {
+        assert_eq!(UnixTime(10) - UnixTime(4), Duration::from_millis(6000));
+        assert_eq!(UnixMillis(1500) - UnixMillis(2000), Duration::from_millis(-500));
+        assert_eq!(Duration::from_millis(-500).as_secs(), -1);
+        assert_eq!(UnixTime(10) + Duration::from_secs(5), UnixTime(15));
+    }
+
+    #[test]
+    fn hundredths_sum_before_they_scale() {
+        let total: Hundredths<Metres> = [Hundredths::new(150), Hundredths::new(450)].into_iter().sum();
+        assert_eq!(total.value(), Metres(6.0));
     }
 }

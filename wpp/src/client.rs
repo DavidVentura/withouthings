@@ -12,7 +12,7 @@ use crate::objects::{
 };
 use crate::signal::{Signal, SignalCollector, SignalStore};
 use crate::spiflash::{SpiFlash, SpiFlashProgress};
-use crate::units::{UnixMillis, UnixTime};
+use crate::units::{Duration, Hundredths, UnixMillis, UnixTime};
 use crate::{Command, Frame, WppObject};
 
 pub(crate) fn refuses(frame: &Frame, cmd: Command, err: i32) -> bool {
@@ -1242,16 +1242,16 @@ impl Client {
                 continue;
             };
             match object {
-                WppObject::WamVasistasDuration(d) => minute.duration_secs = d.duration as i64,
+                WppObject::WamVasistasDuration(d) => minute.duration = Duration::from_secs(d.duration as i64),
                 WppObject::WamVasistasAwake(a) => {
                     minute.steps = Some(a.steps as i64);
-                    minute.distance = Some(a.distance as i64);
-                    minute.ascent = Some(a.ascent as i64);
-                    minute.descent = Some(a.descent as i64);
+                    minute.distance = Some(Hundredths::new(a.distance as i64));
+                    minute.ascent = Some(Hundredths::new(a.ascent as i64));
+                    minute.descent = Some(Hundredths::new(a.descent as i64));
                 }
                 WppObject::WamVasistasMetCalEarned(m) => {
-                    minute.calories = Some(m.calories as i64);
-                    minute.met = Some(m.met as i64);
+                    minute.calories = Some(Hundredths::new(m.calories as i64));
+                    minute.met = Some(Hundredths::new(m.met as i64));
                 }
                 WppObject::WamVasistasWalk(w) => minute.walk_level = Some(w.level as i64),
                 WppObject::WamVasistasRun(r) => minute.run_level = Some(r.level as i64),
@@ -2536,13 +2536,13 @@ mod tests {
         assert_eq!(
             stored(&actions),
             vec![Record::Activity(Minute {
-                duration_secs: 60,
+                duration: Duration::from_secs(60),
                 steps: Some(94),
-                distance: Some(7180),
-                ascent: Some(0),
-                descent: Some(0),
-                calories: Some(245),
-                met: Some(290),
+                distance: Some(Hundredths::new(7180)),
+                ascent: Some(Hundredths::new(0)),
+                descent: Some(Hundredths::new(0)),
+                calories: Some(Hundredths::new(245)),
+                met: Some(Hundredths::new(290)),
                 walk_level: Some(2),
                 reco_v1: Some(14002),
                 reco_v2: Some(5438),
@@ -2581,7 +2581,7 @@ mod tests {
         assert_eq!(
             records[1],
             Record::Activity(Minute {
-                duration_secs: 960,
+                duration: Duration::from_secs(960),
                 ..Minute::opened(UnixTime(5060))
             })
         );
@@ -4108,7 +4108,8 @@ mod tests {
         };
         assert_eq!(minute.at, UnixTime(5_000));
         assert_eq!(
-            minute.duration_secs, 780,
+            minute.duration,
+            Duration::from_secs(780),
             "a level covers its window, not the instant it is dated"
         );
         assert_eq!(minute.sleep_level, Some(2));

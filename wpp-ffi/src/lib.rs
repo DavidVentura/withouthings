@@ -13,7 +13,6 @@ use wpp::pairing::{Pairing, PairingState};
 use wpp::track::{self, Limits, Track};
 use wpp::units::{
     Bpm, Celsius, Kilocalories, Met, Metres, MetresPerSecond, Millivolts, UnixMillis, UnixTime,
-    ACTIVITY_HUNDREDTHS,
 };
 use wpp::Frame;
 use wpp_store::{Store, Trim, WorkoutRow};
@@ -1235,7 +1234,7 @@ impl WatchService {
             .filter(|minute| minute.at.0 * 1000 >= from_ms && minute.at.0 * 1000 <= to_ms)
             .map(|minute| Point {
                 at_ms: minute.at.0 * 1000,
-                value: minute.ascent.unwrap_or(0) as f64 / ACTIVITY_HUNDREDTHS,
+                value: minute.ascent.map_or(0.0, |ascent| ascent.value().0),
                 origin: Origin::Stored,
             })
             .collect())
@@ -3545,7 +3544,7 @@ mod tests {
 
     fn staged(at_ms: i64, minutes: i64, level: i64) -> Record {
         Record::Activity(Minute {
-            duration_secs: minutes * 60,
+            duration: wpp::units::Duration::from_secs(minutes * 60),
             sleep_level: Some(level),
             ..Minute::opened(UnixMillis(at_ms).to_seconds())
         })

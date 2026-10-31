@@ -1,4 +1,4 @@
-use crate::units::{Kilocalories, Metres, UnixTime, ACTIVITY_HUNDREDTHS};
+use crate::units::{Duration, Hundredths, Kilocalories, Met, Metres, UnixTime};
 use std::ops::Range;
 
 pub const WALK: u16 = 1;
@@ -15,13 +15,13 @@ const MIN_SESSION_SECS: i64 = 300;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Minute {
     pub at: UnixTime,
-    pub duration_secs: i64,
+    pub duration: Duration,
     pub steps: Option<i64>,
-    pub distance: Option<i64>,
-    pub ascent: Option<i64>,
-    pub descent: Option<i64>,
-    pub calories: Option<i64>,
-    pub met: Option<i64>,
+    pub distance: Option<Hundredths<Metres>>,
+    pub ascent: Option<Hundredths<Metres>>,
+    pub descent: Option<Hundredths<Metres>>,
+    pub calories: Option<Hundredths<Kilocalories>>,
+    pub met: Option<Hundredths<Met>>,
     pub walk_level: Option<i64>,
     pub run_level: Option<i64>,
     pub reco_v1: Option<i64>,
@@ -56,7 +56,7 @@ impl Minute {
     pub fn opened(at: UnixTime) -> Minute {
         Minute {
             at,
-            duration_secs: 0,
+            duration: Duration::ZERO,
             steps: None,
             distance: None,
             ascent: None,
@@ -72,15 +72,16 @@ impl Minute {
     }
 
     pub fn ended_at(self) -> UnixTime {
-        UnixTime(self.at.0 + self.duration_secs)
+        self.at + self.duration
     }
 
     pub fn cadence(self) -> Option<i64> {
         let steps = self.steps?;
-        if self.duration_secs <= 0 {
+        let secs = self.duration.as_secs();
+        if secs <= 0 {
             return None;
         }
-        Some(steps * 60 / self.duration_secs)
+        Some(steps * 60 / secs)
     }
 }
 
@@ -103,22 +104,22 @@ pub struct Totals {
 }
 
 pub fn totals(minutes: &[Minute]) -> Totals {
-    let sum = |pick: fn(&Minute) -> Option<i64>| -> i64 { minutes.iter().filter_map(pick).sum() };
     Totals {
-        steps: sum(|m| m.steps),
-        distance: Metres(sum(|m| m.distance) as f64 / ACTIVITY_HUNDREDTHS),
-        ascent: Metres(sum(|m| m.ascent) as f64 / ACTIVITY_HUNDREDTHS),
-        calories: Kilocalories(sum(|m| m.calories) as f64 / ACTIVITY_HUNDREDTHS),
+        steps: minutes.iter().filter_map(|m| m.steps).sum(),
+        distance: minutes.iter().filter_map(|m| m.distance).sum::<Hundredths<_>>().value(),
+        ascent: minutes.iter().filter_map(|m| m.ascent).sum::<Hundredths<_>>().value(),
+        calories: minutes.iter().filter_map(|m| m.calories).sum::<Hundredths<_>>().value(),
     }
 }
 
 /// Scaled by sixty so the floor can be charged per second without dividing.
 /// A window with no duration earns nothing: steps over no time are not a pace.
 fn earned(minute: &Minute) -> i64 {
-    if minute.duration_secs <= 0 {
+    let secs = minute.duration.as_secs();
+    if secs <= 0 {
         return 0;
     }
-    minute.steps.unwrap_or(0) * 60 - WALKING_FLOOR_SPM * minute.duration_secs
+    minute.steps.unwrap_or(0) * 60 - WALKING_FLOOR_SPM * secs
 }
 
 /// A session the wearer recorded is not one to be found again. The pedometer
@@ -212,7 +213,7 @@ fn close(minutes: &[Minute]) -> Option<Session> {
     let (moving_steps, moving_secs) = moving.fold((0, 0), |(steps, secs), minute| {
         (
             steps + minute.steps.unwrap_or(0),
-            secs + minute.duration_secs,
+            secs + minute.duration.as_secs(),
         )
     });
     let cadence = moving_steps * 60 / moving_secs;
@@ -261,11 +262,11 @@ mod tests {
 
     fn minute(at: i64, steps: i64) -> Minute {
         Minute {
-            duration_secs: 60,
+            duration: Duration::from_secs(60),
             steps: Some(steps),
-            distance: Some(steps * 75),
-            calories: Some(steps * 25),
-            met: Some(400),
+            distance: Some(Hundredths::new(steps * 75)),
+            calories: Some(Hundredths::new(steps * 25)),
+            met: Some(Hundredths::new(400)),
             ..Minute::opened(UnixTime(at))
         }
     }
@@ -276,7 +277,7 @@ mod tests {
 
     fn idle(at: i64, secs: i64) -> Minute {
         Minute {
-            duration_secs: secs,
+            duration: Duration::from_secs(secs),
             ..Minute::opened(UnixTime(at))
         }
     }
@@ -295,9 +296,9 @@ mod tests {
     #[test]
     fn a_window_missing_a_column_is_skipped_rather_than_counted_as_zero() {
         let mut minutes = walk(1_000, 3, 90);
-        minutes[0].ascent = Some(150);
+        minutes[0].ascent = Some(Hundredths::new(150));
         minutes[1].ascent = None;
-        minutes[2].ascent = Some(450);
+        minutes[2].ascent = Some(Hundredths::new(450));
 
         let summed = totals(&minutes);
         assert_eq!(summed.steps, 270);
@@ -351,7 +352,7 @@ mod tests {
     fn a_compressed_idle_window_breaks_the_session() {
         let mut minutes = walk(1_000, 12, 95);
         minutes.push(Minute {
-            duration_secs: 900,
+            duration: Duration::from_secs(900),
             ..Minute::opened(UnixTime(1_000 + 12 * 60))
         });
         minutes.extend(walk(1_000 + 27 * 60, 12, 95));

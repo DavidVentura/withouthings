@@ -9,7 +9,7 @@ use wpp::client::{
 };
 use wpp::signal::{MeasureType, SampleFormat, Signal};
 use wpp::track::Fix;
-use wpp::units::{UnixMillis, UnixTime};
+use wpp::units::{Duration, Hundredths, UnixMillis, UnixTime};
 
 pub use rusqlite::Error;
 
@@ -294,13 +294,13 @@ impl Store {
                         params![
                             device_id,
                             minute.at.0,
-                            minute.duration_secs,
+                            minute.duration.as_secs(),
                             minute.steps,
-                            minute.distance,
-                            minute.ascent,
-                            minute.descent,
-                            minute.calories,
-                            minute.met,
+                            minute.distance.map(Hundredths::raw),
+                            minute.ascent.map(Hundredths::raw),
+                            minute.descent.map(Hundredths::raw),
+                            minute.calories.map(Hundredths::raw),
+                            minute.met.map(Hundredths::raw),
                             minute.walk_level,
                             minute.run_level,
                             minute.reco_v1,
@@ -812,13 +812,13 @@ impl Store {
             |r| {
                 Ok(Minute {
                     at: UnixTime(r.get(0)?),
-                    duration_secs: r.get(1)?,
+                    duration: Duration::from_secs(r.get(1)?),
                     steps: r.get(2)?,
-                    distance: r.get(3)?,
-                    ascent: r.get(4)?,
-                    descent: r.get(5)?,
-                    calories: r.get(6)?,
-                    met: r.get(7)?,
+                    distance: r.get::<_, Option<i64>>(3)?.map(Hundredths::new),
+                    ascent: r.get::<_, Option<i64>>(4)?.map(Hundredths::new),
+                    descent: r.get::<_, Option<i64>>(5)?.map(Hundredths::new),
+                    calories: r.get::<_, Option<i64>>(6)?.map(Hundredths::new),
+                    met: r.get::<_, Option<i64>>(7)?.map(Hundredths::new),
                     walk_level: r.get(8)?,
                     run_level: r.get(9)?,
                     reco_v1: r.get(10)?,
@@ -1384,18 +1384,18 @@ mod tests {
         let mut store = Store::open_in_memory().unwrap();
         let device = store.device("a4:7e:fa:44:d6:10").unwrap();
         let minute = Minute {
-            duration_secs: 60,
+            duration: wpp::units::Duration::from_secs(60),
             steps: Some(94),
-            distance: Some(7180),
-            calories: Some(245),
-            met: Some(290),
+            distance: Some(wpp::units::Hundredths::new(7180)),
+            calories: Some(wpp::units::Hundredths::new(245)),
+            met: Some(wpp::units::Hundredths::new(290)),
             walk_level: Some(2),
             ..Minute::opened(UnixTime(5000))
         };
         let batch = vec![
             Record::Activity(minute),
             Record::Activity(Minute {
-                duration_secs: 960,
+                duration: wpp::units::Duration::from_secs(960),
                 ..Minute::opened(UnixTime(5060))
             }),
         ];
@@ -1414,7 +1414,7 @@ mod tests {
             .store(
                 device,
                 &[Record::Activity(Minute {
-                    duration_secs: 900,
+                    duration: wpp::units::Duration::from_secs(900),
                     steps: Some(30),
                     ..Minute::opened(UnixTime(1000))
                 })],
