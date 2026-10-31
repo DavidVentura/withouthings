@@ -190,6 +190,12 @@ pub fn renode_binary() -> PathBuf {
     }
 }
 
+pub fn require(prerequisites: &[(&str, &Path)]) {
+    for (what, path) in prerequisites {
+        assert!(path.exists(), "{what} is not at {}", path.display());
+    }
+}
+
 /// A scratch copy of the rig: Renode writes its outputs next to the scripts it
 /// runs, and the models and images are large, so everything is symlinked and
 /// only the scripts are copied.

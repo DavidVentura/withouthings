@@ -11,7 +11,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{client, renode_binary, repository, scratch, tail, Renode, Rig};
+use common::{client, renode_binary, repository, require, scratch, tail, Renode, Rig};
 
 const BOOT_TIMEOUT: Duration = Duration::from_secs(600);
 const STORE_TIMEOUT: Duration = Duration::from_secs(120);
@@ -22,16 +22,11 @@ const EPISODE_STORED: &str = " stored (diagnosis = ";
 /// reads P0.08 and skips shell_init when it reads low.
 const SCRIPT: &str = "include @scripts/wpp-pipe.resc; pause; sysbus.gpio0 OnGPIO 8 true; start";
 
-fn boot_with_afib_episodes(episodes: usize) -> Option<Renode> {
-    for (what, path) in [
-        ("Renode", renode_binary()),
-        ("the flash dump", repository().join("renode-sim/external_flash.bin")),
-    ] {
-        if !path.exists() {
-            println!("skipping: {what} is not at {}", path.display());
-            return None;
-        }
-    }
+fn boot_with_afib_episodes(episodes: usize) -> Renode {
+    require(&[
+        ("Renode", &renode_binary()),
+        ("the flash dump", &repository().join("renode-sim/external_flash.bin")),
+    ]);
     let directory = scratch("stored-test");
     Rig::stock().generate(&directory, "rig");
     let renode = Renode::start(&directory, SCRIPT);
@@ -49,7 +44,7 @@ fn boot_with_afib_episodes(episodes: usize) -> Option<Renode> {
     renode
         .wait_for("Add WPPS chars.", BOOT_TIMEOUT)
         .expect("the watch finishes booting after the console");
-    Some(renode)
+    renode
 }
 
 fn episodes(output: &str) -> Vec<&str> {
@@ -80,10 +75,9 @@ fn boot_clock(log: &str) -> i64 {
 }
 
 #[test]
+#[ignore = "needs the Renode rig; run with --ignored"]
 fn measurements_the_watch_kept_reach_the_phone_once() {
-    let Some(renode) = boot_with_afib_episodes(2) else {
-        return;
-    };
+    let renode = boot_with_afib_episodes(2);
 
     let (synced, output) = client(&renode.directory, &["--sync"]);
     assert!(synced, "the sync did not finish:\n{}", tail(&output, 40));

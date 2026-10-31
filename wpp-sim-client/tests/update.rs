@@ -5,7 +5,9 @@
 //! The test drives the `wpp-sim-client` binary rather than its internals, so
 //! what it exercises is the same thing a person would run, and reads the
 //! watch's own log and the Renode monitor for everything the protocol does not
-//! say. It skips, loudly, when Renode or the flash dump is not there.
+//! say. These tests are `#[ignore]`d because they need the rig and take minutes;
+//! `cargo test -p wpp-sim-client -- --ignored` runs them, and a missing
+//! prerequisite is a failure there, so a pass always means the update ran.
 
 mod common;
 
@@ -14,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use common::{client, renode_binary, repository, scratch, strip_colour, tail, Renode, Rig};
+use common::{client, renode_binary, repository, require, scratch, strip_colour, tail, Renode, Rig};
 
 const BOOT_TIMEOUT: Duration = Duration::from_secs(180);
 /// The bootloader compares and then copies the whole 1.15 MB bank over a
@@ -160,17 +162,12 @@ fn mkpkg(repository: &Path, case: &Case, source: &Path, package: &Path) -> Strin
 
 /// Push `case`'s package into a watch booted from `case`'s image and return the
 /// running Renode plus its scratch directory once the new version is up.
-fn run_update(case: &Case) -> Option<(Renode, PathBuf)> {
+fn run_update(case: &Case) -> (Renode, PathBuf) {
     let repository = repository();
     let renode = renode_binary();
     let dump = repository.join("renode-sim/external_flash.bin");
     let source = repository.join("hwa10_3411_Tf4fD4.bin");
-    for (what, path) in [("Renode", &renode), ("the flash dump", &dump), ("the package", &source)] {
-        if !path.exists() {
-            println!("skipping: {what} is not at {}", path.display());
-            return None;
-        }
-    }
+    require(&[("Renode", &renode), ("the flash dump", &dump), ("the package", &source)]);
 
     let directory = scratch("update-test");
     case.boot.generate(&directory, "rig");
@@ -248,17 +245,16 @@ fn run_update(case: &Case) -> Option<(Renode, PathBuf)> {
         "the version trailer at {version_address} holds {trailer}, not the version the watch reports"
     );
     println!("appl version word in flash at {version_address}: {trailer}");
-    Some((renode, directory))
+    (renode, directory)
 }
 
 #[test]
+#[ignore = "needs the Renode rig; run with --ignored"]
 fn an_update_pushed_over_wpp_boots_and_reports_its_new_version() {
     let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let started = Instant::now();
     let case = Case::from_environment();
-    let Some((_renode, _directory)) = run_update(&case) else {
-        return;
-    };
+    let (_renode, _directory) = run_update(&case);
     println!("wall time: {:.1}s", started.elapsed().as_secs_f64());
 }
 
@@ -266,6 +262,7 @@ fn an_update_pushed_over_wpp_boots_and_reports_its_new_version() {
 /// app blob plus the FreeRTOS built from source, which is 0x22b8 bytes longer
 /// than the stock part.
 #[test]
+#[ignore = "needs the Renode rig and ~/ref-build; run with --ignored"]
 fn the_relinked_image_installs_through_the_update_path() {
     let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let started = Instant::now();
@@ -273,13 +270,11 @@ fn the_relinked_image_installs_through_the_update_path() {
     let relink = Command::new(repository.join("renode-sim/abi/relink.sh"))
         .output()
         .expect("abi/relink.sh runs");
-    if !relink.status.success() {
-        println!(
-            "skipping: abi/relink.sh needs ~/ref-build:\n{}",
-            String::from_utf8_lossy(&relink.stderr)
-        );
-        return;
-    }
+    assert!(
+        relink.status.success(),
+        "abi/relink.sh failed:\n{}",
+        String::from_utf8_lossy(&relink.stderr)
+    );
     print!("{}", String::from_utf8_lossy(&relink.stdout));
 
     let appl = repository.join("renode-sim/out/appl-relinked.bin");
@@ -291,9 +286,7 @@ fn the_relinked_image_installs_through_the_update_path() {
         installed_version: INSTALLED_VERSION,
         target_version: RELINKED_VERSION,
     };
-    let Some((renode, _directory)) = run_update(&case) else {
-        return;
-    };
+    let (renode, _directory) = run_update(&case);
 
     // Each bank is the package verbatim, so its fwblk header's appl entry has
     // the part length at +0xc and the version at +0x14 (FIRMWARE.md).
