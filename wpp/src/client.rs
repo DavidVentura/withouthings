@@ -21,10 +21,13 @@ pub(crate) fn refuses(frame: &Frame, cmd: Command, err: i32) -> bool {
             .any(|o| matches!(o, WppObject::Cmderror(e) if e.cmd == cmd.0 && e.err == err))
 }
 
+/// A busy or failing watch also answers the handshake with CMD_ERROR, and that
+/// says nothing about whether it would accept these credentials.
 pub(crate) fn rejects_probe(frame: &Frame) -> bool {
     frame.objects.iter().any(|o| {
         matches!(o, WppObject::Cmderror(e)
-            if e.cmd == Command::CMD_PROBE.0 || e.cmd == Command::CMD_PROBE_CHALLENGE.0)
+            if (e.cmd == Command::CMD_PROBE.0 || e.cmd == Command::CMD_PROBE_CHALLENGE.0)
+                && (e.err == Cmderror::ERR_NOT_AUTH || e.err == Cmderror::ERR_AUTH_ERR))
     })
 }
 pub const APP_PROBE: AppProbe = AppProbe {
@@ -498,15 +501,19 @@ impl Client {
         if self.current.is_some() || self.draining.is_some() {
             return Vec::new();
         }
-        self.queue
-            .extend(std::mem::take(&mut self.done).into_iter().rev());
-        if self.queue.is_empty() {
+        if self.queue.is_empty() && self.done.is_empty() {
             return Vec::new();
         }
         self.phase = Phase::Syncing;
         self.last_walk = self.now;
-        let actions = self.request_next();
+        let actions = self.begin_walk();
         self.noted(actions)
+    }
+
+    fn begin_walk(&mut self) -> Vec<Action> {
+        self.queue
+            .extend(std::mem::take(&mut self.done).into_iter().rev());
+        self.request_next()
     }
 
     pub fn measuring(&self) -> Option<i16> {
@@ -648,9 +655,11 @@ impl Client {
         // that ends its reply can share a frame, and the Null moves the drain
         // on to the next store.
         for signal in self.take_signals() {
-            let store = self
-                .draining
-                .expect("a stored signal arrives only in answer to a request that named its store");
+            // Nothing is deleted, so the watch still holds it for the next drain.
+            let Some(store) = self.draining else {
+                self.note_unhandled(&frame, &WppObject::StoredSignalMeta(signal.meta));
+                continue;
+            };
             let delete = delete_frame(store, &signal);
             let measured_at = signal.measure.as_ref().map(|m| UnixTime(m.time as i64));
             let record = match (store, measured_at) {
@@ -795,7 +804,7 @@ impl Client {
                     Command::CMD_WORKOUT_STATUS,
                     Vec::new(),
                 )));
-                actions.extend(self.request_next());
+                actions.extend(self.begin_walk());
             }
             (Phase::Syncing, _) if self.draining.is_some() => {
                 actions.extend(self.on_store_frame(&frame));
@@ -831,7 +840,13 @@ impl Client {
                         }
                     }
                 }
-                let closed = !carries_records
+                // Other requests on the link also answer with a Null, and only
+                // the outstanding stream's own reply says the stream is over.
+                let answers_stream = self
+                    .current
+                    .is_some_and(|(category, _)| stream_command(category).0 == frame.command.opcode());
+                let closed = answers_stream
+                    && !carries_records
                     && frame
                         .objects
                         .iter()
@@ -1733,30 +1748,34 @@ impl Client {
             utc_start: from.0 as u32,
             max: 0,
         });
-        let frame = if category == Category::BODY {
-            Frame::new(Command::CMD_BODY_VASISTAS_GET, vec![window])
+        let objects = if category == Category::BODY {
+            vec![window]
         } else if category == Category::ACTIVITY {
-            Frame::new(
-                Command::CMD_WAM_VASISTAS_GET,
-                vec![
-                    window,
-                    WppObject::Version(Version {
-                        value: Version::VALUE_ACTI_RECO_V3,
-                    }),
-                ],
-            )
+            vec![
+                window,
+                WppObject::Version(Version {
+                    value: Version::VALUE_ACTI_RECO_V3,
+                }),
+            ]
         } else {
-            Frame::new(
-                Command::CMD_VASISTAS_GET,
-                vec![
-                    window,
-                    WppObject::VasistasType(VasistasType {
-                        value: category.0 as i32,
-                    }),
-                ],
-            )
+            vec![
+                window,
+                WppObject::VasistasType(VasistasType {
+                    value: category.0 as i32,
+                }),
+            ]
         };
-        vec![Action::Send(frame)]
+        vec![Action::Send(Frame::new(stream_command(category), objects))]
+    }
+}
+
+fn stream_command(category: Category) -> Command {
+    if category == Category::BODY {
+        Command::CMD_BODY_VASISTAS_GET
+    } else if category == Category::ACTIVITY {
+        Command::CMD_WAM_VASISTAS_GET
+    } else {
+        Command::CMD_VASISTAS_GET
     }
 }
 
@@ -3105,6 +3124,76 @@ mod tests {
     }
 
     #[test]
+    fn a_null_answering_something_else_does_not_end_the_stream() {
+        use crate::objects::{VasistasCbt, WamVasistasHead};
+        let mut client = Client::new(
+            credentials(),
+            vec![(Category(11), UnixTime(1_000)), (Category(6), UnixTime(1_000))],
+            Vec::new(),
+        );
+        client.handle(Event::Connected);
+        client.handle(frame(Command::CMD_PROBE, Vec::new()));
+        assert_eq!(client.current(), Some((Category(6), UnixTime(1_000))));
+
+        let replied = client.handle(frame(
+            Command::CMD_FEATURE_TAGS_SET_DEPRECATED_V2,
+            vec![WppObject::Null(Null {})],
+        ));
+        assert!(sent(&replied).is_empty(), "nothing further is asked for");
+        assert_eq!(client.current(), Some((Category(6), UnixTime(1_000))));
+
+        client.handle(frame(
+            Command::CMD_VASISTAS_GET,
+            vec![
+                WppObject::WamVasistasHead(WamVasistasHead { utc: 900_000 }),
+                WppObject::VasistasCbt(VasistasCbt { algo: 0, attrib: 0, temperature: 37_000 }),
+            ],
+        ));
+        client.handle(frame(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]));
+        let marks = client.watermarks();
+        assert!(marks.contains(&(Category(11), UnixTime(1_000))), "{marks:?}");
+        assert!(marks.contains(&(Category(6), UnixTime(900_001))), "{marks:?}");
+    }
+
+    #[test]
+    fn a_reconnect_walks_the_streams_a_finished_sync_had_done() {
+        let mut client = synced();
+        client.handle(Event::Disconnected);
+        client.handle(Event::Connected);
+        let actions = client.handle(frame(Command::CMD_PROBE, Vec::new()));
+        assert!(client.current().is_some(), "{:?}", sent(&actions));
+        assert!(!sent(&actions).contains(&Command::CMD_SYNC_OK));
+    }
+
+    #[test]
+    fn a_stored_signal_nobody_asked_for_is_reported_and_not_deleted() {
+        let mut client = synced();
+        let mut actions = Vec::new();
+        for episode in afib_episode(7) {
+            actions.extend(client.handle(Event::Frame { frame: episode, received_at: UnixMillis(0) }));
+        }
+        assert!(stored(&actions).is_empty());
+        assert!(!actions.iter().any(|a| matches!(a, Action::Delete(_))));
+        assert_eq!(client.pending_deletes(), 0);
+        assert!(!client.take_unhandled().is_empty());
+    }
+
+    #[test]
+    fn a_busy_watch_during_the_handshake_is_not_a_refusal() {
+        use crate::objects::Cmderror;
+        let mut client = Client::new(credentials(), Vec::new(), Vec::new());
+        client.handle(Event::Connected);
+        client.handle(frame(
+            Command::CMD_ERROR,
+            vec![WppObject::Cmderror(Cmderror {
+                cmd: Command::CMD_PROBE.0,
+                err: Cmderror::ERR_DEVBUSY,
+            })],
+        ));
+        assert_eq!(client.phase(), Phase::Probing);
+    }
+
+    #[test]
     fn a_refused_challenge_ends_in_not_authenticated() {
         use crate::objects::Cmderror;
         let mut client = Client::new(
@@ -3410,7 +3499,7 @@ mod tests {
     fn synced() -> Client {
         let mut client = authenticated();
         client.handle(frame(
-            Command::CMD_BODY_VASISTAS_GET,
+            Command::CMD_VASISTAS_GET,
             vec![WppObject::Null(Null {})],
         ));
         stores_empty(&mut client, 0);
@@ -3483,7 +3572,7 @@ mod tests {
             .phone_clock_changed(UnixMillis(1_785_000_001_000))
             .is_empty());
         client.handle(frame(
-            Command::CMD_BODY_VASISTAS_GET,
+            Command::CMD_VASISTAS_GET,
             vec![WppObject::Null(Null {})],
         ));
         stores_empty(&mut client, 0);
