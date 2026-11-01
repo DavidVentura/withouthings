@@ -1,10 +1,10 @@
 use std::process::ExitCode;
 
 use wpp::capture::{frames, Direction, StreamItem};
-use wpp::client::{Action, Category, Client, Credentials, Event};
+use wpp::client::{Action, Stream, Client, Credentials, Event};
 use wpp_store::Store;
 
-const CATEGORIES: [Category; 2] = [Category(8), Category(9)];
+const STREAMS: [Stream; 2] = [Stream::Vasistas(8), Stream::Vasistas(9)];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -48,7 +48,7 @@ fn main() -> ExitCode {
         }
     };
     let device = store.device(&mac).expect("device row");
-    let watermarks = store.watermarks(device, &CATEGORIES).expect("watermarks");
+    let watermarks = store.watermarks(device, &STREAMS).expect("watermarks");
 
     let mut client = Client::new(
         Credentials::new(&mac, String::new()),

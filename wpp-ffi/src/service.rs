@@ -14,7 +14,7 @@ use wpp::sport::{self, SportId};
 use wpp::track;
 use wpp::units::{Bpm, Duration, Millivolts, UnixMillis, UnixTime};
 use wpp::watch_config::{
-    default_features, screen_name, CATEGORIES, HEALTH_FEATURES, KNOWN_SCREENS,
+    default_features, screen_name, STREAMS, HEALTH_FEATURES, KNOWN_SCREENS,
     RESPIRATORY_SCAN_MONITORING, SCAN_WINDOW,
 };
 use wpp::Frame;
@@ -94,7 +94,7 @@ impl WatchService {
     ) -> Result<Self, WatchError> {
         let mut store = Store::open(&db_path)?;
         let device_id = store.device(&mac)?;
-        let watermarks = store.watermarks(device_id, &CATEGORIES)?;
+        let watermarks = store.watermarks(device_id, &STREAMS)?;
         let features = store.features_or_seed(device_id, &default_features())?;
         let client = Client::new(Credentials::new(&mac, secret), watermarks, features);
         Ok(WatchService {

@@ -8,7 +8,7 @@ use rusqlite::types::{FromSql, FromSqlResult, ToSqlOutput, ValueRef};
 use rusqlite::{params, Connection, OptionalExtension, ToSql};
 use wpp::activity::Minute;
 use wpp::client::{
-    Category, DeviceIdentity, Feature, FeatureId, FeatureSchedule, Record, SampleKind, Source,
+    Stream, DeviceIdentity, Feature, FeatureId, FeatureSchedule, Record, SampleKind, Source,
     UserProfile, BATTERY_STATE_CHARGING,
 };
 use wpp::signal::{EcgMeasure, MeasureType, Recording, SampleFormat, Signal, SignalKind};
@@ -695,8 +695,8 @@ impl Store {
     pub fn watermarks(
         &self,
         device_id: DeviceId,
-        categories: &[Category],
-    ) -> Result<Vec<(Category, UnixTime)>, Error> {
+        categories: &[Stream],
+    ) -> Result<Vec<(Stream, UnixTime)>, Error> {
         categories
             .iter()
             .map(|category| {
@@ -705,7 +705,7 @@ impl Store {
                     .query_row(
                         "SELECT synced_through FROM sync_state
                           WHERE device_id = ?1 AND category = ?2",
-                        params![device_id, category.0],
+                        params![device_id, category.code()],
                         |r| r.get(0),
                     )
                     .optional()?;
@@ -717,7 +717,7 @@ impl Store {
     pub fn set_watermarks(
         &self,
         device_id: DeviceId,
-        watermarks: &[(Category, UnixTime)],
+        watermarks: &[(Stream, UnixTime)],
     ) -> Result<(), Error> {
         let tx = self.conn.unchecked_transaction()?;
         for (category, through) in watermarks {
@@ -729,7 +729,7 @@ impl Store {
     pub fn set_watermark(
         &self,
         device_id: DeviceId,
-        category: Category,
+        category: Stream,
         through: UnixTime,
     ) -> Result<(), Error> {
         self.conn.execute(
@@ -737,7 +737,7 @@ impl Store {
              VALUES (?1, ?2, ?3)
              ON CONFLICT (device_id, category)
              DO UPDATE SET synced_through = max(synced_through, ?3)",
-            params![device_id, category.0, through.0],
+            params![device_id, category.code(), through.0],
         )?;
         Ok(())
     }
@@ -2712,14 +2712,14 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let device = store.device("a4:7e:fa:44:d6:10").unwrap();
         store
-            .set_watermark(device, Category(8), UnixTime(5000))
+            .set_watermark(device, Stream::Vasistas(8), UnixTime(5000))
             .unwrap();
         store
-            .set_watermark(device, Category(8), UnixTime(4000))
+            .set_watermark(device, Stream::Vasistas(8), UnixTime(4000))
             .unwrap();
         assert_eq!(
-            store.watermarks(device, &[Category(8)]).unwrap(),
-            vec![(Category(8), UnixTime(5000))]
+            store.watermarks(device, &[Stream::Vasistas(8)]).unwrap(),
+            vec![(Stream::Vasistas(8), UnixTime(5000))]
         );
     }
 
@@ -2760,5 +2760,29 @@ mod tests {
             store.sleep_minutes(device, UnixTime(900), UnixTime(2000)),
             Err(Error::FromSqlConversionFailure(1, _, _))
         ));
+    }
+
+    #[test]
+    fn a_walk_already_on_file_is_found_under_its_old_key() {
+        let store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .connection()
+            .execute_batch(&format!(
+                "INSERT INTO sync_state (device_id, category, synced_through)
+                 VALUES ({0}, 0, 10), ({0}, 255, 20), ({0}, 8, 30)",
+                device.0
+            ))
+            .unwrap();
+        assert_eq!(
+            store
+                .watermarks(device, &[Stream::Body, Stream::Activity, Stream::Vasistas(8)])
+                .unwrap(),
+            vec![
+                (Stream::Body, UnixTime(10)),
+                (Stream::Activity, UnixTime(20)),
+                (Stream::Vasistas(8), UnixTime(30)),
+            ]
+        );
     }
 }

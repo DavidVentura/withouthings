@@ -1,16 +1,16 @@
-use crate::client::{Category, Feature, FeatureId, FeatureSchedule};
+use crate::client::{Stream, Feature, FeatureId, FeatureSchedule};
 use crate::units::Duration;
 
-pub const CATEGORIES: [Category; 9] = [
-    Category(5),
-    Category(9),
-    Category(8),
-    Category(6),
-    Category(12),
-    Category(11),
-    Category(10),
-    Category::ACTIVITY,
-    Category::BODY,
+pub const STREAMS: [Stream; 9] = [
+    Stream::Vasistas(5),
+    Stream::Vasistas(9),
+    Stream::Vasistas(8),
+    Stream::Vasistas(6),
+    Stream::Vasistas(12),
+    Stream::Vasistas(11),
+    Stream::Vasistas(10),
+    Stream::Activity,
+    Stream::Body,
 ];
 
 pub const KNOWN_SCREENS: &[(u8, &str)] = &[

@@ -230,12 +230,24 @@ pub struct NotificationConfig {
     pub displayed: bool,
 }
 
+/// What the watch keeps a history of. Each is read through its own command, so
+/// this says more than which number to ask for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Category(pub u8);
+pub enum Stream {
+    Body,
+    Activity,
+    Vasistas(u8),
+}
 
-impl Category {
-    pub const BODY: Category = Category(0);
-    pub const ACTIVITY: Category = Category(255);
+impl Stream {
+    /// The key a walk's progress is kept under.
+    pub fn code(self) -> u8 {
+        match self {
+            Stream::Body => 0,
+            Stream::Activity => 255,
+            Stream::Vasistas(kind) => kind,
+        }
+    }
 }
 
 /// Whether the phone is feeding the watch a position at all.
@@ -505,14 +517,14 @@ enum State {
     Probing,
     Authenticating,
     NotAuthenticated,
-    Walking(Stream),
+    Walking(OpenStream),
     Draining(Drain),
     Finished,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct Stream {
-    category: Category,
+struct OpenStream {
+    category: Stream,
     through: UnixTime,
     started_from: UnixTime,
 }
@@ -564,19 +576,19 @@ impl Link {
 /// A stream's position moves as records arrive, but a restart may only resume
 /// from what the store acknowledged, so the two are held apart.
 struct Streams {
-    queue: Vec<(Category, UnixTime)>,
-    done: Vec<(Category, UnixTime)>,
+    queue: Vec<(Stream, UnixTime)>,
+    done: Vec<(Stream, UnixTime)>,
     total: u32,
-    kept: BTreeMap<Category, UnixTime>,
+    kept: BTreeMap<Stream, UnixTime>,
     /// Kept positions the shell has not persisted yet.
-    unpersisted: BTreeMap<Category, UnixTime>,
-    in_flight: Vec<(u64, Category, UnixTime)>,
+    unpersisted: BTreeMap<Stream, UnixTime>,
+    in_flight: Vec<(u64, Stream, UnixTime)>,
     /// Moved by the current frame and not yet tied to a store token.
-    moved: Option<(Category, UnixTime)>,
+    moved: Option<(Stream, UnixTime)>,
 }
 
 impl Streams {
-    fn new(watermarks: Vec<(Category, UnixTime)>) -> Streams {
+    fn new(watermarks: Vec<(Stream, UnixTime)>) -> Streams {
         Streams {
             total: watermarks.len() as u32,
             kept: watermarks.iter().copied().collect(),
@@ -588,7 +600,7 @@ impl Streams {
         }
     }
 
-    fn keep(&mut self, category: Category, through: UnixTime) {
+    fn keep(&mut self, category: Stream, through: UnixTime) {
         self.kept.insert(category, through);
         self.unpersisted.insert(category, through);
     }
@@ -598,7 +610,7 @@ impl Streams {
             .into_iter()
             .partition(|(pending, _, _)| *pending <= token);
         self.in_flight = later;
-        let settled: Vec<(u64, Category, UnixTime)> = settled;
+        let settled: Vec<(u64, Stream, UnixTime)> = settled;
         for (_, category, through) in settled {
             self.keep(category, through);
         }
@@ -654,7 +666,7 @@ pub struct Client {
 impl Client {
     pub fn new(
         credentials: Credentials,
-        watermarks: Vec<(Category, UnixTime)>,
+        watermarks: Vec<(Stream, UnixTime)>,
         features: Vec<Feature>,
     ) -> Client {
         Client {
@@ -682,7 +694,7 @@ impl Client {
         }
     }
 
-    pub fn watermarks(&self) -> Vec<(Category, UnixTime)> {
+    pub fn watermarks(&self) -> Vec<(Stream, UnixTime)> {
         let mut all = self.streams.queue.clone();
         all.extend(self.streams.done.iter().copied());
         if let Some(current) = self.current() {
@@ -694,7 +706,7 @@ impl Client {
 
     /// Positions the store has acknowledged since this was last asked, for the
     /// shell to persist. Only these are safe to resume from after a restart.
-    pub fn take_kept_watermarks(&mut self) -> Vec<(Category, UnixTime)> {
+    pub fn take_kept_watermarks(&mut self) -> Vec<(Stream, UnixTime)> {
         std::mem::take(&mut self.streams.unpersisted).into_iter().collect()
     }
 
@@ -755,14 +767,14 @@ impl Client {
         }
     }
 
-    fn stream(&self) -> Option<Stream> {
+    fn stream(&self) -> Option<OpenStream> {
         match self.link.state {
             State::Walking(stream) => Some(stream),
             _ => None,
         }
     }
 
-    pub fn current(&self) -> Option<(Category, UnixTime)> {
+    pub fn current(&self) -> Option<(Stream, UnixTime)> {
         self.stream().map(|s| (s.category, s.through))
     }
 
@@ -1755,7 +1767,7 @@ impl Client {
 
     fn request_next(&mut self, now: UnixMillis) -> Vec<Action> {
         if let Some((category, from)) = self.streams.queue.pop() {
-            self.link.state = State::Walking(Stream {
+            self.link.state = State::Walking(OpenStream {
                 category,
                 through: from,
                 started_from: from,
@@ -1824,34 +1836,28 @@ impl Client {
             utc_start: from.0 as u32,
             max: 0,
         });
-        let objects = if category == Category::BODY {
-            vec![window]
-        } else if category == Category::ACTIVITY {
-            vec![
+        let objects = match category {
+            Stream::Body => vec![window],
+            Stream::Activity => vec![
                 window,
                 WppObject::Version(Version {
                     value: Version::VALUE_ACTI_RECO_V3,
                 }),
-            ]
-        } else {
-            vec![
+            ],
+            Stream::Vasistas(kind) => vec![
                 window,
-                WppObject::VasistasType(VasistasType {
-                    value: category.0 as i32,
-                }),
-            ]
+                WppObject::VasistasType(VasistasType { value: kind as i32 }),
+            ],
         };
         vec![Action::Send(Frame::new(stream_command(category), objects))]
     }
 }
 
-fn stream_command(category: Category) -> Command {
-    if category == Category::BODY {
-        Command::CMD_BODY_VASISTAS_GET
-    } else if category == Category::ACTIVITY {
-        Command::CMD_WAM_VASISTAS_GET
-    } else {
-        Command::CMD_VASISTAS_GET
+fn stream_command(stream: Stream) -> Command {
+    match stream {
+        Stream::Body => Command::CMD_BODY_VASISTAS_GET,
+        Stream::Activity => Command::CMD_WAM_VASISTAS_GET,
+        Stream::Vasistas(_) => Command::CMD_VASISTAS_GET,
     }
 }
 
@@ -1983,7 +1989,7 @@ mod tests {
     fn connecting_probes_then_answers_the_challenge() {
         let mut client = Client::new(
             credentials(),
-            vec![(Category(8), UnixTime(1000))],
+            vec![(Stream::Vasistas(8), UnixTime(1000))],
             Vec::new(),
         );
         let actions = client.handle(Event::Connected { now: UnixMillis(0) });
@@ -2013,7 +2019,7 @@ mod tests {
     pub(super) fn authenticated() -> Client {
         let mut client = Client::new(
             credentials(),
-            vec![(Category(8), UnixTime(1000))],
+            vec![(Stream::Vasistas(8), UnixTime(1000))],
             Vec::new(),
         );
         client.handle(Event::Connected { now: UnixMillis(0) });
@@ -2064,7 +2070,7 @@ mod tests {
                 ],
             ),
         });
-        assert_eq!(client.watermarks(), vec![(Category(8), UnixTime(5001))]);
+        assert_eq!(client.watermarks(), vec![(Stream::Vasistas(8), UnixTime(5001))]);
     }
 
     #[test]
@@ -2507,7 +2513,7 @@ mod tests {
     fn the_body_stream_uses_its_own_command_and_no_type() {
         let mut client = Client::new(
             credentials(),
-            vec![(Category::BODY, UnixTime(4000))],
+            vec![(Stream::Body, UnixTime(4000))],
             Vec::new(),
         );
         client.handle(Event::Connected { now: UnixMillis(0) });
@@ -2546,7 +2552,7 @@ mod tests {
     fn the_activity_stream_uses_its_own_command() {
         let mut client = Client::new(
             credentials(),
-            vec![(Category::ACTIVITY, UnixTime(4000))],
+            vec![(Stream::Activity, UnixTime(4000))],
             Vec::new(),
         );
         client.handle(Event::Connected { now: UnixMillis(0) });
@@ -2588,7 +2594,7 @@ mod tests {
         };
         let mut client = Client::new(
             credentials(),
-            vec![(Category::ACTIVITY, UnixTime(0))],
+            vec![(Stream::Activity, UnixTime(0))],
             Vec::new(),
         );
         client.handle(Event::Connected { now: UnixMillis(0) });
@@ -2638,7 +2644,7 @@ mod tests {
         use crate::objects::{WamVasistasAwake, WamVasistasDuration, WamVasistasHead};
         let mut client = Client::new(
             credentials(),
-            vec![(Category::ACTIVITY, UnixTime(0))],
+            vec![(Stream::Activity, UnixTime(0))],
             Vec::new(),
         );
         client.handle(Event::Connected { now: UnixMillis(0) });
@@ -2669,7 +2675,7 @@ mod tests {
         );
         assert_eq!(
             client.current(),
-            Some((Category::ACTIVITY, UnixTime(5061))),
+            Some((Stream::Activity, UnixTime(5061))),
             "the walk resumes past the newest window"
         );
     }
@@ -2696,7 +2702,7 @@ mod tests {
         use crate::objects::{Null, VasistasHeartrate, WamVasistasHead};
         let mut client = Client::new(
             credentials(),
-            vec![(Category::BODY, UnixTime(4000))],
+            vec![(Stream::Body, UnixTime(4000))],
             Vec::new(),
         );
         client.handle(Event::Connected { now: UnixMillis(0) });
@@ -2727,13 +2733,13 @@ mod tests {
         assert_eq!(client.phase(), Phase::Finished);
         assert_eq!(
             client.watermarks(),
-            vec![(Category::BODY, UnixTime(5001))],
+            vec![(Stream::Body, UnixTime(5001))],
             "a finished stream keeps its watermark"
         );
 
         let actions = client.sync_now(UnixMillis(0));
         assert_eq!(sent(&actions), vec![Command::CMD_BODY_VASISTAS_GET]);
-        assert_eq!(client.current(), Some((Category::BODY, UnixTime(5001))));
+        assert_eq!(client.current(), Some((Stream::Body, UnixTime(5001))));
     }
 
     #[test]
@@ -3086,7 +3092,7 @@ mod tests {
         };
         let mut client = Client::new(
             credentials(),
-            vec![(Category(8), UnixTime(1000))],
+            vec![(Stream::Vasistas(8), UnixTime(1000))],
             vec![permanent(20)],
         );
         let expected = vec![FeatureTagsDeprecated {
@@ -3102,7 +3108,7 @@ mod tests {
     fn a_window_the_watch_has_run_out_is_not_armed_again() {
         let mut client = Client::new(
             credentials(),
-            vec![(Category(8), UnixTime(1000))],
+            vec![(Stream::Vasistas(8), UnixTime(1000))],
             vec![
                 permanent(20),
                 Feature {
@@ -3229,19 +3235,19 @@ mod tests {
         use crate::objects::{VasistasCbt, WamVasistasHead};
         let mut client = Client::new(
             credentials(),
-            vec![(Category(11), UnixTime(1_000)), (Category(6), UnixTime(1_000))],
+            vec![(Stream::Vasistas(11), UnixTime(1_000)), (Stream::Vasistas(6), UnixTime(1_000))],
             Vec::new(),
         );
         client.handle(Event::Connected { now: UnixMillis(0) });
         client.handle(frame(Command::CMD_PROBE, Vec::new()));
-        assert_eq!(client.current(), Some((Category(6), UnixTime(1_000))));
+        assert_eq!(client.current(), Some((Stream::Vasistas(6), UnixTime(1_000))));
 
         let replied = client.handle(frame(
             Command::CMD_FEATURE_TAGS_SET_DEPRECATED_V2,
             vec![WppObject::Null(Null {})],
         ));
         assert!(sent(&replied).is_empty(), "nothing further is asked for");
-        assert_eq!(client.current(), Some((Category(6), UnixTime(1_000))));
+        assert_eq!(client.current(), Some((Stream::Vasistas(6), UnixTime(1_000))));
 
         client.handle(frame(
             Command::CMD_VASISTAS_GET,
@@ -3252,8 +3258,8 @@ mod tests {
         ));
         client.handle(frame(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]));
         let marks = client.watermarks();
-        assert!(marks.contains(&(Category(11), UnixTime(1_000))), "{marks:?}");
-        assert!(marks.contains(&(Category(6), UnixTime(900_001))), "{marks:?}");
+        assert!(marks.contains(&(Stream::Vasistas(11), UnixTime(1_000))), "{marks:?}");
+        assert!(marks.contains(&(Stream::Vasistas(6), UnixTime(900_001))), "{marks:?}");
     }
 
     #[test]
@@ -3328,7 +3334,7 @@ mod tests {
         use crate::objects::Cmderror;
         let mut client = Client::new(
             credentials(),
-            vec![(Category::BODY, UnixTime(0))],
+            vec![(Stream::Body, UnixTime(0))],
             Vec::new(),
         );
         client.handle(Event::Connected { now: UnixMillis(0) });
@@ -3353,7 +3359,7 @@ mod tests {
         use crate::objects::ProbeReply;
         let mut client = Client::new(
             credentials(),
-            vec![(Category::BODY, UnixTime(0))],
+            vec![(Stream::Body, UnixTime(0))],
             Vec::new(),
         );
         client.handle(Event::Connected { now: UnixMillis(0) });
@@ -3379,7 +3385,7 @@ mod tests {
         use crate::objects::Cmderror;
         let mut client = Client::new(
             credentials(),
-            vec![(Category::BODY, UnixTime(0))],
+            vec![(Stream::Body, UnixTime(0))],
             Vec::new(),
         );
         client.handle(Event::Connected { now: UnixMillis(0) });
@@ -3409,7 +3415,7 @@ mod tests {
         use crate::objects::Null;
         let mut client = Client::new(
             credentials(),
-            vec![(Category::BODY, UnixTime(0))],
+            vec![(Stream::Body, UnixTime(0))],
             Vec::new(),
         );
         client.handle(Event::Connected { now: UnixMillis(0) });
@@ -3885,11 +3891,11 @@ mod tests {
         client.take_kept_watermarks();
 
         let actions = client.handle(head_with_a_reading(5_000));
-        assert_eq!(client.current(), Some((Category(8), UnixTime(5_001))));
+        assert_eq!(client.current(), Some((Stream::Vasistas(8), UnixTime(5_001))));
         assert!(client.take_kept_watermarks().is_empty(), "not stored yet");
 
         client.handle(Event::Stored { token: token_of(&actions) });
-        assert_eq!(client.take_kept_watermarks(), vec![(Category(8), UnixTime(5_001))]);
+        assert_eq!(client.take_kept_watermarks(), vec![(Stream::Vasistas(8), UnixTime(5_001))]);
         assert!(client.take_kept_watermarks().is_empty(), "reported once");
     }
 
@@ -3898,12 +3904,12 @@ mod tests {
         let mut client = authenticated();
         client.handle(head_with_a_reading(5_000));
         assert_eq!(client.handle(Event::StoreFailed), vec![Action::Reconnect]);
-        assert_eq!(client.current(), Some((Category(8), UnixTime(1_000))));
+        assert_eq!(client.current(), Some((Stream::Vasistas(8), UnixTime(1_000))));
         assert!(client.take_kept_watermarks().is_empty());
 
         let later = client.handle(head_with_a_reading(6_000));
         client.handle(Event::Stored { token: token_of(&later) });
-        assert_eq!(client.take_kept_watermarks(), vec![(Category(8), UnixTime(6_001))]);
+        assert_eq!(client.take_kept_watermarks(), vec![(Stream::Vasistas(8), UnixTime(6_001))]);
     }
 
     #[test]
@@ -4217,8 +4223,8 @@ mod tests {
         let mut client = Client::new(
             credentials(),
             vec![
-                (Category(11), UnixTime(1_000)),
-                (Category(6), UnixTime(1_000)),
+                (Stream::Vasistas(11), UnixTime(1_000)),
+                (Stream::Vasistas(6), UnixTime(1_000)),
             ],
             Vec::new(),
         );
@@ -4246,11 +4252,11 @@ mod tests {
 
         let marks = client.watermarks();
         assert!(
-            marks.contains(&(Category(6), UnixTime(900_001))),
+            marks.contains(&(Stream::Vasistas(6), UnixTime(900_001))),
             "the current stream resumes past its own newest record: {marks:?}"
         );
         assert!(
-            marks.contains(&(Category(11), UnixTime(2_001))),
+            marks.contains(&(Stream::Vasistas(11), UnixTime(2_001))),
             "and the stream behind is not dragged forward with it: {marks:?}"
         );
     }
@@ -4330,7 +4336,7 @@ mod tests {
 
         let mut client = Client::new(
             credentials(),
-            vec![(Category(8), UnixTime(4000))],
+            vec![(Stream::Vasistas(8), UnixTime(4000))],
             Vec::new(),
         );
         assert_eq!(client.phase(), Phase::Idle);
@@ -4372,7 +4378,7 @@ mod tests {
             ]
         );
         assert_eq!(client.phase(), Phase::Syncing);
-        assert_eq!(client.current(), Some((Category(8), UnixTime(4000))));
+        assert_eq!(client.current(), Some((Stream::Vasistas(8), UnixTime(4000))));
         let request = actions
             .iter()
             .find_map(|a| match a {
@@ -4430,7 +4436,7 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(client.current(), Some((Category(8), UnixTime(5001))));
+        assert_eq!(client.current(), Some((Stream::Vasistas(8), UnixTime(5001))));
 
         let actions = client.handle(frame(
             Command::CMD_VASISTAS_GET,
@@ -4454,7 +4460,7 @@ mod tests {
         assert_eq!(client.phase(), Phase::Finished);
         assert_eq!(client.current(), None);
         assert_eq!(client.pending_deletes(), 0);
-        assert_eq!(client.watermarks(), vec![(Category(8), UnixTime(5001))]);
+        assert_eq!(client.watermarks(), vec![(Stream::Vasistas(8), UnixTime(5001))]);
     }
 }
 
