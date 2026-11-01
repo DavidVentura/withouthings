@@ -1,5 +1,5 @@
 use crate::client::{probe_frame, refuses, rejects_probe, Credentials};
-use crate::objects::{AccountKey, AdvKey, Cmderror, ProbeChallenge, ProbeChallengeResponse};
+use crate::objects::{AccountKey, AdvKey, Cmderror};
 use crate::{Command, Frame, WppObject};
 
 pub const SECRET_LEN: usize = 32;
@@ -56,13 +56,7 @@ impl Pairing {
         Ok(Pairing {
             secret,
             account_id,
-            known: known
-                .into_iter()
-                .map(|c| Credentials {
-                    mac: c.mac.to_ascii_lowercase(),
-                    secret: c.secret,
-                })
-                .collect(),
+            known,
             state: PairingState::Idle,
         })
     }
@@ -98,23 +92,14 @@ impl Pairing {
                     return Vec::new();
                 };
                 let identity = challenge.mac.to_ascii_lowercase();
-                let Some(credentials) = self.known.iter().find(|c| c.mac == identity).cloned()
+                let Some(credentials) = self.known.iter().find(|c| c.mac() == identity).cloned()
                 else {
                     self.state = PairingState::AlreadyAssociated;
                     return Vec::new();
                 };
-                let answer = credentials.answer(&challenge.challenge);
+                let reply = credentials.challenge_reply(&challenge);
                 self.state = PairingState::Readopting(credentials);
-                vec![Frame::new(
-                    Command::CMD_PROBE_CHALLENGE,
-                    vec![
-                        WppObject::ProbeChallengeResponse(ProbeChallengeResponse { answer }),
-                        WppObject::ProbeChallenge(ProbeChallenge {
-                            mac: identity,
-                            challenge: vec![0; 16],
-                        }),
-                    ],
-                )]
+                vec![reply]
             }
             PairingState::Readopting(credentials) if opcode == Command::CMD_PROBE => {
                 self.state = PairingState::Paired(credentials.clone());
@@ -166,10 +151,7 @@ impl Pairing {
                 vec![Frame::new(Command::CMD_SETUP_OK, Vec::new())]
             }
             PairingState::FinishingSetup { mac, .. } if opcode == Command::CMD_SETUP_OK => {
-                self.state = PairingState::Paired(Credentials {
-                    mac: mac.clone(),
-                    secret: self.secret.clone(),
-                });
+                self.state = PairingState::Paired(Credentials::new(mac, self.secret.clone()));
                 Vec::new()
             }
             // Firmware that predates key association may predate SETUP_OK too.
@@ -178,10 +160,7 @@ impl Pairing {
                 mac,
                 keys: AccountKeys::Unsupported,
             } if refuses(frame, Command::CMD_SETUP_OK, Cmderror::ERR_CMDUNKN) => {
-                self.state = PairingState::Paired(Credentials {
-                    mac: mac.clone(),
-                    secret: self.secret.clone(),
-                });
+                self.state = PairingState::Paired(Credentials::new(mac, self.secret.clone()));
                 Vec::new()
             }
             _ => Vec::new(),
@@ -192,6 +171,7 @@ impl Pairing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::objects::ProbeChallengeResponse;
     use crate::objects::{ProbeChallenge, ProbeReply};
 
     const SECRET: &str = "gUf8Np69A4GvJxjY1XOcIHKQm2HcPZnO";
@@ -205,10 +185,7 @@ mod tests {
         Pairing::new(
             "a different key, of the very same length".to_string()[..SECRET_LEN].to_string(),
             19071510,
-            vec![Credentials {
-                mac: MAC.to_ascii_uppercase(),
-                secret: SECRET.to_string(),
-            }],
+            vec![Credentials::new(&MAC.to_ascii_uppercase(), SECRET.to_string())],
         )
         .unwrap()
     }
@@ -259,10 +236,7 @@ mod tests {
     }
 
     fn paired() -> PairingState {
-        PairingState::Paired(Credentials {
-            mac: MAC.to_string(),
-            secret: SECRET.to_string(),
-        })
+        PairingState::Paired(Credentials::new(MAC, SECRET.to_string()))
     }
 
     #[test]
@@ -357,10 +331,7 @@ mod tests {
         pairing.on_frame(&Frame::new(Command::CMD_SETUP_OK, Vec::new()));
         assert_eq!(
             pairing.state(),
-            &PairingState::Paired(Credentials {
-                mac: MAC.to_string(),
-                secret: SECRET.to_string(),
-            })
+            &PairingState::Paired(Credentials::new(MAC, SECRET.to_string()))
         );
     }
 
@@ -391,10 +362,7 @@ mod tests {
         pairing.on_frame(&Frame::new(Command::CMD_PROBE, Vec::new()));
         assert_eq!(
             pairing.state(),
-            &PairingState::Paired(Credentials {
-                mac: MAC.to_string(),
-                secret: SECRET.to_string(),
-            })
+            &PairingState::Paired(Credentials::new(MAC, SECRET.to_string()))
         );
     }
 

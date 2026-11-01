@@ -48,10 +48,7 @@ fn main() -> ExitCode {
     let watermarks = store.watermarks(device, &CATEGORIES).expect("watermarks");
 
     let mut client = Client::new(
-        Credentials {
-            mac: mac.clone(),
-            secret: String::new(),
-        },
+        Credentials::new(&mac, String::new()),
         watermarks,
         store.features(device).expect("features"),
     );

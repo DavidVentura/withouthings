@@ -96,7 +96,7 @@ impl WatchService {
         let device_id = store.device(&mac)?;
         let watermarks = store.watermarks(device_id, &CATEGORIES)?;
         let features = store.features_or_seed(device_id, &default_features())?;
-        let client = Client::new(Credentials { mac, secret }, watermarks, features);
+        let client = Client::new(Credentials::new(&mac, secret), watermarks, features);
         Ok(WatchService {
             inner: Mutex::new(Inner {
                 client,

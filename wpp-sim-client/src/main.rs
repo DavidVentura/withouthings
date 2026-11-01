@@ -1,23 +1,24 @@
 mod ancs;
 mod dblib;
+mod pipe;
 mod update;
 
 use std::env;
-use std::io::{ErrorKind, Read, Write};
-use std::net::TcpStream;
+use std::fmt;
+use std::io::{self, ErrorKind};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use wpp::ancs::{Category, NotificationId};
-use wpp::client::{probe_frame, Action, Client, Credentials, Event, Phase, Record};
-use wpp::units::UnixMillis;
+use wpp::client::{probe_frame, time_set_frame, Action, Client, Event, Phase, Record};
+use wpp::units::{UnixMillis, UnixTime};
 use wpp::commands::Command;
-use wpp::frame::{Channel, Frame};
+use wpp::frame::{Channel, Frame, FrameError};
 use wpp::objects::{
     ActivitySubcategory, Alarm, AncsStatus, Distance, InfoType, LocalNotification, MeasureCategory,
-    MeasureLiveAppStatus, Pace, PauseState, ProbeChallenge, ProbeChallengeResponse, ProbeReply,
-    RawDataCmd, SleepActivityGet, Speed, StartTime, StoredSignalMeta, TimeSet, Uint32, VasistasType,
-    Version, WamAutoSleep, WamVasistasGet, WorkoutGpsStatus,
+    MeasureLiveAppStatus, Pace, PauseState, ProbeReply, RawDataCmd, SleepActivityGet, Speed,
+    StartTime, StoredSignalMeta, Uint32, VasistasType, Version, WamAutoSleep, WamVasistasGet,
+    WorkoutGpsStatus,
 };
 use wpp::WppObject;
 
@@ -56,75 +57,116 @@ const ANCS_QUIET: Duration = Duration::from_secs(10);
 /// which it does once, on the command that turns notifications on.
 const ANCS_DISCOVERY: Duration = Duration::from_secs(30);
 
-/// A scenario's duration argument, which every live scenario takes the same way.
-fn seconds(arguments: &mut impl Iterator<Item = String>, flag: &str) -> u64 {
-    arguments
-        .next()
-        .unwrap_or_else(|| panic!("{flag} takes a number of seconds"))
-        .parse()
-        .unwrap_or_else(|_| panic!("{flag} takes a number of seconds"))
+/// Why a run failed, which is what the exit code stands for.
+#[derive(Debug)]
+pub enum Failure {
+    Usage(String),
+    Setup(String),
+    Link(io::Error),
+    Silent(String),
+    Refused(String),
+    NotAuthenticated(String),
+    Update(update::UpdateError),
+    NotSubscribed,
+    SyncUnfinished(String),
 }
 
-struct Link {
-    socket: TcpStream,
+impl fmt::Display for Failure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Failure::Usage(reason) => write!(f, "{reason}\n{USAGE}"),
+            Failure::Setup(reason) => write!(f, "{reason}"),
+            Failure::Link(error) => write!(f, "the link failed: {error}"),
+            Failure::Silent(label) => write!(f, "{label}: nothing within the timeout"),
+            Failure::Refused(label) => write!(f, "{label}: the watch answered CMD_ERROR"),
+            Failure::NotAuthenticated(reason) => write!(f, "not authenticated: {reason}"),
+            Failure::Update(error) => write!(f, "update failed: {error}"),
+            Failure::NotSubscribed => write!(f, "the watch never subscribed to ANCS"),
+            Failure::SyncUnfinished(reason) => write!(f, "the sync did not finish: {reason}"),
+        }
+    }
+}
+
+impl From<io::Error> for Failure {
+    fn from(error: io::Error) -> Failure {
+        Failure::Link(error)
+    }
+}
+
+const USAGE: &str = "usage: wpp-sim-client [--endpoint host:port | --port n] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only | --ecg <seconds> | --spo2 <seconds> | --ppg <seconds> | --body-temp | --raw-data | --send <command>... | --stored <type>... | --sync | --update <package> [--version-address <hex>] | [--workout <seconds> [--activity <n>]] [--hr-measure <seconds>] [--alarm] [--notify] [--notification \"<title>|<message>\" [--app <bundle id>]] [--dismiss <id>] [--sleep <seconds>]]";
+
+/// How much of a frame one write to the pipe carries.
+#[derive(Clone, Copy)]
+enum WriteSplit {
+    AttMtu,
+    WholeFrame,
+}
+
+impl WriteSplit {
+    fn limit(self) -> usize {
+        match self {
+            WriteSplit::AttMtu => WRITE_LIMIT,
+            WriteSplit::WholeFrame => FRAME_PER_WRITE_LIMIT,
+        }
+    }
+}
+
+pub struct Link {
+    pipe: pipe::Pipe,
     received: Vec<u8>,
     write_limit: usize,
 }
 
 impl Link {
-    fn connect(endpoint: &str) -> std::io::Result<Link> {
-        let socket = TcpStream::connect(endpoint)?;
-        socket.set_nodelay(true)?;
-        socket.set_read_timeout(Some(REPLY_TIMEOUT))?;
-        Ok(Link { socket, received: Vec::new(), write_limit: WRITE_LIMIT })
+    fn connect(endpoint: &str, split: WriteSplit) -> io::Result<Link> {
+        Ok(Link {
+            pipe: pipe::Pipe::connect(endpoint)?,
+            received: Vec::new(),
+            write_limit: split.limit(),
+        })
     }
 
-    fn send(&mut self, frame: &Frame) -> std::io::Result<()> {
+    pub fn send(&mut self, frame: &Frame) -> io::Result<()> {
         println!("-> {:?} {:?}", frame.command.opcode_name(), frame.objects);
         self.send_quietly(frame)
     }
 
-    fn send_quietly(&mut self, frame: &Frame) -> std::io::Result<()> {
+    pub fn send_quietly(&mut self, frame: &Frame) -> io::Result<()> {
         for part in frame.to_wire().expect("the client sends objects a frame can hold") {
             for write in part.to_bytes().chunks(self.write_limit) {
-                let mut message = Vec::with_capacity(write.len() + 2);
-                message.extend_from_slice(&(write.len() as u16).to_be_bytes());
-                message.extend_from_slice(write);
-                self.socket.write_all(&message)?;
+                self.pipe.write_message(write)?;
             }
         }
         Ok(())
     }
 
-    fn receive(&mut self, timeout: Duration) -> std::io::Result<Option<Frame>> {
-        self.socket.set_read_timeout(Some(timeout))?;
+    fn receive(&mut self, timeout: Duration) -> io::Result<Option<Frame>> {
+        let deadline = Instant::now() + timeout;
         loop {
-            let mut header = [0u8; 2];
-            match self.socket.read_exact(&mut header) {
-                Ok(()) => {}
-                Err(e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {
-                    return Ok(None);
+            match Frame::parse_prefix(&self.received) {
+                Ok((frame, rest)) => {
+                    let consumed = self.received.len() - rest.len();
+                    self.received.drain(..consumed);
+                    return Ok(Some(frame));
                 }
-                Err(e) => return Err(e),
+                // The watch notifies in MTU-sized pieces, so this is a reply
+                // still arriving; anything else will not parse however long
+                // it is waited for.
+                Err(FrameError::ShortHeader { .. } | FrameError::IncompletePayload { .. }) => {}
+                Err(error) => return Err(io::Error::new(ErrorKind::InvalidData, error)),
             }
-            let mut notification = vec![0u8; u16::from_be_bytes(header) as usize];
-            self.socket.read_exact(&mut notification)?;
-            self.received.extend_from_slice(&notification);
-            // Anything short of a whole frame is a reply still arriving, since
-            // the watch notifies in MTU-sized pieces.
-            let Ok((frame, rest)) = Frame::parse_prefix(&self.received) else {
-                continue;
+            let left = deadline.saturating_duration_since(Instant::now());
+            let Some(notification) = self.pipe.read_message(left)? else {
+                return Ok(None);
             };
-            let consumed = self.received.len() - rest.len();
-            self.received.drain(..consumed);
-            return Ok(Some(frame));
+            self.received.extend_from_slice(&notification);
         }
     }
 
     /// Reads the next frame that is an answer rather than watch-initiated
     /// chatter, answering the chatter as a phone would so the watch stops
     /// repeating it.
-    fn next_answer(&mut self, deadline: Instant) -> std::io::Result<Option<Frame>> {
+    pub fn next_answer(&mut self, deadline: Instant) -> io::Result<Option<Frame>> {
         loop {
             let Some(frame) = self.next_frame(deadline)? else {
                 return Ok(None);
@@ -174,6 +216,13 @@ struct Step {
     label: &'static str,
     frame: Frame,
     answers: Answers,
+}
+
+/// What the watch made of a request it answered.
+#[derive(Clone, Copy, PartialEq)]
+enum Answered {
+    Took,
+    Refused,
 }
 
 fn read_only_steps() -> Vec<Step> {
@@ -242,59 +291,84 @@ fn read_only_steps() -> Vec<Step> {
     steps
 }
 
-fn run(link: &mut Link, step: &Step) -> std::io::Result<()> {
+/// A watch that says nothing is a failure whatever was asked. What a refusal
+/// means is up to the caller, so it comes back as the answer it is.
+fn exchange(link: &mut Link, step: &Step) -> Result<Answered, Failure> {
     println!("\n== {} ==", step.label);
     link.send(&step.frame)?;
     let opcode = step.frame.command.opcode();
     loop {
         let Some(reply) = link.next_answer(Instant::now() + REPLY_TIMEOUT)? else {
-            println!("<- nothing within the timeout");
-            return Ok(());
+            return Err(Failure::Silent(step.label.to_string()));
         };
         report(&reply);
         if reply.command.opcode() == Command::CMD_ERROR {
-            return Ok(());
+            return Ok(Answered::Refused);
         }
         match step.answers {
-            Answers::One => return Ok(()),
+            Answers::One => return Ok(Answered::Took),
             Answers::UntilQuiet if reply.command.opcode() == opcode => {
                 // The walk ends with a quiet link rather than a marker frame.
                 while let Some(more) = link.next_answer(Instant::now() + QUIET)? {
                     report(&more);
                 }
-                return Ok(());
+                return Ok(Answered::Took);
             }
             Answers::UntilQuiet => {}
         }
     }
 }
 
+/// A request the scenario depends on: a refusal fails the run.
+fn request(
+    link: &mut Link,
+    label: &'static str,
+    command: Command,
+    objects: Vec<WppObject>,
+) -> Result<(), Failure> {
+    let step = Step { label, frame: Frame::new(command, objects), answers: Answers::One };
+    match exchange(link, &step)? {
+        Answered::Took => Ok(()),
+        Answered::Refused => Err(Failure::Refused(label.to_string())),
+    }
+}
+
+/// A request sent to see what the watch does with it, so a refusal is the
+/// measurement rather than a failure.
+fn ask(
+    link: &mut Link,
+    label: &'static str,
+    command: Command,
+    objects: Vec<WppObject>,
+) -> Result<(), Failure> {
+    let step = Step { label, frame: Frame::new(command, objects), answers: Answers::One };
+    exchange(link, &step).map(|_| ())
+}
+
 /// The poll the official app makes after every sync, one per stored signal
 /// type: the handler at 0x6e21c serves a type only when the request names it,
 /// and an empty store answers Null.
-fn stored(link: &mut Link, signal_type: u16) -> std::io::Result<()> {
-    run(
-        link,
-        &Step {
-            label: "stored measure signal",
-            frame: Frame::new(
-                Command::CMD_STORED_MEASURE_SIGNAL_GET,
-                vec![WppObject::StoredSignalMeta(StoredSignalMeta {
-                    r#type: signal_type,
-                    ..StoredSignalMeta::default()
-                })],
-            ),
-            answers: Answers::UntilQuiet,
-        },
-    )
+fn stored(link: &mut Link, signal_type: u16) -> Result<(), Failure> {
+    let step = Step {
+        label: "stored measure signal",
+        frame: Frame::new(
+            Command::CMD_STORED_MEASURE_SIGNAL_GET,
+            vec![WppObject::StoredSignalMeta(StoredSignalMeta {
+                r#type: signal_type,
+                ..StoredSignalMeta::default()
+            })],
+        ),
+        answers: Answers::UntilQuiet,
+    };
+    exchange(link, &step).map(|_| ())
 }
 
 /// A sync as the app runs it: the phone-side `Client` drives the link from the
 /// probe to the end, and every record it hands over for keeping is printed as a
 /// `stored` line. With no series to walk, what it exercises is the handshake
 /// and the stores drained after the walk.
-fn sync(link: &mut Link, credentials: Credentials) -> std::io::Result<bool> {
-    let mut client = Client::new(credentials, Vec::new(), Vec::new());
+fn sync(link: &mut Link, association: dblib::Association) -> Result<(), Failure> {
+    let mut client = Client::new(association.credentials(), Vec::new(), Vec::new());
     let mut pending: std::collections::VecDeque<Action> = client.handle(Event::Connected { now: wall_clock() }).into();
     let deadline = Instant::now() + SYNC_TIMEOUT;
     while Instant::now() < deadline {
@@ -310,12 +384,11 @@ fn sync(link: &mut Link, credentials: Credentials) -> std::io::Result<bool> {
                 Action::Finished => {
                     if client.phase() == Phase::Finished && client.pending_deletes() == 0 {
                         println!("sync finished");
-                        return Ok(true);
+                        return Ok(());
                     }
                 }
                 Action::Reconnect => {
-                    println!("the client gave up on a silent watch");
-                    return Ok(false);
+                    return Err(Failure::SyncUnfinished("the client gave up on a silent watch".to_string()));
                 }
             }
         }
@@ -328,8 +401,7 @@ fn sync(link: &mut Link, credentials: Credentials) -> std::io::Result<bool> {
             None => client.handle(Event::Tick { now }),
         });
     }
-    println!("the sync did not finish within {}s", SYNC_TIMEOUT.as_secs());
-    Ok(false)
+    Err(Failure::SyncUnfinished(format!("still running after {}s", SYNC_TIMEOUT.as_secs())))
 }
 
 fn wall_clock() -> UnixMillis {
@@ -342,56 +414,62 @@ fn wall_clock() -> UnixMillis {
 }
 
 fn describe(record: &Record) -> String {
+    let measures = |signal: &wpp::signal::Signal| {
+        signal
+            .measures
+            .iter()
+            .map(|m| format!("{}={}", m.r#type, m.value))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let uid = |signal: &wpp::signal::Signal| match &signal.measure {
+        Some(measure) => measure.uid.to_string(),
+        None => "none".to_string(),
+    };
     match record {
         Record::PpgAfib { measured_at, signal } => format!(
-            "ppg_afib measured_at={} uid={} measures={:?} samples={}",
+            "ppg_afib measured_at={} uid={} measures={} samples={}",
             measured_at.0,
-            signal.measure.as_ref().map(|m| m.uid).unwrap_or_default(),
-            signal.measures.iter().map(|m| (m.r#type, m.value)).collect::<Vec<_>>(),
+            uid(signal),
+            measures(signal),
             signal.data.len(),
         ),
         Record::Spo2Check { measured_at, signal } => format!(
-            "spo2_check measured_at={} uid={} measures={:?}",
+            "spo2_check measured_at={} uid={} measures={}",
             measured_at.0,
-            signal.measure.as_ref().map(|m| m.uid).unwrap_or_default(),
-            signal.measures.iter().map(|m| (m.r#type, m.value)).collect::<Vec<_>>(),
+            uid(signal),
+            measures(signal),
         ),
-        Record::Ecg { signal, .. } => format!(
-            "ecg uid={:?} samples={}",
-            signal.measure.as_ref().map(|m| m.uid),
-            signal.data.len()
-        ),
+        Record::Ecg { signal, .. } => format!("ecg uid={} samples={}", uid(signal), signal.data.len()),
         other => format!("{other:?}"),
     }
+}
+
+/// MEASURE_START says the phone has the live screen up and is therefore ready
+/// for the sample frames. The request objects are the two the handler at
+/// 0x54238 parses -- MeasureCategory, which is what says ECG rather than PPG or
+/// SpO2, and MeasureLiveAppStatus.
+fn start_measuring(link: &mut Link, label: &'static str, category: &WppObject) -> Result<(), Failure> {
+    ask(
+        link,
+        label,
+        Command::CMD_MEASURE_START,
+        vec![
+            category.clone(),
+            WppObject::MeasureLiveAppStatus(MeasureLiveAppStatus { app_live_screen_displayed: 1 }),
+        ],
+    )
 }
 
 /// One ECG acquisition: ask for it, watch it run, stop it.
 ///
 /// MEASURE_START and MEASURE_STOP are the only two commands the phone sends;
 /// everything between them the watch pushes by itself on the slave channel, so
-/// the middle of this is a read loop and not a request. The request objects are
-/// the two the handler at 0x54238 parses -- MeasureCategory, which is what says
-/// ECG rather than PPG or SpO2, and MeasureLiveAppStatus, which says the phone
-/// has the live screen up and is therefore ready for the sample frames.
-fn ecg(link: &mut Link, seconds: u64) -> std::io::Result<()> {
+/// the middle of this is a read loop and not a request.
+fn ecg(link: &mut Link, seconds: u64) -> Result<(), Failure> {
     let category =
         WppObject::MeasureCategory(MeasureCategory { value: MeasureCategory::VALUE_ECG });
-    run(
-        link,
-        &Step {
-            label: "ecg start",
-            frame: Frame::new(
-                Command::CMD_MEASURE_START,
-                vec![
-                    category.clone(),
-                    WppObject::MeasureLiveAppStatus(MeasureLiveAppStatus {
-                        app_live_screen_displayed: 1,
-                    }),
-                ],
-            ),
-            answers: Answers::One,
-        },
-    )?;
+    start_measuring(link, "ecg start", &category)?;
     // MEASURE_START is the phone saying it will take the live data; it does not
     // start anything, because on the watch an ECG is started by the wearer
     // holding the crown. CMD_ECG_TEST is the command that stands in for that,
@@ -401,42 +479,31 @@ fn ecg(link: &mut Link, seconds: u64) -> std::io::Result<()> {
     // measurement, which at the 300 Hz the metadata reports is thirty seconds.
     // Without the object the handler logs that it could not read the count and
     // falls back to a thousand, and the run ends in that assert.
-    run(
+    request(
         link,
-        &Step {
-            label: "ecg run",
-            frame: Frame::new(
-                Command::CMD_ECG_TEST,
-                vec![WppObject::Uint32(Uint32 { val: ECG_SAMPLES })],
-            ),
-            answers: Answers::One,
-        },
+        "ecg run",
+        Command::CMD_ECG_TEST,
+        vec![WppObject::Uint32(Uint32 { val: ECG_SAMPLES })],
     )?;
 
-    println!("\n== ecg live, {seconds} s ==");
     let until = Instant::now() + Duration::from_secs(seconds);
-    let (mut frames, mut samples) = (0usize, 0usize);
-    while let Some(frame) = link.next_frame(until)? {
-        frames += 1;
-        for object in &frame.objects {
-            if let WppObject::MeasureLiveEcg(live) = object {
-                samples += live.samples.len();
-            }
-        }
-        if frame.command.channel() != Some(Channel::SlaveRequest) {
-            report(&frame);
-        }
-    }
-    println!("   {frames} frames from the watch, {samples} ECG sample bytes");
-
-    run(
+    let mut samples = 0usize;
+    watch(
         link,
-        &Step {
-            label: "ecg stop",
-            frame: Frame::new(Command::CMD_MEASURE_STOP, vec![category]),
-            answers: Answers::One,
+        "ecg live",
+        until,
+        |frame| {
+            for object in &frame.objects {
+                if let WppObject::MeasureLiveEcg(live) = object {
+                    samples += live.samples.len();
+                }
+            }
         },
-    )
+        |_, _| Ok(()),
+    )?;
+    println!("   {samples} ECG sample bytes");
+
+    ask(link, "ecg stop", Command::CMD_MEASURE_STOP, vec![category])
 }
 
 /// One live measurement of a category other than ECG, driven exactly the way
@@ -448,41 +515,19 @@ fn ecg(link: &mut Link, seconds: u64) -> std::io::Result<()> {
 /// (SpO2) and logs `[MEASURE_LIVE] Unknown measure subcat %d` for everything
 /// else, so a run of this flag with a category the firmware does not admit is
 /// the measurement of that refusal and not a mistake.
-fn measure(link: &mut Link, category: i16, seconds: u64) -> std::io::Result<()> {
+fn measure(link: &mut Link, category: i16, seconds: u64) -> Result<(), Failure> {
     let object = WppObject::MeasureCategory(MeasureCategory { value: category });
     let name = MeasureCategory::value_name(category).unwrap_or("unknown");
-    run(
-        link,
-        &Step {
-            label: "measure start",
-            frame: Frame::new(
-                Command::CMD_MEASURE_START,
-                vec![
-                    object.clone(),
-                    WppObject::MeasureLiveAppStatus(MeasureLiveAppStatus {
-                        app_live_screen_displayed: 1,
-                    }),
-                ],
-            ),
-            answers: Answers::One,
-        },
-    )?;
+    start_measuring(link, "measure start", &object)?;
     let until = Instant::now() + Duration::from_secs(seconds);
-    watch(link, &format!("{name} live"), until, |_, _| Ok(()))?;
-    run(
-        link,
-        &Step {
-            label: "measure stop",
-            frame: Frame::new(Command::CMD_MEASURE_STOP, vec![object]),
-            answers: Answers::One,
-        },
-    )
+    watch(link, &format!("{name} live"), until, |_| {}, |_, _| Ok(()))?;
+    ask(link, "measure stop", Command::CMD_MEASURE_STOP, vec![object])
 }
 
 /// The temperature the phone can ask for: the skin sensor, the heat-flux
 /// sensor the core-body-temperature algorithm integrates, the barometer's own
 /// temperature, and the greenTEG calibration the algorithm reads.
-fn body_temperature(link: &mut Link) -> std::io::Result<()> {
+fn body_temperature(link: &mut Link) -> Result<(), Failure> {
     for (label, command) in [
         ("skin temperature", Command::CMD_SKIN_TEMPERATURE_MEASURE),
         ("heat flux", Command::CMD_FLUX_SENSOR_MEASURE),
@@ -500,14 +545,7 @@ fn body_temperature(link: &mut Link) -> std::io::Result<()> {
         ),
         ("mcu temperature calibration", Command::CMD_MCU_TEMP_CAL_GET),
     ] {
-        run(
-            link,
-            &Step {
-                label,
-                frame: Frame::new(command, Vec::new()),
-                answers: Answers::One,
-            },
-        )?;
+        ask(link, label, command, Vec::new())?;
     }
     Ok(())
 }
@@ -518,28 +556,17 @@ fn body_temperature(link: &mut Link) -> std::io::Result<()> {
 /// (erase all) and 3 (mark synced); the two erases are what the phone sends
 /// once it has the bytes, so only the marking is driven here and the capture
 /// itself is started from the debug shell.
-fn raw_data(link: &mut Link) -> std::io::Result<()> {
+fn raw_data(link: &mut Link) -> Result<(), Failure> {
     for (label, cmd) in [
         ("raw data, mark synced", RawDataCmd::CMD_SET_SYNCED),
         ("raw data, no command", RawDataCmd::CMD_NONE),
     ] {
-        run(
-            link,
-            &Step {
-                label,
-                frame: Frame::new(
-                    Command::CMD_RAW_DATA,
-                    vec![WppObject::RawDataCmd(RawDataCmd { cmd })],
-                ),
-                answers: Answers::One,
-            },
-        )?;
+        ask(link, label, Command::CMD_RAW_DATA, vec![WppObject::RawDataCmd(RawDataCmd { cmd })])?;
     }
     Ok(())
 }
 
-/// How long a live scenario watches the link before it sends its closing
-/// command, and how often it pushes the phone's own updates while it waits.
+/// How often a live scenario pushes the phone's own updates while it waits.
 const LIVE_TICK: Duration = Duration::from_secs(5);
 
 /// Everything the watch says between two commands, decoded.
@@ -552,8 +579,9 @@ fn watch(
     link: &mut Link,
     label: &str,
     until: Instant,
-    mut tick: impl FnMut(&mut Link, u32) -> std::io::Result<()>,
-) -> std::io::Result<usize> {
+    mut on_frame: impl FnMut(&Frame),
+    mut tick: impl FnMut(&mut Link, u32) -> io::Result<()>,
+) -> io::Result<()> {
     println!("\n== {label} ==");
     let mut frames = 0usize;
     let mut ticks = 0u32;
@@ -561,6 +589,7 @@ fn watch(
         let next = (Instant::now() + LIVE_TICK).min(until);
         while let Some(frame) = link.next_frame(next)? {
             frames += 1;
+            on_frame(&frame);
             if frame.command.channel() != Some(Channel::SlaveRequest) {
                 report(&frame);
             }
@@ -569,7 +598,7 @@ fn watch(
         ticks += 1;
     }
     println!("   {frames} frames from the watch over {label}");
-    Ok(frames)
+    Ok(())
 }
 
 /// One workout, driven the way the phone drives it.
@@ -580,46 +609,29 @@ fn watch(
 /// phone owns the GPS, so what it sends during the workout is the fix's state
 /// through WORKOUT_GPS_STATUS and the distance, pace and speed it derives
 /// through WORKOUT_LIVE_DATA; the protocol has no coordinate object.
-fn workout(link: &mut Link, seconds: u64, subcategory: i16, now: i32) -> std::io::Result<()> {
-    run(
+fn workout(link: &mut Link, seconds: u64, subcategory: i16, now: i32) -> Result<(), Failure> {
+    request(
         link,
-        &Step {
-            label: "workout start",
-            frame: Frame::new(
-                Command::CMD_WORKOUT_START,
-                vec![
-                    WppObject::StartTime(StartTime { value: now }),
-                    WppObject::ActivitySubcategory(ActivitySubcategory { value: subcategory }),
-                    WppObject::PauseState(PauseState { value: 0, start_time: 0, sum: 0 }),
-                ],
-            ),
-            answers: Answers::One,
-        },
+        "workout start",
+        Command::CMD_WORKOUT_START,
+        vec![
+            WppObject::StartTime(StartTime { value: now }),
+            WppObject::ActivitySubcategory(ActivitySubcategory { value: subcategory }),
+            WppObject::PauseState(PauseState { value: 0, start_time: 0, sum: 0 }),
+        ],
     )?;
-    run(
-        link,
-        &Step {
-            label: "workout status",
-            frame: Frame::new(Command::CMD_WORKOUT_STATUS, Vec::new()),
-            answers: Answers::One,
-        },
-    )?;
+    request(link, "workout status", Command::CMD_WORKOUT_STATUS, Vec::new())?;
     // A fix takes a moment on a phone too: the first status is searching and
     // the rest are locked, which is the transition the watch's GPS screen reads.
-    run(
+    request(
         link,
-        &Step {
-            label: "gps searching",
-            frame: Frame::new(
-                Command::CMD_WORKOUT_GPS_STATUS,
-                vec![WppObject::WorkoutGpsStatus(WorkoutGpsStatus { status: 1 })],
-            ),
-            answers: Answers::One,
-        },
+        "gps searching",
+        Command::CMD_WORKOUT_GPS_STATUS,
+        vec![WppObject::WorkoutGpsStatus(WorkoutGpsStatus { status: 1 })],
     )?;
 
     let until = Instant::now() + Duration::from_secs(seconds);
-    watch(link, "workout live", until, |link, tick| {
+    watch(link, "workout live", until, |_| {}, |link, tick| {
         // Five metres a second is a run, and the pace is the reciprocal in the
         // seconds per kilometre the object carries.
         let metres = 5 * (tick as i32 + 1) * LIVE_TICK.as_secs() as i32;
@@ -637,154 +649,80 @@ fn workout(link: &mut Link, seconds: u64, subcategory: i16, now: i32) -> std::io
         ))
     })?;
 
-    run(
-        link,
-        &Step {
-            label: "workout stop",
-            frame: Frame::new(Command::CMD_WORKOUT_STOP, Vec::new()),
-            answers: Answers::One,
-        },
-    )?;
-    run(
-        link,
-        &Step {
-            label: "workout status, after",
-            frame: Frame::new(Command::CMD_WORKOUT_STATUS, Vec::new()),
-            answers: Answers::One,
-        },
-    )
+    request(link, "workout stop", Command::CMD_WORKOUT_STOP, Vec::new())?;
+    request(link, "workout status, after", Command::CMD_WORKOUT_STATUS, Vec::new())
 }
 
 /// A manual heart-rate measurement: the one the watch face's heart-rate tile
-/// starts.
+/// starts. The firmware refuses parts of this, and what it does regardless is
+/// what the run is for, so a refusal does not end it.
 ///
 /// The handler at 0x624e4 reads a single Uint32 and nothing else: zero starts
 /// the measurement and one stops it, and everything in between arrives as live
 /// heart rate on the slave channel.
-fn hr_measure(link: &mut Link, seconds: u64) -> std::io::Result<()> {
-    run(
-        link,
-        &Step {
-            label: "hr measure start",
-            frame: Frame::new(Command::CMD_HR_MEASURE, vec![WppObject::Uint32(Uint32 { val: 0 })]),
-            answers: Answers::One,
-        },
-    )?;
+fn hr_measure(link: &mut Link, seconds: u64) -> Result<(), Failure> {
+    ask(link, "hr measure start", Command::CMD_HR_MEASURE, vec![WppObject::Uint32(Uint32 { val: 0 })])?;
     let until = Instant::now() + Duration::from_secs(seconds);
-    watch(link, "hr measure live", until, |link, _| {
+    watch(link, "hr measure live", until, |_| {}, |link, _| {
         link.send(&Frame::new(Command::CMD_GET_LIVE_HR, Vec::new()))
     })?;
-    run(
-        link,
-        &Step {
-            label: "hr measure stop",
-            frame: Frame::new(Command::CMD_HR_MEASURE, vec![WppObject::Uint32(Uint32 { val: 1 })]),
-            answers: Answers::One,
-        },
-    )?;
-    run(
-        link,
-        &Step {
-            label: "heart rate, after",
-            frame: Frame::new(Command::CMD_GET_HR, Vec::new()),
-            answers: Answers::One,
-        },
-    )
+    ask(link, "hr measure stop", Command::CMD_HR_MEASURE, vec![WppObject::Uint32(Uint32 { val: 1 })])?;
+    ask(link, "heart rate, after", Command::CMD_GET_HR, Vec::new())
 }
 
 /// An alarm the phone sets, and the settings read back.
-fn alarm(link: &mut Link) -> std::io::Result<()> {
-    for step in [
-        Step {
-            label: "set alarm",
-            frame: Frame::new(
-                Command::CMD_SET_ALARM,
-                vec![WppObject::Alarm(Alarm {
-                    hour: 7,
-                    minute: 30,
-                    wday: 0x7f,
-                    mday: 0,
-                    month: 0,
-                    year: 0,
-                    span: 0,
-                })],
-            ),
-            answers: Answers::One,
-        },
-        Step {
-            label: "alarm read back",
-            frame: Frame::new(Command::CMD_GET_ALARM, Vec::new()),
-            answers: Answers::One,
-        },
-        Step {
-            label: "alarm settings",
-            frame: Frame::new(Command::CMD_GET_ALARM_SETTINGS, Vec::new()),
-            answers: Answers::One,
-        },
-    ] {
-        run(link, &step)?;
-    }
-    Ok(())
+fn alarm(link: &mut Link) -> Result<(), Failure> {
+    request(
+        link,
+        "set alarm",
+        Command::CMD_SET_ALARM,
+        vec![WppObject::Alarm(Alarm {
+            hour: 7,
+            minute: 30,
+            wday: 0x7f,
+            mday: 0,
+            month: 0,
+            year: 0,
+            span: 0,
+        })],
+    )?;
+    request(link, "alarm read back", Command::CMD_GET_ALARM, Vec::new())?;
+    request(link, "alarm settings", Command::CMD_GET_ALARM_SETTINGS, Vec::new())
 }
 
 /// Sleep: the watch decides it itself, so the phone's part is to turn automatic
 /// sleep on and then leave the watch alone. The scenario is the quiet that
-/// follows, which is what the sleep-wake algorithm reads.
-fn sleep(link: &mut Link, seconds: u64, now: i32) -> std::io::Result<()> {
-    for step in [
-        Step {
-            label: "auto sleep on",
-            frame: Frame::new(
-                Command::CMD_WAM_AUTO_SLEEP,
-                vec![WppObject::WamAutoSleep(WamAutoSleep { auto_sleep: 1 })],
-            ),
-            answers: Answers::One,
-        },
-        Step {
-            label: "auto sleep read back",
-            frame: Frame::new(Command::CMD_WAM_AUTO_SLEEP_GET, Vec::new()),
-            answers: Answers::One,
-        },
-    ] {
-        run(link, &step)?;
-    }
-    let until = Instant::now() + Duration::from_secs(seconds);
-    watch(link, "still and worn", until, |_, _| Ok(()))?;
-    run(
+/// follows, which is what the sleep-wake algorithm reads, and it runs whether
+/// or not the firmware admits the command that asked for it.
+fn sleep(link: &mut Link, seconds: u64, now: i32) -> Result<(), Failure> {
+    ask(
         link,
-        &Step {
-            label: "sleep activity",
-            frame: Frame::new(
-                Command::CMD_SLEEP_ACTIVITY_GET,
-                vec![WppObject::SleepActivityGet(SleepActivityGet { from_utc: now - 86400 })],
-            ),
-            answers: Answers::One,
-        },
+        "auto sleep on",
+        Command::CMD_WAM_AUTO_SLEEP,
+        vec![WppObject::WamAutoSleep(WamAutoSleep { auto_sleep: 1 })],
+    )?;
+    ask(link, "auto sleep read back", Command::CMD_WAM_AUTO_SLEEP_GET, Vec::new())?;
+    let until = Instant::now() + Duration::from_secs(seconds);
+    watch(link, "still and worn", until, |_| {}, |_, _| Ok(()))?;
+    ask(
+        link,
+        "sleep activity",
+        Command::CMD_SLEEP_ACTIVITY_GET,
+        vec![WppObject::SleepActivityGet(SleepActivityGet { from_utc: now - 86400 })],
     )
 }
 
 /// A notification push. ANCS is the phone's own service and the sim has no
 /// radio, so what is reachable over the pipe is the local-event path the watch
 /// exposes for the same purpose.
-fn notify(link: &mut Link) -> std::io::Result<()> {
-    for step in [
-        Step {
-            label: "notification push",
-            frame: Frame::new(
-                Command::CMD_LOCAL_EVENT_NOTIFY,
-                vec![WppObject::LocalNotification(LocalNotification { id: 1, status: 1 })],
-            ),
-            answers: Answers::One,
-        },
-        Step {
-            label: "notification read back",
-            frame: Frame::new(Command::CMD_NOTIFICATION_GET, Vec::new()),
-            answers: Answers::One,
-        },
-    ] {
-        run(link, &step)?;
-    }
-    Ok(())
+fn notify(link: &mut Link) -> Result<(), Failure> {
+    ask(
+        link,
+        "notification push",
+        Command::CMD_LOCAL_EVENT_NOTIFY,
+        vec![WppObject::LocalNotification(LocalNotification { id: 1, status: 1 })],
+    )?;
+    ask(link, "notification read back", Command::CMD_NOTIFICATION_GET, Vec::new())
 }
 
 /// The ANCS scenario: turn the watch's notification client on, announce what
@@ -795,59 +733,38 @@ fn notify(link: &mut Link) -> std::io::Result<()> {
 /// The socket is opened before the command that turns ANCS on, because the
 /// pipe's ANCS connection is what stands for a bonded phone and the watch
 /// refuses to discover anything without one.
-fn announce(
-    link: &mut Link,
-    endpoint: &str,
-    bundle_id: &str,
-    notifications: &[(String, String)],
-    dismissals: &[u32],
-) -> std::io::Result<()> {
+fn announce(link: &mut Link, endpoint: &str, announcement: &Announcement) -> Result<(), Failure> {
     let (host, port) = endpoint
         .rsplit_once(':')
-        .unwrap_or_else(|| panic!("{endpoint} is not host:port"));
-    let port: u16 = port.parse().unwrap_or_else(|_| panic!("{endpoint} is not host:port"));
+        .ok_or_else(|| Failure::Usage(format!("{endpoint} is not host:port")))?;
+    let port: u16 = port.parse().map_err(|_| Failure::Usage(format!("{endpoint} is not host:port")))?;
     let ancs_endpoint = format!("{host}:{}", port + 1);
     let mut phone = ancs::Phone::connect(&ancs_endpoint)?;
     println!("[ancs] connected to {ancs_endpoint}");
-    run(
+    request(
         link,
-        &Step {
-            label: "notifications on",
-            frame: Frame::new(
-                Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_SET,
-                vec![WppObject::AncsStatus(AncsStatus { status: 1 })],
-            ),
-            answers: Answers::One,
-        },
+        "notifications on",
+        Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_SET,
+        vec![WppObject::AncsStatus(AncsStatus { status: 1 })],
     )?;
     if !phone.subscribed(ANCS_DISCOVERY)? {
-        println!("[ancs] the watch has not subscribed; announcing anyway");
+        return Err(Failure::NotSubscribed);
     }
-    for (title, message) in notifications {
-        phone.post(bundle_id, title, message, Category::Social)?;
+    for (title, message) in &announcement.notifications {
+        phone.post(&announcement.bundle_id, title, message, Category::Social)?;
         let served = phone.serve(ANCS_QUIET)?;
         println!("[ancs] served {served} attribute requests");
     }
     // What the watch says about a notification it now holds, which is the half
     // of the notification path WPP owns.
-    for step in [
-        Step {
-            label: "notification get",
-            frame: Frame::new(Command::CMD_NOTIFICATION_GET, Vec::new()),
-            answers: Answers::One,
-        },
-        Step {
-            label: "local event notify",
-            frame: Frame::new(
-                Command::CMD_LOCAL_EVENT_NOTIFY,
-                vec![WppObject::LocalNotification(LocalNotification { id: 1, status: 1 })],
-            ),
-            answers: Answers::One,
-        },
-    ] {
-        run(link, &step)?;
-    }
-    for id in dismissals {
+    ask(link, "notification get", Command::CMD_NOTIFICATION_GET, Vec::new())?;
+    ask(
+        link,
+        "local event notify",
+        Command::CMD_LOCAL_EVENT_NOTIFY,
+        vec![WppObject::LocalNotification(LocalNotification { id: 1, status: 1 })],
+    )?;
+    for id in &announcement.dismissals {
         phone.dismiss(NotificationId(*id))?;
         let served = phone.serve(ANCS_QUIET)?;
         println!("[ancs] served {served} attribute requests after the dismissal");
@@ -855,7 +772,7 @@ fn announce(
     Ok(())
 }
 
-fn report(frame: &Frame) {
+pub fn report(frame: &Frame) {
     println!("<- {:?}", frame.command.opcode_name());
     for object in &frame.objects {
         println!("   {object:?}");
@@ -864,14 +781,10 @@ fn report(frame: &Frame) {
 
 /// The firmware version is in the probe reply and nowhere else, so the reply
 /// is what a caller wants back rather than a yes/no.
-fn authenticate(
-    link: &mut Link,
-    association: &dblib::Association,
-) -> std::io::Result<Option<ProbeReply>> {
+fn authenticate(link: &mut Link, association: dblib::Association) -> Result<ProbeReply, Failure> {
     link.send(&probe_frame())?;
     let Some(challenge_frame) = link.next_answer(Instant::now() + REPLY_TIMEOUT)? else {
-        println!("the watch never answered the probe");
-        return Ok(None);
+        return Err(Failure::Silent("probe".to_string()));
     };
     report(&challenge_frame);
     let Some(challenge) = challenge_frame.objects.iter().find_map(|o| match o {
@@ -880,337 +793,418 @@ fn authenticate(
     }) else {
         // Answering a watch that does not challenge means associating with it,
         // which this client deliberately does not do.
-        println!("the watch did not challenge; nothing to authenticate against");
-        return Ok(None);
+        return Err(Failure::NotAuthenticated(
+            "the watch did not challenge; nothing to authenticate against".to_string(),
+        ));
     };
+    let credentials = association.credentials();
     let identity = challenge.mac.to_ascii_lowercase();
-    if identity != association.mac {
-        println!("the watch's identity {identity} is not the one the dump holds a secret for");
-        return Ok(None);
+    if identity != credentials.mac() {
+        return Err(Failure::NotAuthenticated(format!(
+            "the watch's identity {identity} is not the one the dump holds a secret for"
+        )));
     }
-    let credentials = Credentials { mac: identity.clone(), secret: association.secret.clone() };
-    let answer = credentials.answer(&challenge.challenge);
-    link.send(&Frame::new(
-        Command::CMD_PROBE_CHALLENGE,
-        vec![
-            WppObject::ProbeChallengeResponse(ProbeChallengeResponse { answer }),
-            WppObject::ProbeChallenge(ProbeChallenge { mac: identity, challenge: vec![0; 16] }),
-        ],
-    ))?;
+    link.send(&credentials.challenge_reply(&challenge))?;
     let Some(reply) = link.next_answer(Instant::now() + REPLY_TIMEOUT)? else {
-        println!("the watch never answered the challenge response");
-        return Ok(None);
+        return Err(Failure::Silent("challenge response".to_string()));
     };
     report(&reply);
     if reply.command.opcode() != Command::CMD_PROBE {
-        return Ok(None);
+        return Err(Failure::NotAuthenticated("the watch refused the challenge response".to_string()));
     }
-    Ok(reply.objects.iter().find_map(|o| match o {
-        WppObject::ProbeReply(r) => Some(r.clone()),
-        _ => None,
-    }))
+    reply
+        .objects
+        .iter()
+        .find_map(|o| match o {
+            WppObject::ProbeReply(r) => Some(r.clone()),
+            _ => None,
+        })
+        .ok_or_else(|| Failure::NotAuthenticated("the probe answer carries no reply".to_string()))
 }
 
-fn main() -> ExitCode {
+/// The notifications to announce over ANCS, each a title and a message, and the
+/// ids to take back afterwards.
+#[derive(Debug, PartialEq)]
+struct Announcement {
+    bundle_id: String,
+    notifications: Vec<(String, String)>,
+    dismissals: Vec<u32>,
+}
+
+/// The scenarios a run on the watch's clock is made of, in the order they run.
+#[derive(Debug, PartialEq, Default)]
+struct Clocked {
+    workout: Option<(u64, i16)>,
+    hr_seconds: Option<u64>,
+    alarm: bool,
+    notify: bool,
+    announcement: Option<Announcement>,
+    sleep_seconds: Option<u64>,
+}
+
+/// What one run does. Each of these is a whole run: anything that could be
+/// combined with something else lives inside `Clocked`.
+#[derive(Debug, PartialEq)]
+enum Scenario {
+    Survey,
+    ProbeOnly,
+    Sync,
+    Update { package: String, trailer: update::VersionTrailer },
+    Ecg { seconds: u64 },
+    Measure { category: i16, seconds: u64 },
+    BodyTemperature,
+    RawData,
+    Stored { types: Vec<u16> },
+    Send { commands: Vec<u16> },
+    Clocked(Clocked),
+}
+
+#[derive(Debug, PartialEq)]
+struct Invocation {
+    endpoint: String,
+    dump_path: String,
+    set_time: Option<u32>,
+    scenario: Scenario,
+}
+
+fn value<T: std::str::FromStr>(
+    arguments: &mut impl Iterator<Item = String>,
+    flag: &str,
+    what: &str,
+) -> Result<T, Failure> {
+    arguments
+        .next()
+        .and_then(|text| text.parse().ok())
+        .ok_or_else(|| Failure::Usage(format!("{flag} takes {what}")))
+}
+
+fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Invocation, Failure> {
+    const SECONDS: &str = "a number of seconds";
     let mut endpoint = DEFAULT_ENDPOINT.to_string();
     let mut dump_path: Option<String> = None;
     let mut set_time: Option<u32> = None;
-    let mut package_path: Option<String> = None;
-    let mut probe_only = false;
-    // Seconds of ECG to watch between the start and the stop.
-    let mut ecg_seconds: Option<u64> = None;
-    // The live scenarios, each the seconds it runs for between its own start
-    // and stop commands.
-    let mut workout_seconds: Option<u64> = None;
-    let mut workout_subcategory: i16 = ACTIVITY_SUBCATEGORY_RUNNING;
-    let mut hr_seconds: Option<u64> = None;
-    let mut sleep_seconds: Option<u64> = None;
-    // The measurement categories the ECG flag's sibling drives, each the
-    // seconds it watches the link for between the start and the stop.
-    let mut spo2_seconds: Option<u64> = None;
-    let mut ppg_seconds: Option<u64> = None;
-    let mut body_temp_scenario = false;
-    let mut raw_data_scenario = false;
-    let mut alarm_scenario = false;
-    let mut notify_scenario = false;
-    // The notifications to announce over ANCS, each a title and a message, and
-    // the ids to take back afterwards.
+    let mut activity: Option<i16> = None;
+    let mut bundle_id: Option<String> = None;
     let mut notifications: Vec<(String, String)> = Vec::new();
-    let mut bundle_id = DEFAULT_BUNDLE_ID.to_string();
     let mut dismissals: Vec<u32> = Vec::new();
+    let mut version_address: Option<update::VersionTrailer> = None;
+    let mut clocked = Clocked::default();
+    let mut workout_seconds: Option<u64> = None;
     // A bare command by number, for asking the watch what it does with one.
     // Removing a command from the dispatch table is only half an answer; what
     // the phone sees is the other half, and nothing else here can send a
     // command the scenario does not already use.
     let mut send_commands: Vec<u16> = Vec::new();
     let mut stored_types: Vec<u16> = Vec::new();
-    let mut sync_scenario = false;
-    let mut version_trailer = update::VersionTrailer::STOCK;
-    let mut arguments = env::args().skip(1);
+    let mut whole_runs: Vec<(String, Scenario)> = Vec::new();
+
+    let mut arguments = arguments.into_iter();
     while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--endpoint" => endpoint = arguments.next().expect("--endpoint takes an address"),
-            "--secret-from-dump" => {
-                dump_path = Some(arguments.next().expect("--secret-from-dump takes a path"))
-            }
-            "--set-time" => {
-                set_time = Some(
-                    arguments
-                        .next()
-                        .expect("--set-time takes a unix timestamp")
-                        .parse()
-                        .expect("--set-time takes a unix timestamp"),
-                )
-            }
+        let flag = argument.as_str();
+        match flag {
+            "--endpoint" => endpoint = value(&mut arguments, flag, "an address")?,
+            "--secret-from-dump" => dump_path = Some(value(&mut arguments, flag, "a path")?),
+            "--set-time" => set_time = Some(value(&mut arguments, flag, "a unix timestamp")?),
             "--update" => {
-                package_path = Some(arguments.next().expect("--update takes a package path"))
+                let package = value(&mut arguments, flag, "a package path")?;
+                whole_runs.push((
+                    flag.to_string(),
+                    Scenario::Update { package, trailer: update::VersionTrailer::STOCK },
+                ));
             }
             // Where the image in the package reads its own version. It is the
             // stock address unless a layout moved the trailer's section, and
             // tools/mkpkg.py prints the one it wrote to.
             "--version-address" => {
-                let text = arguments.next().expect("--version-address takes an address");
+                let text: String = value(&mut arguments, flag, "an address")?;
                 let parsed = usize::from_str_radix(text.trim_start_matches("0x"), 16)
-                    .expect("--version-address takes a hexadecimal address");
-                version_trailer = update::VersionTrailer::at(parsed)
-                    .unwrap_or_else(|reason| panic!("--version-address {text}: {reason}"));
+                    .map_err(|_| Failure::Usage(format!("{flag} takes a hexadecimal address")))?;
+                let trailer = update::VersionTrailer::at(parsed)
+                    .map_err(|reason| Failure::Usage(format!("{flag} {text}: {reason}")))?;
+                version_address = Some(trailer);
             }
             // The pipe is on localhost and a run that shares the host with
             // another run differs from it only in the port.
             "--port" => {
-                endpoint = format!("127.0.0.1:{}", arguments.next().expect("--port takes a port"))
+                let port: u16 = value(&mut arguments, flag, "a port")?;
+                endpoint = format!("127.0.0.1:{port}");
             }
-            "--probe-only" => probe_only = true,
-            "--workout" => workout_seconds = Some(seconds(&mut arguments, "--workout")),
-            "--activity" => {
-                workout_subcategory = arguments
-                    .next()
-                    .expect("--activity takes a subcategory")
-                    .parse()
-                    .expect("--activity takes a subcategory")
+            "--probe-only" => whole_runs.push((flag.to_string(), Scenario::ProbeOnly)),
+            "--sync" => whole_runs.push((flag.to_string(), Scenario::Sync)),
+            "--ecg" => {
+                let seconds = value(&mut arguments, flag, SECONDS)?;
+                whole_runs.push((flag.to_string(), Scenario::Ecg { seconds }));
             }
-            "--hr-measure" => hr_seconds = Some(seconds(&mut arguments, "--hr-measure")),
-            "--sleep" => sleep_seconds = Some(seconds(&mut arguments, "--sleep")),
-            "--spo2" => spo2_seconds = Some(seconds(&mut arguments, "--spo2")),
-            "--ppg" => ppg_seconds = Some(seconds(&mut arguments, "--ppg")),
-            "--body-temp" => body_temp_scenario = true,
-            "--raw-data" => raw_data_scenario = true,
-            "--alarm" => alarm_scenario = true,
+            "--spo2" => {
+                let seconds = value(&mut arguments, flag, SECONDS)?;
+                whole_runs.push((
+                    flag.to_string(),
+                    Scenario::Measure { category: MeasureCategory::VALUE_SPO2, seconds },
+                ));
+            }
+            "--ppg" => {
+                let seconds = value(&mut arguments, flag, SECONDS)?;
+                whole_runs.push((
+                    flag.to_string(),
+                    Scenario::Measure { category: MeasureCategory::VALUE_PPG, seconds },
+                ));
+            }
+            "--body-temp" => whole_runs.push((flag.to_string(), Scenario::BodyTemperature)),
+            "--raw-data" => whole_runs.push((flag.to_string(), Scenario::RawData)),
+            "--workout" => workout_seconds = Some(value(&mut arguments, flag, SECONDS)?),
+            "--activity" => activity = Some(value(&mut arguments, flag, "a subcategory")?),
+            "--hr-measure" => clocked.hr_seconds = Some(value(&mut arguments, flag, SECONDS)?),
+            "--sleep" => clocked.sleep_seconds = Some(value(&mut arguments, flag, SECONDS)?),
+            "--alarm" => clocked.alarm = true,
+            "--notify" => clocked.notify = true,
             "--notification" => {
-                let text = arguments.next().expect("--notification takes \"<title>|<message>\"");
-                let (title, message) = text.split_once('|').unwrap_or_else(|| {
-                    panic!("--notification takes \"<title>|<message>\", got {text:?}")
-                });
+                const SHAPE: &str = "\"<title>|<message>\"";
+                let text: String = value(&mut arguments, flag, SHAPE)?;
+                let (title, message) = text
+                    .split_once('|')
+                    .ok_or_else(|| Failure::Usage(format!("{flag} takes {SHAPE}, got {text:?}")))?;
                 notifications.push((title.to_string(), message.to_string()));
             }
-            "--app" => bundle_id = arguments.next().expect("--app takes a bundle id"),
-            "--dismiss" => dismissals.push(
-                arguments
-                    .next()
-                    .expect("--dismiss takes a notification id")
-                    .parse()
-                    .expect("--dismiss takes a notification id"),
-            ),
-            "--notify" => notify_scenario = true,
-            "--ecg" => {
-                ecg_seconds = Some(
-                    arguments
-                        .next()
-                        .expect("--ecg takes a number of seconds")
-                        .parse()
-                        .expect("--ecg takes a number of seconds"),
-                )
-            }
-            "--send" => send_commands.push(
-                arguments
-                    .next()
-                    .expect("--send takes a command number")
-                    .parse()
-                    .expect("--send takes a command number"),
-            ),
-            "--sync" => sync_scenario = true,
-            "--stored" => stored_types.push(
-                arguments
-                    .next()
-                    .expect("--stored takes a stored signal type")
-                    .parse()
-                    .expect("--stored takes a stored signal type"),
-            ),
-            other => {
-                eprintln!("usage: wpp-sim-client [--endpoint host:port | --port n] --secret-from-dump <external_flash.bin> [--set-time <unix>] [--probe-only] [--ecg <seconds>] [--workout <seconds> [--activity <n>]] [--hr-measure <seconds>] [--sleep <seconds>] [--spo2 <seconds>] [--ppg <seconds>] [--body-temp] [--raw-data] [--alarm] [--notify] [--notification \"<title>|<message>\" [--app <bundle id>]] [--dismiss <id>] [--send <command>] [--stored <type>] [--sync] [--update <package> [--version-address <hex>]]");
-                eprintln!("unknown argument {other}");
-                return ExitCode::FAILURE;
-            }
+            "--app" => bundle_id = Some(value(&mut arguments, flag, "a bundle id")?),
+            "--dismiss" => dismissals.push(value(&mut arguments, flag, "a notification id")?),
+            "--send" => send_commands.push(value(&mut arguments, flag, "a command number")?),
+            "--stored" => stored_types.push(value(&mut arguments, flag, "a stored signal type")?),
+            other => return Err(Failure::Usage(format!("unknown argument {other}"))),
         }
+    }
+
+    if activity.is_some() && workout_seconds.is_none() {
+        return Err(Failure::Usage("--activity qualifies --workout".to_string()));
+    }
+    clocked.workout =
+        workout_seconds.map(|seconds| (seconds, activity.unwrap_or(ACTIVITY_SUBCATEGORY_RUNNING)));
+
+    if bundle_id.is_some() && notifications.is_empty() {
+        return Err(Failure::Usage("--app qualifies --notification".to_string()));
+    }
+    if !notifications.is_empty() || !dismissals.is_empty() {
+        clocked.announcement = Some(Announcement {
+            bundle_id: bundle_id.unwrap_or_else(|| DEFAULT_BUNDLE_ID.to_string()),
+            notifications,
+            dismissals,
+        });
+    }
+    if clocked != Clocked::default() {
+        whole_runs.push(("the clocked scenarios".to_string(), Scenario::Clocked(clocked)));
+    }
+    if !send_commands.is_empty() {
+        whole_runs.push(("--send".to_string(), Scenario::Send { commands: send_commands }));
+    }
+    if !stored_types.is_empty() {
+        whole_runs.push(("--stored".to_string(), Scenario::Stored { types: stored_types }));
+    }
+    if whole_runs.len() > 1 {
+        let named: Vec<&str> = whole_runs.iter().map(|(name, _)| name.as_str()).collect();
+        return Err(Failure::Usage(format!("{} cannot share a run", named.join(" and "))));
+    }
+    let mut scenario = whole_runs.pop().map_or(Scenario::Survey, |(_, scenario)| scenario);
+    match (&mut scenario, version_address) {
+        (Scenario::Update { trailer, .. }, Some(address)) => *trailer = address,
+        (_, Some(_)) => return Err(Failure::Usage("--version-address qualifies --update".to_string())),
+        (_, None) => {}
+    }
+    if scenario == Scenario::Sync && set_time.is_some() {
+        return Err(Failure::Usage("--sync sets the clock itself, so --set-time has no place in it".to_string()));
     }
     let Some(dump_path) = dump_path else {
-        eprintln!("--secret-from-dump <external_flash.bin> is required: the watch answers nothing before the challenge");
-        return ExitCode::FAILURE;
+        return Err(Failure::Usage(
+            "--secret-from-dump <external_flash.bin> is required: the watch answers nothing before the challenge".to_string(),
+        ));
     };
-    let dump = std::fs::read(&dump_path).expect("the flash dump is readable");
-    let association = dblib::association(&dump).expect("the dump holds a dblib association");
+    Ok(Invocation { endpoint, dump_path, set_time, scenario })
+}
+
+fn set_clock(link: &mut Link, now: u32) -> Result<(), Failure> {
+    let step = Step {
+        label: "set time",
+        frame: time_set_frame(UnixTime(now as i64), 0, None),
+        answers: Answers::One,
+    };
+    match exchange(link, &step)? {
+        Answered::Took => Ok(()),
+        Answered::Refused => Err(Failure::Refused(step.label.to_string())),
+    }
+}
+
+fn run_clocked(
+    link: &mut Link,
+    endpoint: &str,
+    set_time: Option<u32>,
+    clocked: &Clocked,
+) -> Result<(), Failure> {
+    // A scenario needs the watch's own clock to be a plausible wall time, since
+    // a workout and a sleep window are both timestamped against it, so the
+    // scenarios write the time first and then use the same value themselves.
+    let now = set_time.unwrap_or(DEFAULT_SCENARIO_TIME);
+    set_clock(link, now)?;
+    if let Some((seconds, subcategory)) = clocked.workout {
+        workout(link, seconds, subcategory, now as i32)?;
+    }
+    if let Some(seconds) = clocked.hr_seconds {
+        hr_measure(link, seconds)?;
+    }
+    if clocked.alarm {
+        alarm(link)?;
+    }
+    if clocked.notify {
+        notify(link)?;
+    }
+    if let Some(announcement) = &clocked.announcement {
+        announce(link, endpoint, announcement)?;
+    }
+    if let Some(seconds) = clocked.sleep_seconds {
+        sleep(link, seconds, now as i32)?;
+    }
+    Ok(())
+}
+
+fn run_survey(link: &mut Link, set_time: Option<u32>) -> Result<(), Failure> {
+    for step in read_only_steps() {
+        exchange(link, &step)?;
+    }
+    let Some(now) = set_time else {
+        return Ok(());
+    };
+    set_clock(link, now)?;
+    request(link, "time, read back", Command::CMD_TIME_GET, Vec::new())
+}
+
+fn drive(invocation: Invocation) -> Result<(), Failure> {
+    let Invocation { endpoint, dump_path, set_time, scenario } = invocation;
+    let dump = std::fs::read(&dump_path)
+        .map_err(|error| Failure::Setup(format!("{dump_path}: {error}")))?;
+    let association = dblib::association(&dump)
+        .map_err(|error| Failure::Setup(format!("{dump_path}: {error}")))?;
     println!("{association:?}");
 
-    let package = package_path.map(|path| {
-        let bytes = std::fs::read(&path).expect("the package is readable");
-        match update::Package::parse(bytes, version_trailer) {
-            Ok(package) => package,
-            Err(reason) => panic!("{path} is not a usable package: {reason}"),
+    let package = match &scenario {
+        Scenario::Update { package, trailer } => {
+            let bytes = std::fs::read(package)
+                .map_err(|error| Failure::Setup(format!("{package}: {error}")))?;
+            let parsed = update::Package::parse(bytes, *trailer)
+                .map_err(|reason| Failure::Setup(format!("{package} is not a usable package: {reason}")))?;
+            Some(parsed)
         }
-    });
-
-    let mut link = Link::connect(&endpoint).expect("the pipe accepts the connection");
-    println!("connected to {endpoint}");
-    if sync_scenario {
-        let credentials = Credentials { mac: association.mac.clone(), secret: association.secret.clone() };
-        return match sync(&mut link, credentials).expect("the link stays up") {
-            true => ExitCode::SUCCESS,
-            false => ExitCode::FAILURE,
-        };
-    }
-    let Some(identity) = authenticate(&mut link, &association).expect("the link stays up through the handshake")
-    else {
-        return ExitCode::FAILURE;
+        _ => None,
     };
+    let split = if package.is_some() { WriteSplit::WholeFrame } else { WriteSplit::AttMtu };
+
+    let mut link = Link::connect(&endpoint, split)?;
+    let link = &mut link;
+    println!("connected to {endpoint}");
+    if scenario == Scenario::Sync {
+        return sync(link, association);
+    }
+    let identity = authenticate(link, association)?;
     println!("authenticated");
     // The line the test harness reads; everything else here is for a human.
     println!("soft_version={}", identity.soft_version);
 
-    if let Some(package) = package {
-        link.write_limit = FRAME_PER_WRITE_LIMIT;
-        match update::run(&mut link, &package).expect("the link stays up through the transfer") {
-            Ok(()) => {}
-            Err(reason) => {
-                eprintln!("update failed: {reason}");
-                return ExitCode::FAILURE;
-            }
-        }
-        update::restart(&mut link).expect("the link stays up to the restart");
-        println!("update pushed");
-        return ExitCode::SUCCESS;
+    match (&scenario, set_time) {
+        (Scenario::Survey | Scenario::Clocked(_), _) | (_, None) => {}
+        (_, Some(now)) => set_clock(link, now)?,
     }
-    if let Some(seconds) = ecg_seconds {
-        ecg(&mut link, seconds).expect("the link stays up");
-        return ExitCode::SUCCESS;
-    }
-    if let Some(seconds) = spo2_seconds {
-        measure(&mut link, MeasureCategory::VALUE_SPO2, seconds).expect("the link stays up");
-        return ExitCode::SUCCESS;
-    }
-    if let Some(seconds) = ppg_seconds {
-        measure(&mut link, MeasureCategory::VALUE_PPG, seconds).expect("the link stays up");
-        return ExitCode::SUCCESS;
-    }
-    if body_temp_scenario {
-        body_temperature(&mut link).expect("the link stays up");
-        return ExitCode::SUCCESS;
-    }
-    if raw_data_scenario {
-        raw_data(&mut link).expect("the link stays up");
-        return ExitCode::SUCCESS;
-    }
-    // A scenario needs the watch's own clock to be a plausible wall time, since
-    // a workout and a sleep window are both timestamped against it, so the
-    // scenarios write the time first and then use the same value themselves.
-    let scenario = workout_seconds.is_some()
-        || hr_seconds.is_some()
-        || sleep_seconds.is_some()
-        || alarm_scenario
-        || notify_scenario
-        || !notifications.is_empty()
-        || !dismissals.is_empty();
-    if scenario {
-        let now = set_time.unwrap_or(DEFAULT_SCENARIO_TIME);
-        run(
-            &mut link,
-            &Step {
-                label: "set time",
-                frame: Frame::new(
-                    Command::CMD_TIME_SET,
-                    vec![WppObject::TimeSet(TimeSet {
-                        utc: now,
-                        gmt_offset: 0,
-                        dst_change_time: 0,
-                        next_gmt_offset: 0,
-                    })],
-                ),
-                answers: Answers::One,
-            },
-        )
-        .expect("the link stays up");
-        if let Some(seconds) = workout_seconds {
-            workout(&mut link, seconds, workout_subcategory, now as i32)
-                .expect("the link stays up");
+    match &scenario {
+        Scenario::Sync => unreachable!("a sync returned above"),
+        Scenario::Update { .. } => {
+            let package = package.expect("an update scenario parsed its package");
+            update::run(link, &package).map_err(Failure::Update)?;
+            update::restart(link)?;
+            println!("update pushed");
+            Ok(())
         }
-        if let Some(seconds) = hr_seconds {
-            hr_measure(&mut link, seconds).expect("the link stays up");
-        }
-        if alarm_scenario {
-            alarm(&mut link).expect("the link stays up");
-        }
-        if notify_scenario {
-            notify(&mut link).expect("the link stays up");
-        }
-        if !notifications.is_empty() || !dismissals.is_empty() {
-            announce(&mut link, &endpoint, &bundle_id, &notifications, &dismissals)
-                .expect("the link stays up");
-        }
-        if let Some(seconds) = sleep_seconds {
-            sleep(&mut link, seconds, now as i32).expect("the link stays up");
-        }
-        return ExitCode::SUCCESS;
+        Scenario::ProbeOnly => Ok(()),
+        Scenario::Survey => run_survey(link, set_time),
+        Scenario::Ecg { seconds } => ecg(link, *seconds),
+        Scenario::Measure { category, seconds } => measure(link, *category, *seconds),
+        Scenario::BodyTemperature => body_temperature(link),
+        Scenario::RawData => raw_data(link),
+        Scenario::Stored { types } => types.iter().try_for_each(|signal_type| stored(link, *signal_type)),
+        Scenario::Send { commands } => commands
+            .iter()
+            .try_for_each(|number| ask(link, "command by number", Command(*number), Vec::new())),
+        Scenario::Clocked(clocked) => run_clocked(link, &endpoint, set_time, clocked),
     }
-    if !stored_types.is_empty() {
-        for signal_type in stored_types {
-            stored(&mut link, signal_type).expect("the link stays up");
+}
+
+fn main() -> ExitCode {
+    let outcome = parse_arguments(env::args().skip(1)).and_then(drive);
+    match outcome {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(failure) => {
+            eprintln!("{failure}");
+            ExitCode::FAILURE
         }
-        return ExitCode::SUCCESS;
     }
-    if !send_commands.is_empty() {
-        for number in send_commands {
-            run(
-                &mut link,
-                &Step {
-                    label: "command by number",
-                    frame: Frame::new(Command(number), Vec::new()),
-                    answers: Answers::One,
-                },
-            )
-            .expect("the link stays up");
-        }
-        return ExitCode::SUCCESS;
-    }
-    if probe_only {
-        return ExitCode::SUCCESS;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parsed(arguments: &[&str]) -> Result<Invocation, Failure> {
+        let mut all = vec!["--secret-from-dump".to_string(), "dump".to_string()];
+        all.extend(arguments.iter().map(|argument| argument.to_string()));
+        parse_arguments(all)
     }
 
-    for step in read_only_steps() {
-        run(&mut link, &step).expect("the link stays up");
+    fn scenario(arguments: &[&str]) -> Scenario {
+        parsed(arguments).unwrap().scenario
     }
-    let Some(now) = set_time else {
-        return ExitCode::SUCCESS;
-    };
-    for step in [
-        Step {
-            label: "set time",
-            frame: Frame::new(
-                Command::CMD_TIME_SET,
-                vec![WppObject::TimeSet(TimeSet {
-                    utc: now,
-                    gmt_offset: 0,
-                    dst_change_time: 0,
-                    next_gmt_offset: 0,
-                })],
-            ),
-            answers: Answers::One,
-        },
-        Step {
-            label: "time, read back",
-            frame: Frame::new(Command::CMD_TIME_GET, Vec::new()),
-            answers: Answers::One,
-        },
-    ] {
-        run(&mut link, &step).expect("the link stays up");
+
+    #[test]
+    fn no_scenario_is_the_read_only_survey() {
+        assert_eq!(scenario(&[]), Scenario::Survey);
     }
-    ExitCode::SUCCESS
+
+    #[test]
+    fn the_clocked_scenarios_combine() {
+        let Scenario::Clocked(clocked) = scenario(&["--alarm", "--notify", "--workout", "5"]) else {
+            panic!("not the clocked scenarios");
+        };
+        assert!(clocked.alarm && clocked.notify);
+        assert_eq!(clocked.workout, Some((5, ACTIVITY_SUBCATEGORY_RUNNING)));
+    }
+
+    #[test]
+    fn scenarios_that_are_a_whole_run_refuse_company_rather_than_dropping_one() {
+        for pair in [
+            &["--ecg", "5", "--workout", "5"][..],
+            &["--sync", "--probe-only"],
+            &["--ecg", "5", "--spo2", "5"],
+            &["--send", "1", "--stored", "1"],
+        ] {
+            assert!(matches!(parsed(pair), Err(Failure::Usage(_))), "{pair:?}");
+        }
+    }
+
+    #[test]
+    fn a_qualifier_needs_what_it_qualifies() {
+        assert!(matches!(parsed(&["--activity", "6"]), Err(Failure::Usage(_))));
+        assert!(matches!(parsed(&["--app", "a.b"]), Err(Failure::Usage(_))));
+        assert!(matches!(parsed(&["--version-address", "0x27000"]), Err(Failure::Usage(_))));
+    }
+
+    #[test]
+    fn a_sync_refuses_a_clock_it_would_ignore() {
+        assert!(matches!(parsed(&["--sync", "--set-time", "1"]), Err(Failure::Usage(_))));
+        assert!(parsed(&["--ecg", "5", "--set-time", "1"]).is_ok());
+    }
+
+    #[test]
+    fn a_bad_value_is_a_usage_error() {
+        assert!(matches!(parsed(&["--ecg", "soon"]), Err(Failure::Usage(_))));
+        assert!(matches!(parsed(&["--notification", "no separator"]), Err(Failure::Usage(_))));
+        assert!(matches!(parsed(&["--nonsense"]), Err(Failure::Usage(_))));
+    }
+
+    #[test]
+    fn the_dump_is_required() {
+        assert!(matches!(parse_arguments(Vec::new()), Err(Failure::Usage(_))));
+    }
 }

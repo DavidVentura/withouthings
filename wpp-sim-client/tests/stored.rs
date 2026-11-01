@@ -87,7 +87,7 @@ fn measurements_the_watch_kept_reach_the_phone_once() {
     let injected = kept.iter().filter(|e| measured_at(e) >= booted).collect::<Vec<_>>();
     assert_eq!(injected.len(), 2, "both injected episodes are handed over:\n{}", tail(&output, 60));
     for episode in &injected {
-        assert!(episode.contains("(139, 1)"), "the verdict is AFib: {episode}");
+        assert!(episode.contains("139=1"), "the verdict is AFib: {episode}");
     }
     assert!(
         !log.contains("[PPG_AFIB] Signal deletion requested"),

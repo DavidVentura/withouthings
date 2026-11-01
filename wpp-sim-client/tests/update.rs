@@ -16,11 +16,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use common::{client, renode_binary, repository, require, scratch, strip_colour, tail, Renode, Rig};
+use common::{client, renode_binary, repository, require, scratch, strip_colour, tail, Renode, Rig, Symbols};
 
 const BOOT_TIMEOUT: Duration = Duration::from_secs(180);
-/// The bootloader compares and then copies the whole 1.15 MB bank over a
-/// modelled SPI bus one byte at a time, which is minutes of wall time.
+/// The bootloader compares and then copies the whole bank over a modelled SPI
+/// bus one byte at a time.
 const UPDATE_BOOT_TIMEOUT: Duration = Duration::from_secs(1500);
 const TEST_VERSION: u32 = 9999;
 /// Distinct from TEST_VERSION so a relinked run cannot be mistaken for a stock one.
@@ -103,7 +103,7 @@ impl Case {
             Err(_) => Rig::stock(),
             Ok(path) => Rig {
                 image: PathBuf::from(path),
-                symbols: std::env::var(symbols).unwrap_or_else(|_| "partition".to_string()),
+                symbols: std::env::var(symbols).map_or(Symbols::Partition, |path| Symbols::Elf(PathBuf::from(path))),
             },
         };
         Case {
@@ -134,11 +134,10 @@ fn mkpkg(repository: &Path, case: &Case, source: &Path, package: &Path) -> Strin
         .args(["--version", &case.target_version.to_string()]);
     if let Some(appl) = &case.appl {
         command.arg("--appl").arg(appl);
-        assert_ne!(
-            case.target.symbols, "partition",
-            "a package with its own appl part needs the ELF that part was linked from"
-        );
-        command.arg("--symbols").arg(&case.target.symbols);
+        let Symbols::Elf(elf) = &case.target.symbols else {
+            panic!("a package with its own appl part needs the ELF that part was linked from");
+        };
+        command.arg("--symbols").arg(elf);
     }
     let built = command
         .arg(source)
@@ -259,8 +258,8 @@ fn an_update_pushed_over_wpp_boots_and_reports_its_new_version() {
 }
 
 /// The same path with the relinked image: a package whose `appl` part is the
-/// app blob plus the FreeRTOS built from source, which is 0x22b8 bytes longer
-/// than the stock part.
+/// app blob plus the FreeRTOS built from source, which is longer than the stock
+/// part.
 #[test]
 #[ignore = "needs the Renode rig and ~/ref-build; run with --ignored"]
 fn the_relinked_image_installs_through_the_update_path() {

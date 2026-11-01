@@ -79,13 +79,39 @@ const MIN_WORKOUT_SECS: i64 = 30;
 const DRAINED_STORES: [SignalStore; 3] =
     [SignalStore::Ecg, SignalStore::Spo2, SignalStore::PpgAfib];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Credentials {
-    pub mac: String,
-    pub secret: String,
+    mac: String,
+    secret: String,
+}
+
+impl std::fmt::Debug for Credentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Credentials")
+            .field("mac", &self.mac)
+            .field("secret", &"<redacted>")
+            .finish()
+    }
 }
 
 impl Credentials {
+    /// The answer hashes the MAC's text, so the case has to be settled before
+    /// anything hashes or compares it.
+    pub fn new(mac: &str, secret: String) -> Credentials {
+        Credentials {
+            mac: mac.to_ascii_lowercase(),
+            secret,
+        }
+    }
+
+    pub fn mac(&self) -> &str {
+        &self.mac
+    }
+
+    pub fn secret(&self) -> &str {
+        &self.secret
+    }
+
     pub fn answer(&self, challenge: &[u8]) -> Vec<u8> {
         let mut input = Vec::with_capacity(challenge.len() + self.mac.len() + self.secret.len());
         input.extend_from_slice(challenge);
@@ -93,6 +119,37 @@ impl Credentials {
         input.extend_from_slice(self.secret.as_bytes());
         sha1(&input).to_vec()
     }
+
+    pub fn challenge_reply(&self, challenge: &ProbeChallenge) -> Frame {
+        Frame::new(
+            Command::CMD_PROBE_CHALLENGE,
+            vec![
+                WppObject::ProbeChallengeResponse(ProbeChallengeResponse {
+                    answer: self.answer(&challenge.challenge),
+                }),
+                WppObject::ProbeChallenge(ProbeChallenge {
+                    mac: self.mac.clone(),
+                    challenge: vec![0; 16],
+                }),
+            ],
+        )
+    }
+}
+
+pub fn time_set_frame(now: UnixTime, gmt_offset: i32, next_change: Option<DstChange>) -> Frame {
+    let change = next_change.unwrap_or(DstChange {
+        at: UnixTime(0),
+        gmt_offset,
+    });
+    Frame::new(
+        Command::CMD_TIME_SET,
+        vec![WppObject::TimeSet(TimeSet {
+            utc: now.0 as u32,
+            gmt_offset,
+            dst_change_time: change.at.0 as u32,
+            next_gmt_offset: change.gmt_offset,
+        })],
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -947,18 +1004,7 @@ impl Client {
             (State::Probing, Command::CMD_PROBE_CHALLENGE) => {
                 if let Some(challenge) = first!(frame, ProbeChallenge) {
                     self.link.state = State::Authenticating;
-                    actions.push(Action::Send(Frame::new(
-                        Command::CMD_PROBE_CHALLENGE,
-                        vec![
-                            WppObject::ProbeChallengeResponse(ProbeChallengeResponse {
-                                answer: self.credentials.answer(&challenge.challenge),
-                            }),
-                            WppObject::ProbeChallenge(ProbeChallenge {
-                                mac: self.credentials.mac.clone(),
-                                challenge: vec![0; 16],
-                            }),
-                        ],
-                    )));
+                    actions.push(Action::Send(self.credentials.challenge_reply(&challenge)));
                 }
             }
             (State::Probing | State::Authenticating, Command::CMD_ERROR)
@@ -1599,19 +1645,7 @@ impl Client {
         gmt_offset: i32,
         next_change: Option<DstChange>,
     ) -> Vec<Action> {
-        let change = next_change.unwrap_or(DstChange {
-            at: UnixTime(0),
-            gmt_offset,
-        });
-        vec![Action::Send(Frame::new(
-            Command::CMD_TIME_SET,
-            vec![WppObject::TimeSet(TimeSet {
-                utc: now.0 as u32,
-                gmt_offset,
-                dst_change_time: change.at.0 as u32,
-                next_gmt_offset: change.gmt_offset,
-            })],
-        ))]
+        vec![Action::Send(time_set_frame(now, gmt_offset, next_change))]
     }
 
     /// The watch has no read side for this and the write carries the whole
@@ -1878,10 +1912,7 @@ mod tests {
     use crate::objects::Null;
 
     fn credentials() -> Credentials {
-        Credentials {
-            mac: "a4:7e:fa:44:d6:10".to_string(),
-            secret: "gUf8Np69A4GvJxjY1XOcIHKQm2HcPZnO".to_string(),
-        }
+        Credentials::new("a4:7e:fa:44:d6:10", "gUf8Np69A4GvJxjY1XOcIHKQm2HcPZnO".to_string())
     }
 
     #[test]

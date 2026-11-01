@@ -33,8 +33,8 @@ impl PairingProgress {
             }
             PairingState::Readopting(_) => PairingProgress::Readopting,
             PairingState::Paired(credentials) => PairingProgress::Paired {
-                mac: credentials.mac.clone(),
-                secret: credentials.secret.clone(),
+                mac: credentials.mac().to_string(),
+                secret: credentials.secret().to_string(),
             },
             PairingState::AlreadyAssociated => PairingProgress::AlreadyAssociated,
         }
@@ -63,10 +63,7 @@ impl PairingService {
     ) -> Result<Self, WatchError> {
         let known = known
             .into_iter()
-            .map(|w| Credentials {
-                mac: w.mac,
-                secret: w.secret,
-            })
+            .map(|w| Credentials::new(&w.mac, w.secret))
             .collect();
         let pairing =
             Pairing::new(secret, account_id, known).map_err(|err| WatchError::Protocol {

@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 pub const MONITOR_PORT: u16 = 7799;
 const SHELL_ECHO_TIMEOUT: Duration = Duration::from_secs(60);
 const SHELL_QUEUE_BYTES: usize = 8;
+const MONITOR_TIMEOUT: Duration = Duration::from_secs(10);
+const MONITOR_PROMPT: &str = "(hwa10)";
 
 /// A monitor connection held open for many commands whose answers nobody reads.
 /// Renode takes the lines in order, so the only wait is for the socket to take
@@ -119,41 +121,39 @@ impl Renode {
     }
 
     pub fn wait_for_boots(&self, boots: usize, timeout: Duration) -> Result<(), String> {
-        let deadline = Instant::now() + timeout;
-        while Instant::now() < deadline {
-            if self.log().matches("Add WPPS chars.").count() >= boots {
-                return Ok(());
-            }
-            std::thread::sleep(Duration::from_secs(2));
-        }
-        Err(format!(
-            "the watch did not reach boot {boots} within {}s; the log ends with:\n{}",
-            timeout.as_secs(),
-            tail(&self.log(), 40)
-        ))
+        self.wait_for_count("Add WPPS chars.", boots, timeout)
     }
 
     /// One monitor command, one answer. Renode echoes the command before the
     /// result, and the telnet negotiation bytes at the start of the session are
-    /// not text, so both are dropped.
+    /// not text, so both are dropped. The prompt is what says an answer is whole.
     pub fn monitor(&self, command: &str) -> String {
         let mut socket = TcpStream::connect(("127.0.0.1", MONITOR_PORT))
             .expect("the Renode monitor accepts a connection");
-        socket.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-        std::thread::sleep(Duration::from_millis(400));
-        let mut banner = [0u8; 4096];
-        let _ = socket.read(&mut banner);
+        socket.set_read_timeout(Some(MONITOR_TIMEOUT)).unwrap();
+        read_to_prompt(&mut socket, command);
         socket.write_all(format!("{command}\n").as_bytes()).unwrap();
-        std::thread::sleep(Duration::from_millis(800));
-        let mut answer = [0u8; 4096];
-        let read = socket.read(&mut answer).unwrap_or(0);
-        String::from_utf8_lossy(&answer[..read])
+        String::from_utf8_lossy(&read_to_prompt(&mut socket, command))
             .lines()
             .map(|line| strip_colour(line).trim().to_string())
-            .filter(|line| !line.is_empty() && line != command && !line.starts_with("(hwa10)"))
+            .filter(|line| !line.is_empty() && line != command && !line.starts_with(MONITOR_PROMPT))
             .collect::<Vec<_>>()
             .join(" ")
     }
+}
+
+fn read_to_prompt(socket: &mut TcpStream, command: &str) -> Vec<u8> {
+    let prompt = MONITOR_PROMPT.as_bytes();
+    let mut answer = Vec::new();
+    let mut chunk = [0u8; 4096];
+    while !answer.windows(prompt.len()).any(|window| window == prompt) {
+        let read = socket
+            .read(&mut chunk)
+            .unwrap_or_else(|error| panic!("the monitor never finished {command:?}: {error}"));
+        assert!(read > 0, "the monitor closed during {command:?}");
+        answer.extend_from_slice(&chunk[..read]);
+    }
+    answer
 }
 
 pub fn strip_colour(line: &str) -> String {
@@ -245,29 +245,42 @@ pub fn client(directory: &Path, arguments: &[&str]) -> (bool, String) {
     (finished.status.success(), output)
 }
 
+/// Where the symbol table to resolve a rig's addresses against lives. A stock
+/// image has no ELF, so its partition table stands in.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Symbols {
+    Partition,
+    Elf(PathBuf),
+}
+
+impl Symbols {
+    fn argument(&self) -> String {
+        match self {
+            Symbols::Partition => "partition".to_string(),
+            Symbols::Elf(path) => path.display().to_string(),
+        }
+    }
+}
+
 /// The image a rig is generated for: the internal-flash binary the addresses
-/// are read out of, and where the symbol table to resolve them against lives
-/// (`partition` for a stock image, which has no ELF).
+/// are read out of, and the symbols to resolve them against.
 pub struct Rig {
     pub image: PathBuf,
-    pub symbols: String,
+    pub symbols: Symbols,
 }
 
 impl Rig {
     pub fn stock() -> Rig {
         Rig {
             image: repository().join("renode-sim/flash.bin"),
-            symbols: "partition".to_string(),
+            symbols: Symbols::Partition,
         }
     }
 
     pub fn relinked() -> Rig {
         Rig {
             image: repository().join("renode-sim/out/flash-relinked.bin"),
-            symbols: repository()
-                .join("renode-sim/out/relink/relinked.elf")
-                .display()
-                .to_string(),
+            symbols: Symbols::Elf(repository().join("renode-sim/out/relink/relinked.elf")),
         }
     }
 
@@ -279,7 +292,7 @@ impl Rig {
             .arg(repository.join("renode-sim/abi/rig.py"))
             .arg("--image")
             .arg(&self.image)
-            .args(["--symbols", &self.symbols])
+            .args(["--symbols", &self.symbols.argument()])
             .arg("--out")
             .arg(directory.join("out").join(into))
             .output()

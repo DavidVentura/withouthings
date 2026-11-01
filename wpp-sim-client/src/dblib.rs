@@ -45,6 +45,12 @@ impl fmt::Debug for Association {
     }
 }
 
+impl Association {
+    pub fn credentials(&self) -> wpp::client::Credentials {
+        wpp::client::Credentials::new(&self.mac, self.secret.clone())
+    }
+}
+
 pub fn association(dump: &[u8]) -> Result<Association, DumpError> {
     let entries = regions(dump)?;
     let mac = entries
@@ -77,24 +83,28 @@ fn trim_nul(value: &[u8]) -> &[u8] {
 
 /// dblib is spread over several regions and each is rewritten whole, so a
 /// region that does not check out is a half-written copy rather than an error.
+/// The newest copy of an entry comes first, so a stale region cannot win.
 fn regions(dump: &[u8]) -> Result<Vec<(u16, Vec<u8>)>, DumpError> {
-    let mut entries = Vec::new();
+    let mut parsed_regions = Vec::new();
     for region in 0..REGION_COUNT {
         let start = region * REGION_LEN;
         let Some(bytes) = dump.get(start..start + REGION_LEN) else {
             break;
         };
         if let Some(parsed) = parse_region(bytes) {
-            entries.extend(parsed);
+            parsed_regions.push(parsed);
         }
     }
+    parsed_regions.sort_by_key(|(update_count, _)| std::cmp::Reverse(*update_count));
+    let entries: Vec<(u16, Vec<u8>)> =
+        parsed_regions.into_iter().flat_map(|(_, entries)| entries).collect();
     if entries.is_empty() {
         return Err(DumpError::NoValidRegion);
     }
     Ok(entries)
 }
 
-fn parse_region(bytes: &[u8]) -> Option<Vec<(u16, Vec<u8>)>> {
+fn parse_region(bytes: &[u8]) -> Option<(u32, Vec<(u16, Vec<u8>)>)> {
     let mut entries = Vec::new();
     let mut offset = 0usize;
     while offset + 4 <= bytes.len() {
@@ -108,7 +118,9 @@ fn parse_region(bytes: &[u8]) -> Option<Vec<(u16, Vec<u8>)>> {
             if (sum % 0x10000) as u16 != stored {
                 return None;
             }
-            return Some(entries);
+            let count = bytes.get(offset + 2..offset + 6)?;
+            let update_count = u32::from_le_bytes([count[0], count[1], count[2], count[3]]);
+            return Some((update_count, entries));
         }
         let value = bytes.get(offset + 4..offset + 4 + len)?;
         entries.push((ie, value.to_vec()));
@@ -131,6 +143,10 @@ mod tests {
     use super::*;
 
     fn region(entries: &[(u16, &[u8])]) -> Vec<u8> {
+        region_counted(7, entries)
+    }
+
+    fn region_counted(update_count: u32, entries: &[(u16, &[u8])]) -> Vec<u8> {
         let mut bytes = Vec::new();
         for (ie, value) in entries {
             bytes.extend_from_slice(&ie.to_le_bytes());
@@ -138,7 +154,7 @@ mod tests {
             bytes.extend_from_slice(value);
         }
         bytes.extend_from_slice(&IE_END.to_le_bytes());
-        bytes.extend_from_slice(&7u32.to_le_bytes());
+        bytes.extend_from_slice(&update_count.to_le_bytes());
         let sum: u32 = bytes.iter().map(|b| *b as u32).sum();
         bytes.extend_from_slice(&((sum % 0x10000) as u16).to_le_bytes());
         bytes.resize(REGION_LEN, 0xff);
@@ -156,6 +172,15 @@ mod tests {
         let association = association(&dump).unwrap();
         assert_eq!(association.mac, "a4:7e:fa:44:d6:10");
         assert_eq!(association.secret.as_bytes(), secret);
+    }
+
+    #[test]
+    fn the_copy_rewritten_last_wins_wherever_it_sits() {
+        let secret = b"0123456789abcdef0123456789abcdef";
+        let auth = [secret.as_slice(), &[0]].concat();
+        let mut dump = region_counted(1, &[(IE_MAC, b"11:22:33:44:55:66\0"), (IE_AUTH_DATA, &auth)]);
+        dump.extend(region_counted(2, &[(IE_MAC, b"a4:7e:fa:44:d6:10\0"), (IE_AUTH_DATA, &auth)]));
+        assert_eq!(association(&dump).unwrap().mac, "a4:7e:fa:44:d6:10");
     }
 
     #[test]

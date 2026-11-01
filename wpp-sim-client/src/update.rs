@@ -8,12 +8,13 @@
 //! is the only content check there is. `CMD_RESTART_TO_UPDATE` sets the boot
 //! mode the bootloader reads and reboots.
 
+use std::fmt;
 use std::io;
 use std::time::Instant;
 
 use wpp::client::sha1;
 use wpp::commands::Command;
-use wpp::frame::Frame;
+use wpp::frame::{Frame, HEADER_LEN, OBJECT_HEADER_LEN};
 use wpp::objects::{FwChunk, FwChunkRequest, FwInfo, Null};
 use wpp::WppObject;
 
@@ -36,7 +37,7 @@ const BOOTLOADER_BASE: usize = 0xfc000;
 /// so a layout moves its section like any other -- and the packager is what
 /// knows: `tools/mkpkg.py --symbols` resolves it against the linked ELF and
 /// prints it, and this carries it as far as the check.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VersionTrailer(usize);
 
 impl VersionTrailer {
@@ -60,7 +61,9 @@ impl VersionTrailer {
 /// Beyond the protocol's own cap the watch has no say in the split, so the
 /// largest chunk that leaves room for the frame and object headers is the one
 /// that costs the fewest round trips.
-const FRAME_OVERHEAD: usize = 5 + 4 + 5;
+const FRAME_OVERHEAD: usize = HEADER_LEN + OBJECT_HEADER_LEN + FW_CHUNK_FIELDS_LEN;
+/// An FwChunk's u32 offset and the length byte in front of its packet.
+const FW_CHUNK_FIELDS_LEN: usize = 5;
 const TRANSFER_COMPLETE: u32 = 1;
 
 /// The package as the watch will store it: the bank on external flash is these
@@ -170,7 +173,76 @@ fn announce(link: &mut Link, package: &Package) -> io::Result<()> {
     ))
 }
 
-pub fn run(link: &mut Link, package: &Package) -> io::Result<Result<(), String>> {
+#[derive(Debug)]
+pub enum UpdateError {
+    Link(io::Error),
+    Quiet { covered: usize, total: usize },
+    CompleteTooEarly { covered: usize, total: usize },
+    WatchError { rc: u32, covered: usize },
+    EmptyRequest { offset: u32 },
+    RequestPastEnd { start: usize, end: usize, total: usize },
+    NoPacketSize,
+}
+
+impl fmt::Display for UpdateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UpdateError::Link(error) => write!(f, "the link failed: {error}"),
+            UpdateError::Quiet { covered, total } => {
+                write!(f, "the watch went quiet having asked for {covered} of {total} bytes")
+            }
+            UpdateError::CompleteTooEarly { covered, total } => {
+                write!(f, "the watch called the transfer complete after {covered} of {total} bytes")
+            }
+            UpdateError::WatchError { rc, covered } => {
+                write!(f, "the watch answered rc {rc} at {covered} bytes")
+            }
+            UpdateError::EmptyRequest { offset } => {
+                write!(f, "the watch asked for no bytes at offset {offset}")
+            }
+            UpdateError::RequestPastEnd { start, end, total } => {
+                write!(f, "the watch asked for {start:#x}..{end:#x}, past the {total:#x} byte package it was told about")
+            }
+            UpdateError::NoPacketSize => {
+                write!(f, "the watch asked for chunks of no bytes (packet_max_size 0)")
+            }
+        }
+    }
+}
+
+impl From<io::Error> for UpdateError {
+    fn from(error: io::Error) -> UpdateError {
+        UpdateError::Link(error)
+    }
+}
+
+/// The spans of the package handed over, merged, so a span the watch asks for
+/// twice counts once.
+#[derive(Default)]
+struct Coverage {
+    spans: Vec<std::ops::Range<usize>>,
+}
+
+impl Coverage {
+    fn add(&mut self, span: std::ops::Range<usize>) {
+        self.spans.push(span);
+        self.spans.sort_by_key(|span| span.start);
+        let mut merged: Vec<std::ops::Range<usize>> = Vec::with_capacity(self.spans.len());
+        for span in self.spans.drain(..) {
+            match merged.last_mut() {
+                Some(last) if span.start <= last.end => last.end = last.end.max(span.end),
+                _ => merged.push(span),
+            }
+        }
+        self.spans = merged;
+    }
+
+    fn bytes(&self) -> usize {
+        self.spans.iter().map(|span| span.len()).sum()
+    }
+}
+
+pub fn run(link: &mut Link, package: &Package) -> Result<(), UpdateError> {
     println!(
         "\n== firmware update: version {}, {} bytes, sha1 {} ==",
         package.appl_version,
@@ -187,13 +259,12 @@ pub fn run(link: &mut Link, package: &Package) -> io::Result<Result<(), String>>
     // Coverage rather than a high-water mark: the watch does not ask for the
     // package in order, and the only thing that proves the transfer is the
     // digest it checks, so the client tracks what it actually handed over.
-    let mut covered = 0usize;
+    let mut coverage = Coverage::default();
+    let total = package.bytes.len();
     loop {
+        let covered = coverage.bytes();
         let Some(frame) = link.next_answer(Instant::now() + QUIET)? else {
-            return Ok(Err(format!(
-                "the watch went quiet having asked for {covered} of {} bytes",
-                package.bytes.len()
-            )));
+            return Err(UpdateError::Quiet { covered, total });
         };
         let requesting = frame.command.opcode() == Command::CMD_REQUEST_FW_CHUNK
             // The first request and every one after an acknowledgement ride back
@@ -216,17 +287,14 @@ pub fn run(link: &mut Link, package: &Package) -> io::Result<Result<(), String>>
         // image is in the bank, hashed and accepted.
         if status == Some(TRANSFER_COMPLETE) {
             report(&frame);
-            if covered != package.bytes.len() {
-                return Ok(Err(format!(
-                    "the watch called the transfer complete after {covered} of {} bytes",
-                    package.bytes.len()
-                )));
+            if covered != total {
+                return Err(UpdateError::CompleteTooEarly { covered, total });
             }
-            return Ok(Ok(()));
+            return Ok(());
         }
         if let Some(rc) = status.filter(|rc| *rc != 0) {
             report(&frame);
-            return Ok(Err(format!("the watch answered rc {rc} at {covered} bytes")));
+            return Err(UpdateError::WatchError { rc, covered });
         }
         let Some(request) = request else {
             // A status with no request acknowledges a served window; the next
@@ -235,30 +303,29 @@ pub fn run(link: &mut Link, package: &Package) -> io::Result<Result<(), String>>
             continue;
         };
         if request.size == 0 {
-            return Ok(Err(format!("the watch asked for no bytes at offset {}", request.offset)));
+            return Err(UpdateError::EmptyRequest { offset: request.offset });
         }
         serve(link, package, &request)?;
-        covered += request.size as usize;
-        if covered >= package.bytes.len() {
-            println!("-> {covered} of {} bytes served", package.bytes.len());
+        let start = request.offset as usize;
+        coverage.add(start..start + request.size as usize);
+        if coverage.bytes() == total {
+            println!("-> {total} of {total} bytes served");
         }
     }
 }
 
-fn serve(link: &mut Link, package: &Package, request: &FwChunkRequest) -> io::Result<()> {
+fn serve(link: &mut Link, package: &Package, request: &FwChunkRequest) -> Result<(), UpdateError> {
     let start = request.offset as usize;
     let end = start + request.size as usize;
-    if end > package.bytes.len() {
-        panic!(
-            "the watch asked for {start:#x}..{end:#x}, past the {:#x} byte package it was told about",
-            package.bytes.len()
-        );
+    let total = package.bytes.len();
+    if end > total {
+        return Err(UpdateError::RequestPastEnd { start, end, total });
     }
     // The watch's packet_max_size is a u8 and the frame cap is 200 bytes, so
     // the chunk size is whichever of the two binds first.
     let cap = (wpp::frame::MAX_FRAME_BYTES - FRAME_OVERHEAD).min(request.packet_max_size as usize);
     if cap == 0 {
-        panic!("the watch asked for chunks of no bytes (packet_max_size 0)");
+        return Err(UpdateError::NoPacketSize);
     }
     println!(
         "-> serving {:#x}..{:#x} in {cap} byte chunks ({}%)",
@@ -275,7 +342,8 @@ fn serve(link: &mut Link, package: &Package, request: &FwChunkRequest) -> io::Re
         })
         .collect();
     objects.push(WppObject::Null(Null {}));
-    link.send_quietly(&Frame::new(Command::CMD_REQUEST_FW_CHUNK, objects))
+    link.send_quietly(&Frame::new(Command::CMD_REQUEST_FW_CHUNK, objects))?;
+    Ok(())
 }
 
 pub fn restart(link: &mut Link) -> io::Result<()> {
@@ -322,6 +390,27 @@ mod tests {
         let mut part = vec![0u8; 12];
         part[TRAILER_OFFSET..].copy_from_slice(&version.to_le_bytes());
         part
+    }
+
+    #[test]
+    fn a_span_asked_for_twice_is_covered_once() {
+        let mut coverage = Coverage::default();
+        coverage.add(0..10);
+        coverage.add(0..10);
+        assert_eq!(coverage.bytes(), 10);
+        coverage.add(5..15);
+        assert_eq!(coverage.bytes(), 15);
+    }
+
+    #[test]
+    fn a_repeat_cannot_stand_in_for_a_gap() {
+        let mut coverage = Coverage::default();
+        coverage.add(20..30);
+        coverage.add(0..10);
+        coverage.add(0..10);
+        assert_eq!(coverage.bytes(), 20);
+        coverage.add(10..20);
+        assert_eq!(coverage.spans, vec![0..30]);
     }
 
     #[test]

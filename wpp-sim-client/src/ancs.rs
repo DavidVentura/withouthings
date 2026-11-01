@@ -12,11 +12,11 @@
 //! a control-point write from the watch, 0x03 a data source fragment, 0x04 the
 //! watch has subscribed to both sources.
 
-use std::io::{ErrorKind, Read, Write};
-use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
 use wpp::ancs::{self, Category, ControlPoint, NotificationCenter, NotificationId};
+
+use crate::pipe::Pipe;
 
 const ANNOUNCE: u8 = 0x01;
 const REQUEST: u8 = 0x02;
@@ -31,17 +31,14 @@ const POLL: Duration = Duration::from_millis(200);
 
 /// The phone: the notification store and the socket the watch reaches it over.
 pub struct Phone {
-    socket: TcpStream,
+    pipe: Pipe,
     center: NotificationCenter,
 }
 
 impl Phone {
     pub fn connect(endpoint: &str) -> std::io::Result<Phone> {
-        let socket = TcpStream::connect(endpoint)?;
-        socket.set_nodelay(true)?;
-        socket.set_read_timeout(Some(POLL))?;
         Ok(Phone {
-            socket,
+            pipe: Pipe::connect(endpoint)?,
             center: NotificationCenter::new(),
         })
     }
@@ -155,41 +152,21 @@ impl Phone {
     }
 
     fn send(&mut self, kind: u8, payload: &[u8]) -> std::io::Result<()> {
-        let length = payload.len() + 1;
-        let mut frame = vec![(length >> 8) as u8, length as u8, kind];
+        let mut frame = vec![kind];
         frame.extend_from_slice(payload);
-        self.socket.write_all(&frame)?;
-        self.socket.flush()
+        self.pipe.write_message(&frame)
     }
 
     fn receive(&mut self) -> std::io::Result<Option<(u8, Vec<u8>)>> {
-        let mut first = [0u8; 1];
-        if !self.read_exactly(&mut first)? {
+        let Some(message) = self.pipe.read_message(POLL)? else {
             return Ok(None);
-        }
-        // A byte arrived, so the rest of the frame is on its way: reading the
-        // remainder without a timeout is what keeps the stream's framing.
-        self.socket.set_read_timeout(None)?;
-        let mut second = [0u8; 1];
-        self.socket.read_exact(&mut second)?;
-        let length = ((first[0] as usize) << 8) | second[0] as usize;
-        let mut frame = vec![0u8; length];
-        self.socket.read_exact(&mut frame)?;
-        self.socket.set_read_timeout(Some(POLL))?;
-        Ok(Some((frame[0], frame[1..].to_vec())))
-    }
-
-    fn read_exactly(&mut self, buffer: &mut [u8]) -> std::io::Result<bool> {
-        let mut got = 0;
-        while got < buffer.len() {
-            match self.socket.read(&mut buffer[got..]) {
-                Ok(0) => return Ok(false),
-                Ok(read) => got += read,
-                Err(error) if error.kind() == ErrorKind::WouldBlock => return Ok(false),
-                Err(error) if error.kind() == ErrorKind::TimedOut => return Ok(false),
-                Err(error) => return Err(error),
-            }
-        }
-        Ok(true)
+        };
+        let Some((kind, payload)) = message.split_first() else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "an ANCS frame with no kind",
+            ));
+        };
+        Ok(Some((*kind, payload.to_vec())))
     }
 }
