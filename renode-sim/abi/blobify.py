@@ -1485,7 +1485,7 @@ def main():
     exported = {}
 
     def export(name, addr, styp):
-        section = layout.at(addr)
+        section = layout.at(addr) or ramlayout.by_start.get(addr)
         if section is None:
             sys.exit("cannot export %s: 0x%x is outside the app" % (name, addr))
         # The boundary's and the replacements' published names are how the rest
@@ -1517,7 +1517,8 @@ def main():
     for e in boundary["lib_to_app"]:
         if e["symbol"] and not e.get("library_not_app") \
                 and e["symbol"] not in replaced_names:
-            export(e["symbol"], int(e["addr"]), STT_FUNC)
+            export(e["symbol"], int(e["addr"]),
+                   STT_OBJECT if e.get("kind") == "data" else STT_FUNC)
     for v in boundary["data_references"]["vector_table"]:
         if not v.get("relocate") and v["symbol"] not in replaced_names:
             export(v["symbol"], v["word"] & ~1, STT_FUNC)

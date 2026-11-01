@@ -19,7 +19,7 @@ meta:
   image: appl.bin
   app_base: 0x27000
   app_to_lib: {sites: 647, tail_sites: 96, targets: 62}
-  lib_to_app: {sites: 26, targets: 14}
+  lib_to_app: {sites: 27, targets: 15}
 
 # Config corrections forced by the image's own struct layouts. refbuild.sh's
 # FreeRTOSConfig.h is wrong on three knobs; every queue.c body's match score
@@ -523,6 +523,15 @@ lib_to_app:
       the configASSERT logger; called with a format/file pointer in r0 and the
       __LINE__ value in r1 from queue.c lines 400/523/617 and from tasks.c.
       symbols.txt calls it wlog_fmt_r0d.
+  - addr: 0x20017c84
+    sites: 1
+    symbol: "nrf_nvic_state"
+    kind: data
+    confidence: "high"
+    how: >
+      The pool word at 0x74020 in vPortSuppressTicksAndSleep. The sleep's inlined
+      sd_nvic_critical_region_enter shares its __cr_flag and saved masks with
+      every region the app enters, so the kernel has no copy of its own.
   - addr: 0x371c8
     sites: 1
     symbol: "nrf_sdh_is_enabled"

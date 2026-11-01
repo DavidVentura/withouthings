@@ -9,10 +9,6 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-nrf_nvic_state_t nrf_nvic_state;
-
-void vAssertCalled(const char *file, unsigned int line);
-
 /* port.c has this but keeps it static, and the blob calls it across the
  * boundary (0x73dfc). */
 __attribute__((naked)) void vPortEnableVFP(void)
@@ -26,27 +22,6 @@ __attribute__((naked)) void vPortEnableVFP(void)
         "   bx r14                  \n"
         "   .align 4                \n"
     );
-}
-
-/* port_cmsis_systick.c reaches for nrf_drv_clock and nrf_sdh; the image's own
- * tick setup (0x74034) starts the LFCLK by hand instead, so do that. */
-void nrf_drv_clock_lfclk_request(void *handler)
-{
-    (void)handler;
-    if (NRF_CLOCK->LFCLKSTAT & CLOCK_LFCLKSTAT_STATE_Msk) {
-        return;
-    }
-    NRF_CLOCK->EVENTS_LFCLKSTARTED = 0;
-    NRF_CLOCK->TASKS_LFCLKSTART = 1;
-    while (NRF_CLOCK->EVENTS_LFCLKSTARTED == 0) {
-    }
-}
-
-void app_error_handler_bare(unsigned int error_code)
-{
-    vAssertCalled("app_error", error_code);
-    for (;;) {
-    }
 }
 
 /* The blob's Reset_Handler zeroes only the blob's own .bss, so the source
