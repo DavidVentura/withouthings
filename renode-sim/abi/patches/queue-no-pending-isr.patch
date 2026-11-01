@@ -9,8 +9,7 @@ xQueueReceive (1288). The loop bounds are the two pool words at 0x73d6c and
 configASSERT: configASSERT is undefined in this build and none of its argument
 checks appear anywhere.
 
-The two bodies this patch covers are the two the byte verdict measures. The line
-number is an immediate in the image and Withings' file has more lines above the
+The line number is an immediate in the image and Withings' file has more lines above the
 macro than the SDK's, so a #line marker carries the image's own number and is
 restored after.
 
@@ -45,7 +44,47 @@ restored after.
  #include "task.h"
  #include "queue.h"
  
-@@ -729,6 +751,9 @@
+@@ -362,6 +384,9 @@
+ 	size_t xQueueSizeInBytes;
+ 	uint8_t *pucQueueStorage;
+ 
++#line 400
++	ASSERT_NO_PENDING_ISR();
++#line 365
+ 		configASSERT( uxQueueLength > ( UBaseType_t ) 0 );
+ 
+ 		if( uxItemSize == ( UBaseType_t ) 0 )
+@@ -485,6 +510,9 @@
+ 	Queue_t *pxNewQueue;
+ 	const UBaseType_t uxMutexLength = ( UBaseType_t ) 1, uxMutexSize = ( UBaseType_t ) 0;
+ 
++#line 523
++	ASSERT_NO_PENDING_ISR();
++#line 488
+ 		pxNewQueue = ( Queue_t * ) xQueueGenericCreate( uxMutexLength, uxMutexSize, ucQueueType );
+ 		prvInitialiseMutex( pxNewQueue );
+ 
+@@ -577,6 +605,9 @@
+ 	BaseType_t xReturn;
+ 	Queue_t * const pxMutex = ( Queue_t * ) xMutex;
+ 
++#line 617
++	ASSERT_NO_PENDING_ISR();
++#line 580
+ 		configASSERT( pxMutex );
+ 
+ 		/* If this is the task that holds the mutex then pxMutexHolder will not
+@@ -632,6 +663,9 @@
+ 	BaseType_t xReturn;
+ 	Queue_t * const pxMutex = ( Queue_t * ) xMutex;
+ 
++#line 673
++	ASSERT_NO_PENDING_ISR();
++#line 635
+ 		configASSERT( pxMutex );
+ 
+ 		/* Comments regarding mutual exclusion as per those within
+@@ -729,6 +763,9 @@
  TimeOut_t xTimeOut;
  Queue_t * const pxQueue = ( Queue_t * ) xQueue;
  
@@ -55,7 +94,7 @@ restored after.
  	configASSERT( pxQueue );
  	configASSERT( !( ( pvItemToQueue == NULL ) && ( pxQueue->uxItemSize != ( UBaseType_t ) 0U ) ) );
  	configASSERT( !( ( xCopyPosition == queueOVERWRITE ) && ( pxQueue->uxLength != 1 ) ) );
-@@ -1243,6 +1268,9 @@
+@@ -1243,6 +1280,9 @@
  TimeOut_t xTimeOut;
  Queue_t * const pxQueue = ( Queue_t * ) xQueue;
  
