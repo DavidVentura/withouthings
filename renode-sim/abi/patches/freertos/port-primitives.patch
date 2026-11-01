@@ -23,7 +23,8 @@ port_cmsis.c
 
   vPortEnableVFP is C, so GCC inlines it into xPortStartScheduler. The image
   calls it (0x74078 -> 0x73dfc) and the body at 0x73dfc is the kernel's naked
-  asm version verbatim, 0xE000ED88 in its own literal pool.
+  asm version verbatim, 0xE000ED88 in its own literal pool. The blob calls it too
+  (abi/boundary.yaml), so it is not static.
 
   prvTaskExitError ends in for(;;). The image (inlined at 0x740b6) spins on a
   volatile zero, which is what the kernel's own version does so a debugger can
@@ -178,7 +179,7 @@ port.c
   * Function to enable the VFP.
   */
 -static void vPortEnableVFP( void );
-+static void vPortEnableVFP( void ) __attribute__ (( naked ));
++void vPortEnableVFP( void ) __attribute__ (( naked ));
  
  /*
   * Used to catch tasks that attempt to return from their implementing function.
@@ -227,7 +228,8 @@ port.c
      here already. */
 @@ -290,7 +305,15 @@
  /* This is a naked function. */
- static void vPortEnableVFP( void )
+-static void vPortEnableVFP( void )
++void vPortEnableVFP( void )
  {
 -    SCB->CPACR |= 0xf << 20;
 +    __asm volatile
@@ -237,7 +239,7 @@ port.c
 +        "   orr r1, r1, #( 0xf << 20 )  \n"
 +        "   str r1, [r0]                \n"
 +        "   bx r14                      \n"
-+        "   .align 4                    \n"
++        "   .balign 4, 0                \n"
 +    );
  }
  /*-----------------------------------------------------------*/

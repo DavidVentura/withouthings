@@ -9,24 +9,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-/* port.c has this but keeps it static, and the blob calls it across the
- * boundary (0x73dfc). */
-__attribute__((naked)) void vPortEnableVFP(void)
-{
-    __asm volatile
-    (
-        "   ldr.w r0, =0xE000ED88   \n"
-        "   ldr r1, [r0]            \n"
-        "   orr r1, r1, #(0xf << 20)\n"
-        "   str r1, [r0]            \n"
-        "   bx r14                  \n"
-        "   .balign 4, 0            \n"
-    );
-}
-
 /* The blob's Reset_Handler zeroes only the blob's own .bss, so the source
- * library's statics -- 16 KB of them, nearly all heap_4's ucHeap -- would start
- * as whatever the flash-erased RAM held. Reset_Handler's first call is
+ * library's statics would start as whatever the flash-erased RAM held. Reset_Handler's first call is
  * SystemInit (0x34968 -> 0x34854), well before any kernel use, and
  * abi/boundary.yaml's `startup` list diverts it here.
  *
