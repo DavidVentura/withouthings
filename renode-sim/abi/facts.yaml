@@ -34,8 +34,8 @@ regions:
 
     '
 - name: LIBRARY_RAM
-  start: 537047040
-  size: 57344
+  start: 537071616
+  size: 32768
   kind: ram
   notes: 'The app''s initial MSP is 0x20040000 (top of the 256 KB SRAM) and the
     main stack grows down from there. After 600 s of virtual time that included
@@ -51,6 +51,10 @@ regions:
     the moment configTOTAL_HEAP_SIZE was measured off pvPortMalloc. Cross-checked by snapshotting this exact range at reset
     with the NVMC model''s SnapshotProtectedRegion (it works on any sysbus range,
     not just flash) and verifying it at the end of the run: zero words differed.
+    The window has since moved up to 0x20031000 and lost the heap: a running watch
+    never writes 0x2002b000..0x20031000, but the stack dump a fault prints writes
+    down from 0x2002ff1c by address, which on the image lands in the unused
+    top of the heap and would land on live tasks in a heap placed any higher.
 
     '
 fixed_points:

@@ -12,21 +12,18 @@ MEMORY
     /* Immediately after the app image (0xf117c) so that `appl` stays one part:
      * a package describes each part by one address and one length, and the
      * bootloader copies that many bytes to 0x27000 in one go. The four bytes of
-     * padding are the section's own alignment -- relink_glue.c's naked
-     * vPortEnableVFP ends in `.align 4`, so .libtext wants 16 -- and
-     * relink_image.py takes the placed address out of the ELF rather than
+     * padding are the section's own alignment, and relink_image.py takes the placed address out of the ELF rather than
      * trusting this number. */
     LIB   (rx)  : ORIGIN = 0x000f1180, LENGTH = 0x0000ae80
-    /* facts.yaml's LIBRARY_RAM: room for the source heap_4's ucHeap, which is
-     * 35000 bytes because that is what the image's is. It starts 0x200 above
-     * the highest static a 600 s run wrote and ends 0x6000 below the deepest
-     * the main stack reached in the same run. */
-    LRAM  (rw)  : ORIGIN = 0x2002b000, LENGTH = 0x0000e000
+    /* facts.yaml's LIBRARY_RAM: the kernel's and the driver's statics, above
+     * the crash dump's window at the top of the image's heap and below the
+     * deepest the main stack reached. */
+    LRAM  (rw)  : ORIGIN = 0x20031000, LENGTH = 0x00008000
     /* The app's own static RAM, as abi/ramparts.py reads it off the startup:
-     * the `.data` image the copy loop moves and the two runs it zeroes. It
-     * ends where the heap begins and LIBRARY_RAM starts above that, so the two
-     * regions cannot overlap. */
-    RAM   (rw)  : ORIGIN = 0x20006000, LENGTH = 0x00025000
+     * the `.data` image the copy loop moves and the two runs it zeroes, then the
+     * heap, which the app's stack dump writes over the top of by address, so it
+     * has to sit exactly where the image's does. */
+    RAM   (rw)  : ORIGIN = 0x20006000, LENGTH = 0x0002b000
 }
 
 ENTRY(Reset_Handler)
@@ -40,6 +37,13 @@ SECTIONS
      * partition: in this step every section keeps its original address, so the
      * app's bytes are unchanged and only the library moves. */
     INCLUDE relink-place.ld
+
+    /* Directly above the app's `.bss`, as in the image. relink_startup does not
+     * clear it, because the image's startup does not clear its heap either. */
+    .libheap (NOLOAD) : ALIGN(8)
+    {
+        *(.bss.ucHeap)
+    } > RAM
 
     /* --layout pack leaves out of the placement every section the link is
      * about to drop -- a body abi/replacements.yaml replaced, which is

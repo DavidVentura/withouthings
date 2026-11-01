@@ -31,6 +31,7 @@ LIBRARY_END = 0xfc000
 FLASH_END = 0x100000
 # The startup's copy of .data, at 0x36e1c: its end, its start and where it loads from.
 STOCK_DATA_POOL = (0x36e3c, 0x36e38, 0x36e40)
+STOCK_HEAP = 0x20027248
 ALIAS = re.compile(r"^[aD]_([0-9a-f]{8})$")
 
 
@@ -49,6 +50,14 @@ def read_symbols(elf):
         if len(fields) == 4 and fields[2] in "tT" and LIBRARY_START <= address < LIBRARY_END:
             functions[name] = (address & ~1, int(fields[1], 16))
     return functions, aliases, names
+
+
+def heap_is_where_the_image_has_it(elf):
+    for line in subprocess.check_output([NM, elf], text=True).splitlines():
+        fields = line.split()
+        if fields[-1] == "ucHeap":
+            return int(fields[0], 16) == STOCK_HEAP
+    return False
 
 
 def c_string(image, at):
@@ -302,6 +311,9 @@ def main():
         print("%s+%#x: %#x is %#x here, which another image address also became" % (name, offset, stock_word, linked_word))
     failed = check_strings(stock, linked, parity) or failed
     failed = check_initial_values(stock, linked, parity, read_library_data_bounds(args.elf)) or failed
+    if not args.placement_moved and not heap_is_where_the_image_has_it(args.elf):
+        failed = True
+        print("the heap is not at %#x, and the app's stack dump writes into it by address" % STOCK_HEAP)
     if not args.placement_moved:
         failed = check_outside_library(stock, linked, parity) or failed
     print("library parity: %d bodies, %d exceptions" % (len(paired), len(exceptions)))
