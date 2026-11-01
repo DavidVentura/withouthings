@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::energy::{Beat, LONGEST_HELD_MS};
-use crate::units::Bpm;
+use crate::units::{Bpm, UnixMillis};
 
 /// As slow as the wearer's heart gets asleep. A waking body under it during a
 /// session is the optical sensor having lost the wrist, not a rest between sets.
@@ -112,10 +112,10 @@ pub fn asleep(beats: &[Beat]) -> Option<Asleep> {
 /// The typical rate of a waking body left alone: the readings outside every
 /// stretch it was asleep, training or getting over having trained, one vote
 /// each since the watch takes them on its own schedule.
-pub fn at_rest(beats: &[Beat], busy: &[Range<i64>]) -> Option<AtRest> {
+pub fn at_rest(beats: &[Beat], busy: &[Range<UnixMillis>]) -> Option<AtRest> {
     let votes: Vec<(Bpm, i64)> = beats
         .iter()
-        .filter(|beat| !busy.iter().any(|span| span.contains(&beat.at.0)))
+        .filter(|beat| !busy.iter().any(|span| span.contains(&beat.at)))
         .map(|beat| (beat.rate, 1))
         .collect();
     Some(AtRest {
@@ -326,7 +326,10 @@ mod tests {
             trace(3600, 600, &[50, 52]),
         ]
         .concat();
-        let busy = [1_800_000..3_600_000, 3_600_000..4_800_000];
+        let busy = [
+            UnixMillis(1_800_000)..UnixMillis(3_600_000),
+            UnixMillis(3_600_000)..UnixMillis(4_800_000),
+        ];
         assert_eq!(
             at_rest(&beats, &busy),
             Some(AtRest {
@@ -334,7 +337,7 @@ mod tests {
                 readings: 3
             })
         );
-        assert_eq!(at_rest(&beats, &[0..i64::MAX]), None);
+        assert_eq!(at_rest(&beats, &[UnixMillis(0)..UnixMillis(i64::MAX)]), None);
     }
 
     #[test]

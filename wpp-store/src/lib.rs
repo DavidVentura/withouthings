@@ -9,7 +9,8 @@ use wpp::client::{
     Category, DeviceIdentity, Feature, FeatureId, FeatureSchedule, Record, SampleKind, Source,
     UserProfile, BATTERY_STATE_CHARGING,
 };
-use wpp::signal::{MeasureType, Recording, SampleFormat, Signal, SignalKind};
+use wpp::signal::{EcgMeasure, MeasureType, Recording, SampleFormat, Signal, SignalKind};
+use wpp::sleep::StageWindow;
 use wpp::track::Fix;
 use wpp::units::{Duration, Edges, Hundredths, SamplingHz, UnixMillis, UnixTime};
 
@@ -102,13 +103,6 @@ impl SeriesPoint {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StageWindow {
-    pub at: UnixTime,
-    pub duration: Duration,
-    pub level: i64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChargePeriod {
     pub from: UnixMillis,
     /// None while still on the charger.
@@ -156,13 +150,6 @@ pub struct EcgSummaryRow {
 pub struct StoredEcg {
     pub measured_at: UnixMillis,
     pub recording: Recording,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EcgMeasure {
-    pub kind: MeasureType,
-    pub value: i64,
-    pub exponent: i64,
 }
 
 #[derive(Debug, Clone, PartialEq)]

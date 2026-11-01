@@ -2,20 +2,17 @@ use crate::energy;
 use crate::track::Limits;
 use crate::units::{Met, Metres, MetresPerSecond};
 
-/// The subcategory a session is recorded under, which is also the id the
-/// watch's activity menu lists it by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SportId(pub u32);
 
 /// Whether the wearer's own feet carry them through an activity. The pedometer
 /// keeps counting either way — a wrist swings on a bike too — so this is what
 /// says whether the steps and the metres climbed under a session describe it.
-///
-/// Pedalled sits apart from Otherwise because speed prices a ride, where it
-/// says nothing about a boat or a board.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Gait {
     OnFoot,
+    // Apart from Otherwise because speed prices a ride, where it says nothing
+    // about a boat or a board.
     Pedalled,
     Otherwise,
 }
@@ -40,7 +37,6 @@ pub enum Terrain {
 use Terrain::Ground;
 use Terrain::InPlace;
 
-/// How the watch lays out an activity's screen when its menu entry is written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Face {
     pub mode: u8,

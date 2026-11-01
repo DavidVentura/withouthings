@@ -11,6 +11,7 @@ use wpp::energy::{self, Beat, Reading, Wearer};
 use wpp::image::{GlyphRequest, IconRequest, Mono};
 use wpp::pairing::{Pairing, PairingState};
 use wpp::track::{self, Track};
+use wpp::signal::{WatchVerdict, STORED_MEASURE_ATTRIB_CONFIRMED};
 use wpp::sport::{self, SportId};
 use wpp::units::{Bpm, Kilocalories, Met, Millivolts, UnixMillis, UnixTime};
 use wpp::watch_config::{
@@ -365,18 +366,6 @@ pub enum SleepStage {
     Light,
     Deep,
     Rem,
-}
-
-fn merge_adjacent(bands: impl Iterator<Item = SleepBand>) -> Vec<SleepBand> {
-    bands.fold(Vec::new(), |mut out: Vec<SleepBand>, band| {
-        match out.last_mut() {
-            Some(last) if last.stage == band.stage && last.to_ms >= band.from_ms => {
-                last.to_ms = last.to_ms.max(band.to_ms);
-            }
-            _ => out.push(band),
-        }
-        out
-    })
 }
 
 impl SleepStage {
@@ -1827,7 +1816,7 @@ impl WatchService {
 
     pub fn night(&self, from_ms: i64, to_ms: i64) -> Result<Night, WatchError> {
         let store = self.store.lock().unwrap();
-        read_night(&store, self.device_id, from_ms, to_ms)
+        Ok(night_record(read_night(&store, self.device_id, from_ms, to_ms)?))
     }
 
     /// One entry for each window the watch staged any sleep in; a window it
@@ -1862,7 +1851,13 @@ impl WatchService {
     /// sleeping baseline, so a stretch survives them as one span.
     pub fn sleep_spans(&self, from_ms: i64, to_ms: i64) -> Result<Vec<SleepSpan>, WatchError> {
         let store = self.store.lock().unwrap();
-        asleep_spans(&store, self.device_id, from_ms, to_ms)
+        Ok(asleep_spans(&store, self.device_id, from_ms, to_ms)?
+            .into_iter()
+            .map(|span| SleepSpan {
+                from_ms: span.start.0,
+                to_ms: span.end.0,
+            })
+            .collect())
     }
 
     /// The median waking rate of each window, readings taken asleep, in a
@@ -2063,14 +2058,14 @@ impl WatchService {
                     .collect(),
             })
             .collect();
-        let verdict = verdict_of(&store, EcgId(id))?;
+        let verdict = WatchVerdict::of(&store.ecg_measures(EcgId(id))?);
         Ok(Some(EcgRecording {
             id,
             measured_at_ms: stored.measured_at.0,
             sampling_hz: u32::from(recording.rate.get()),
             leads,
-            heart_rate: verdict.0,
-            rhythm: verdict.1,
+            heart_rate: verdict.rate.map(|bpm| u32::from(bpm.0)),
+            rhythm: verdict.rhythm.map(ecg_rhythm),
             analysis: ecg_analysis(&wpp::rhythm::read_ecg(
                 &recording.analysed().samples,
                 recording.rate,
@@ -2078,11 +2073,6 @@ impl WatchService {
         }))
     }
 }
-
-/// StoredMeasureMeta.attrib on the reading that confirmed a run: the reply
-/// builder at 0x6370c sets it from the header flag the store writer takes from
-/// its confirmed out-parameter.
-const STORED_MEASURE_ATTRIB_CONFIRMED: i64 = 7;
 
 fn ppg_rhythm(code: i64) -> Option<PpgRhythm> {
     let rhythm = wpp::signal::PpgRhythm::of(i32::try_from(code).ok()?)?;
@@ -2102,14 +2092,14 @@ const ECG_AFTER_ALERT_MS: i64 = 30 * 60 * 1000;
 fn ecg_summary(store: &Store, row: wpp_store::EcgSummaryRow) -> Result<EcgSummary, WatchError> {
     let leads = row.kind.leads().len();
     let per_lead = row.sample_bytes / 2 / leads as i64;
-    let verdict = verdict_of(store, row.id)?;
+    let verdict = WatchVerdict::of(&store.ecg_measures(row.id)?);
     Ok(EcgSummary {
         id: row.id.0,
         measured_at_ms: row.measured_at.0,
         seconds: per_lead as f64 / row.sampling_hz.as_f64(),
         leads: leads as u32,
-        heart_rate: verdict.0,
-        rhythm: verdict.1,
+        heart_rate: verdict.rate.map(|bpm| u32::from(bpm.0)),
+        rhythm: verdict.rhythm.map(ecg_rhythm),
     })
 }
 
@@ -2117,9 +2107,9 @@ fn afib_reading(
     store: &Store,
     device_id: DeviceId,
     row: &wpp_store::AfibReadingRow,
-    asleep: &[SleepSpan],
+    asleep: &[std::ops::Range<UnixMillis>],
 ) -> Result<AfibReading, WatchError> {
-    use wpp::rhythm::{read_pulse, PulseVerdict, WATCH_RATE_WITHIN_MS};
+    use wpp::rhythm::{read_stored_pulse, PulseCheck, PulseVerdict, WATCH_RATE_WITHIN_MS};
     let corrupt = || WatchError::Storage {
         reason: format!("reading {} has no sample size or sampling rate", row.id),
     };
@@ -2135,44 +2125,26 @@ fn afib_reading(
         row.measured_at,
         wpp::units::Duration::from_millis(WATCH_RATE_WITHIN_MS),
     )?;
-    let (intervals, analysis) = match watch.filter(|bpm| *bpm > 0) {
-        None => (
-            raw.iter().map(|ms| ms.0.round() as u32).collect::<Vec<_>>(),
-            PulseAnalysis::NoWatchRate,
-        ),
-        Some(watch) => {
-            let reading = read_pulse(&raw, Bpm(watch as u16));
-            let analysis = match reading.verdict {
-                PulseVerdict::TooFew { .. } => PulseAnalysis::TooFew,
-                PulseVerdict::Disagrees { .. } => PulseAnalysis::Disagrees,
-                PulseVerdict::Shifted(_) => PulseAnalysis::Shifted,
-                PulseVerdict::Assessed(rhythm) => PulseAnalysis::Assessed {
-                    rhythm: rhythm_analysis(&rhythm),
-                },
-            };
-            (
-                reading
-                    .intervals
-                    .iter()
-                    .map(|interval| interval.length.0.round() as u32)
-                    .collect(),
-                analysis,
-            )
-        }
-    };
-    let heart_rate = (!intervals.is_empty()).then(|| {
-        let mean = intervals.iter().copied().sum::<u32>() / intervals.len() as u32;
-        60_000 / mean.max(1)
-    });
+    let pulse = read_stored_pulse(&raw, watch.filter(|bpm| *bpm > 0).map(|bpm| Bpm(bpm as u16)));
     Ok(AfibReading {
         id: row.id,
         measured_at_ms: row.measured_at.0,
-        heart_rate,
-        intervals_ms: intervals,
-        analysis,
-        asleep: asleep
+        heart_rate: pulse.heart_rate.map(|bpm| u32::from(bpm.0)),
+        intervals_ms: pulse
+            .intervals
             .iter()
-            .any(|span| (span.from_ms..span.to_ms).contains(&row.measured_at.0)),
+            .map(|interval| interval.as_millis() as u32)
+            .collect(),
+        analysis: match pulse.check {
+            PulseCheck::NoWatchRate => PulseAnalysis::NoWatchRate,
+            PulseCheck::Read(PulseVerdict::TooFew { .. }) => PulseAnalysis::TooFew,
+            PulseCheck::Read(PulseVerdict::Disagrees { .. }) => PulseAnalysis::Disagrees,
+            PulseCheck::Read(PulseVerdict::Shifted(_)) => PulseAnalysis::Shifted,
+            PulseCheck::Read(PulseVerdict::Assessed(rhythm)) => PulseAnalysis::Assessed {
+                rhythm: rhythm_analysis(&rhythm),
+            },
+        },
+        asleep: asleep.iter().any(|span| span.contains(&row.measured_at)),
     })
 }
 
@@ -2212,28 +2184,15 @@ fn ecg_analysis(reading: &wpp::rhythm::EcgReading) -> EcgAnalysis {
     }
 }
 
-fn verdict_of(store: &Store, id: EcgId) -> Result<(Option<u32>, Option<EcgRhythm>), WatchError> {
-    let measures = store.ecg_measures(id)?;
-    let reading = |kind: wpp::signal::MeasureType| {
-        measures
-            .iter()
-            .find(|measure| measure.kind == kind)
-            .map(|measure| measure.value as f64 * 10f64.powi(measure.exponent as i32))
-    };
-    let rhythm = reading(wpp::signal::MeasureType::AFIB_RESULT)
-        .and_then(|code| wpp::signal::Rhythm::of(code as i32))
-        .map(|rhythm| match rhythm {
-            wpp::signal::Rhythm::NoAfib => EcgRhythm::NoAfib,
-            wpp::signal::Rhythm::Afib => EcgRhythm::Afib,
-            wpp::signal::Rhythm::Inconclusive => EcgRhythm::Inconclusive,
-            wpp::signal::Rhythm::PoorRecording => EcgRhythm::PoorRecording,
-            wpp::signal::Rhythm::RateOutOfRange => EcgRhythm::RateOutOfRange,
-            wpp::signal::Rhythm::NoResult => EcgRhythm::NoResult,
-        });
-    let rate = reading(wpp::signal::MeasureType::HEART_RATE)
-        .filter(|bpm| *bpm > 0.0)
-        .map(|bpm| bpm.round() as u32);
-    Ok((rate, rhythm))
+fn ecg_rhythm(rhythm: wpp::signal::Rhythm) -> EcgRhythm {
+    match rhythm {
+        wpp::signal::Rhythm::NoAfib => EcgRhythm::NoAfib,
+        wpp::signal::Rhythm::Afib => EcgRhythm::Afib,
+        wpp::signal::Rhythm::Inconclusive => EcgRhythm::Inconclusive,
+        wpp::signal::Rhythm::PoorRecording => EcgRhythm::PoorRecording,
+        wpp::signal::Rhythm::RateOutOfRange => EcgRhythm::RateOutOfRange,
+        wpp::signal::Rhythm::NoResult => EcgRhythm::NoResult,
+    }
 }
 
 const CHARGE_STATE_FRESH_MS: i64 = 180_000;
@@ -2279,88 +2238,13 @@ fn read_night(
     device_id: DeviceId,
     from_ms: i64,
     to_ms: i64,
-) -> Result<Night, WatchError> {
+) -> Result<wpp::sleep::Night, WatchError> {
     let minutes = store.activity_minutes(
         device_id,
         UnixMillis(from_ms).to_seconds(),
         UnixMillis(to_ms).to_seconds(),
     )?;
-
-    let levels: Vec<(i64, i64, SleepStage)> = minutes
-        .iter()
-        .filter_map(|minute| {
-            let level = activity::SleepLevel::from_wire(minute.sleep_level?)?;
-            Some((
-                minute.at.0 * 1000,
-                minute.ended_at().0 * 1000,
-                SleepStage::of(level),
-            ))
-        })
-        .collect();
-
-    let asleep = levels
-        .iter()
-        .filter(|(_, _, stage)| *stage != SleepStage::Awake)
-        .fold(None, |span: Option<(i64, i64)>, (from, to, _)| {
-            Some(match span {
-                None => (*from, *to),
-                Some((lo, hi)) => (lo.min(*from), hi.max(*to)),
-            })
-        });
-
-    let stages = merge_adjacent(minutes.iter().filter_map(|minute| {
-        let (from_ms, to_ms) = (minute.at.0 * 1000, minute.ended_at().0 * 1000);
-        let stage = match minute.sleep_level {
-            Some(level) => SleepStage::of(activity::SleepLevel::from_wire(level)?),
-            None => SleepStage::Awake,
-        };
-        // The night runs from the first minute asleep to the last, so being
-        // awake outside that is time in bed and not part of it. The watch
-        // reports those minutes as Awake rather than leaving them out, which
-        // is indistinguishable from the gaps filled in above.
-        if stage == SleepStage::Awake {
-            let (night_from, night_to) = asleep?;
-            if from_ms < night_from || to_ms > night_to {
-                return None;
-            }
-        }
-        Some(SleepBand {
-            from_ms,
-            to_ms,
-            stage,
-        })
-    }));
-
-    let score = wpp::sleep::score(
-        &stages
-            .iter()
-            .map(|band| wpp::sleep::Band {
-                from_ms: band.from_ms,
-                to_ms: band.to_ms,
-                level: match band.stage {
-                    SleepStage::Awake => activity::SleepLevel::Awake,
-                    SleepStage::Light => activity::SleepLevel::Light,
-                    SleepStage::Deep => activity::SleepLevel::Deep,
-                    SleepStage::Rem => activity::SleepLevel::Rem,
-                },
-            })
-            .collect::<Vec<_>>(),
-    )
-    .map(|s| SleepScore {
-        total: s.total,
-        duration: s.duration,
-        efficiency: s.efficiency,
-        deep: s.deep,
-        rem: s.rem,
-        continuity: s.continuity,
-    });
-
-    Ok(Night {
-        asleep_from_ms: asleep.map(|(from, _)| from),
-        asleep_to_ms: asleep.map(|(_, to)| to),
-        score,
-        stages,
-    })
+    Ok(wpp::sleep::night(&minutes))
 }
 
 fn asleep_spans(
@@ -2368,36 +2252,41 @@ fn asleep_spans(
     device_id: DeviceId,
     from_ms: i64,
     to_ms: i64,
-) -> Result<Vec<SleepSpan>, WatchError> {
-    const AWAKE_BRIDGE_MS: i64 = 45 * 60 * 1000;
-
-    let minutes = store.sleep_minutes(
+) -> Result<Vec<std::ops::Range<UnixMillis>>, WatchError> {
+    let windows = store.sleep_minutes(
         device_id,
         UnixMillis(from_ms).to_seconds(),
         UnixMillis(to_ms).to_seconds(),
     )?;
-    Ok(minutes
-        .into_iter()
-        .filter(|window| {
-            !matches!(
-                activity::SleepLevel::from_wire(window.level),
-                None | Some(activity::SleepLevel::Awake)
-            )
-        })
-        .fold(Vec::new(), |mut out: Vec<SleepSpan>, window| {
-            let from = window.at.to_millis().0;
-            let to = (window.at + window.duration).to_millis().0;
-            match out.last_mut() {
-                Some(last) if from - last.to_ms <= AWAKE_BRIDGE_MS => {
-                    last.to_ms = last.to_ms.max(to)
-                }
-                _ => out.push(SleepSpan {
-                    from_ms: from,
-                    to_ms: to,
-                }),
-            }
-            out
-        }))
+    Ok(wpp::sleep::asleep_spans(&windows))
+}
+
+fn sleep_score(score: wpp::sleep::Score) -> SleepScore {
+    SleepScore {
+        total: score.total,
+        duration: score.duration,
+        efficiency: score.efficiency,
+        deep: score.deep,
+        rem: score.rem,
+        continuity: score.continuity,
+    }
+}
+
+fn night_record(night: wpp::sleep::Night) -> Night {
+    Night {
+        stages: night
+            .stages
+            .iter()
+            .map(|band| SleepBand {
+                from_ms: band.from.0,
+                to_ms: band.to.0,
+                stage: SleepStage::of(band.level),
+            })
+            .collect(),
+        asleep_from_ms: night.asleep.as_ref().map(|span| span.start.0),
+        asleep_to_ms: night.asleep.as_ref().map(|span| span.end.0),
+        score: night.score.map(sleep_score),
+    }
 }
 
 /// A heart still coming down from a session is not the waking rate either.
@@ -2405,7 +2294,7 @@ const RECOVERY_MS: i64 = 10 * 60 * 1000;
 
 /// Everything a waking rate at rest is read against, read once for a span.
 struct Waking {
-    busy: Vec<std::ops::Range<i64>>,
+    busy: Vec<std::ops::Range<UnixMillis>>,
     beats: Vec<Beat>,
 }
 
@@ -2425,12 +2314,11 @@ impl Waking {
             .iter()
             .cloned()
             .chain(detected)
-            .map(|span| span.start.to_millis().0..span.end.to_millis().0 + RECOVERY_MS)
-            .chain(
-                asleep_spans(store, device_id, from_ms, to_ms)?
-                    .into_iter()
-                    .map(|span| span.from_ms..span.to_ms),
-            )
+            .map(|span| {
+                span.start.to_millis()
+                    ..span.end.to_millis() + wpp::units::Duration::from_millis(RECOVERY_MS)
+            })
+            .chain(asleep_spans(store, device_id, from_ms, to_ms)?)
             .collect();
         let beats = store
             .samples_from(
@@ -2519,28 +2407,27 @@ fn night_trend(
     let mut out = Vec::new();
     for window in windows {
         let night = read_night(store, device_id, window.from_ms, window.to_ms)?;
-        let (Some(asleep_from_ms), Some(asleep_to_ms)) = (night.asleep_from_ms, night.asleep_to_ms)
-        else {
+        let Some(span) = night.asleep else {
             continue;
         };
-        let asleep: Vec<&SleepBand> = night
+        let asleep: Vec<&wpp::sleep::Band> = night
             .stages
             .iter()
-            .filter(|band| band.stage != SleepStage::Awake)
+            .filter(|band| band.level != activity::SleepLevel::Awake)
             .collect();
-        let beats: Vec<Beat> = beats_between(store, device_id, asleep_from_ms, asleep_to_ms)?
+        let beats: Vec<Beat> = beats_between(store, device_id, span.start.0, span.end.0)?
             .into_iter()
             .filter(|beat| {
                 asleep
                     .iter()
-                    .any(|band| beat.at.0 >= band.from_ms && beat.at.0 < band.to_ms)
+                    .any(|band| beat.at >= band.from && beat.at < band.to)
             })
             .collect();
         out.push(NightTrend {
-            asleep_from_ms,
-            asleep_to_ms,
-            asleep_ms: asleep.iter().map(|band| band.to_ms - band.from_ms).sum(),
-            score: night.score,
+            asleep_from_ms: span.start.0,
+            asleep_to_ms: span.end.0,
+            asleep_ms: asleep.iter().map(|band| (band.to - band.from).as_millis()).sum(),
+            score: night.score.map(sleep_score),
             heart: wpp::heart::asleep(&beats).map(|heart| NightHeart {
                 median_bpm: heart.median.0,
                 resting_bpm: heart.resting.0,
@@ -3312,10 +3199,7 @@ mod tests {
         store
             .store(device, &[rate(at + 45_000, 61, Source::Stored)])
             .unwrap();
-        let asleep = [SleepSpan {
-            from_ms: at - 3_600_000,
-            to_ms: at + 3_600_000,
-        }];
+        let asleep = [UnixMillis(at - 3_600_000)..UnixMillis(at + 3_600_000)];
 
         let reading = afib_reading(&store, device, &reading_row(at), &asleep).unwrap();
         assert!(reading.asleep);

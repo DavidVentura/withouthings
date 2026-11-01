@@ -1,5 +1,5 @@
 use crate::analysis::detect_r_peaks;
-use crate::units::{Bpm, Millis, SamplingHz};
+use crate::units::{Bpm, Duration, Millis, SamplingHz};
 
 /// The watch logs the rate of a background measurement within this of the
 /// start of the reading it keeps from it.
@@ -141,6 +141,45 @@ pub enum PulseVerdict {
 pub struct PulseReading {
     pub intervals: Vec<Interval>,
     pub verdict: PulseVerdict,
+}
+
+// A kept reading is only checked against a rate the watch logged near it;
+// without one its intervals stand as stored.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PulseCheck {
+    NoWatchRate,
+    Read(PulseVerdict),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredPulse {
+    pub intervals: Vec<Duration>,
+    pub heart_rate: Option<Bpm>,
+    pub check: PulseCheck,
+}
+
+pub fn read_stored_pulse(raw: &[Millis], watch: Option<Bpm>) -> StoredPulse {
+    let whole_ms = |ms: Millis| Duration::from_millis(ms.0.round() as i64);
+    let (intervals, check): (Vec<Duration>, PulseCheck) = match watch {
+        None => (raw.iter().copied().map(whole_ms).collect(), PulseCheck::NoWatchRate),
+        Some(watch) => {
+            let reading = read_pulse(raw, watch);
+            (
+                reading.intervals.iter().map(|interval| whole_ms(interval.length)).collect(),
+                PulseCheck::Read(reading.verdict),
+            )
+        }
+    };
+    let heart_rate = (!intervals.is_empty()).then(|| {
+        let total: i64 = intervals.iter().map(|interval| interval.as_millis()).sum();
+        let mean = total / intervals.len() as i64;
+        Bpm((60_000 / mean.max(1)) as u16)
+    });
+    StoredPulse {
+        intervals,
+        heart_rate,
+        check,
+    }
 }
 
 /// `watch` is a rate the watch actually read, so never zero.
@@ -838,6 +877,28 @@ fn correlation(a: &[f64], b: &[f64]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reading_with_no_watch_rate_keeps_its_intervals_as_stored() {
+        let pulse = read_stored_pulse(&[Millis(1000.4), Millis(999.6)], None);
+        assert_eq!(pulse.check, PulseCheck::NoWatchRate);
+        assert_eq!(pulse.intervals, vec![Duration::from_millis(1000); 2]);
+        assert_eq!(pulse.heart_rate, Some(Bpm(60)));
+    }
+
+    #[test]
+    fn a_reading_with_no_beats_has_no_rate() {
+        let pulse = read_stored_pulse(&[], None);
+        assert!(pulse.intervals.is_empty());
+        assert_eq!(pulse.heart_rate, None);
+    }
+
+    #[test]
+    fn a_reading_checked_against_the_watch_carries_its_verdict() {
+        let pulse = read_stored_pulse(&[Millis(1000.0); 3], Some(Bpm(60)));
+        assert_eq!(pulse.check, PulseCheck::Read(PulseVerdict::TooFew { intervals: 3 }));
+        assert_eq!(pulse.heart_rate, Some(Bpm(60)));
+    }
 
     fn intervals(ms: &[u32]) -> Vec<Millis> {
         ms.iter().map(|v| Millis(*v as f64)).collect()

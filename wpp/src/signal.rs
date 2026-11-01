@@ -4,7 +4,7 @@ use crate::objects::{
 };
 use std::num::NonZeroUsize;
 
-use crate::units::{LeadCount, SamplingHz, UnixTime};
+use crate::units::{Bpm, LeadCount, SamplingHz, UnixTime};
 use crate::WppObject;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +101,41 @@ impl MeasureType {
     pub const SPO2: MeasureType = MeasureType(54);
     pub const PPG_AFIB_RESULT: MeasureType = MeasureType(139);
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EcgMeasure {
+    pub kind: MeasureType,
+    pub value: i64,
+    pub exponent: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WatchVerdict {
+    pub rate: Option<Bpm>,
+    pub rhythm: Option<Rhythm>,
+}
+
+impl WatchVerdict {
+    pub fn of(measures: &[EcgMeasure]) -> WatchVerdict {
+        let reading = |kind: MeasureType| {
+            measures
+                .iter()
+                .find(|measure| measure.kind == kind)
+                .map(|measure| measure.value as f64 * 10f64.powi(measure.exponent as i32))
+        };
+        WatchVerdict {
+            rate: reading(MeasureType::HEART_RATE)
+                .filter(|bpm| *bpm > 0.0)
+                .map(|bpm| Bpm(bpm.round() as u16)),
+            rhythm: reading(MeasureType::AFIB_RESULT).and_then(|code| Rhythm::of(code as i32)),
+        }
+    }
+}
+
+/// StoredMeasureMeta.attrib on the reading that confirmed a run: the reply
+/// builder at 0x6370c sets it from the header flag the store writer takes from
+/// its confirmed out-parameter.
+pub const STORED_MEASURE_ATTRIB_CONFIRMED: i64 = 7;
 
 /// Where the watch keeps a signal between syncs. `CMD_STORED_MEASURE_SIGNAL_GET`
 /// (handler 0x6e21c) serves a store only to a request whose StoredSignalMeta
@@ -460,6 +495,32 @@ impl SignalCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn measure(kind: MeasureType, value: i64, exponent: i64) -> EcgMeasure {
+        EcgMeasure { kind, value, exponent }
+    }
+
+    #[test]
+    fn a_verdict_applies_each_measures_exponent() {
+        let verdict = WatchVerdict::of(&[
+            measure(MeasureType::HEART_RATE, 7240, -2),
+            measure(MeasureType::AFIB_RESULT, 1, 0),
+        ]);
+        assert_eq!(verdict.rate, Some(Bpm(72)));
+        assert_eq!(verdict.rhythm, Rhythm::of(1));
+    }
+
+    #[test]
+    fn a_verdict_without_a_usable_rate_or_rhythm_has_none() {
+        assert_eq!(
+            WatchVerdict::of(&[]),
+            WatchVerdict { rate: None, rhythm: None }
+        );
+        let zero_rate = WatchVerdict::of(&[measure(MeasureType::HEART_RATE, 0, 0)]);
+        assert_eq!(zero_rate.rate, None);
+        let unknown_code = WatchVerdict::of(&[measure(MeasureType::AFIB_RESULT, 12345, 0)]);
+        assert_eq!(unknown_code.rhythm, None);
+    }
     use crate::objects::StoredSignalData;
 
     fn meta(type_id: u16, channels: u8) -> StoredSignalMeta {

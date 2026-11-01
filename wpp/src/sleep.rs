@@ -1,16 +1,109 @@
-use crate::activity::SleepLevel;
+use std::ops::Range;
+
+use crate::activity::{Minute, SleepLevel};
+use crate::units::{Duration, UnixMillis, UnixTime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Band {
-    pub from_ms: i64,
-    pub to_ms: i64,
+    pub from: UnixMillis,
+    pub to: UnixMillis,
     pub level: SleepLevel,
 }
 
 impl Band {
     fn duration_ms(&self) -> i64 {
-        (self.to_ms - self.from_ms).max(0)
+        (self.to - self.from).as_millis().max(0)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StageWindow {
+    pub at: UnixTime,
+    pub duration: Duration,
+    pub level: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Night {
+    pub stages: Vec<Band>,
+    pub asleep: Option<Range<UnixMillis>>,
+    pub score: Option<Score>,
+}
+
+// A few minutes awake in the middle of a night leave the body on its sleeping
+// baseline.
+const AWAKE_BRIDGE: Duration = Duration::from_secs(45 * 60);
+
+fn merge_adjacent(bands: impl Iterator<Item = Band>) -> Vec<Band> {
+    bands.fold(Vec::new(), |mut out: Vec<Band>, band| {
+        match out.last_mut() {
+            Some(last) if last.level == band.level && last.to >= band.from => {
+                last.to = last.to.max(band.to);
+            }
+            _ => out.push(band),
+        }
+        out
+    })
+}
+
+pub fn night(minutes: &[Minute]) -> Night {
+    let asleep = minutes
+        .iter()
+        .filter_map(|minute| {
+            let level = SleepLevel::from_wire(minute.sleep_level?)?;
+            (level != SleepLevel::Awake).then(|| minute.at.to_millis()..minute.ended_at().to_millis())
+        })
+        .fold(None, |span: Option<Range<UnixMillis>>, minute| {
+            Some(match span {
+                None => minute,
+                Some(span) => span.start.min(minute.start)..span.end.max(minute.end),
+            })
+        });
+
+    let stages = merge_adjacent(minutes.iter().filter_map(|minute| {
+        let (from, to) = (minute.at.to_millis(), minute.ended_at().to_millis());
+        let level = match minute.sleep_level {
+            Some(level) => SleepLevel::from_wire(level)?,
+            None => SleepLevel::Awake,
+        };
+        // The night runs from the first minute asleep to the last, so being
+        // awake outside that is time in bed and not part of it. The watch
+        // reports those minutes as Awake rather than leaving them out, which
+        // is indistinguishable from the gaps filled in above.
+        if level == SleepLevel::Awake {
+            let night = asleep.as_ref()?;
+            if from < night.start || to > night.end {
+                return None;
+            }
+        }
+        Some(Band { from, to, level })
+    }));
+
+    Night {
+        score: score(&stages),
+        asleep,
+        stages,
+    }
+}
+
+pub fn asleep_spans(windows: &[StageWindow]) -> Vec<Range<UnixMillis>> {
+    windows
+        .iter()
+        .filter(|window| {
+            !matches!(
+                SleepLevel::from_wire(window.level),
+                None | Some(SleepLevel::Awake)
+            )
+        })
+        .fold(Vec::new(), |mut out: Vec<Range<UnixMillis>>, window| {
+            let from = window.at.to_millis();
+            let to = (window.at + window.duration).to_millis();
+            match out.last_mut() {
+                Some(last) if from - last.end <= AWAKE_BRIDGE => last.end = last.end.max(to),
+                _ => out.push(from..to),
+            }
+            out
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,8 +204,8 @@ mod tests {
 
     fn band(from_min: i64, minutes: i64, level: SleepLevel) -> Band {
         Band {
-            from_ms: from_min * 60_000,
-            to_ms: (from_min + minutes) * 60_000,
+            from: UnixMillis(from_min * 60_000),
+            to: UnixMillis((from_min + minutes) * 60_000),
             level,
         }
     }
@@ -278,5 +371,102 @@ mod tests {
             band(120, 100, SleepLevel::Deep),
         ];
         assert_eq!(wakings(&night), 1);
+    }
+
+    fn minute(from_min: i64, minutes: i64, level: Option<i64>) -> Minute {
+        Minute {
+            duration: Duration::from_secs(minutes * 60),
+            sleep_level: level,
+            ..Minute::opened(UnixTime(from_min * 60))
+        }
+    }
+
+    fn at(minute: i64) -> UnixMillis {
+        UnixMillis(minute * 60_000)
+    }
+
+    const AWAKE: i64 = 0;
+    const LIGHT: i64 = 1;
+
+    #[test]
+    fn a_night_runs_from_the_first_minute_asleep_to_the_last() {
+        let drawn = night(&[
+            minute(0, 10, Some(AWAKE)),
+            minute(10, 30, Some(LIGHT)),
+            minute(40, 10, Some(AWAKE)),
+            minute(50, 30, Some(LIGHT)),
+            minute(80, 10, Some(AWAKE)),
+        ]);
+        assert_eq!(drawn.asleep, Some(at(10)..at(80)));
+        assert_eq!(
+            drawn.stages,
+            vec![
+                band(10, 30, SleepLevel::Light),
+                band(40, 10, SleepLevel::Awake),
+                band(50, 30, SleepLevel::Light),
+            ]
+        );
+        assert_eq!(drawn.score, score(&drawn.stages));
+    }
+
+    #[test]
+    fn neighbouring_minutes_of_a_stage_are_one_band_and_a_gap_splits_them() {
+        let drawn = night(&[
+            minute(0, 10, Some(LIGHT)),
+            minute(10, 10, Some(LIGHT)),
+            minute(30, 10, Some(LIGHT)),
+        ]);
+        assert_eq!(
+            drawn.stages,
+            vec![band(0, 20, SleepLevel::Light), band(30, 10, SleepLevel::Light)]
+        );
+    }
+
+    #[test]
+    fn an_unstaged_minute_inside_the_night_reads_as_awake_and_outside_it_is_dropped() {
+        let drawn = night(&[
+            minute(0, 10, None),
+            minute(10, 10, Some(LIGHT)),
+            minute(20, 10, None),
+            minute(30, 10, Some(LIGHT)),
+        ]);
+        assert_eq!(drawn.stages.len(), 3);
+        assert_eq!(drawn.stages[1], band(20, 10, SleepLevel::Awake));
+    }
+
+    #[test]
+    fn a_stage_code_never_heard_of_is_left_out_of_the_night() {
+        let drawn = night(&[minute(0, 10, Some(99)), minute(10, 10, Some(LIGHT))]);
+        assert_eq!(drawn.asleep, Some(at(10)..at(20)));
+        assert_eq!(drawn.stages, vec![band(10, 10, SleepLevel::Light)]);
+    }
+
+    #[test]
+    fn nothing_asleep_is_no_night() {
+        let drawn = night(&[minute(0, 10, Some(AWAKE)), minute(10, 10, None)]);
+        assert_eq!(drawn.asleep, None);
+        assert!(drawn.stages.is_empty());
+        assert_eq!(drawn.score, None);
+    }
+
+    fn window(from_min: i64, minutes: i64, level: i64) -> StageWindow {
+        StageWindow {
+            at: UnixTime(from_min * 60),
+            duration: Duration::from_secs(minutes * 60),
+            level,
+        }
+    }
+
+    #[test]
+    fn a_short_time_awake_bridges_and_a_long_one_splits() {
+        let spans = asleep_spans(&[
+            window(0, 60, LIGHT),
+            window(60, 45, AWAKE),
+            window(105, 60, LIGHT),
+            window(165, 46, AWAKE),
+            window(211, 10, LIGHT),
+            window(300, 10, 99),
+        ]);
+        assert_eq!(spans, vec![at(0)..at(165), at(211)..at(221)]);
     }
 }
