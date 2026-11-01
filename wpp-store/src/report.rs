@@ -416,12 +416,7 @@ pub fn ascents(
     Ok(minutes
         .iter()
         .filter(|minute| minute.at.to_millis() >= from && minute.at.to_millis() <= to)
-        .map(|minute| {
-            (
-                minute.at.to_millis(),
-                minute.ascent.map_or(Metres(0.0), |ascent| ascent.value()),
-            )
-        })
+        .filter_map(|minute| Some((minute.at.to_millis(), minute.ascent?.value())))
         .collect())
 }
 
@@ -864,7 +859,7 @@ mod tests {
             },
             Record::WorkoutStarted {
                 started_at: UnixMillis(opened + 3_600_000).to_seconds(),
-                subcategory: 6,
+                subcategory: 16,
             },
         ];
         records.extend((0..1800).map(|second| {
@@ -889,7 +884,7 @@ mod tests {
         assert_eq!(
             trend.len(),
             1,
-            "one finished weights session, the ride is still open"
+            "the session still open is left out"
         );
         let heart = trend[0].effort.unwrap();
         assert_eq!(heart.median, Bpm(125));
@@ -903,13 +898,13 @@ mod tests {
         let device = store.device("a4:7e:fa:44:d6:10").unwrap();
         let bed = DAY_ONE + 23 * 3_600_000;
         let mut records = vec![
-            staged(bed, 60, 1),
-            staged(bed + 60 * 60_000, 20, 0),
-            staged(bed + 80 * 60_000, 120, 2),
+            staged(bed, 30, 1),
+            staged(bed + 30 * 60_000, 150, 0),
+            staged(bed + 180 * 60_000, 30, 2),
         ];
-        records.extend((0..20).map(|step| {
+        records.extend((0..21).map(|step| {
             let at = bed + step * 10 * 60_000;
-            let awake = (60..80).contains(&(step * 10));
+            let awake = (30..180).contains(&(step * 10));
             rate(at, if awake { 90 } else { 50 + step }, Source::Stored)
         }));
         store.store(device, &records).unwrap();
@@ -920,7 +915,7 @@ mod tests {
         ];
         let nights = night_trend(&store, device, &windows).unwrap();
         assert_eq!(nights.len(), 1);
-        assert_eq!(nights[0].asleep_for, Duration::from_millis(180 * 60_000));
+        assert_eq!(nights[0].asleep_for, Duration::from_millis(60 * 60_000));
         let heart = nights[0].heart.unwrap();
         assert!(heart.median < Bpm(90), "awake readings stay out: {heart:?}");
         assert_eq!(heart.resting, Bpm(50));
@@ -982,5 +977,168 @@ mod tests {
         assert_eq!(reading.pulse.check, PulseCheck::NoWatchRate);
         assert_eq!(reading.pulse.intervals.len(), SPLIT_NIGHT_READING.len());
         assert!(!reading.asleep);
+    }
+
+    fn minute_with_ascent(at_ms: i64, centimetres: Option<i64>) -> Record {
+        Record::Activity(Minute {
+            duration: Duration::from_secs(60),
+            ascent: centimetres.map(Hundredths::new),
+            ..Minute::opened(UnixMillis(at_ms).to_seconds())
+        })
+    }
+
+    #[test]
+    fn a_minute_with_no_ascent_reported_is_no_point_on_the_climb() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .store(
+                device,
+                &[
+                    minute_with_ascent(DAY_ONE, Some(250)),
+                    minute_with_ascent(DAY_ONE + 60_000, None),
+                ],
+            )
+            .unwrap();
+        let climbed = ascents(&store, device, UnixMillis(DAY_ONE), UnixMillis(DAY_ONE + DAY_MS)).unwrap();
+        assert_eq!(climbed, vec![(UnixMillis(DAY_ONE), Metres(2.5))]);
+    }
+
+    fn finished(opened: i64, minutes: i64, sport: i16) -> Vec<Record> {
+        vec![
+            Record::WorkoutStarted {
+                started_at: UnixMillis(opened).to_seconds(),
+                subcategory: sport,
+            },
+            Record::WorkoutEnded {
+                started_at: UnixMillis(opened).to_seconds(),
+                ended_at: UnixMillis(opened + minutes * 60_000).to_seconds(),
+                paused_secs: 0,
+            },
+        ]
+    }
+
+    #[test]
+    fn zone_time_counts_a_session_whole_on_the_day_it_began() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let opened = DAY_ONE + DAY_MS - 5 * 60_000;
+        let mut records = finished(opened, 10, 16);
+        records.extend((0..=10).map(|minute| rate(opened + minute * 60_000, 130, Source::Stored)));
+        store.store(device, &records).unwrap();
+        let edges = Edges::new(vec![
+            UnixMillis(DAY_ONE),
+            UnixMillis(DAY_ONE + DAY_MS),
+            UnixMillis(DAY_ONE + 2 * DAY_MS),
+        ])
+        .unwrap();
+
+        let spent = zone_time(&store, device, &edges, &[Bpm(100), Bpm(150)]).unwrap();
+        assert_eq!(spent[0], vec![Duration::from_secs(600), Duration::from_secs(0)]);
+        assert_eq!(spent[1], vec![Duration::from_secs(0), Duration::from_secs(0)]);
+    }
+
+    #[test]
+    fn the_waking_rate_leaves_out_a_session_and_its_recovery() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let opened = DAY_ONE + 12 * 3_600_000;
+        let mut records = finished(opened, 30, 16);
+        records.extend((0..30).map(|minute| rate(opened + minute * 60_000, 140, Source::Stored)));
+        records.push(rate(opened + 35 * 60_000, 120, Source::Stored));
+        records.extend((0..5).map(|step| rate(DAY_ONE + step * 3_600_000, 62, Source::Stored)));
+        store.store(device, &records).unwrap();
+        let edges = Edges::new(vec![UnixMillis(DAY_ONE), UnixMillis(DAY_ONE + DAY_MS)]).unwrap();
+
+        let rest = awake_heart(&store, device, &edges).unwrap();
+        assert_eq!(rest, vec![Some(AtRest { median: Bpm(62), readings: 5 })]);
+    }
+
+    fn straight_ride(store: &mut Store, device: DeviceId, opened: i64, metres_per_second: f64) {
+        let fixes: Vec<track::Fix> = (0..120)
+            .map(|second| track::Fix {
+                at: UnixMillis(opened + second * 1000),
+                lat_e7: ((52.0 + second as f64 * metres_per_second / 111_320.0) * 1e7) as i32,
+                lon_e7: 49_000_000,
+                altitude_cm: None,
+                accuracy_cm: Some(500),
+                speed_mm_s: None,
+                bearing_cdeg: None,
+            })
+            .collect();
+        store.record_fixes(device, &fixes).unwrap();
+    }
+
+    #[test]
+    fn a_slow_ride_is_held_to_the_speed_it_actually_went() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let cycling = SportId(6);
+        straight_ride(&mut store, device, DAY_ONE, 3.0);
+        let from = UnixMillis(DAY_ONE);
+        let to = UnixMillis(DAY_ONE + 120_000);
+        let held = session_ceiling(&store, device, cycling, from, to).unwrap();
+        assert!(held.0 < sport::ceiling(cycling).0, "{held:?}");
+
+        let nothing_recorded = UnixMillis(DAY_ONE + DAY_MS);
+        assert_eq!(
+            session_ceiling(&store, device, cycling, nothing_recorded, nothing_recorded + Duration::from_secs(60))
+                .unwrap(),
+            sport::ceiling(cycling)
+        );
+    }
+
+    #[test]
+    fn a_session_is_only_costed_for_a_wearer_the_watch_has_described() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let opened = DAY_ONE;
+        store
+            .store(
+                device,
+                &(0..=30)
+                    .map(|minute| rate(opened + minute * 60_000, 140, Source::Stored))
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+        let (from, to) = (UnixMillis(opened), UnixMillis(opened + 30 * 60_000));
+        let weights = SportId(16);
+        assert_eq!(workout_calories(&store, device, None, weights, from, to).unwrap(), None);
+
+        let wearer = UserProfile {
+            id: 1,
+            weight: 75_000,
+            height: 178,
+            gender: 0,
+            birth: 0,
+            first_name: String::new(),
+        };
+        let burned = workout_calories(&store, device, Some(&wearer), weights, from, to)
+            .unwrap()
+            .expect("a known wearer");
+        assert!(burned.0 > 0.0);
+
+        let sex_unknown = UserProfile { gender: 9, ..wearer };
+        assert_eq!(
+            workout_calories(&store, device, Some(&sex_unknown), weights, from, to).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn each_window_reads_the_highest_the_counter_reached_in_it() {
+        let (store, device) = two_days_and_a_session();
+        let edges = Edges::new(vec![
+            UnixMillis(DAY_ONE + ROLLOVER_MS),
+            UnixMillis(DAY_ONE + ROLLOVER_MS + DAY_MS),
+            UnixMillis(DAY_ONE + ROLLOVER_MS + 2 * DAY_MS),
+            UnixMillis(DAY_ONE + ROLLOVER_MS + 3 * DAY_MS),
+        ])
+        .unwrap();
+        let peaks = calories_windowed_max(&store, device, &edges, LONG_AFTER).unwrap();
+        assert_eq!(peaks.len(), 3);
+        assert!(peaks[0].unwrap().0 > 1805.0, "{peaks:?}");
+        assert!(peaks[1].unwrap().0 < 1706.0, "{peaks:?}");
+        assert_eq!(peaks[2], None);
     }
 }

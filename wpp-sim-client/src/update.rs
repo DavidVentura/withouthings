@@ -66,6 +66,7 @@ const TRANSFER_COMPLETE: u32 = 1;
 /// The package as the watch will store it: the bank on external flash is these
 /// bytes verbatim, header included, which is why the `fwblk` table the
 /// bootloader parses is the package header.
+#[derive(Debug)]
 pub struct Package {
     pub bytes: Vec<u8>,
     pub appl_version: u32,
@@ -103,10 +104,10 @@ impl Package {
             let length = read_u32(&bytes, at + 4)? as usize;
             let crc = read_u32(&bytes, at + 8)?;
             let component_version = read_u32(&bytes, at + 12)?;
-            if address + length > bytes.len() {
+            let aligned = (length + 3) & !3;
+            if address + aligned > bytes.len() {
                 return Err(format!("entry ie={ie} runs past the end of the file"));
             }
-            let aligned = (length + 3) & !3;
             let computed = crc32(&bytes[address..address + aligned]);
             if computed != crc {
                 return Err(format!("entry ie={ie} CRC {crc:#010x} != computed {computed:#010x}"));
@@ -280,4 +281,91 @@ fn serve(link: &mut Link, package: &Package, request: &FwChunkRequest) -> io::Re
 pub fn restart(link: &mut Link) -> io::Result<()> {
     println!("\n== restart to update ==");
     link.send(&Frame::new(Command::CMD_RESTART_TO_UPDATE, Vec::new()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TRAILER_OFFSET: usize = 8;
+
+    fn package_with(entries: &[(u16, usize, Vec<u8>, u32)]) -> Vec<u8> {
+        let body = entries.len() * (4 + IE_ENTRY_LEN as usize);
+        let start = 4 + body + 4;
+        let mut out = HEADER_VERSION.to_le_bytes().to_vec();
+        out.extend_from_slice(&(body as u16).to_le_bytes());
+        let mut address = start;
+        for (ie, length, part, version) in entries {
+            out.extend_from_slice(&ie.to_le_bytes());
+            out.extend_from_slice(&IE_ENTRY_LEN.to_le_bytes());
+            let mut entry = vec![0u8; IE_ENTRY_LEN as usize];
+            entry[..4].copy_from_slice(&(address as u32).to_le_bytes());
+            entry[4..8].copy_from_slice(&(*length as u32).to_le_bytes());
+            entry[8..12].copy_from_slice(&crc32(part).to_le_bytes());
+            entry[12..16].copy_from_slice(&version.to_le_bytes());
+            out.extend_from_slice(&entry);
+            address += part.len();
+        }
+        let crc = crc32(&out);
+        out.extend_from_slice(&crc.to_le_bytes());
+        for (_, _, part, _) in entries {
+            out.extend_from_slice(part);
+        }
+        out
+    }
+
+    fn trailer() -> VersionTrailer {
+        VersionTrailer::at(APPL_BASE + TRAILER_OFFSET).unwrap()
+    }
+
+    fn appl(version: u32) -> Vec<u8> {
+        let mut part = vec![0u8; 12];
+        part[TRAILER_OFFSET..].copy_from_slice(&version.to_le_bytes());
+        part
+    }
+
+    #[test]
+    fn the_crc_is_the_standard_one() {
+        assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
+    }
+
+    #[test]
+    fn a_trailer_has_to_be_a_word_inside_the_appl_part() {
+        assert!(VersionTrailer::at(APPL_BASE).is_ok());
+        assert!(VersionTrailer::at(APPL_BASE + 2).is_err());
+        assert!(VersionTrailer::at(APPL_BASE - 4).is_err());
+        assert!(VersionTrailer::at(BOOTLOADER_BASE).is_err());
+    }
+
+    #[test]
+    fn a_package_whose_trailer_matches_its_header_is_taken() {
+        let bytes = package_with(&[(IE_APPL, 12, appl(9999), 9999)]);
+        let package = Package::parse(bytes.clone(), trailer()).unwrap();
+        assert_eq!(package.appl_version, 9999);
+        assert_eq!(package.crc, crc32(&bytes));
+    }
+
+    #[test]
+    fn a_trailer_disagreeing_with_the_header_is_refused() {
+        let bytes = package_with(&[(IE_APPL, 12, appl(1), 9999)]);
+        assert!(Package::parse(bytes, trailer()).unwrap_err().contains("trailer"));
+    }
+
+    #[test]
+    fn a_damaged_header_or_part_is_refused() {
+        let good = package_with(&[(IE_APPL, 12, appl(9999), 9999)]);
+        let mut header = good.clone();
+        header[6] ^= 1;
+        assert!(Package::parse(header, trailer()).unwrap_err().contains("header CRC"));
+        let mut part = good.clone();
+        *part.last_mut().unwrap() ^= 1;
+        assert!(Package::parse(part, trailer()).unwrap_err().contains("CRC"));
+        assert!(Package::parse(vec![0; 4], trailer()).is_err());
+    }
+
+    #[test]
+    fn an_unaligned_part_at_the_end_of_the_file_is_refused_rather_than_read_past() {
+        let bytes = package_with(&[(IE_APPL, 11, vec![0; 11], 9999)]);
+        assert!(Package::parse(bytes, trailer()).unwrap_err().contains("past the end"));
+    }
 }

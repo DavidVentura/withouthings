@@ -149,17 +149,42 @@ pub struct EcgSummaryRow {
     pub sample_bytes: i64,
 }
 
-// The sampling rate comes off the wire unchecked, and it divides everything
-// about a recording, so a row carrying a bad one cannot be summarised.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EcgFault {
+    // The sampling rate comes off the wire unchecked, and it divides everything
+    // about a recording, so a row carrying a bad one cannot be summarised.
+    SamplingRate(i64),
+    DeltaCoded,
+    NotAnEcgSignal(u16),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnreadableEcg {
     pub id: EcgId,
-    pub sampling_hz: i64,
+    pub fault: EcgFault,
 }
 
 impl std::fmt::Display for UnreadableEcg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ecg {} has sampling rate {}", self.id.0, self.sampling_hz)
+        let id = self.id.0;
+        match self.fault {
+            EcgFault::SamplingRate(hz) => write!(f, "ecg {id} has sampling rate {hz}"),
+            EcgFault::DeltaCoded => write!(f, "ecg {id} is delta coded, which nothing here decodes"),
+            EcgFault::NotAnEcgSignal(kind) => write!(f, "ecg {id} has signal type {kind}"),
+        }
+    }
+}
+
+/// An end the store has no start for. The start carries the activity, so there
+/// is no row it could honestly make.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnstartedWorkout {
+    pub started_at: UnixTime,
+}
+
+impl std::fmt::Display for UnstartedWorkout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "a workout started at {} ended with no start on file", self.started_at.0)
     }
 }
 
@@ -413,8 +438,13 @@ impl Store {
         tx.commit()
     }
 
-    pub fn store(&mut self, device_id: DeviceId, records: &[Record]) -> Result<(), Error> {
+    pub fn store(
+        &mut self,
+        device_id: DeviceId,
+        records: &[Record],
+    ) -> Result<Vec<UnstartedWorkout>, Error> {
         let records = thin_levels(self.newest_levels(device_id, records)?, records);
+        let mut unstarted = Vec::new();
         let tx = self.conn.transaction()?;
         for record in records {
             match record {
@@ -461,13 +491,14 @@ impl Store {
                     ended_at,
                     paused_secs,
                 } => {
-                    tx.execute(
-                        "INSERT INTO workout (device_id, started_at, ended_at, subcategory, paused_secs)
-                         VALUES (?1, ?2, ?3, 0, ?4)
-                         ON CONFLICT (device_id, started_at)
-                         DO UPDATE SET ended_at = ?3, paused_secs = ?4",
+                    let ended = tx.execute(
+                        "UPDATE workout SET ended_at = ?3, paused_secs = ?4
+                          WHERE device_id = ?1 AND started_at = ?2",
                         params![device_id, started_at.0, ended_at.0, paused_secs],
                     )?;
+                    if ended == 0 {
+                        unstarted.push(UnstartedWorkout { started_at: *started_at });
+                    }
                 }
                 Record::WorkoutDropped { started_at } => {
                     tx.execute(
@@ -560,7 +591,8 @@ impl Store {
                 }
             }
         }
-        tx.commit()
+        tx.commit()?;
+        Ok(unstarted)
     }
 
     fn newest_levels(
@@ -1287,34 +1319,38 @@ impl Store {
 
     /// Delta-coded recordings stay on file but are not offered: nothing here
     /// decodes them, and read as plain samples they are a wrong waveform. Nor
-    /// are signal types that are not ECG leads.
+    /// are signal types that are not ECG leads. Both are named in the listing.
     pub fn ecgs(&self, device_id: DeviceId) -> Result<EcgListing, Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, measured_at, signal_type, sampling_hz, length(samples)
+            "SELECT id, measured_at, signal_type, sampling_hz, length(samples), format
                FROM ecg
-              WHERE device_id = ?1 AND format != ?2
+              WHERE device_id = ?1
               ORDER BY measured_at DESC",
         )?;
-        let rows = stmt.query_map(params![device_id, SampleFormat::DELTA_META], |r| {
+        let rows = stmt.query_map(params![device_id], |r| {
+            let id: EcgId = r.get(0)?;
+            let unreadable = |fault| Ok(Err(UnreadableEcg { id, fault }));
+            let format: u8 = r.get(5)?;
+            if format == SampleFormat::DELTA_META {
+                return unreadable(EcgFault::DeltaCoded);
+            }
             let signal_type: u16 = r.get(2)?;
             let Some(kind) = SignalKind::from_type_id(signal_type) else {
-                return Ok(None);
+                return unreadable(EcgFault::NotAnEcgSignal(signal_type));
             };
-            let id: EcgId = r.get(0)?;
             let hz: i64 = r.get(3)?;
             let Some(sampling_hz) = u16::try_from(hz).ok().and_then(SamplingHz::new) else {
-                return Ok(Some(Err(UnreadableEcg { id, sampling_hz: hz })));
+                return unreadable(EcgFault::SamplingRate(hz));
             };
-            Ok(Some(Ok(EcgSummaryRow {
+            Ok(Ok(EcgSummaryRow {
                 id,
                 measured_at: millis(r, 1)?,
                 kind,
                 sampling_hz,
                 sample_bytes: r.get(4)?,
-            })))
+            }))
         })?;
-        let parsed: Vec<Result<EcgSummaryRow, UnreadableEcg>> =
-            rows.filter_map(Result::transpose).collect::<Result<_, Error>>()?;
+        let parsed: Vec<Result<EcgSummaryRow, UnreadableEcg>> = rows.collect::<Result<_, Error>>()?;
         let (rows, unreadable): (Vec<_>, Vec<_>) = parsed.into_iter().partition(Result::is_ok);
         Ok(EcgListing {
             rows: rows.into_iter().map(Result::unwrap).collect(),
@@ -1912,9 +1948,9 @@ mod tests {
                     filter_bank: 0,
                 },
                 units: Some(UnitConversionParameters {
-                    offset: 0,
-                    gain: 0,
-                    qfix: 0,
+                    offset: 3,
+                    gain: 5,
+                    qfix: 7,
                 }),
                 measure: Some(StoredMeasureMeta {
                     uid: 0,
@@ -1942,6 +1978,13 @@ mod tests {
         store.store(device, &[check]).unwrap();
         assert_eq!(store.count("spo2_check").unwrap(), 1);
         assert_eq!(store.count("spo2_check_measure").unwrap(), 2);
+        let units: (i64, i64, i64) = store
+            .connection()
+            .query_row("SELECT unit_offset, gain, qfix FROM spo2_check", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(units, (3, 5, 7));
     }
 
     #[test]
@@ -2411,7 +2454,14 @@ mod tests {
     fn foreign_keys_are_enforced() {
         let mut store = Store::open_in_memory().unwrap();
         let err = store.store(DeviceId(999), &[sample(1000, 62, Source::Stored)]);
-        assert!(err.is_err(), "an unknown device must be rejected");
+        assert!(
+            matches!(
+                err,
+                Err(rusqlite::Error::SqliteFailure(e, _))
+                    if e.code == rusqlite::ErrorCode::ConstraintViolation
+            ),
+            "an unknown device must be rejected: {err:?}"
+        );
     }
 
     #[test]
@@ -2468,7 +2518,7 @@ mod tests {
             .unwrap();
 
         let id = store.ecgs(device).unwrap().rows[0].id;
-        assert!(store.ecg(id).is_err());
+        assert!(matches!(store.ecg(id), Err(rusqlite::Error::FromSqlConversionFailure(..))));
     }
 
     #[test]
@@ -2502,7 +2552,7 @@ mod tests {
         let readable: Vec<UnixMillis> = listed.rows.iter().map(|row| row.measured_at).collect();
         assert_eq!(readable, vec![UnixTime(3000).to_millis(), UnixTime(1000).to_millis()]);
         assert_eq!(listed.unreadable.len(), 1);
-        assert_eq!(listed.unreadable[0].sampling_hz, 0);
+        assert_eq!(listed.unreadable[0].fault, EcgFault::SamplingRate(0));
     }
 
     #[test]
@@ -2560,13 +2610,62 @@ mod tests {
             .unwrap();
 
         assert_eq!(store.count("ecg").unwrap(), 1);
-        assert_eq!(
-            store.ecgs(device).unwrap(),
-            EcgListing {
-                rows: Vec::new(),
-                unreadable: Vec::new()
-            }
-        );
+        let listed = store.ecgs(device).unwrap();
+        assert!(listed.rows.is_empty());
+        assert_eq!(listed.unreadable.len(), 1);
+        assert_eq!(listed.unreadable[0].fault, EcgFault::DeltaCoded);
+    }
+
+    #[test]
+    fn a_signal_type_that_is_no_ecg_lead_is_kept_and_named() {
+        use wpp::objects::{StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend};
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let signal = Signal {
+            meta: StoredSignalMeta {
+                r#type: 9_999,
+                sampling_freq: 300,
+                format: 0,
+                size: 2,
+                resolution: 14,
+                channel: 1,
+            },
+            extend: StoredSignalMetaExtend::default(),
+            units: None,
+            measure: Some(StoredMeasureMeta::default()),
+            measures: Vec::new(),
+            data: vec![1, 0],
+        };
+        store
+            .store(
+                device,
+                &[Record::Ecg {
+                    measured_at: UnixTime(1000),
+                    signal: Box::new(signal),
+                }],
+            )
+            .unwrap();
+        let listed = store.ecgs(device).unwrap();
+        assert!(listed.rows.is_empty());
+        assert_eq!(listed.unreadable[0].fault, EcgFault::NotAnEcgSignal(9_999));
+    }
+
+    #[test]
+    fn an_end_with_no_start_on_file_makes_no_row_and_is_named() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let unstarted = store
+            .store(
+                device,
+                &[Record::WorkoutEnded {
+                    started_at: UnixTime(1000),
+                    ended_at: UnixTime(2000),
+                    paused_secs: 0,
+                }],
+            )
+            .unwrap();
+        assert_eq!(unstarted, vec![UnstartedWorkout { started_at: UnixTime(1000) }]);
+        assert_eq!(store.count("workout").unwrap(), 0);
     }
 
     #[test]

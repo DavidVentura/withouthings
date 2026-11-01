@@ -163,5 +163,12 @@ mod tests {
         let mut broken = region(&[(IE_MAC, b"a4:7e:fa:44:d6:10\0")]);
         broken[4] = 0x41;
         assert!(matches!(association(&broken), Err(DumpError::NoValidRegion)));
+
+        let secret = b"0123456789abcdef0123456789abcdef";
+        broken.extend(region(&[
+            (IE_MAC, b"11:22:33:44:55:66\0"),
+            (IE_AUTH_DATA, &[secret.as_slice(), &[0]].concat()),
+        ]));
+        assert_eq!(association(&broken).unwrap().mac, "11:22:33:44:55:66");
     }
 }

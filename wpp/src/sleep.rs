@@ -253,7 +253,7 @@ mod tests {
     ) -> Vec<Band> {
         let mut out = Vec::new();
         let mut at = 0;
-        let mut push = |out: &mut Vec<Band>, at: &mut i64, minutes: i64, level| {
+        let push = |out: &mut Vec<Band>, at: &mut i64, minutes: i64, level| {
             if minutes > 0 {
                 out.push(band(*at, minutes, level));
                 *at += minutes;

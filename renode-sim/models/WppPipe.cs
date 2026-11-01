@@ -298,6 +298,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         // and a second connect on a link the firmware thinks is up goes unanswered.
         private void Unlink()
         {
+            this.Log(LogLevel.Info, "WPP client left {0} events undelivered", inbound.Count);
             Post(BuildDisconnected());
         }
 

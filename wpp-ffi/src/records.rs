@@ -205,12 +205,13 @@ impl WearPosition {
         }
     }
 
-    pub(crate) fn of(value: u8) -> WearPosition {
+    pub(crate) fn of(value: u8) -> Option<WearPosition> {
         match value {
-            1 => WearPosition::Hip,
-            2 => WearPosition::LeftWrist,
-            3 => WearPosition::RightWrist,
-            _ => WearPosition::NotSet,
+            0 => Some(WearPosition::NotSet),
+            1 => Some(WearPosition::Hip),
+            2 => Some(WearPosition::LeftWrist),
+            3 => Some(WearPosition::RightWrist),
+            _ => None,
         }
     }
 }

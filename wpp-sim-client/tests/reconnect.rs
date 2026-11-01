@@ -4,8 +4,10 @@
 
 mod common;
 
+use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::path::Path;
 use std::time::Duration;
 
 use common::{client, renode_binary, repository, require, scratch, tail, Renode, Rig};
@@ -16,9 +18,26 @@ const WPP_PIPE: (&str, u16) = ("127.0.0.1", 7788);
 /// Each injected event takes the pipe a few ms, so these are still queued when
 /// the next client arrives.
 const UNREAD_REQUESTS: usize = 20;
+const ANSWER_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// What the pipe counted as still queued when each client left. Without it a
+/// queue that had already drained would pass this test for the wrong reason.
+fn undelivered_at_departure(directory: &Path) -> Vec<usize> {
+    let log = fs::read_to_string(directory.join("log")).expect("Renode keeps a log");
+    log.lines()
+        .filter_map(|line| line.split("WPP client left ").nth(1))
+        .map(|rest| {
+            rest.split(' ')
+                .next()
+                .and_then(|count| count.parse().ok())
+                .expect("the pipe logs a count")
+        })
+        .collect()
+}
 
 fn leave_requests_behind() {
     let mut socket = TcpStream::connect(WPP_PIPE).expect("the pipe accepts the connection");
+    socket.set_read_timeout(Some(ANSWER_TIMEOUT)).unwrap();
     let request = Frame::new(Command::CMD_BATTERY_STATUS, Vec::new()).to_bytes();
     let mut framed = (request.len() as u16).to_be_bytes().to_vec();
     framed.extend_from_slice(&request);
@@ -45,6 +64,12 @@ fn a_reconnect_over_unread_requests_is_answered() {
     assert!(first, "the first probe failed:\n{}", tail(&output, 20));
 
     leave_requests_behind();
+    std::thread::sleep(Duration::from_millis(100));
+    let departed = undelivered_at_departure(&directory);
+    assert!(
+        departed.last().is_some_and(|count| *count > 0),
+        "the client left nothing queued, so this proves nothing: {departed:?}"
+    );
     let (answered, output) = client(&directory, &["--sync"]);
     assert!(answered, "the reconnect went unanswered:\n{}", tail(&output, 20));
 }

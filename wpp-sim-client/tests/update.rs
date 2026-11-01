@@ -314,10 +314,10 @@ fn the_relinked_image_installs_through_the_update_path() {
         "xTickCount",
     );
     let read = format!("sysbus ReadDoubleWord {ticks:#x}");
-    let first = renode.monitor(&read);
+    let first = word(renode.monitor(&read));
     std::thread::sleep(Duration::from_secs(3));
-    let second = renode.monitor(&read);
-    assert_ne!(first, second, "the source kernel's tick is not advancing ({first})");
+    let second = word(renode.monitor(&read));
+    assert!(second > first, "the source kernel's tick is not advancing ({first})");
     println!("source kernel tick {first} -> {second}");
     println!("wall time: {:.1}s", started.elapsed().as_secs_f64());
 }

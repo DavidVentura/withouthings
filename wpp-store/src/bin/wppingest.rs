@@ -81,9 +81,15 @@ fn main() -> ExitCode {
                 } => {
                     batches += 1;
                     records += batch.len();
-                    if let Err(err) = store.store(device, &batch) {
-                        eprintln!("store failed: {err}");
-                        return ExitCode::FAILURE;
+                    let unstarted = match store.store(device, &batch) {
+                        Ok(unstarted) => unstarted,
+                        Err(err) => {
+                            eprintln!("store failed: {err}");
+                            return ExitCode::FAILURE;
+                        }
+                    };
+                    for workout in unstarted {
+                        eprintln!("{workout}");
                     }
                     queue.extend(client.handle(Event::Stored { token }));
                 }

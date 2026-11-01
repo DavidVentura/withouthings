@@ -718,14 +718,13 @@ impl WatchService {
     }
 
     pub fn wear_position(&self) -> WearPosition {
-        WearPosition::of(
-            self.inner
-                .lock()
-                .unwrap()
-                .client
-                .wear_position()
-                .unwrap_or(0),
-        )
+        let Some(reported) = self.inner.lock().unwrap().client.wear_position() else {
+            return WearPosition::NotSet;
+        };
+        WearPosition::of(reported).unwrap_or_else(|| {
+            self.note_unreadable(&[format!("wear position {reported} is not one this app knows")]);
+            WearPosition::NotSet
+        })
     }
 
     pub fn set_wear_position(&self, position: WearPosition) -> Result<(), WatchError> {
@@ -1398,13 +1397,18 @@ impl WatchService {
                 // may be acknowledged past one that was not kept.
                 Action::Store { .. } if unkept => {}
                 Action::Store { token, records } => {
-                    if let Err(error) = self.store.lock().unwrap().store(self.device_id, &records) {
-                        failure.get_or_insert(error.into());
-                        unkept = true;
-                        let refetch = self.inner.lock().unwrap().client.handle(Event::StoreFailed);
-                        actions.extend(refetch);
-                        continue;
-                    }
+                    let stored = self.store.lock().unwrap().store(self.device_id, &records);
+                    let unstarted = match stored {
+                        Ok(unstarted) => unstarted,
+                        Err(error) => {
+                            failure.get_or_insert(error.into());
+                            unkept = true;
+                            let refetch = self.inner.lock().unwrap().client.handle(Event::StoreFailed);
+                            actions.extend(refetch);
+                            continue;
+                        }
+                    };
+                    self.note_unreadable(&unstarted);
                     changed = true;
                     let released = self
                         .inner

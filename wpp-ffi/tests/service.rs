@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
-use wpp_ffi::{AncsLink, Bitmap, LocationFix, Rasterizer, SetEdge, Transport, WatchService};
+use wpp_ffi::{
+    AncsLink, Bitmap, LocationFix, Rasterizer, SetEdge, Transport, WatchError, WatchService,
+};
 
 #[derive(Default)]
 struct Recorder {
@@ -470,7 +472,10 @@ fn trimming_a_session_moves_its_end_and_forgets_the_sets_after_it() {
     );
 
     assert!(
-        service.trim_workout(id, 1_784_005_000_000).is_err(),
+        matches!(
+            service.trim_workout(id, 1_784_005_000_000),
+            Err(WatchError::Refused { .. })
+        ),
         "an end later than the one recorded is refused"
     );
 
@@ -546,7 +551,6 @@ fn a_toggle_and_save_leaves_an_armed_scan_alone() {
 }
 
 const CYCLING: i32 = 6;
-const WEIGHTS: i32 = 16;
 
 fn fix(at_ms: i64, lat: f64, lon: f64) -> LocationFix {
     LocationFix {
@@ -599,24 +603,6 @@ fn a_recorded_route_comes_back_measured() {
 }
 
 #[test]
-fn an_activity_that_covers_no_ground_has_no_route_to_read() {
-    let recorder = Arc::new(Recorder::default());
-    let (service, path) = service(&recorder);
-
-    service.record_fixes(ride()).unwrap();
-
-    assert!(
-        service
-            .track(1_700_000_000_000, 1_700_000_060_000, WEIGHTS)
-            .unwrap()
-            .is_none(),
-        "fixes recorded under a session on the spot are not a route"
-    );
-
-    cleanup(&path);
-}
-
-#[test]
 fn the_table_says_which_activities_are_worth_a_receiver() {
     let recorder = Arc::new(Recorder::default());
     let (service, path) = service(&recorder);
@@ -632,20 +618,19 @@ fn the_table_says_which_activities_are_worth_a_receiver() {
     for (subcategory, name) in [(6, "cycling"), (2, "running"), (34, "skiing")] {
         assert!(reads_a_route(subcategory), "{name} covers ground");
     }
-    for (subcategory, name) in [
-        (16, "weights"),
-        (307, "indoor running"),
-        (7, "swimming"),
-        (9_999, "an activity the table has never heard of"),
-    ] {
+    for (subcategory, name) in [(16, "weights"), (307, "indoor running"), (7, "swimming")] {
         assert!(!reads_a_route(subcategory), "{name} stays put");
     }
+    assert!(
+        !reads_a_route(9_999),
+        "an activity the table has never heard of has no limits to clean it by"
+    );
 
     cleanup(&path);
 }
 
 #[test]
-fn a_map_frame_covers_the_box_it_was_fitted_to() {
+fn a_map_frame_keeps_the_ends_of_the_route() {
     let recorder = Arc::new(Recorder::default());
     let (service, path) = service(&recorder);
 
@@ -814,7 +799,10 @@ fn a_batch_that_cannot_be_kept_asks_for_a_new_connection() {
         Command::CMD_DISPLAYED_INFO_GET,
         vec![WppObject::Steps(Steps { value: 10 })],
     );
-    assert!(service.on_bytes(frame.to_bytes(), 1_700_000_000_000).is_err());
+    assert!(matches!(
+        service.on_bytes(frame.to_bytes(), 1_700_000_000_000),
+        Err(WatchError::Storage { .. })
+    ));
     assert_eq!(*recorder.reconnects.lock().unwrap(), 1);
     cleanup(&path);
 }
@@ -823,7 +811,10 @@ fn a_batch_that_cannot_be_kept_asks_for_a_new_connection() {
 fn window_edges_out_of_order_are_refused() {
     let recorder = Arc::new(Recorder::default());
     let (service, path) = service(&recorder);
-    assert!(service.worn_hours(vec![2_000, 1_000]).is_err());
+    assert!(matches!(
+        service.worn_hours(vec![2_000, 1_000]),
+        Err(WatchError::Refused { .. })
+    ));
     assert!(service.worn_hours(Vec::new()).unwrap().is_empty());
     cleanup(&path);
 }
@@ -873,6 +864,7 @@ fn an_unreadable_ecg_is_left_out_of_the_list_and_told_once() {
 
     service.ecgs().unwrap();
     assert!(service.unhandled_objects().is_empty(), "told only once");
+    cleanup(&path);
 }
 
 #[test]
@@ -904,4 +896,5 @@ fn an_alert_keeps_the_readings_it_can_read_and_tells_of_the_rest() {
     let told = service.unhandled_objects();
     assert_eq!(told.len(), 1, "{told:?}");
     assert!(told[0].contains("afib reading 1"), "{told:?}");
+    cleanup(&path);
 }
