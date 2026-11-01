@@ -103,6 +103,11 @@ namespace Antmicro.Renode.Peripherals.MTD
             this.Log(LogLevel.Info, "protected region snapshot: 0x{0:X}..0x{1:X}", start, start + size);
         }
 
+        public void DumpFlash(string path)
+        {
+            System.IO.File.WriteAllBytes(path, sysbus.ReadBytes(0, FlashSize));
+        }
+
         public uint VerifyProtectedRegion()
         {
             if(protectedImage == null)
@@ -147,6 +152,7 @@ namespace Antmicro.Renode.Peripherals.MTD
         public long Size { get { return 0x1000; } }
 
         private const uint PageSize = 0x1000;
+        private const int FlashSize = 0x100000;
 
         private enum Reg : long
         {
