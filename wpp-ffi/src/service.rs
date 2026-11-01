@@ -568,12 +568,12 @@ impl WatchService {
     }
 
     pub fn request_screens(&self) -> Result<(), WatchError> {
-        let actions = self.inner.lock().unwrap().client.request_screens();
+        let actions = self.inner.lock().unwrap().client.request_screens(now());
         self.dispatch(actions)
     }
 
     pub fn set_screens(&self, ids: Vec<u8>) -> Result<(), WatchError> {
-        let actions = self.inner.lock().unwrap().client.set_screens(&ids);
+        let actions = self.inner.lock().unwrap().client.set_screens(&ids, now());
         self.dispatch(actions)
     }
 
@@ -601,7 +601,7 @@ impl WatchService {
                 weight: weight_grams,
                 height: height_cm,
                 ..held
-            });
+            }, now());
         self.dispatch(actions)
     }
 
@@ -611,7 +611,7 @@ impl WatchService {
             .lock()
             .unwrap()
             .client
-            .start_workout(activity as i16, now().to_seconds());
+            .start_workout(activity as i16, now());
         self.dispatch(actions)
     }
 
@@ -669,7 +669,7 @@ impl WatchService {
     }
 
     pub fn refresh_workout_status(&self) -> Result<(), WatchError> {
-        let actions = self.inner.lock().unwrap().client.workout_status();
+        let actions = self.inner.lock().unwrap().client.workout_status(now());
         self.dispatch(actions)
     }
 
@@ -713,7 +713,7 @@ impl WatchService {
             .lock()
             .unwrap()
             .client
-            .stop_workout(active.started_at, now().to_seconds());
+            .stop_workout(active.started_at, now());
         self.dispatch(actions)
     }
 
@@ -734,7 +734,7 @@ impl WatchService {
             .lock()
             .unwrap()
             .client
-            .set_wear_position(position.wire());
+            .set_wear_position(position.wire(), now());
         self.dispatch(actions)
     }
 
@@ -770,7 +770,7 @@ impl WatchService {
     }
 
     pub fn request_device_config(&self) -> Result<(), WatchError> {
-        let actions = self.inner.lock().unwrap().client.request_device_config();
+        let actions = self.inner.lock().unwrap().client.request_device_config(now());
         self.dispatch(actions)
     }
 
@@ -853,22 +853,19 @@ impl WatchService {
                         let drawn =
                             self.rasterizer
                                 .activity_glyph(*id, format.width, format.height);
-                        (
-                            format.kind,
-                            wpp::image::Mono::pack(&drawn.pixels, drawn.width, drawn.height),
-                        )
+                        Ok((format.kind, drawn.pack()?))
                     })
-                    .collect();
-                wpp::client::WorkoutScreen {
+                    .collect::<Result<_, WatchError>>()?;
+                Ok(wpp::client::WorkoutScreen {
                     id: *id,
                     name: sport::name(SportId(*id)),
                     face_mode: face.mode,
                     flag: face.flag,
                     glyphs,
-                }
+                })
             })
-            .collect();
-        let actions = self.inner.lock().unwrap().client.set_activities(&screens);
+            .collect::<Result<_, WatchError>>()?;
+        let actions = self.inner.lock().unwrap().client.set_activities(&screens, now());
         self.dispatch(actions)
     }
 
@@ -944,7 +941,7 @@ impl WatchService {
     }
 
     pub fn set_notifications(&self, enabled: bool) -> Result<(), WatchError> {
-        let actions = self.inner.lock().unwrap().client.set_notifications(enabled);
+        let actions = self.inner.lock().unwrap().client.set_notifications(enabled, now());
         self.dispatch(actions)
     }
 
@@ -1456,7 +1453,7 @@ impl WatchService {
                 .glyphs
                 .iter()
                 .map(|g| self.rasterizer.glyph(g.codepoint, width, height).pack())
-                .collect();
+                .collect::<Result<_, _>>()?;
             return self.write(&request.reply(&bitmaps));
         }
         if let Some(request) = icon {
@@ -1464,7 +1461,7 @@ impl WatchService {
             let drawn = self
                 .rasterizer
                 .icon(request.app_id.clone(), width, height)
-                .pack();
+                .pack()?;
             return self.write(&request.reply(&drawn));
         }
         Ok(())

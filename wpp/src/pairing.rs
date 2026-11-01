@@ -84,13 +84,13 @@ impl Pairing {
 
     pub fn on_frame(&mut self, frame: &Frame) -> Vec<Frame> {
         let opcode = frame.command.opcode();
-        if opcode == Command::CMD_ERROR.0 && rejects_probe(frame) {
+        if opcode == Command::CMD_ERROR && rejects_probe(frame) {
             self.state = PairingState::AlreadyAssociated;
             return Vec::new();
         }
 
         match &self.state {
-            PairingState::Probing if opcode == Command::CMD_PROBE_CHALLENGE.0 => {
+            PairingState::Probing if opcode == Command::CMD_PROBE_CHALLENGE => {
                 let Some(challenge) = frame.objects.iter().find_map(|o| match o {
                     WppObject::ProbeChallenge(c) => Some(c.clone()),
                     _ => None,
@@ -116,11 +116,11 @@ impl Pairing {
                     ],
                 )]
             }
-            PairingState::Readopting(credentials) if opcode == Command::CMD_PROBE.0 => {
+            PairingState::Readopting(credentials) if opcode == Command::CMD_PROBE => {
                 self.state = PairingState::Paired(credentials.clone());
                 Vec::new()
             }
-            PairingState::Probing if opcode == Command::CMD_PROBE.0 => {
+            PairingState::Probing if opcode == Command::CMD_PROBE => {
                 let Some(reply) = frame.objects.iter().find_map(|o| match o {
                     WppObject::ProbeReply(r) => Some(r.clone()),
                     _ => None,
@@ -141,7 +141,7 @@ impl Pairing {
                     ],
                 )]
             }
-            PairingState::Associating { mac } if opcode == Command::CMD_ASSOCIATION_KEYS_SET.0 => {
+            PairingState::Associating { mac } if opcode == Command::CMD_ASSOCIATION_KEYS_SET => {
                 self.state = PairingState::FinishingSetup {
                     mac: mac.clone(),
                     keys: AccountKeys::Set,
@@ -165,7 +165,7 @@ impl Pairing {
                 };
                 vec![Frame::new(Command::CMD_SETUP_OK, Vec::new())]
             }
-            PairingState::FinishingSetup { mac, .. } if opcode == Command::CMD_SETUP_OK.0 => {
+            PairingState::FinishingSetup { mac, .. } if opcode == Command::CMD_SETUP_OK => {
                 self.state = PairingState::Paired(Credentials {
                     mac: mac.clone(),
                     secret: self.secret.clone(),

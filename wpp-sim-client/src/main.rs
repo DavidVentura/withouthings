@@ -153,7 +153,7 @@ impl Link {
         if frame.command.channel() == Some(Channel::SlaveRequest) {
             println!("   [slave request] {:?} {:?}", frame.command.opcode_name(), frame.objects);
             let echo = Frame::new(
-                Command(frame.command.opcode()).with_channel(Channel::SlaveRequest),
+                frame.command.opcode().with_channel(Channel::SlaveRequest),
                 Vec::new(),
             );
             self.send(&echo)?;
@@ -252,7 +252,7 @@ fn run(link: &mut Link, step: &Step) -> std::io::Result<()> {
             return Ok(());
         };
         report(&reply);
-        if reply.command.opcode() == Command::CMD_ERROR.0 {
+        if reply.command.opcode() == Command::CMD_ERROR {
             return Ok(());
         }
         match step.answers {
@@ -902,7 +902,7 @@ fn authenticate(
         return Ok(None);
     };
     report(&reply);
-    if reply.command.opcode() != Command::CMD_PROBE.0 {
+    if reply.command.opcode() != Command::CMD_PROBE {
         return Ok(None);
     }
     Ok(reply.objects.iter().find_map(|o| match o {

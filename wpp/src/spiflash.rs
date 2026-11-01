@@ -85,7 +85,7 @@ impl SpiFlash {
             read.outcome = Outcome::Refused(err);
             return;
         }
-        if frame.command.opcode() != Command::CMD_SPI_FLASH.0 {
+        if frame.command.opcode() != Command::CMD_SPI_FLASH {
             return;
         }
         for object in &frame.objects {
@@ -143,7 +143,7 @@ mod tests {
     fn chunks_accumulate_until_the_null_closes_the_read() {
         let mut flash = SpiFlash::new();
         let frame = flash.start(0x6000, 32);
-        assert_eq!(frame.command.opcode(), Command::CMD_SPI_FLASH.0);
+        assert_eq!(frame.command.opcode(), Command::CMD_SPI_FLASH);
 
         flash.on_frame(&reply(vec![chunk(&[1; 16]), chunk(&[2; 16])]));
         let progress = flash.progress().unwrap();

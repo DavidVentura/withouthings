@@ -49,7 +49,7 @@ impl DebugDump {
 
         match self.state {
             State::Idle => Vec::new(),
-            State::Selecting(anchor) if command == Command::CMD_DEBUG_SET.0 => {
+            State::Selecting(anchor) if command == Command::CMD_DEBUG_SET => {
                 self.state = State::Receiving;
                 vec![Frame::new(
                     Command::CMD_DEBUG_DUMP,
@@ -58,7 +58,7 @@ impl DebugDump {
                     })],
                 )]
             }
-            State::Receiving if command == Command::CMD_DEBUG_DUMP.0 => {
+            State::Receiving if command == Command::CMD_DEBUG_DUMP => {
                 if !frame
                     .objects
                     .iter()
@@ -73,7 +73,7 @@ impl DebugDump {
                 self.state = State::Acking { next };
                 vec![Frame::new(Command::CMD_DEBUG_DUMP_ACK, Vec::new())]
             }
-            State::Acking { next } if command == Command::CMD_DEBUG_DUMP_ACK.0 => match next {
+            State::Acking { next } if command == Command::CMD_DEBUG_DUMP_ACK => match next {
                 Some(anchor) => self.select(anchor),
                 None => {
                     self.state = State::Idle;
@@ -109,7 +109,7 @@ mod tests {
     }
 
     fn sent(frames: &[Frame]) -> Vec<u16> {
-        frames.iter().map(|f| f.command.opcode()).collect()
+        frames.iter().map(|f| f.command.opcode().0).collect()
     }
 
     #[test]

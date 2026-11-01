@@ -194,10 +194,10 @@ pub fn run(link: &mut Link, package: &Package) -> io::Result<Result<(), String>>
                 package.bytes.len()
             )));
         };
-        let requesting = frame.command.opcode() == Command::CMD_REQUEST_FW_CHUNK.0
+        let requesting = frame.command.opcode() == Command::CMD_REQUEST_FW_CHUNK
             // The first request and every one after an acknowledgement ride back
             // on CMD_FW_AVAILABLE; the continuation at 0x65078 answers on 0x967.
-            || frame.command.opcode() == Command::CMD_FW_AVAILABLE.0;
+            || frame.command.opcode() == Command::CMD_FW_AVAILABLE;
         let request = frame.objects.iter().find_map(|o| match o {
             WppObject::FwChunkRequest(r) => Some(r.clone()),
             _ => None,

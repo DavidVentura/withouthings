@@ -593,11 +593,18 @@ pub struct Bitmap {
 }
 
 impl Bitmap {
-    pub(crate) fn pack(self) -> Mono {
+    pub(crate) fn pack(self) -> Result<Mono, WatchError> {
         if self.pixels.len() != self.width as usize * self.height as usize {
-            return Mono::empty();
+            return Err(WatchError::Refused {
+                reason: format!(
+                    "a {}x{} bitmap cannot hold {} pixels",
+                    self.width,
+                    self.height,
+                    self.pixels.len()
+                ),
+            });
         }
-        Mono::pack(&self.pixels, self.width, self.height)
+        Ok(Mono::pack(&self.pixels, self.width, self.height))
     }
 }
 

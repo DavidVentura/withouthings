@@ -69,7 +69,7 @@ mod tests {
         let notif = Command::CMD_BATTERY_STATUS.with_channel(Channel::Notification);
         assert_eq!(notif.0, 0x8504);
         assert_eq!(notif.channel(), Some(Channel::Notification));
-        assert_eq!(notif.opcode(), Command::CMD_BATTERY_STATUS.0);
+        assert_eq!(notif.opcode(), Command::CMD_BATTERY_STATUS);
         assert_eq!(notif.opcode_name(), Some("CMD_BATTERY_STATUS"));
     }
 

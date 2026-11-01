@@ -89,7 +89,7 @@ fn luma(argb: u32) -> f64 {
 }
 
 fn asks(frame: &Frame, command: Command) -> bool {
-    frame.command.opcode() == command.0 && frame.command.channel() == Some(Channel::SlaveRequest)
+    frame.command.opcode() == command && frame.command.channel() == Some(Channel::SlaveRequest)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,7 +101,7 @@ pub struct ImageFormat {
 
 impl ImageFormat {
     pub fn declared(frame: &Frame) -> Vec<ImageFormat> {
-        if frame.command.opcode() != Command::CMD_WORKOUT_SCREEN_LIST_GET.0 {
+        if frame.command.opcode() != Command::CMD_WORKOUT_SCREEN_LIST_GET {
             return Vec::new();
         }
         frame

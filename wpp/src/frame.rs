@@ -36,8 +36,8 @@ impl Channel {
 }
 
 impl Command {
-    pub fn opcode(self) -> u16 {
-        self.0 & OPCODE_MASK
+    pub fn opcode(self) -> Command {
+        Command(self.0 & OPCODE_MASK)
     }
 
     pub fn channel(self) -> Option<Channel> {
@@ -45,11 +45,11 @@ impl Command {
     }
 
     pub fn with_channel(self, channel: Channel) -> Command {
-        Command(self.opcode() | channel.bits())
+        Command(self.opcode().0 | channel.bits())
     }
 
     pub fn opcode_name(self) -> Option<&'static str> {
-        Command(self.opcode()).name()
+        self.opcode().name()
     }
 }
 

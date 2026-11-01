@@ -16,7 +16,7 @@ use crate::units::{Duration, Hundredths, UnixMillis, UnixTime};
 use crate::{Command, Frame, WppObject};
 
 pub(crate) fn refuses(frame: &Frame, cmd: Command, err: i32) -> bool {
-    frame.command.opcode() == Command::CMD_ERROR.0
+    frame.command.opcode() == Command::CMD_ERROR
         && frame
             .objects
             .iter()
@@ -870,7 +870,7 @@ impl Client {
 
         // A refused menu write erases the whole store on the watch, so the
         // menu must be re-read after any error.
-        if frame.command.opcode() == Command::CMD_ERROR.0
+        if frame.command.opcode() == Command::CMD_ERROR
             && frame.objects.iter().any(|o| {
                 matches!(o, WppObject::Cmderror(e) if e.cmd == Command::CMD_WORKOUT_SCREEN_SET.0)
             })
@@ -884,7 +884,7 @@ impl Client {
 
         let mut answered_ecg = false;
         match frame.command.opcode() {
-            c if c == Command::CMD_MEASURE_START.0 => {
+            Command::CMD_MEASURE_START => {
                 match first!(frame, MeasureCategory).map(|m| m.value) {
                     Some(category) => {
                         self.link.measuring = Some(category);
@@ -899,32 +899,32 @@ impl Client {
                             ],
                         )));
                     }
-                    None => self.unhandled.push((c, 0, "CMD_MEASURE_START without a category")),
+                    None => self.unhandled.push((Command::CMD_MEASURE_START.0, 0, "CMD_MEASURE_START without a category")),
                 }
             }
-            c if c == Command::CMD_STORED_MEASURE_SIGNAL_GET.0
-                && self.link.fetching_ecg
+            Command::CMD_STORED_MEASURE_SIGNAL_GET
+                if self.link.fetching_ecg
                 && frame.objects.iter().any(|o| matches!(o, WppObject::Null(_))) =>
             {
                 self.link.fetching_ecg = false;
                 answered_ecg = true;
             }
-            c if c == Command::CMD_SYNC_REQUEST.0 => {
+            Command::CMD_SYNC_REQUEST => {
                 actions.push(Action::Send(Frame::new(
                     Command::CMD_SYNC_REQUEST.with_channel(Channel::SlaveRequest),
                     Vec::new(),
                 )));
             }
-            c if c == Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_GET.0 => {
+            Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_GET => {
                 if let (Some(wanted), Some(config)) =
                     (self.wanted_notifications, self.notifications)
                 {
                     if config.accepted != wanted {
-                        actions.extend(self.set_notifications(wanted));
+                        actions.extend(self.set_notifications(wanted, received_at));
                     }
                 }
             }
-            c if c == Command::CMD_MEASURE_STOP.0 => {
+            Command::CMD_MEASURE_STOP => {
                 self.link.measuring = None;
                 actions.push(Action::Send(Frame::new(
                     Command::CMD_MEASURE_STOP.with_channel(Channel::SlaveRequest),
@@ -944,7 +944,7 @@ impl Client {
         }
 
         match (&self.link.state, frame.command.opcode()) {
-            (State::Probing, c) if c == Command::CMD_PROBE_CHALLENGE.0 => {
+            (State::Probing, Command::CMD_PROBE_CHALLENGE) => {
                 if let Some(challenge) = first!(frame, ProbeChallenge) {
                     self.link.state = State::Authenticating;
                     actions.push(Action::Send(Frame::new(
@@ -961,12 +961,12 @@ impl Client {
                     )));
                 }
             }
-            (State::Probing | State::Authenticating, c)
-                if c == Command::CMD_ERROR.0 && rejects_probe(&frame) =>
+            (State::Probing | State::Authenticating, Command::CMD_ERROR)
+                if rejects_probe(&frame) =>
             {
                 self.link.state = State::NotAuthenticated;
             }
-            (State::Probing | State::Authenticating, c) if c == Command::CMD_PROBE.0 => {
+            (State::Probing | State::Authenticating, Command::CMD_PROBE) => {
                 actions.extend(self.send_clock(received_at));
                 // Scheduled features are armed for one window at a time, so the
                 // set has to be re-asserted on every connection or a nightly
@@ -983,7 +983,7 @@ impl Client {
             (State::Draining(_), _) if !answered_ecg => {
                 actions.extend(self.on_store_frame(&frame, received_at));
             }
-            (State::Finished, c) if c == Command::CMD_SYNC_REQUEST.0 => {
+            (State::Finished, Command::CMD_SYNC_REQUEST) => {
                 let walk = self.sync_now(received_at);
                 if walk.is_empty() {
                     actions.extend(self.drain_dump(received_at));
@@ -991,7 +991,7 @@ impl Client {
                     actions.extend(walk);
                 }
             }
-            (State::Walking(_), c) if c == Command::CMD_ERROR.0 => {
+            (State::Walking(_), Command::CMD_ERROR) => {
                 let busy = frame
                     .objects
                     .iter()
@@ -1010,7 +1010,7 @@ impl Client {
                     .any(|o| matches!(o, WppObject::WamVasistasHead(_)));
                 // Other requests on the link also answer with a Null, and only
                 // the outstanding stream's own reply says the stream is over.
-                let closed = stream_command(stream.category).0 == c
+                let closed = stream_command(stream.category) == c
                     && !carries_records
                     && frame
                         .objects
@@ -1064,20 +1064,24 @@ impl Client {
             self.image_formats = declared;
         }
 
-        if frame.command.opcode() == Command::CMD_WORKOUT_STATUS.0 {
+        if frame.command.opcode() == Command::CMD_WORKOUT_STATUS {
             let running = frame
                 .objects
                 .iter()
                 .any(|o| matches!(o, WppObject::Status(s) if s.value == 1));
-            if let Some((started_at, ended_at)) = self.pending_stop.take() {
-                if !running && ended_at.0 - started_at.0 < MIN_WORKOUT_SECS {
-                    records.push(Record::WorkoutDropped { started_at });
-                } else if !running {
-                    records.push(Record::WorkoutEnded {
-                        started_at,
-                        ended_at,
-                        paused_secs: paused_secs(frame),
-                    });
+            // A reply still saying running can have crossed the stop on the link,
+            // and the session is only over once the watch says it is gone.
+            if !running {
+                if let Some((started_at, ended_at)) = self.pending_stop.take() {
+                    if ended_at.0 - started_at.0 < MIN_WORKOUT_SECS {
+                        records.push(Record::WorkoutDropped { started_at });
+                    } else {
+                        records.push(Record::WorkoutEnded {
+                            started_at,
+                            ended_at,
+                            paused_secs: paused_secs(frame),
+                        });
+                    }
                 }
             }
         }
@@ -1144,8 +1148,8 @@ impl Client {
                     records.push(Record::live_sample(received_at, SampleKind::HeartRate, live.hr as i64));
                 }
                 WppObject::StartTime(start)
-                    if frame.command.opcode() == Command::CMD_WORKOUT_START.0
-                        || (frame.command.opcode() == Command::CMD_WORKOUT_STATUS.0
+                    if frame.command.opcode() == Command::CMD_WORKOUT_START
+                        || (frame.command.opcode() == Command::CMD_WORKOUT_STATUS
                             && first!(frame, Status).is_some_and(|s| s.value == 1)) =>
                 {
                     let Some(subcategory) = first!(frame, ActivitySubcategory) else {
@@ -1186,10 +1190,10 @@ impl Client {
 
     fn collect_history(&mut self, frame: &Frame, records: &mut Vec<Record>) {
         let opcode = frame.command.opcode();
-        if opcode == Command::CMD_WAM_VASISTAS_GET.0 {
+        if opcode == Command::CMD_WAM_VASISTAS_GET {
             return self.collect_activity(frame, records);
         }
-        if opcode != Command::CMD_VASISTAS_GET.0 && opcode != Command::CMD_BODY_VASISTAS_GET.0 {
+        if opcode != Command::CMD_VASISTAS_GET && opcode != Command::CMD_BODY_VASISTAS_GET {
             return;
         }
         let mut at: Option<UnixTime> = None;
@@ -1279,7 +1283,7 @@ impl Client {
     }
 
     fn note_unhandled(&mut self, frame: &Frame, object: &WppObject) {
-        let seen = (frame.command.opcode(), object.type_id(), object.type_name());
+        let seen = (frame.command.opcode().0, object.type_id(), object.type_name());
         if !self.unhandled.contains(&seen) {
             self.unhandled.push(seen);
         }
@@ -1324,18 +1328,18 @@ impl Client {
         self.link.spi_flash.reset();
     }
 
-    pub fn request_screens(&self) -> Vec<Action> {
-        vec![Action::Send(Frame::new(
+    pub fn request_screens(&mut self, now: UnixMillis) -> Vec<Action> {
+        self.noted(now, vec![Action::Send(Frame::new(
             Command::CMD_WAM_SCREENS_LIST_GET,
             Vec::new(),
-        ))]
+        ))])
     }
 
-    pub fn set_screens(&self, ids: &[u8]) -> Vec<Action> {
+    pub fn set_screens(&mut self, ids: &[u8], now: UnixMillis) -> Vec<Action> {
         let mut slots = ids.to_vec();
         slots.truncate(SCREEN_SLOTS);
         slots.resize(SCREEN_SLOTS, 0);
-        vec![
+        self.noted(now, vec![
             Action::Send(Frame::new(
                 Command::CMD_WAM_SCREENS_LIST,
                 vec![WppObject::WamScreensList(WamScreensList {
@@ -1343,7 +1347,7 @@ impl Client {
                 })],
             )),
             Action::Send(Frame::new(Command::CMD_WAM_SCREENS_LIST_GET, Vec::new())),
-        ]
+        ])
     }
 
     pub fn activities(&self) -> Option<Vec<u32>> {
@@ -1354,8 +1358,8 @@ impl Client {
         self.wear_position
     }
 
-    pub fn request_device_config(&self) -> Vec<Action> {
-        vec![
+    pub fn request_device_config(&mut self, now: UnixMillis) -> Vec<Action> {
+        self.noted(now, vec![
             Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_LIST_GET, Vec::new())),
             Action::Send(Frame::new(Command::CMD_GET_TRACKER_WEAR_POS, Vec::new())),
             Action::Send(Frame::new(
@@ -1363,11 +1367,11 @@ impl Client {
                 Vec::new(),
             )),
             Action::Send(Frame::new(Command::CMD_TRACKER_USER_GET, Vec::new())),
-        ]
+        ])
     }
 
-    pub fn set_user(&self, profile: &UserProfile) -> Vec<Action> {
-        vec![
+    pub fn set_user(&mut self, profile: &UserProfile, now: UnixMillis) -> Vec<Action> {
+        self.noted(now, vec![
             Action::Send(Frame::new(
                 Command::CMD_TRACKER_USER_SET,
                 vec![WppObject::TrackerUser(TrackerUser {
@@ -1380,17 +1384,17 @@ impl Client {
                 })],
             )),
             Action::Send(Frame::new(Command::CMD_TRACKER_USER_GET, Vec::new())),
-        ]
+        ])
     }
 
     /// Answering this is what puts the watch's own workout screens into the
     /// mode that will show a phone's figures at all, so it is asked for again
     /// whenever a session the phone did not start begins.
-    pub fn workout_status(&self) -> Vec<Action> {
-        vec![Action::Send(Frame::new(
+    pub fn workout_status(&mut self, now: UnixMillis) -> Vec<Action> {
+        self.noted(now, vec![Action::Send(Frame::new(
             Command::CMD_WORKOUT_STATUS,
             Vec::new(),
-        ))]
+        ))])
     }
 
     /// What the watch believes about the phone's receiver. Zero is what it
@@ -1398,6 +1402,9 @@ impl Client {
     /// App for GPS tracking* on its screen instead of a speed. Only the
     /// zero/non-zero split is established; whether the firmware separates
     /// searching from fixed above zero is not.
+    ///
+    /// No read follows this one, and without a reply known to come the silence
+    /// watchdog must not be armed by it.
     pub fn gps_status(&self, status: GpsStatus) -> Vec<Action> {
         vec![Action::Send(Frame::new(
             Command::CMD_WORKOUT_GPS_STATUS,
@@ -1430,27 +1437,27 @@ impl Client {
         ))]
     }
 
-    pub fn start_workout(&self, subcategory: i16, at: UnixTime) -> Vec<Action> {
-        vec![
+    pub fn start_workout(&mut self, subcategory: i16, now: UnixMillis) -> Vec<Action> {
+        self.noted(now, vec![
             Action::Send(Frame::new(
                 Command::CMD_WORKOUT_START,
                 vec![
                     WppObject::ActivitySubcategory(ActivitySubcategory { value: subcategory }),
-                    WppObject::StartTime(StartTime { value: at.0 as i32 }),
+                    WppObject::StartTime(StartTime { value: now.to_seconds().0 as i32 }),
                 ],
             )),
             Action::Send(Frame::new(Command::CMD_WORKOUT_STATUS, Vec::new())),
-        ]
+        ])
     }
 
     /// An end earlier than the start — which a second of clock skew between
     /// host and watch is enough to cause — would otherwise be stored as an
     /// undeletable session lasting nearly a century, so the end is moved up
     /// to the start.
-    pub fn stop_workout(&mut self, started_at: UnixTime, at: UnixTime) -> Vec<Action> {
-        let ended_at = UnixTime(at.0.max(started_at.0));
+    pub fn stop_workout(&mut self, started_at: UnixTime, now: UnixMillis) -> Vec<Action> {
+        let ended_at = UnixTime(now.to_seconds().0.max(started_at.0));
         self.pending_stop = Some((started_at, ended_at));
-        vec![
+        self.noted(now, vec![
             Action::Send(Frame::new(
                 Command::CMD_WORKOUT_STOP,
                 vec![
@@ -1463,13 +1470,13 @@ impl Client {
                 ],
             )),
             Action::Send(Frame::new(Command::CMD_WORKOUT_STATUS, Vec::new())),
-        ]
+        ])
     }
 
     /// Each entry must go whole, since the watch keeps no catalogue of its own
     /// and an id alone means nothing to it; sending back the id array that a
     /// read returns empties the menu instead of setting it.
-    pub fn set_activities(&self, screens: &[WorkoutScreen]) -> Vec<Action> {
+    pub fn set_activities(&mut self, screens: &[WorkoutScreen], now: UnixMillis) -> Vec<Action> {
         let mut objects = Vec::new();
         for screen in screens.iter().take(ACTIVITY_SLOTS) {
             objects.push(WppObject::WorkoutScreenMetadata(WorkoutScreenMetadata {
@@ -1487,10 +1494,10 @@ impl Client {
 
         objects.push(WppObject::Null(Null {}));
 
-        vec![
+        self.noted(now, vec![
             Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_SET, objects)),
             Action::Send(Frame::new(Command::CMD_WORKOUT_SCREEN_LIST_GET, Vec::new())),
-        ]
+        ])
     }
 
     pub fn notifications(&self) -> Option<NotificationConfig> {
@@ -1513,9 +1520,9 @@ impl Client {
         self.wanted_notifications = Some(enabled);
     }
 
-    pub fn set_notifications(&mut self, enabled: bool) -> Vec<Action> {
+    pub fn set_notifications(&mut self, enabled: bool, now: UnixMillis) -> Vec<Action> {
         self.wanted_notifications = Some(enabled);
-        vec![
+        self.noted(now, vec![
             Action::Send(Frame::new(
                 Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_SET,
                 vec![WppObject::AncsStatus(AncsStatus {
@@ -1526,11 +1533,11 @@ impl Client {
                 Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_GET,
                 Vec::new(),
             )),
-        ]
+        ])
     }
 
-    pub fn set_wear_position(&self, position: u8) -> Vec<Action> {
-        vec![
+    pub fn set_wear_position(&mut self, position: u8, now: UnixMillis) -> Vec<Action> {
+        self.noted(now, vec![
             Action::Send(Frame::new(
                 Command::CMD_SET_TRACKER_WEAR_POS,
                 vec![WppObject::TrackerWearPos(TrackerWearPos {
@@ -1538,7 +1545,7 @@ impl Client {
                 })],
             )),
             Action::Send(Frame::new(Command::CMD_GET_TRACKER_WEAR_POS, Vec::new())),
-        ]
+        ])
     }
 
     /// The phone's zone as it is now. The watch is given the time again when
@@ -1582,7 +1589,8 @@ impl Client {
             return Vec::new();
         };
         self.clock_sent = Some((now, zone));
-        self.set_time(UnixTime(now.0 / 1000), zone.gmt_offset, zone.next_change)
+        let actions = self.set_time(UnixTime(now.0 / 1000), zone.gmt_offset, zone.next_change);
+        self.noted(now, actions)
     }
 
     pub fn set_time(
@@ -1716,7 +1724,7 @@ impl Client {
         };
         let store = drain.store;
         let opcode = frame.command.opcode();
-        if opcode == Command::CMD_ERROR.0 {
+        if opcode == Command::CMD_ERROR {
             let busy = frame
                 .objects
                 .iter()
@@ -1729,11 +1737,11 @@ impl Client {
             return self.request_next_store(remaining, now);
         }
         self.link.busy_retries = 0;
-        if opcode == Command::CMD_STORED_MEASURE_SIGNAL_DEL.0 {
+        if opcode == Command::CMD_STORED_MEASURE_SIGNAL_DEL {
             drain.awaiting_delete = false;
             return vec![Action::Send(stored_signal_request(store))];
         }
-        let ends_reply = opcode == Command::CMD_STORED_MEASURE_SIGNAL_GET.0
+        let ends_reply = opcode == Command::CMD_STORED_MEASURE_SIGNAL_GET
             && frame.objects.iter().any(|o| matches!(o, WppObject::Null(_)));
         if !ends_reply || drain.awaiting_delete {
             return Vec::new();
@@ -1964,7 +1972,7 @@ mod tests {
     }
 
     #[test]
-    fn a_null_reply_ends_the_category_and_finishes_the_sync() {
+    fn a_null_reply_ends_the_category_and_says_sync_ok() {
         let mut client = authenticated();
         let actions = client.handle(Event::Frame {
             received_at: UnixMillis(0),
@@ -2604,17 +2612,6 @@ mod tests {
     }
 
     #[test]
-    fn nothing_is_asked_for_before_the_probe_completes() {
-        let mut client = Client::new(
-            credentials(),
-            vec![(Category::BODY, UnixTime(0))],
-            Vec::new(),
-        );
-        let actions = client.handle(Event::Connected { now: UnixMillis(0) });
-        assert_eq!(sent(&actions), vec![Command::CMD_PROBE]);
-    }
-
-    #[test]
     fn a_busy_watch_is_asked_again_for_the_same_window() {
         use crate::objects::Cmderror;
         let mut client = authenticated();
@@ -2889,12 +2886,12 @@ mod tests {
             })
         );
 
-        let actions = client.set_notifications(true);
+        let actions = client.set_notifications(true, UnixMillis(0));
         let Action::Send(frame) = &actions[0] else {
             panic!()
         };
         assert_eq!(
-            frame.command.opcode(),
+            frame.command.opcode().0,
             Command::CMD_REMOTE_NOTIFICATIONS_CONFIG_SET.0
         );
         assert_eq!(
@@ -2974,34 +2971,35 @@ mod tests {
     /// to restate the set.
     #[test]
     fn the_set_is_restated_on_every_connection() {
+        let reconnect = |client: &mut Client| {
+            client.handle(Event::Connected { now: UnixMillis(0) });
+            client.handle(Event::Frame {
+                received_at: UnixMillis(0),
+                frame: Frame::new(
+                    Command::CMD_PROBE_CHALLENGE,
+                    vec![WppObject::ProbeChallenge(ProbeChallenge {
+                        mac: "a4:7e:fa:44:d6:10".to_string(),
+                        challenge: vec![1; 16],
+                    })],
+                ),
+            });
+            client.handle(Event::Frame {
+                received_at: UnixMillis(0),
+                frame: Frame::new(Command::CMD_PROBE, Vec::new()),
+            })
+        };
         let mut client = Client::new(
             credentials(),
             vec![(Category(8), UnixTime(1000))],
             vec![permanent(20)],
         );
-        client.handle(Event::Connected { now: UnixMillis(0) });
-        client.handle(Event::Frame {
-            received_at: UnixMillis(0),
-            frame: Frame::new(
-                Command::CMD_PROBE_CHALLENGE,
-                vec![WppObject::ProbeChallenge(ProbeChallenge {
-                    mac: "a4:7e:fa:44:d6:10".to_string(),
-                    challenge: vec![1; 16],
-                })],
-            ),
-        });
-        let actions = client.handle(Event::Frame {
-            received_at: UnixMillis(0),
-            frame: Frame::new(Command::CMD_PROBE, Vec::new()),
-        });
-        assert_eq!(
-            tags(&actions),
-            vec![FeatureTagsDeprecated {
-                id: 20,
-                start_time: 0,
-                end_time: 0
-            }]
-        );
+        let expected = vec![FeatureTagsDeprecated {
+            id: 20,
+            start_time: 0,
+            end_time: 0,
+        }];
+        assert_eq!(tags(&reconnect(&mut client)), expected);
+        assert_eq!(tags(&reconnect(&mut client)), expected);
     }
 
     #[test]
@@ -3043,7 +3041,7 @@ mod tests {
     }
 
     #[test]
-    fn the_wear_position_round_trips() {
+    fn the_wear_position_the_watch_reports_is_read() {
         use crate::objects::TrackerWearPos;
         let mut client = authenticated();
         client.handle(frame(
@@ -3118,7 +3116,7 @@ mod tests {
             "empty slots are not screens"
         );
 
-        let actions = client.set_screens(&[4, 6]);
+        let actions = client.set_screens(&[4, 6], UnixMillis(0));
         let Action::Send(frame) = &actions[0] else {
             panic!()
         };
@@ -3249,7 +3247,7 @@ mod tests {
 
         client.handle(frame(
             Command::CMD_ERROR,
-            vec![WppObject::Cmderror(Cmderror { cmd: 257, err: -5 })],
+            vec![WppObject::Cmderror(Cmderror { cmd: Command::CMD_PROBE_CHALLENGE.0, err: -5 })],
         ));
         assert_eq!(client.phase(), Phase::NotAuthenticated);
     }
@@ -3307,7 +3305,7 @@ mod tests {
         let Action::Send(reply) = &actions[0] else {
             panic!()
         };
-        assert_eq!(reply.command.opcode(), Command::CMD_PROBE_CHALLENGE.0);
+        assert_eq!(reply.command.opcode(), Command::CMD_PROBE_CHALLENGE);
     }
 
     #[test]
@@ -3332,7 +3330,7 @@ mod tests {
             actions
                 .iter()
                 .map(|a| match a {
-                    Action::Send(f) => f.command.opcode(),
+                    Action::Send(f) => f.command.opcode().0,
                     _ => 0,
                 })
                 .collect()
@@ -3405,7 +3403,7 @@ mod tests {
 
     #[test]
     fn every_sync_request_is_acknowledged_even_when_the_walk_is_not_due() {
-        let mut client = authenticated();
+        let mut client = synced();
         let ask = |ms: i64| Event::Frame {
             frame: Frame::new(Command::CMD_SYNC_REQUEST, Vec::new()),
             received_at: UnixMillis(ms),
@@ -3413,15 +3411,24 @@ mod tests {
         let acked = |actions: &[Action]| {
             actions.iter().any(|a| {
                 matches!(a, Action::Send(f)
-                    if f.command.opcode() == Command::CMD_SYNC_REQUEST.0
+                    if f.command.opcode() == Command::CMD_SYNC_REQUEST
                         && f.command.channel() == Some(Channel::SlaveRequest))
             })
         };
 
-        assert!(acked(&client.handle(ask(0))));
+        assert!(acked(&client.handle(ask(1_000))), "this one walks");
+        client.handle(frame(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]));
+        stores_empty(&mut client, 1_500);
+
+        let not_due = client.handle(ask(2_000));
+        assert!(acked(&not_due));
         assert!(
-            acked(&client.handle(ask(2_000))),
-            "and the one two seconds behind it"
+            !sent(&not_due).contains(&Command::CMD_VASISTAS_GET),
+            "the walk just ran, so this one is not due"
+        );
+        assert!(
+            acked(&client.handle(ask(3_000))),
+            "and the one a second behind it"
         );
     }
 
@@ -3637,7 +3644,7 @@ mod tests {
             )
         };
 
-        client.stop_workout(UnixTime(1_785_000_000), UnixTime(1_785_000_600));
+        client.stop_workout(UnixTime(1_785_000_000), UnixMillis(1_785_000_600_000));
 
         let ended = |actions: &[Action]| -> Vec<Record> {
             records(actions)
@@ -3647,7 +3654,6 @@ mod tests {
         };
         assert!(ended(&client.handle(status(1))).is_empty());
 
-        client.stop_workout(UnixTime(1_785_000_000), UnixTime(1_785_000_600));
         assert_eq!(
             ended(&client.handle(status(0))),
             vec![Record::WorkoutEnded {
@@ -3665,7 +3671,7 @@ mod tests {
         use crate::objects::{StartTime, Status};
         let mut client = authenticated();
 
-        client.stop_workout(UnixTime(1_785_000_000), UnixTime(1_785_000_000 + 8));
+        client.stop_workout(UnixTime(1_785_000_000), UnixMillis((1_785_000_000 + 8) * 1000));
         let actions = client.handle(frame(
             Command::CMD_WORKOUT_STATUS,
             vec![
@@ -3815,6 +3821,35 @@ mod tests {
     }
 
     #[test]
+    fn a_command_the_watch_never_answers_is_noticed() {
+        let mut client = synced();
+        client.handle(Event::Frame {
+            received_at: UnixMillis(1_000_000),
+            frame: Frame::new(Command::CMD_BATTERY_STATUS, Vec::new()),
+        });
+        let sent_at = UnixMillis(1_000_500);
+        client.set_wear_position(2, sent_at);
+        assert_eq!(
+            client.handle(Event::Tick { now: UnixMillis(sent_at.0 + SILENCE_TIMEOUT_MS + 1) }),
+            vec![Action::Reconnect]
+        );
+    }
+
+    #[test]
+    fn a_push_the_watch_does_not_answer_arms_nothing() {
+        let mut client = synced();
+        client.handle(Event::Frame {
+            received_at: UnixMillis(1_000_000),
+            frame: Frame::new(Command::CMD_BATTERY_STATUS, Vec::new()),
+        });
+        client.gps_status(GpsStatus::Absent);
+        client.workout_live_data(LiveRoute { pace: Some(300), distance: None, speed: None });
+        assert!(client
+            .handle(Event::Tick { now: UnixMillis(1_000_000 + SILENCE_TIMEOUT_MS + 1) })
+            .is_empty());
+    }
+
+    #[test]
     fn a_walk_that_stops_replying_is_noticed() {
         let mut client = authenticated();
         assert_eq!(client.phase(), Phase::Syncing);
@@ -3904,7 +3939,7 @@ mod tests {
     #[test]
     fn a_measurement_starting_arms_the_live_waveform() {
         use crate::objects::{MeasureCategory, MeasureLiveEcg};
-        let mut client = authenticated();
+        let mut client = synced();
 
         let actions = client.handle(frame(
             Command::CMD_MEASURE_START,
@@ -3913,7 +3948,7 @@ mod tests {
         assert_eq!(client.measuring(), Some(1));
         let Some(Action::Send(reply)) = actions
             .iter()
-            .find(|a| matches!(a, Action::Send(f) if f.command.opcode() == Command::CMD_MEASURE_START.0))
+            .find(|a| matches!(a, Action::Send(f) if f.command.opcode() == Command::CMD_MEASURE_START))
             .cloned()
         else {
             panic!("the watch must be told the waveform is being shown")
@@ -3958,7 +3993,7 @@ mod tests {
         let sent: Vec<u16> = stopped
             .iter()
             .filter_map(|a| match a {
-                Action::Send(f) => Some(f.command.opcode()),
+                Action::Send(f) => Some(f.command.opcode().0),
                 _ => None,
             })
             .collect();
@@ -4022,11 +4057,8 @@ mod tests {
                 }),
             ],
         ));
-        client.handle(frame(
-            Command::CMD_VASISTAS_GET,
-            vec![WppObject::Null(Null {})],
-        ));
-        let reached = client.watermarks();
+        let reached = client.current();
+        assert!(reached.is_some());
 
         client.handle(frame(
             Command::CMD_DISPLAYED_INFO_GET,
@@ -4035,7 +4067,7 @@ mod tests {
                 WppObject::Steps(Steps { value: 3169 }),
             ],
         ));
-        assert_eq!(client.watermarks(), reached, "midnight must not rewind it");
+        assert_eq!(client.current(), reached, "midnight must not rewind it");
     }
 
     #[test]
@@ -4317,8 +4349,8 @@ mod workout_screen_tests {
         }
     }
 
-    fn written(client: &Client, screens: &[WorkoutScreen]) -> Frame {
-        let actions = client.set_activities(screens);
+    fn written(client: &mut Client, screens: &[WorkoutScreen]) -> Frame {
+        let actions = client.set_activities(screens, UnixMillis(0));
         let sent: Vec<&Frame> = actions
             .iter()
             .filter_map(|a| match a {
@@ -4332,8 +4364,8 @@ mod workout_screen_tests {
 
     #[test]
     fn no_frame_reaches_the_size_that_reboots_the_watch() {
-        let client = authenticated();
-        let frames = written(&client, &[screen(16, "Weights"), screen(2, "Running")])
+        let mut client = authenticated();
+        let frames = written(&mut client, &[screen(16, "Weights"), screen(2, "Running")])
             .to_wire()
             .unwrap();
         assert!(frames.len() > 1, "one frame would overflow the watch");
@@ -4348,8 +4380,8 @@ mod workout_screen_tests {
 
     #[test]
     fn the_menu_carries_every_entry_and_closes_once() {
-        let client = authenticated();
-        let message = written(&client, &[screen(16, "Weights"), screen(2, "Running")]);
+        let mut client = authenticated();
+        let message = written(&mut client, &[screen(16, "Weights"), screen(2, "Running")]);
         let sent: Vec<u16> = message.objects.iter().map(|o| o.type_id()).collect();
         assert_eq!(
             sent.iter().filter(|t| **t == 317).count(),
@@ -4372,8 +4404,8 @@ mod workout_screen_tests {
 
     #[test]
     fn splitting_keeps_every_object_in_order() {
-        let client = authenticated();
-        let message = written(&client, &[screen(16, "Weights"), screen(2, "Running")]);
+        let mut client = authenticated();
+        let message = written(&mut client, &[screen(16, "Weights"), screen(2, "Running")]);
         let split: Vec<WppObject> = message
             .to_wire()
             .unwrap()

@@ -109,7 +109,7 @@ fn connecting_probes_the_watch_and_asks_nothing_else() {
     let written = recorder.written.lock().unwrap().clone();
     assert_eq!(written.len(), 1, "the probe, and nothing else");
     let frame = wpp::Frame::parse(&written[0]).expect("valid frame");
-    assert_eq!(frame.command.opcode(), wpp::Command::CMD_PROBE.0);
+    assert_eq!(frame.command.opcode(), wpp::Command::CMD_PROBE);
 
     cleanup(&path);
 }
@@ -297,7 +297,7 @@ fn a_glyph_request_is_answered_with_a_packed_bitmap() {
 
     let written = recorder.written.lock().unwrap().clone();
     let reply = wpp::Frame::parse(written.last().expect("a reply")).expect("valid frame");
-    assert_eq!(reply.command.opcode(), Command::CMD_GLYPH_GET.0);
+    assert_eq!(reply.command.opcode(), Command::CMD_GLYPH_GET);
     assert_eq!(reply.command.channel(), Some(Channel::SlaveRequest));
     assert_eq!(
         reply.objects[0],
@@ -509,7 +509,7 @@ fn a_toggle_and_save_leaves_an_armed_scan_alone() {
         .filter_map(|buf| wpp::Frame::parse(buf).ok())
         .inspect(|f| {
             assert_eq!(
-                f.command.opcode(),
+                f.command.opcode().0,
                 wpp::Command::CMD_FEATURE_TAGS_SET_DEPRECATED_V2.0
             )
         })
