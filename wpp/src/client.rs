@@ -70,8 +70,8 @@ const MIN_REFRESH_INTERVAL_MS: i64 = 300_000;
 const MIN_WALK_INTERVAL_MS: i64 = 900_000;
 const MIN_DUMP_INTERVAL_MS: i64 = 900_000;
 const SILENCE_TIMEOUT_MS: i64 = 90_000;
-/// The watch measures once a second but its readings carry no time and share
-/// radio events, so they arrive in bunches and their arrival is not their time.
+/// The watch measures once a second but its readings carry no time and often
+/// reach the phone in pairs, so their arrival is not their time.
 const LIVE_HR_PERIOD: Duration = Duration::from_millis(1_000);
 /// A link can stay up for days, and the watch's own clock drifts in that time.
 const CLOCK_RESEND_INTERVAL_MS: i64 = 6 * 3_600_000;
