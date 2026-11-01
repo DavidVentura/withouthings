@@ -16,6 +16,7 @@ pub mod rhythm;
 pub mod signal;
 pub mod sleep;
 pub mod spiflash;
+pub mod sport;
 pub mod track;
 pub mod units;
 

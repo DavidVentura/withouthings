@@ -10,10 +10,9 @@ use wpp::client::{
 use wpp::energy::{self, Beat, Reading, Wearer};
 use wpp::image::{GlyphRequest, IconRequest, Mono};
 use wpp::pairing::{Pairing, PairingState};
-use wpp::track::{self, Limits, Track};
-use wpp::units::{
-    Bpm, Kilocalories, Met, Metres, MetresPerSecond, Millivolts, UnixMillis, UnixTime,
-};
+use wpp::track::{self, Track};
+use wpp::sport::{self, SportId};
+use wpp::units::{Bpm, Kilocalories, Met, Millivolts, UnixMillis, UnixTime};
 use wpp::Frame;
 use wpp_store::{DeviceId, EcgId, SeriesPoint, SetBoundary, Store, Trim, WorkoutId, WorkoutRow};
 
@@ -1015,14 +1014,14 @@ impl WatchService {
                     started_at_ms: active.started_at.0 * 1000,
                     ended_at_ms: None,
                     subcategory: active.subcategory as i32,
-                    activity: activity_name(active.subcategory as u32),
-                    on_foot: on_foot(active.subcategory as u32),
-                    travel: travel(active.subcategory as u32),
+                    activity: sport::name(SportId(active.subcategory as u32)),
+                    on_foot: sport::on_foot(SportId(active.subcategory as u32)),
+                    travel: travel(SportId(active.subcategory as u32)),
                     calories: workout_calories(
                         &store,
                         self.device_id,
                         wearer.as_ref(),
-                        active.subcategory as u32,
+                        SportId(active.subcategory as u32),
                         active.started_at.0 * 1000,
                         now_ms(),
                     )?,
@@ -1295,9 +1294,9 @@ impl WatchService {
                 started_at_ms: session.started_at.to_millis().0,
                 ended_at_ms: session.ended_at.to_millis().0,
                 subcategory: session.subcategory as i32,
-                activity: activity_name(session.subcategory as u32),
-                on_foot: on_foot(session.subcategory as u32),
-                travel: travel(session.subcategory as u32),
+                activity: sport::name(SportId(session.subcategory as u32)),
+                on_foot: sport::on_foot(SportId(session.subcategory as u32)),
+                travel: travel(SportId(session.subcategory as u32)),
                 steps: session.steps,
                 distance_metres: session.distance.0,
                 calories: session.calories.0,
@@ -1575,15 +1574,15 @@ impl WatchService {
             .iter()
             .map(|id| Activity {
                 id: *id,
-                name: activity_name(*id),
+                name: sport::name(SportId(*id)),
                 enabled: true,
             })
             .collect();
-        for sport in ACTIVITIES {
-            if !current.contains(&sport.id) {
+        for known in sport::ACTIVITIES {
+            if !current.contains(&known.id.0) {
                 activities.push(Activity {
-                    id: sport.id,
-                    name: sport.name.to_string(),
+                    id: known.id.0,
+                    name: known.name.to_string(),
                     enabled: false,
                 });
             }
@@ -1608,11 +1607,7 @@ impl WatchService {
         let screens: Vec<wpp::client::WorkoutScreen> = ids
             .iter()
             .map(|id| {
-                let (face_mode, flag) = ACTIVITY_FACES
-                    .iter()
-                    .find(|(known, _, _)| known == id)
-                    .map(|(_, face, flag)| (*face, *flag))
-                    .unwrap_or((1, 1));
+                let face = sport::face(SportId(*id));
                 let glyphs = formats
                     .iter()
                     .map(|format| {
@@ -1627,9 +1622,9 @@ impl WatchService {
                     .collect();
                 wpp::client::WorkoutScreen {
                     id: *id,
-                    name: activity_name(*id),
-                    face_mode,
-                    flag,
+                    name: sport::name(SportId(*id)),
+                    face_mode: face.mode,
+                    flag: face.flag,
                     glyphs,
                 }
             })
@@ -1810,7 +1805,7 @@ impl WatchService {
         let Some(active) = store.active_workout(self.device_id)? else {
             return Ok(None);
         };
-        match travel(active.subcategory as u32) {
+        match travel(SportId(active.subcategory as u32)) {
             Travel::Ground => Ok(Some(active.started_at.0 * 1000)),
             Travel::InPlace => Ok(None),
         }
@@ -1824,7 +1819,7 @@ impl WatchService {
         to_ms: i64,
         subcategory: i32,
     ) -> Result<Option<Arc<RouteTrack>>, WatchError> {
-        let Some(limits) = limits(subcategory as u32) else {
+        let Some(limits) = sport::limits(SportId(subcategory as u32)) else {
             return Ok(None);
         };
         let store = self.store.lock().unwrap();
@@ -2333,274 +2328,12 @@ const HEALTH_FEATURES: &[(u16, &str, &str)] = &[
     (19, "Notifications", "Phone notifications on the watch"),
 ];
 
-const ACTIVITY_FACES: &[(u32, u8, u16)] = &[
-    (1, 2, 0),
-    (2, 2, 0),
-    (3, 2, 0),
-    (4, 1, 1),
-    (5, 1, 1),
-    (6, 3, 0),
-    (7, 1, 1),
-    (8, 1, 1),
-    (9, 1, 1),
-    (10, 3, 1),
-    (11, 1, 1),
-    (12, 1, 1),
-    (13, 1, 1),
-    (14, 1, 1),
-    (15, 1, 1),
-    (16, 1, 1),
-    (17, 1, 1),
-    (18, 1, 0),
-    (19, 1, 1),
-    (20, 1, 1),
-    (21, 1, 1),
-    (22, 1, 1),
-    (23, 1, 1),
-    (24, 1, 1),
-    (25, 1, 1),
-    (26, 3, 0),
-    (27, 1, 1),
-    (28, 1, 1),
-    (29, 1, 1),
-    (30, 1, 1),
-    (31, 1, 1),
-    (32, 1, 1),
-    (33, 1, 1),
-    (34, 3, 0),
-    (35, 3, 0),
-    (36, 3, 0),
-    (187, 3, 0),
-    (188, 1, 1),
-    (191, 1, 1),
-    (192, 1, 1),
-    (193, 1, 1),
-    (194, 1, 1),
-    (195, 1, 1),
-    (196, 1, 1),
-    (306, 2, 1),
-    (307, 1, 0),
-];
-
-/// Whether the wearer's own feet carry them through an activity. The pedometer
-/// keeps counting either way — a wrist swings on a bike too — so this is what
-/// says whether the steps and the metres climbed under a session describe it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Gait {
-    OnFoot,
-    Otherwise,
-}
-
-use Gait::OnFoot;
-use Gait::Otherwise;
-
-/// Whether an activity covers ground, which is a different question from
-/// whether feet carry it: a bike covers ground without a step, a treadmill
-/// takes thousands without moving. Only the first is worth a receiver.
-///
-/// The ceiling is the speed above which a jump between two fixes is a lost
-/// signal rather than a body: 12 m/s is nonsense on a walk and an ordinary
-/// descent on a bike.
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Terrain {
-    Ground(MetresPerSecond),
-    InPlace,
-}
-
-use Terrain::Ground;
-use Terrain::InPlace;
-
-struct Sport {
-    id: u32,
-    name: &'static str,
-    gait: Gait,
-    travel: Terrain,
-    ceiling: Met,
-}
-
-impl Sport {
-    const fn new(id: u32, name: &'static str, gait: Gait, travel: Terrain, ceiling: Met) -> Sport {
-        Sport {
-            id,
-            name,
-            gait,
-            travel,
-            ceiling,
-        }
-    }
-}
-
-/// A rate the watch reports under an activity this table has never heard of is
-/// still a rate a body reached, so it is held to the highest ceiling any
-/// activity has rather than to none.
-const UNKNOWN_CEILING: Met = Met(19.0);
-
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
-/// The ceilings are Withings' own, from the `activityCategory` table its app
-/// ships: the intensity each activity tops out at, which an estimate drawn from
-/// heart rate alone will otherwise sail past.
-const ACTIVITIES: &[Sport] = &[
-    Sport::new(1, "Walking", OnFoot, Ground(MetresPerSecond(5.0)), Met(8.3)),
-    Sport::new(
-        2,
-        "Running",
-        OnFoot,
-        Ground(MetresPerSecond(8.0)),
-        Met(19.0),
-    ),
-    Sport::new(3, "Hiking", OnFoot, Ground(MetresPerSecond(5.0)), Met(6.0)),
-    Sport::new(
-        4,
-        "Skating",
-        Otherwise,
-        Ground(MetresPerSecond(20.0)),
-        Met(14.0),
-    ),
-    Sport::new(
-        5,
-        "BMX",
-        Otherwise,
-        Ground(MetresPerSecond(20.0)),
-        Met(10.0),
-    ),
-    Sport::new(
-        6,
-        "Cycling",
-        Otherwise,
-        Ground(MetresPerSecond(25.0)),
-        Met(15.8),
-    ),
-    Sport::new(7, "Swimming", Otherwise, InPlace, Met(13.8)),
-    Sport::new(
-        8,
-        "Surfing",
-        Otherwise,
-        Ground(MetresPerSecond(15.0)),
-        Met(5.0),
-    ),
-    Sport::new(
-        9,
-        "Kitesurfing",
-        Otherwise,
-        Ground(MetresPerSecond(30.0)),
-        Met(11.0),
-    ),
-    Sport::new(
-        10,
-        "Windsurfing",
-        Otherwise,
-        Ground(MetresPerSecond(30.0)),
-        Met(13.5),
-    ),
-    Sport::new(
-        11,
-        "Bodyboard",
-        Otherwise,
-        Ground(MetresPerSecond(15.0)),
-        Met(5.0),
-    ),
-    Sport::new(12, "Tennis", OnFoot, InPlace, Met(8.0)),
-    Sport::new(13, "Table tennis", OnFoot, InPlace, Met(9.0)),
-    Sport::new(14, "Squash", OnFoot, InPlace, Met(12.0)),
-    Sport::new(15, "Badminton", OnFoot, InPlace, Met(7.0)),
-    Sport::new(16, "Weights", OnFoot, InPlace, Met(6.0)),
-    Sport::new(17, "Calisthenics", OnFoot, InPlace, Met(8.0)),
-    Sport::new(18, "Elliptical", OnFoot, InPlace, Met(10.0)),
-    Sport::new(19, "Pilates", OnFoot, InPlace, Met(5.0)),
-    Sport::new(20, "Basketball", OnFoot, InPlace, Met(9.3)),
-    Sport::new(21, "Soccer", OnFoot, InPlace, Met(10.0)),
-    Sport::new(22, "Football", OnFoot, InPlace, Met(8.0)),
-    Sport::new(23, "Rugby", OnFoot, InPlace, Met(8.3)),
-    Sport::new(24, "Volleyball", OnFoot, InPlace, Met(8.0)),
-    Sport::new(25, "Water polo", Otherwise, InPlace, Met(12.0)),
-    Sport::new(
-        26,
-        "Horse riding",
-        Otherwise,
-        Ground(MetresPerSecond(20.0)),
-        Met(7.3),
-    ),
-    Sport::new(27, "Golf", OnFoot, Ground(MetresPerSecond(20.0)), Met(5.3)),
-    Sport::new(28, "Yoga", OnFoot, InPlace, Met(9.0)),
-    Sport::new(29, "Dancing", OnFoot, InPlace, Met(11.3)),
-    Sport::new(30, "Boxing", OnFoot, InPlace, Met(12.8)),
-    Sport::new(31, "Fencing", OnFoot, InPlace, Met(10.0)),
-    Sport::new(32, "Wrestling", OnFoot, InPlace, Met(12.0)),
-    Sport::new(33, "Martial arts", OnFoot, InPlace, Met(10.3)),
-    Sport::new(
-        34,
-        "Skiing",
-        Otherwise,
-        Ground(MetresPerSecond(40.0)),
-        Met(11.3),
-    ),
-    Sport::new(
-        35,
-        "Snowboarding",
-        Otherwise,
-        Ground(MetresPerSecond(30.0)),
-        Met(5.3),
-    ),
-    Sport::new(36, "Other", OnFoot, InPlace, Met(18.0)),
-    Sport::new(
-        187,
-        "Rowing",
-        Otherwise,
-        Ground(MetresPerSecond(8.0)),
-        Met(11.0),
-    ),
-    Sport::new(188, "Zumba", OnFoot, InPlace, Met(11.3)),
-    Sport::new(191, "Baseball", OnFoot, InPlace, Met(9.3)),
-    Sport::new(192, "Handball", OnFoot, InPlace, Met(9.3)),
-    Sport::new(193, "Hockey", OnFoot, InPlace, Met(14.0)),
-    Sport::new(194, "Ice hockey", Otherwise, InPlace, Met(14.0)),
-    Sport::new(195, "Climbing", OnFoot, InPlace, Met(6.0)),
-    Sport::new(
-        196,
-        "Ice skating",
-        Otherwise,
-        Ground(MetresPerSecond(20.0)),
-        Met(14.0),
-    ),
-    Sport::new(306, "Indoor walk", OnFoot, InPlace, Met(8.3)),
-    Sport::new(307, "Indoor running", OnFoot, InPlace, Met(19.0)),
-];
-
-fn sport(id: u32) -> Option<&'static Sport> {
-    ACTIVITIES.iter().find(|sport| sport.id == id)
-}
-
-fn activity_name(id: u32) -> String {
-    sport(id)
-        .map(|sport| sport.name.to_string())
-        .unwrap_or_else(|| format!("Activity {id}"))
-}
-
-/// An activity the table has never heard of is not credited with a gait, so
-/// what the pedometer holds over it goes unshown rather than unexplained.
-fn on_foot(id: u32) -> bool {
-    sport(id).is_some_and(|sport| sport.gait == OnFoot)
-}
-
-fn travel(id: u32) -> Travel {
-    match limits(id) {
+fn travel(id: SportId) -> Travel {
+    match sport::limits(id) {
         Some(_) => Travel::Ground,
         None => Travel::InPlace,
-    }
-}
-
-/// None for an activity that covers no ground, and for one the table has never
-/// heard of: without a speed to hold it to there is no way to tell a lost fix
-/// from a fast one.
-fn limits(id: u32) -> Option<Limits> {
-    match sport(id)?.travel {
-        Ground(ceiling) => Some(Limits {
-            accuracy_ceiling: Metres(Limits::DEFAULT_ACCURACY_M),
-            speed_ceiling: ceiling,
-            gap_secs: Limits::DEFAULT_GAP_SECS,
-        }),
-        InPlace => None,
     }
 }
 
@@ -2617,14 +2350,14 @@ fn summarise(
         started_at_ms,
         ended_at_ms,
         subcategory: row.subcategory as i32,
-        activity: activity_name(row.subcategory as u32),
-        on_foot: on_foot(row.subcategory as u32),
-        travel: travel(row.subcategory as u32),
+        activity: sport::name(SportId(row.subcategory as u32)),
+        on_foot: sport::on_foot(SportId(row.subcategory as u32)),
+        travel: travel(SportId(row.subcategory as u32)),
         calories: workout_calories(
             store,
             device_id,
             user,
-            row.subcategory as u32,
+            SportId(row.subcategory as u32),
             started_at_ms,
             ended_at_ms.unwrap_or_else(now_ms),
         )?,
@@ -2961,62 +2694,28 @@ fn beats_between(
         .collect())
 }
 
-fn ceiling_of(subcategory: u32) -> Met {
-    sport(subcategory).map_or(UNKNOWN_CEILING, |sport| sport.ceiling)
-}
-
-const CYCLING: u32 = 6;
-const BMX: u32 = 5;
-
-/// What the ground says the effort was worth. Heart rate alone reads a city
-/// commute as hard riding — traffic, heat and the rate hanging on through the
-/// lights all lift it — and the activity's own ceiling is far too loose to
-/// catch that. A measured speed is the work actually done.
-///
-/// None for an activity with no route recorded, and for one whose speed says
-/// nothing about its cost: rowing hard on the spot covers no ground.
-fn measured_ceiling(
-    store: &Store,
-    device_id: DeviceId,
-    subcategory: u32,
-    from_ms: i64,
-    to_ms: i64,
-) -> Result<Option<Met>, WatchError> {
-    let Some(limits) = limits(subcategory) else {
-        return Ok(None);
-    };
-    let fixes = store.track_points(device_id, UnixMillis(from_ms), UnixMillis(to_ms))?;
-    let Some(speed) = track::clean(&fixes, limits).average_speed() else {
-        return Ok(None);
-    };
-    Ok(match subcategory {
-        CYCLING | BMX => Some(energy::cycling_met(speed)),
-        _ if on_foot(subcategory) => Some(energy::on_foot_met(speed)),
-        _ => None,
-    })
-}
-
-/// Never above what the activity itself can reach: a reflected fix reading
-/// sixty on a bike is not a harder ride than the sport has in it.
 fn session_ceiling(
     store: &Store,
     device_id: DeviceId,
-    subcategory: u32,
+    subcategory: SportId,
     from_ms: i64,
     to_ms: i64,
 ) -> Result<Met, WatchError> {
-    let declared = ceiling_of(subcategory);
-    Ok(match measured_ceiling(store, device_id, subcategory, from_ms, to_ms)? {
-        Some(measured) if measured.0 < declared.0 => measured,
-        _ => declared,
-    })
+    let speed = match sport::limits(subcategory) {
+        None => None,
+        Some(limits) => {
+            let fixes = store.track_points(device_id, UnixMillis(from_ms), UnixMillis(to_ms))?;
+            track::clean(&fixes, limits).average_speed()
+        }
+    };
+    Ok(sport::session_ceiling(subcategory, speed))
 }
 
 fn workout_calories(
     store: &Store,
     device_id: DeviceId,
     user: Option<&wpp::client::UserProfile>,
-    subcategory: u32,
+    subcategory: SportId,
     from_ms: i64,
     to_ms: i64,
 ) -> Result<Option<f64>, WatchError> {
@@ -3053,7 +2752,7 @@ fn earned_curves(
             };
             let ended_ms = row.ended_at.map_or_else(now_ms, |end| end.0 * 1000);
             let started_ms = row.started_at.0 * 1000;
-            let subcategory = row.subcategory as u32;
+            let subcategory = SportId(row.subcategory as u32);
             let beats = beats_between(store, device_id, started_ms, ended_ms)?;
             let ceiling = session_ceiling(store, device_id, subcategory, started_ms, ended_ms)?;
             Ok(energy::accrued(wearer, ceiling, &beats))
