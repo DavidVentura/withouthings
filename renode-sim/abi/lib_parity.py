@@ -48,6 +48,9 @@ def read_symbols(elf):
         if alias:
             aliases[int(alias.group(1), 16)] = address & ~1
         if len(fields) == 4 and fields[2] in "tT" and LIBRARY_START <= address < LIBRARY_END:
+            if name in functions:
+                sys.exit("%s is in the library twice, at %#x and %#x, and only one copy could be compared"
+                         % (name, functions[name][0], address & ~1))
             functions[name] = (address & ~1, int(fields[1], 16))
     return functions, aliases, names
 
