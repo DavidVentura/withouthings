@@ -167,8 +167,10 @@ app_to_lib:
     how: >
       vTaskSuspendAll, then a loop of 5 (configMAX_PRIORITIES) over an array of
       stride 0x14 (List_t) calling prvListTasksWithinSingleList@0x9e49a with
-      eState=1, then the delayed/overflow/suspended/terminated lists with
-      eState=2. Needs configUSE_TRACE_FACILITY, which the TCB size already says.
+      eState=1, then the delayed/overflow/terminated/suspended lists. Withings'
+      form takes a visitor and its context rather than an array and a size
+      (abi/patches/tasks-system-state-visitor.patch). Needs
+      configUSE_TRACE_FACILITY, which the TCB size already says.
   - addr: 0x73614
     sites: 1
     symbol: "uxTaskGetStackHighWaterMark"

@@ -1,0 +1,166 @@
+uxTaskGetSystemState calls a visitor rather than filling an array.
+
+0x73580 takes a function, a context for it and the run-time pointer, and its one
+caller at 0x5c96c passes the function at the pool word 0x5c974 and a stack context. prvListTasks-
+WithinSingleList at 0x9e49a fills one TaskStatus_t on its own stack per task,
+hands it to the visitor and stops the walk on the first result other than pdTRUE.
+There is no check against an array size, because there is no array. The walk
+returns what xTaskResumeAll returns, as a tail call.
+
+--- a/include/task.h
++++ b/include/task.h
+@@ -1582,7 +1582,8 @@
+ 	}
+ 	</pre>
+  */
+-UBaseType_t uxTaskGetSystemState( TaskStatus_t * const pxTaskStatusArray, const UBaseType_t uxArraySize, uint32_t * const pulTotalRunTime ) PRIVILEGED_FUNCTION;
++typedef BaseType_t ( *TaskStatusVisitor_t )( TaskStatus_t *pxStatus, void *pvContext );
++BaseType_t uxTaskGetSystemState( TaskStatusVisitor_t pxVisitor, void *pvContext, uint32_t * const pulTotalRunTime ) PRIVILEGED_FUNCTION;
+ 
+ /**
+  * task. h
+--- a/tasks.c
++++ b/tasks.c
+@@ -488,7 +488,7 @@
+  */
+ #if ( configUSE_TRACE_FACILITY == 1 )
+ 
+-	static UBaseType_t prvListTasksWithinSingleList( TaskStatus_t *pxTaskStatusArray, List_t *pxList, eTaskState eState ) PRIVILEGED_FUNCTION;
++	static BaseType_t prvListTasksWithinSingleList( List_t *pxList, eTaskState eState, TaskStatusVisitor_t pxVisitor, void *pvContext ) PRIVILEGED_FUNCTION;
+ 
+ #endif
+ 
+@@ -2411,73 +2411,35 @@
+ 
+ #if ( configUSE_TRACE_FACILITY == 1 )
+ 
+-	UBaseType_t uxTaskGetSystemState( TaskStatus_t * const pxTaskStatusArray, const UBaseType_t uxArraySize, uint32_t * const pulTotalRunTime )
++	BaseType_t uxTaskGetSystemState( TaskStatusVisitor_t pxVisitor, void *pvContext, uint32_t * const pulTotalRunTime )
+ 	{
+-	UBaseType_t uxTask = 0, uxQueue = configMAX_PRIORITIES;
++	UBaseType_t uxQueue = configMAX_PRIORITIES;
+ 
+ 		vTaskSuspendAll();
+ 		{
+-			/* Is there a space in the array for each task in the system? */
+-			if( uxArraySize >= uxCurrentNumberOfTasks )
++			do
+ 			{
+-				/* Fill in an TaskStatus_t structure with information on each
+-				task in the Ready state. */
+-				do
+-				{
+-					uxQueue--;
+-					uxTask += prvListTasksWithinSingleList( &( pxTaskStatusArray[ uxTask ] ), &( pxReadyTasksLists[ uxQueue ] ), eReady );
+-
+-				} while( uxQueue > ( UBaseType_t ) tskIDLE_PRIORITY ); /*lint !e961 MISRA exception as the casts are only redundant for some ports. */
+-
+-				/* Fill in an TaskStatus_t structure with information on each
+-				task in the Blocked state. */
+-				uxTask += prvListTasksWithinSingleList( &( pxTaskStatusArray[ uxTask ] ), ( List_t * ) pxDelayedTaskList, eBlocked );
+-				uxTask += prvListTasksWithinSingleList( &( pxTaskStatusArray[ uxTask ] ), ( List_t * ) pxOverflowDelayedTaskList, eBlocked );
+-
+-				#if( INCLUDE_vTaskDelete == 1 )
+-				{
+-					/* Fill in an TaskStatus_t structure with information on
+-					each task that has been deleted but not yet cleaned up. */
+-					uxTask += prvListTasksWithinSingleList( &( pxTaskStatusArray[ uxTask ] ), &xTasksWaitingTermination, eDeleted );
+-				}
+-				#endif
+-
+-				#if ( INCLUDE_vTaskSuspend == 1 )
++				uxQueue--;
++				if( prvListTasksWithinSingleList( &( pxReadyTasksLists[ uxQueue ] ), eReady, pxVisitor, pvContext ) != pdTRUE )
+ 				{
+-					/* Fill in an TaskStatus_t structure with information on
+-					each task in the Suspended state. */
+-					uxTask += prvListTasksWithinSingleList( &( pxTaskStatusArray[ uxTask ] ), &xSuspendedTaskList, eSuspended );
++					goto stopped;
+ 				}
+-				#endif
++			} while( uxQueue > ( UBaseType_t ) tskIDLE_PRIORITY );
+ 
+-				#if ( configGENERATE_RUN_TIME_STATS == 1)
+-				{
+-					if( pulTotalRunTime != NULL )
+-					{
+-						#ifdef portALT_GET_RUN_TIME_COUNTER_VALUE
+-							portALT_GET_RUN_TIME_COUNTER_VALUE( ( *pulTotalRunTime ) );
+-						#else
+-							*pulTotalRunTime = portGET_RUN_TIME_COUNTER_VALUE();
+-						#endif
+-					}
+-				}
+-				#else
+-				{
+-					if( pulTotalRunTime != NULL )
+-					{
+-						*pulTotalRunTime = 0;
+-					}
+-				}
+-				#endif
++			if( ( prvListTasksWithinSingleList( ( List_t * ) pxDelayedTaskList, eBlocked, pxVisitor, pvContext ) == pdTRUE )
++				&& ( prvListTasksWithinSingleList( ( List_t * ) pxOverflowDelayedTaskList, eBlocked, pxVisitor, pvContext ) == pdTRUE )
++				&& ( prvListTasksWithinSingleList( &xTasksWaitingTermination, eDeleted, pxVisitor, pvContext ) == pdTRUE ) )
++			{
++				( void ) prvListTasksWithinSingleList( &xSuspendedTaskList, eSuspended, pxVisitor, pvContext );
+ 			}
+-			else
++
++		stopped:
++			if( pulTotalRunTime != NULL )
+ 			{
+-				mtCOVERAGE_TEST_MARKER();
++				*pulTotalRunTime = 0;
+ 			}
+ 		}
+-		( void ) xTaskResumeAll();
+-
+-		return uxTask;
++		return xTaskResumeAll();
+ 	}
+ 
+ #endif /* configUSE_TRACE_FACILITY */
+@@ -3598,32 +3560,29 @@
+ 
+ #if ( configUSE_TRACE_FACILITY == 1 )
+ 
+-	static UBaseType_t prvListTasksWithinSingleList( TaskStatus_t *pxTaskStatusArray, List_t *pxList, eTaskState eState )
++	static BaseType_t prvListTasksWithinSingleList( List_t *pxList, eTaskState eState, TaskStatusVisitor_t pxVisitor, void *pvContext )
+ 	{
+ 	configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
+-	UBaseType_t uxTask = 0;
++	TaskStatus_t xStatus;
++	BaseType_t xResult;
+ 
+ 		if( listCURRENT_LIST_LENGTH( pxList ) > ( UBaseType_t ) 0 )
+ 		{
+ 			listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, pxList );
+ 
+-			/* Populate an TaskStatus_t structure within the
+-			pxTaskStatusArray array for each task that is referenced from
+-			pxList.  See the definition of TaskStatus_t in task.h for the
+-			meaning of each TaskStatus_t structure member. */
+ 			do
+ 			{
+ 				listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, pxList );
+-				vTaskGetInfo( ( TaskHandle_t ) pxNextTCB, &( pxTaskStatusArray[ uxTask ] ), pdTRUE, eState );
+-				uxTask++;
++				vTaskGetInfo( ( TaskHandle_t ) pxNextTCB, &xStatus, pdTRUE, eState );
++				xResult = pxVisitor( &xStatus, pvContext );
++				if( xResult != pdTRUE )
++				{
++					return xResult;
++				}
+ 			} while( pxNextTCB != pxFirstTCB );
+ 		}
+-		else
+-		{
+-			mtCOVERAGE_TEST_MARKER();
+-		}
+ 
+-		return uxTask;
++		return pdTRUE;
+ 	}
+ 
+ #endif /* configUSE_TRACE_FACILITY */
