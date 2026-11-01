@@ -10,7 +10,7 @@ use std::ops::RangeInclusive;
 use std::path::Path;
 use std::time::Duration;
 
-use common::{answer_after_echo, relink, renode_binary, repository, require, scratch, Renode, Rig};
+use common::{holds_whole_prompt, relink, renode_binary, repository, require, scratch, Renode, Rig};
 
 const BOOT_TIMEOUT: Duration = Duration::from_secs(180);
 const SUPERVISOR_CALL: &str = "SuperVisorCall";
@@ -96,14 +96,9 @@ fn assert_same_exceptions(stock: &BTreeMap<String, usize>, relinked: &BTreeMap<S
 }
 
 #[test]
-fn a_stray_colour_code_ahead_of_the_echo_is_not_part_of_the_answer() {
-    assert_eq!(
-        answer_after_echo(
-            "[0msysbus ReadDoubleWord 0xf1178\n\r0x0000270F\n\r\n\r\u{1b}[34m(hwa10) ",
-            "sysbus ReadDoubleWord 0xf1178",
-        ),
-        "0x0000270F"
-    );
+fn a_prompt_is_not_whole_until_its_colour_reset_has_arrived() {
+    assert!(!holds_whole_prompt(b"0x0000270F\r\n\x1b[33m(hwa10) \x1b"));
+    assert!(holds_whole_prompt(b"0x0000270F\r\n\x1b[33m(hwa10) \x1b[0m"));
 }
 
 #[test]

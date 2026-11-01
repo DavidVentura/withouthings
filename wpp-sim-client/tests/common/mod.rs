@@ -16,6 +16,9 @@ const SHELL_ECHO_TIMEOUT: Duration = Duration::from_secs(60);
 const SHELL_QUEUE_BYTES: usize = 8;
 const MONITOR_TIMEOUT: Duration = Duration::from_secs(10);
 const MONITOR_PROMPT: &str = "(hwa10)";
+/// The prompt's colour reset follows its text and can arrive in a later read, so
+/// an answer is only whole once the reset has been read too.
+const MONITOR_PROMPT_END: &[u8] = b"(hwa10) \x1b[0m";
 
 /// A monitor connection held open for many commands whose answers nobody reads.
 /// Renode takes the lines in order, so the only wait is for the socket to take
@@ -144,8 +147,10 @@ impl Renode {
     }
 }
 
-/// The monitor sometimes puts a colour code with no escape byte ahead of its
-/// echo, so what comes before the echo is not part of the answer.
+pub fn holds_whole_prompt(read: &[u8]) -> bool {
+    read.windows(MONITOR_PROMPT_END.len()).any(|window| window == MONITOR_PROMPT_END)
+}
+
 pub fn answer_after_echo(raw: &str, command: &str) -> String {
     let (_, answer) = raw
         .split_once(command)
@@ -159,10 +164,9 @@ pub fn answer_after_echo(raw: &str, command: &str) -> String {
 }
 
 fn read_to_prompt(socket: &mut TcpStream, command: &str) -> Vec<u8> {
-    let prompt = MONITOR_PROMPT.as_bytes();
     let mut answer = Vec::new();
     let mut chunk = [0u8; 4096];
-    while !answer.windows(prompt.len()).any(|window| window == prompt) {
+    while !holds_whole_prompt(&answer) {
         let read = socket
             .read(&mut chunk)
             .unwrap_or_else(|error| panic!("the monitor never finished {command:?}: {error}"));
