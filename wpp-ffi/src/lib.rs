@@ -4,8 +4,8 @@ use wpp::activity;
 use wpp::ancs::{self, NotificationCenter, NotificationId};
 use wpp::capture::{FrameReassembler, StreamItem};
 use wpp::client::{
-    Action, Category, Client, Credentials, Event, Feature, FeatureId, FeatureSchedule, Phase,
-    SampleKind, Source, BATTERY_STATE_CHARGING,
+    Action, Client, Credentials, Event, Feature, FeatureId, FeatureSchedule, Phase, SampleKind,
+    Source, BATTERY_STATE_CHARGING,
 };
 use wpp::energy::{self, Beat, Reading, Wearer};
 use wpp::image::{GlyphRequest, IconRequest, Mono};
@@ -13,6 +13,10 @@ use wpp::pairing::{Pairing, PairingState};
 use wpp::track::{self, Track};
 use wpp::sport::{self, SportId};
 use wpp::units::{Bpm, Kilocalories, Met, Millivolts, UnixMillis, UnixTime};
+use wpp::watch_config::{
+    default_features, screen_name, CATEGORIES, HEALTH_FEATURES, KNOWN_SCREENS,
+    RESPIRATORY_SCAN_MONITORING, SCAN_WINDOW,
+};
 use wpp::Frame;
 use wpp_store::{DeviceId, EcgId, SeriesPoint, SetBoundary, Store, Trim, WorkoutId, WorkoutRow};
 
@@ -24,18 +28,6 @@ fn origin_of(source: Source) -> Origin {
         Source::Stored => Origin::Stored,
     }
 }
-
-const CATEGORIES: [Category; 9] = [
-    Category(5),
-    Category(9),
-    Category(8),
-    Category(6),
-    Category(12),
-    Category(11),
-    Category(10),
-    Category::ACTIVITY,
-    Category::BODY,
-];
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum WatchError {
@@ -1680,7 +1672,7 @@ impl WatchService {
             id: RESPIRATORY_SCAN_MONITORING,
             schedule: FeatureSchedule::Window {
                 start,
-                end: UnixTime(start.0 + SCAN_WINDOW_SECS),
+                end: start + SCAN_WINDOW,
             },
         });
         self.commit_features(features)
@@ -2245,88 +2237,6 @@ fn verdict_of(store: &Store, id: EcgId) -> Result<(Option<u32>, Option<EcgRhythm
 }
 
 const CHARGE_STATE_FRESH_MS: i64 = 180_000;
-
-const KNOWN_SCREENS: &[(u8, &str)] = &[
-    (1, "Steps"),
-    (2, "Distance"),
-    (3, "Calories"),
-    (4, "Heart rate"),
-    (6, "Date"),
-    (9, "Electrocardiogram (ECG)"),
-    (10, "Oxygen saturation (SpO2)"),
-    (11, "Workouts"),
-    (12, "Elevation"),
-    (16, "Clock"),
-    (17, "Settings"),
-    (18, "Breathe"),
-    (20, "Body temperature"),
-    (21, "Cycle tracking"),
-    (22, "Sleep"),
-];
-
-fn screen_name(id: u8) -> String {
-    KNOWN_SCREENS
-        .iter()
-        .find(|(known, _)| *known == id)
-        .map(|(_, name)| name.to_string())
-        .unwrap_or_else(|| format!("Screen {id}"))
-}
-
-/// `FEATURE_ID_RESPIRATORY_SCAN_MONITORING`. It holds the optical sensor on
-/// through the night, and the reference app never sends it permanent: it is
-/// the one id in the whole capture that arrives with a window.
-const RESPIRATORY_SCAN_MONITORING: FeatureId = FeatureId(9);
-
-const SCAN_WINDOW_SECS: i64 = 24 * 60 * 60;
-
-/// The message carries the whole enabled set, so an id left out is switched
-/// off. This is what the reference app sends, minus 9, which is armed a window
-/// at a time instead — see [`RESPIRATORY_SCAN_MONITORING`]. 88 and 113 have no
-/// constant in the APK but the reference app sends them, so they are carried.
-const DEFAULT_FEATURES: &[u16] = &[3, 5, 10, 11, 14, 17, 19, 20, 27, 53, 71, 88, 113];
-
-fn default_features() -> Vec<Feature> {
-    DEFAULT_FEATURES
-        .iter()
-        .map(|id| Feature {
-            id: FeatureId(*id),
-            schedule: FeatureSchedule::Permanent,
-        })
-        .collect()
-}
-
-const HEALTH_FEATURES: &[(u16, &str, &str)] = &[
-    (17, "Signs of AFib", "Monitor for irregular heartbeat"),
-    (
-        14,
-        "AFib (medical grade)",
-        "Medically certified AFib detection",
-    ),
-    (5, "SpO2 during sleep", "Measure blood oxygen while asleep"),
-    (3, "SpO2", "Blood oxygen measurement"),
-    (10, "Respiratory scan", "Breathing rate measurement"),
-    (
-        11,
-        "Respiratory scan (smart)",
-        "Choose when to measure automatically",
-    ),
-    (71, "Body temperature", "Skin and core temperature"),
-    (27, "Electrocardiogram", "On-demand ECG recording"),
-    (53, "ECG intervals", "QT, QTc, PQ and QRS from the ECG"),
-    (
-        22,
-        "Resting heart rate alerts",
-        "Alert on unusually high or low resting rate",
-    ),
-    (
-        26,
-        "Automatic resting HR alerts",
-        "Set the alert thresholds automatically",
-    ),
-    (70, "Cycle tracking", "Menstrual cycle logging"),
-    (20, "Activity tracking", "Steps, distance and calories"),
-    (19, "Notifications", "Phone notifications on the watch"),
-];
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 

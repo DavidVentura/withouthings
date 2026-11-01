@@ -19,6 +19,7 @@ pub mod spiflash;
 pub mod sport;
 pub mod track;
 pub mod units;
+pub mod watch_config;
 
 pub use activity::{Minute, Session};
 pub use analysis::{detect_r_peaks, RPeaks};
