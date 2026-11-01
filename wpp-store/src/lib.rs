@@ -1,4 +1,5 @@
 mod migrate;
+pub mod report;
 
 use std::collections::{BTreeSet, HashMap};
 use std::num::NonZeroUsize;
@@ -12,6 +13,7 @@ use wpp::client::{
 };
 use wpp::signal::{EcgMeasure, MeasureType, Recording, SampleFormat, Signal, SignalKind};
 use wpp::sleep::StageWindow;
+use wpp::sport::SportId;
 use wpp::track::Fix;
 use wpp::units::{Duration, Edges, Hundredths, Millis, SamplingHz, UnixMillis, UnixTime};
 
@@ -243,6 +245,18 @@ pub struct WorkoutRow {
     pub started_at: UnixTime,
     pub ended_at: Option<UnixTime>,
     pub subcategory: i64,
+}
+
+impl ActiveWorkout {
+    pub fn sport(&self) -> SportId {
+        SportId(self.subcategory as u32)
+    }
+}
+
+impl WorkoutRow {
+    pub fn sport(&self) -> SportId {
+        SportId(self.subcategory as u32)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

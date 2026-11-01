@@ -6,21 +6,20 @@ use wpp::ancs::{self, NotificationCenter, NotificationId};
 use wpp::capture::{FrameReassembler, StreamItem};
 use wpp::client::{
     Action, Client, Credentials, Event, Feature, FeatureId, FeatureSchedule, Phase, SampleKind,
-    Source, BATTERY_STATE_CHARGING,
+    Source,
 };
-use wpp::energy::{self, Beat, Reading, Wearer};
 use wpp::image::{GlyphRequest, IconRequest, Mono};
 use wpp::pairing::{Pairing, PairingState};
 use wpp::track::{self, Track};
-use wpp::signal::{WatchVerdict, STORED_MEASURE_ATTRIB_CONFIRMED};
+use wpp::signal::STORED_MEASURE_ATTRIB_CONFIRMED;
 use wpp::sport::{self, SportId};
-use wpp::units::{Bpm, Kilocalories, Met, Millivolts, UnixMillis, UnixTime};
+use wpp::units::{Bpm, Millivolts, UnixMillis, UnixTime};
 use wpp::watch_config::{
     default_features, screen_name, CATEGORIES, HEALTH_FEATURES, KNOWN_SCREENS,
     RESPIRATORY_SCAN_MONITORING, SCAN_WINDOW,
 };
 use wpp::Frame;
-use wpp_store::{DeviceId, EcgId, SeriesPoint, SetBoundary, Store, Trim, WorkoutId, WorkoutRow};
+use wpp_store::{report, DeviceId, EcgId, SetBoundary, Store, Trim, WorkoutId};
 
 uniffi::setup_scaffolding!();
 
@@ -932,17 +931,17 @@ impl WatchService {
     }
 
     pub fn snapshot(&self) -> Result<Snapshot, WatchError> {
+        let now = UnixMillis(now_ms());
         let store = self.store.lock().unwrap();
         let (phase, pending, progress, measuring) = {
             let inner = self.inner.lock().unwrap();
-            let now = now_ms();
             let transfer = inner.client.transfer_progress();
             (
                 Progress::of(inner.client.phase()),
                 inner.client.pending_deletes() as u32,
                 SyncProgress {
                     history_fraction: inner.client.walk_span().and_then(|(from, at)| {
-                        let span = now / 1000 - from.0;
+                        let span = now.to_seconds().0 - from.0;
                         if span <= 0 || from.0 <= 0 {
                             None
                         } else {
@@ -977,17 +976,11 @@ impl WatchService {
                     hardware: identity.hardware,
                     rescue: identity.rescue,
                 }),
-            battery: match store.latest(self.device_id, SampleKind::BatteryPercent)? {
-                None => None,
-                Some(level) => Some(Battery {
-                    percent: level.value as u32,
-                    at_ms: level.at.0,
-                    charging: store
-                        .latest(self.device_id, SampleKind::BatteryState)?
-                        .filter(|state| now_ms() - state.at.0 < CHARGE_STATE_FRESH_MS)
-                        .map(|state| state.value == BATTERY_STATE_CHARGING),
-                }),
-            },
+            battery: report::battery(&store, self.device_id, now)?.map(|level| Battery {
+                percent: level.percent,
+                at_ms: level.at.0,
+                charging: level.charging,
+            }),
             latest_hr: store
                 .latest(self.device_id, SampleKind::HeartRate)?
                 .map(|point| HrPoint {
@@ -1007,26 +1000,8 @@ impl WatchService {
                     count: point.value as u32,
                     day_start_ms: point.at.0,
                 }),
-            active_workout: match store.active_workout(self.device_id)? {
-                None => None,
-                Some(active) => Some(WorkoutSummary {
-                    id: active.id.0,
-                    started_at_ms: active.started_at.0 * 1000,
-                    ended_at_ms: None,
-                    subcategory: active.subcategory as i32,
-                    activity: sport::name(SportId(active.subcategory as u32)),
-                    on_foot: sport::on_foot(SportId(active.subcategory as u32)),
-                    travel: travel(SportId(active.subcategory as u32)),
-                    calories: workout_calories(
-                        &store,
-                        self.device_id,
-                        wearer.as_ref(),
-                        SportId(active.subcategory as u32),
-                        active.started_at.0 * 1000,
-                        now_ms(),
-                    )?,
-                }),
-            },
+            active_workout: report::active_workout(&store, self.device_id, now)?
+                .map(workout_summary),
             pending_deletes: pending,
             sync: progress,
             measuring,
@@ -1082,16 +1057,12 @@ impl WatchService {
                 })
                 .collect());
         }
-        let counter: Vec<Reading> = found.iter().map(|p| calorie_reading(p.at, p.value)).collect();
-        let lifted = expenditure(&store, self.device_id, &counter)?;
-        assert_eq!(lifted.len(), found.len(), "one lifted reading per stored one");
-        Ok(lifted
+        Ok(report::calorie_series(&store, self.device_id, &found, UnixMillis(now_ms()))?
             .into_iter()
-            .zip(&found)
-            .map(|(reading, SeriesPoint { source, .. })| Point {
+            .map(|(reading, source)| Point {
                 at_ms: reading.at.0,
                 value: reading.total.0,
-                origin: origin_of(*source),
+                origin: origin_of(source),
             })
             .collect())
     }
@@ -1110,48 +1081,25 @@ impl WatchService {
                 .map(|found| found.map(|value| metric.reading(value)))
                 .collect());
         }
-        let Some((first, last)) = edges.span() else {
-            return Ok(Vec::new());
-        };
-        let counter: Vec<Reading> = store
-            .samples_between(
-                self.device_id,
-                metric.kind(),
-                first,
-                last - wpp::units::Duration::from_millis(1),
-            )?
+        Ok(report::calories_windowed_max(&store, self.device_id, &edges, UnixMillis(now_ms()))?
             .into_iter()
-            .map(|point| calorie_reading(point.at, point.value))
-            .collect();
-        let lifted = expenditure(&store, self.device_id, &counter)?;
-        let mut found = vec![None; edges.windows()];
-        for reading in lifted {
-            if let Some(window) = edges.window_of(reading.at) {
-                found[window] = Some(
-                    found[window].map_or(reading.total.0, |seen: f64| seen.max(reading.total.0)),
-                );
-            }
-        }
-        Ok(found)
+            .map(|found| found.map(|total| total.0))
+            .collect())
     }
 
     pub fn latest_value(&self, metric: Metric) -> Result<Option<Point>, WatchError> {
         let store = self.store.lock().unwrap();
-        let Some(latest) = store.latest(self.device_id, metric.kind())? else {
-            return Ok(None);
-        };
-        if metric != Metric::Calories {
-            return Ok(Some(Point {
-                at_ms: latest.at.0,
-                value: metric.reading(latest.value),
+        if metric == Metric::Calories {
+            let latest = report::latest_calories(&store, self.device_id, UnixMillis(now_ms()))?;
+            return Ok(latest.map(|reading| Point {
+                at_ms: reading.at.0,
+                value: reading.total.0,
                 origin: Origin::Stored,
             }));
         }
-        let counter = [calorie_reading(latest.at, latest.value)];
-        let lifted = expenditure(&store, self.device_id, &counter)?;
-        Ok(lifted.first().map(|reading| Point {
-            at_ms: reading.at.0,
-            value: reading.total.0,
+        Ok(store.latest(self.device_id, metric.kind())?.map(|latest| Point {
+            at_ms: latest.at.0,
+            value: metric.reading(latest.value),
             origin: Origin::Stored,
         }))
     }
@@ -1168,12 +1116,10 @@ impl WatchService {
 
     pub fn workouts(&self, limit: u32) -> Result<Vec<WorkoutSummary>, WatchError> {
         let store = self.store.lock().unwrap();
-        let user = store.watch_user(self.device_id)?;
-        store
-            .workouts(self.device_id, limit)?
+        Ok(report::workouts(&store, self.device_id, limit, UnixMillis(now_ms()))?
             .into_iter()
-            .map(|row| summarise(&store, self.device_id, user.as_ref(), row))
-            .collect()
+            .map(workout_summary)
+            .collect())
     }
 
     /// Every session the span touches, one still running included.
@@ -1183,16 +1129,14 @@ impl WatchService {
         to_ms: i64,
     ) -> Result<Vec<WorkoutSummary>, WatchError> {
         let store = self.store.lock().unwrap();
-        let user = store.watch_user(self.device_id)?;
-        store
-            .workouts_between(
-                self.device_id,
-                UnixMillis(from_ms).to_seconds(),
-                UnixMillis(to_ms).to_seconds(),
-            )?
-            .into_iter()
-            .map(|row| summarise(&store, self.device_id, user.as_ref(), row))
-            .collect()
+        let found = report::workouts_between(
+            &store,
+            self.device_id,
+            UnixMillis(from_ms),
+            UnixMillis(to_ms),
+            UnixMillis(now_ms()),
+        )?;
+        Ok(found.into_iter().map(workout_summary).collect())
     }
 
     /// Hours of each window the watch measured a heart rate in, which is the
@@ -1221,16 +1165,15 @@ impl WatchService {
                 reason: format!("{ended_at_ms} is not inside session {id}"),
             });
         }
-        let user = store.watch_user(self.device_id)?;
-        let Some(row) = store.workout(self.device_id, WorkoutId(id))? else {
+        let now = UnixMillis(now_ms());
+        let Some(trimmed) = report::workout(&store, self.device_id, WorkoutId(id), now)? else {
             return Err(WatchError::Refused {
                 reason: format!("no session {id}"),
             });
         };
-        let trimmed = summarise(&store, self.device_id, user.as_ref(), row)?;
         drop(store);
         self.transport.changed();
-        Ok(trimmed)
+        Ok(workout_summary(trimmed))
     }
 
     pub fn activity_totals(&self, from_ms: i64, to_ms: i64) -> Result<ActivityTotals, WatchError> {
@@ -1254,19 +1197,14 @@ impl WatchService {
     /// anything to be had from it — only how steeply the ground rose.
     pub fn ascent_series(&self, from_ms: i64, to_ms: i64) -> Result<Vec<Point>, WatchError> {
         let store = self.store.lock().unwrap();
-        let minutes = store.activity_minutes(
-            self.device_id,
-            UnixMillis(from_ms).to_seconds(),
-            UnixMillis(to_ms).to_seconds(),
-        )?;
+        let climbed = report::ascents(&store, self.device_id, UnixMillis(from_ms), UnixMillis(to_ms))?;
         drop(store);
 
-        Ok(minutes
-            .iter()
-            .filter(|minute| minute.at.0 * 1000 >= from_ms && minute.at.0 * 1000 <= to_ms)
-            .map(|minute| Point {
-                at_ms: minute.at.0 * 1000,
-                value: minute.ascent.map_or(0.0, |ascent| ascent.value().0),
+        Ok(climbed
+            .into_iter()
+            .map(|(at, ascent)| Point {
+                at_ms: at.0,
+                value: ascent.0,
                 origin: Origin::Stored,
             })
             .collect())
@@ -1278,28 +1216,27 @@ impl WatchService {
         to_ms: i64,
     ) -> Result<Vec<DetectedActivity>, WatchError> {
         let store = self.store.lock().unwrap();
-        let from = UnixMillis(from_ms).to_seconds();
-        let to = UnixMillis(to_ms).to_seconds();
-        let minutes = store.activity_minutes(self.device_id, from, to)?;
-        // A workout still running has no end, and its minutes are as much its
-        // own as a finished one's.
-        let recorded: Vec<std::ops::Range<UnixTime>> = store
-            .workouts_between(self.device_id, from, to)?
-            .iter()
-            .map(|row| row.started_at..row.ended_at.unwrap_or(to))
-            .collect();
-        Ok(activity::detect(&minutes, &recorded)
+        let found = report::detected_activities(
+            &store,
+            self.device_id,
+            UnixMillis(from_ms),
+            UnixMillis(to_ms),
+        )?;
+        Ok(found
             .into_iter()
-            .map(|session| DetectedActivity {
-                started_at_ms: session.started_at.to_millis().0,
-                ended_at_ms: session.ended_at.to_millis().0,
-                subcategory: session.subcategory as i32,
-                activity: sport::name(SportId(session.subcategory as u32)),
-                on_foot: sport::on_foot(SportId(session.subcategory as u32)),
-                travel: travel(SportId(session.subcategory as u32)),
-                steps: session.steps,
-                distance_metres: session.distance.0,
-                calories: session.calories.0,
+            .map(|session| {
+                let kind = SportId(session.subcategory as u32);
+                DetectedActivity {
+                    started_at_ms: session.started_at.to_millis().0,
+                    ended_at_ms: session.ended_at.to_millis().0,
+                    subcategory: session.subcategory as i32,
+                    activity: sport::name(kind),
+                    on_foot: sport::on_foot(kind),
+                    travel: travel(kind),
+                    steps: session.steps,
+                    distance_metres: session.distance.0,
+                    calories: session.calories.0,
+                }
             })
             .collect())
     }
@@ -1835,14 +1772,35 @@ impl WatchService {
 
     pub fn night(&self, from_ms: i64, to_ms: i64) -> Result<Night, WatchError> {
         let store = self.store.lock().unwrap();
-        Ok(night_record(read_night(&store, self.device_id, from_ms, to_ms)?))
+        Ok(night_record(report::night(
+            &store,
+            self.device_id,
+            UnixMillis(from_ms),
+            UnixMillis(to_ms),
+        )?))
     }
 
     /// One entry for each window the watch staged any sleep in; a window it
     /// did not is left out rather than reported as a night of none.
     pub fn night_trend(&self, windows: Vec<SleepSpan>) -> Result<Vec<NightTrend>, WatchError> {
+        let windows: Vec<std::ops::Range<UnixMillis>> = windows
+            .iter()
+            .map(|window| UnixMillis(window.from_ms)..UnixMillis(window.to_ms))
+            .collect();
         let store = self.store.lock().unwrap();
-        night_trend(&store, self.device_id, windows)
+        Ok(report::night_trend(&store, self.device_id, &windows)?
+            .into_iter()
+            .map(|night| NightTrend {
+                asleep_from_ms: night.asleep.start.0,
+                asleep_to_ms: night.asleep.end.0,
+                asleep_ms: night.asleep_for.as_millis(),
+                score: night.score.map(sleep_score),
+                heart: night.heart.map(|heart| NightHeart {
+                    median_bpm: heart.median.0,
+                    resting_bpm: heart.resting.0,
+                }),
+            })
+            .collect())
     }
 
     /// When the first session of any kind was recorded: the watch keeps no
@@ -1863,14 +1821,32 @@ impl WatchService {
         to_ms: i64,
     ) -> Result<Vec<WorkoutTrend>, WatchError> {
         let store = self.store.lock().unwrap();
-        workout_trend(&store, self.device_id, subcategory, from_ms, to_ms)
+        let trend = report::workout_trend(
+            &store,
+            self.device_id,
+            SportId(subcategory as u32),
+            UnixMillis(from_ms),
+            UnixMillis(to_ms),
+        )?;
+        Ok(trend
+            .into_iter()
+            .map(|entry| WorkoutTrend {
+                workout: workout_summary(entry.workout),
+                heart: entry.effort.map(|effort| SessionHeart {
+                    median_bpm: effort.median.0,
+                    p95_bpm: effort.p95.0,
+                    measured_ms: effort.measured_ms,
+                    dropout_ms: effort.dropout_ms,
+                }),
+            })
+            .collect())
     }
 
     /// A few minutes awake in the middle of a night leave the body on its
     /// sleeping baseline, so a stretch survives them as one span.
     pub fn sleep_spans(&self, from_ms: i64, to_ms: i64) -> Result<Vec<SleepSpan>, WatchError> {
         let store = self.store.lock().unwrap();
-        Ok(asleep_spans(&store, self.device_id, from_ms, to_ms)?
+        Ok(report::asleep_spans(&store, self.device_id, UnixMillis(from_ms), UnixMillis(to_ms))?
             .into_iter()
             .map(|span| SleepSpan {
                 from_ms: span.start.0,
@@ -1891,8 +1867,13 @@ impl WatchService {
         edges_ms: Vec<i64>,
         floors_bpm: Vec<u16>,
     ) -> Result<Vec<Vec<i64>>, WatchError> {
+        let edges = edges_of(edges_ms)?;
+        let floors: Vec<Bpm> = floors_bpm.into_iter().map(Bpm).collect();
         let store = self.store.lock().unwrap();
-        zone_time(&store, self.device_id, &edges_of(edges_ms)?, &floors_bpm)
+        Ok(report::zone_time(&store, self.device_id, &edges, &floors)?
+            .into_iter()
+            .map(|window| window.into_iter().map(|spent| spent.as_millis()).collect())
+            .collect())
     }
 
     pub fn add_note(&self, at_ms: i64, text: String) -> Result<i64, WatchError> {
@@ -1925,8 +1906,17 @@ impl WatchService {
     }
 
     pub fn awake_heart(&self, edges_ms: Vec<i64>) -> Result<Vec<Option<AwakeHeart>>, WatchError> {
+        let edges = edges_of(edges_ms)?;
         let store = self.store.lock().unwrap();
-        awake_heart(&store, self.device_id, &edges_of(edges_ms)?)
+        Ok(report::awake_heart(&store, self.device_id, &edges)?
+            .into_iter()
+            .map(|window| {
+                window.map(|rest| AwakeHeart {
+                    median_bpm: rest.median.0,
+                    readings: rest.readings,
+                })
+            })
+            .collect())
     }
 
     pub fn has_staging(&self, from_ms: i64, to_ms: i64) -> Result<bool, WatchError> {
@@ -1983,13 +1973,9 @@ impl WatchService {
 
     pub fn ecgs(&self) -> Result<Vec<EcgSummary>, WatchError> {
         let store = self.store.lock().unwrap();
-        let listed = store.ecgs(self.device_id)?;
+        let listed = report::ecg_summaries(&store, self.device_id)?;
         self.note_unreadable(&listed.unreadable);
-        listed
-            .rows
-            .into_iter()
-            .map(|row| ecg_summary(&store, row))
-            .collect()
+        Ok(listed.summaries.iter().map(ecg_summary).collect())
     }
 
     pub fn afib_episodes(&self) -> Result<Vec<AfibEpisode>, WatchError> {
@@ -2010,73 +1996,29 @@ impl WatchService {
     pub fn afib_alert(&self, id: i64) -> Result<Option<AfibAlert>, WatchError> {
         use wpp::signal::PpgAfibRule;
         let store = self.store.lock().unwrap();
-        let Some(anchor) = store
-            .afib_episodes(self.device_id)?
-            .into_iter()
-            .find(|row| row.id == id)
-        else {
+        let Some(alert) = report::afib_alert(&store, self.device_id, id)? else {
             return Ok(None);
         };
-        let anchored_at = anchor.measured_at;
-        let from = anchored_at - wpp::units::Duration::from_secs(PpgAfibRule::WINDOW_SECS);
-        let rows = store.afib_readings_up_to(self.device_id, id, from)?;
-        let marks: Vec<(wpp::units::UnixTime, bool)> = rows
-            .iter()
-            .map(|row| {
-                (
-                    row.measured_at.to_seconds(),
-                    row.attrib == Some(STORED_MEASURE_ATTRIB_CONFIRMED),
-                )
-            })
-            .collect();
-        let counted = &rows[PpgAfibRule::counted(&marks, rows.len() - 1)];
-        let recorded = |row: &&wpp_store::AfibReadingRow| {
-            row.duration > wpp::units::Duration::ZERO && row.samples.iter().any(|b| *b != 0)
-        };
-        let asleep = asleep_spans(&store, self.device_id, from.0, anchored_at.0)?;
-        let (parsed, unreadable): (Vec<_>, Vec<_>) = counted
-            .iter()
-            .filter(recorded)
-            .map(|row| row.intervals().map(|raw| (row, raw)))
-            .partition(Result::is_ok);
-        self.note_unreadable(
-            &unreadable
-                .into_iter()
-                .map(Result::unwrap_err)
-                .collect::<Vec<_>>(),
-        );
-        let readings = parsed
-            .into_iter()
-            .map(Result::unwrap)
-            .map(|(row, raw)| afib_reading(&store, self.device_id, row, &raw, &asleep))
-            .collect::<Result<Vec<_>, WatchError>>()?;
-        let ecgs = store.ecgs(self.device_id)?;
-        self.note_unreadable(&ecgs.unreadable);
-        let ecg_after = ecgs
-            .rows
-            .into_iter()
-            .filter(|row| (anchored_at.0..=anchored_at.0 + ECG_AFTER_ALERT_MS).contains(&row.measured_at.0))
-            .min_by_key(|row| row.measured_at)
-            .map(|row| ecg_summary(&store, row))
-            .transpose()?;
+        self.note_unreadable(&alert.unreadable_readings);
+        self.note_unreadable(&alert.unreadable_ecgs);
         Ok(Some(AfibAlert {
             id,
-            measured_at_ms: anchored_at.0,
+            measured_at_ms: alert.measured_at.0,
             run: PpgAfibRule::RUN as u32,
             window_hours: (PpgAfibRule::WINDOW_SECS / 3600) as u32,
-            counted: counted.len() as u32,
-            empty: counted.iter().filter(|row| !recorded(row)).count() as u32,
-            readings,
-            ecg_after,
+            counted: alert.counted,
+            empty: alert.empty,
+            readings: alert.readings.into_iter().map(afib_reading).collect(),
+            ecg_after: alert.ecg_after.as_ref().map(ecg_summary),
         }))
     }
 
     pub fn ecg(&self, id: i64) -> Result<Option<EcgRecording>, WatchError> {
         let store = self.store.lock().unwrap();
-        let Some(stored) = store.ecg(EcgId(id))? else {
+        let Some(detail) = report::ecg(&store, EcgId(id))? else {
             return Ok(None);
         };
-        let recording = &stored.recording;
+        let recording = &detail.stored.recording;
         let leads = recording
             .leads()
             .iter()
@@ -2092,18 +2034,14 @@ impl WatchService {
                     .collect(),
             })
             .collect();
-        let verdict = WatchVerdict::of(&store.ecg_measures(EcgId(id))?);
         Ok(Some(EcgRecording {
             id,
-            measured_at_ms: stored.measured_at.0,
+            measured_at_ms: detail.stored.measured_at.0,
             sampling_hz: u32::from(recording.rate.get()),
             leads,
-            heart_rate: verdict.rate.map(|bpm| u32::from(bpm.0)),
-            rhythm: verdict.rhythm.map(ecg_rhythm),
-            analysis: ecg_analysis(&wpp::rhythm::read_ecg(
-                &recording.analysed().samples,
-                recording.rate,
-            )),
+            heart_rate: detail.verdict.rate.map(|bpm| u32::from(bpm.0)),
+            rhythm: detail.verdict.rhythm.map(ecg_rhythm),
+            analysis: ecg_analysis(&detail.reading),
         }))
     }
 }
@@ -2119,49 +2057,30 @@ fn ppg_rhythm(code: i64) -> Option<PpgRhythm> {
     })
 }
 
-/// The watch asks for an ECG with the alert; one taken within this is taken as
-/// the answer to it.
-const ECG_AFTER_ALERT_MS: i64 = 30 * 60 * 1000;
-
-fn ecg_summary(store: &Store, row: wpp_store::EcgSummaryRow) -> Result<EcgSummary, WatchError> {
-    let leads = row.kind.leads().len();
-    let per_lead = row.sample_bytes / 2 / leads as i64;
-    let verdict = WatchVerdict::of(&store.ecg_measures(row.id)?);
-    Ok(EcgSummary {
-        id: row.id.0,
-        measured_at_ms: row.measured_at.0,
-        seconds: per_lead as f64 / row.sampling_hz.as_f64(),
-        leads: leads as u32,
-        heart_rate: verdict.rate.map(|bpm| u32::from(bpm.0)),
-        rhythm: verdict.rhythm.map(ecg_rhythm),
-    })
+fn ecg_summary(summary: &report::EcgSummary) -> EcgSummary {
+    EcgSummary {
+        id: summary.id.0,
+        measured_at_ms: summary.measured_at.0,
+        seconds: summary.seconds,
+        leads: summary.leads,
+        heart_rate: summary.verdict.rate.map(|bpm| u32::from(bpm.0)),
+        rhythm: summary.verdict.rhythm.map(ecg_rhythm),
+    }
 }
 
-fn afib_reading(
-    store: &Store,
-    device_id: DeviceId,
-    row: &wpp_store::AfibReadingRow,
-    raw: &[wpp::units::Millis],
-    asleep: &[std::ops::Range<UnixMillis>],
-) -> Result<AfibReading, WatchError> {
-    use wpp::rhythm::{read_stored_pulse, PulseCheck, PulseVerdict, WATCH_RATE_WITHIN_MS};
-    let watch = store.nearest_sample(
-        device_id,
-        SampleKind::HeartRate,
-        row.measured_at,
-        wpp::units::Duration::from_millis(WATCH_RATE_WITHIN_MS),
-    )?;
-    let pulse = read_stored_pulse(raw, watch.filter(|bpm| *bpm > 0).map(|bpm| Bpm(bpm as u16)));
-    Ok(AfibReading {
-        id: row.id,
-        measured_at_ms: row.measured_at.0,
-        heart_rate: pulse.heart_rate.map(|bpm| u32::from(bpm.0)),
-        intervals_ms: pulse
+fn afib_reading(reading: report::AfibReading) -> AfibReading {
+    use wpp::rhythm::{PulseCheck, PulseVerdict};
+    AfibReading {
+        id: reading.id,
+        measured_at_ms: reading.measured_at.0,
+        heart_rate: reading.pulse.heart_rate.map(|bpm| u32::from(bpm.0)),
+        intervals_ms: reading
+            .pulse
             .intervals
             .iter()
             .map(|interval| interval.as_millis() as u32)
             .collect(),
-        analysis: match pulse.check {
+        analysis: match reading.pulse.check {
             PulseCheck::NoWatchRate => PulseAnalysis::NoWatchRate,
             PulseCheck::Read(PulseVerdict::TooFew { .. }) => PulseAnalysis::TooFew,
             PulseCheck::Read(PulseVerdict::Disagrees { .. }) => PulseAnalysis::Disagrees,
@@ -2170,8 +2089,8 @@ fn afib_reading(
                 rhythm: rhythm_analysis(&rhythm),
             },
         },
-        asleep: asleep.iter().any(|span| span.contains(&row.measured_at)),
-    })
+        asleep: reading.asleep,
+    }
 }
 
 fn rhythm_analysis(rhythm: &wpp::rhythm::Rhythm) -> RhythmAnalysis {
@@ -2221,10 +2140,6 @@ fn ecg_rhythm(rhythm: wpp::signal::Rhythm) -> EcgRhythm {
     }
 }
 
-const CHARGE_STATE_FRESH_MS: i64 = 180_000;
-
-const DAY_MS: i64 = 24 * 60 * 60 * 1000;
-
 fn travel(id: SportId) -> Travel {
     match sport::limits(id) {
         Some(_) => Travel::Ground,
@@ -2232,59 +2147,19 @@ fn travel(id: SportId) -> Travel {
     }
 }
 
-fn summarise(
-    store: &Store,
-    device_id: DeviceId,
-    user: Option<&wpp::client::UserProfile>,
-    row: WorkoutRow,
-) -> Result<WorkoutSummary, WatchError> {
-    let started_at_ms = row.started_at.0 * 1000;
-    let ended_at_ms = row.ended_at.map(|end| end.0 * 1000);
-    Ok(WorkoutSummary {
+fn workout_summary(workout: report::Workout) -> WorkoutSummary {
+    let row = workout.row;
+    let kind = row.sport();
+    WorkoutSummary {
         id: row.id.0,
-        started_at_ms,
-        ended_at_ms,
+        started_at_ms: row.started_at.to_millis().0,
+        ended_at_ms: row.ended_at.map(|end| end.to_millis().0),
         subcategory: row.subcategory as i32,
-        activity: sport::name(SportId(row.subcategory as u32)),
-        on_foot: sport::on_foot(SportId(row.subcategory as u32)),
-        travel: travel(SportId(row.subcategory as u32)),
-        calories: workout_calories(
-            store,
-            device_id,
-            user,
-            SportId(row.subcategory as u32),
-            started_at_ms,
-            ended_at_ms.unwrap_or_else(now_ms),
-        )?,
-    })
-}
-
-fn read_night(
-    store: &Store,
-    device_id: DeviceId,
-    from_ms: i64,
-    to_ms: i64,
-) -> Result<wpp::sleep::Night, WatchError> {
-    let minutes = store.activity_minutes(
-        device_id,
-        UnixMillis(from_ms).to_seconds(),
-        UnixMillis(to_ms).to_seconds(),
-    )?;
-    Ok(wpp::sleep::night(&minutes))
-}
-
-fn asleep_spans(
-    store: &Store,
-    device_id: DeviceId,
-    from_ms: i64,
-    to_ms: i64,
-) -> Result<Vec<std::ops::Range<UnixMillis>>, WatchError> {
-    let windows = store.sleep_minutes(
-        device_id,
-        UnixMillis(from_ms).to_seconds(),
-        UnixMillis(to_ms).to_seconds(),
-    )?;
-    Ok(wpp::sleep::asleep_spans(&windows))
+        activity: sport::name(kind),
+        on_foot: sport::on_foot(kind),
+        travel: travel(kind),
+        calories: workout.calories.map(|burned| burned.0),
+    }
 }
 
 fn sleep_score(score: wpp::sleep::Score) -> SleepScore {
@@ -2315,281 +2190,6 @@ fn night_record(night: wpp::sleep::Night) -> Night {
     }
 }
 
-/// A heart still coming down from a session is not the waking rate either.
-const RECOVERY_MS: i64 = 10 * 60 * 1000;
-
-/// Everything a waking rate at rest is read against, read once for a span.
-struct Waking {
-    busy: Vec<std::ops::Range<UnixMillis>>,
-    beats: Vec<Beat>,
-}
-
-impl Waking {
-    fn read(store: &Store, device_id: DeviceId, from_ms: i64, to_ms: i64) -> Result<Waking, WatchError> {
-        let (from, to) = (UnixMillis(from_ms).to_seconds(), UnixMillis(to_ms).to_seconds());
-        let recorded: Vec<std::ops::Range<UnixTime>> = store
-            .workouts_between(device_id, from, to)?
-            .iter()
-            .map(|row| row.started_at..row.ended_at.unwrap_or(to))
-            .collect();
-        let minutes = store.activity_minutes(device_id, from, to)?;
-        let detected = activity::detect(&minutes, &recorded)
-            .into_iter()
-            .map(|session| session.started_at..session.ended_at);
-        let busy = recorded
-            .iter()
-            .cloned()
-            .chain(detected)
-            .map(|span| {
-                span.start.to_millis()
-                    ..span.end.to_millis() + wpp::units::Duration::from_millis(RECOVERY_MS)
-            })
-            .chain(asleep_spans(store, device_id, from_ms, to_ms)?)
-            .collect();
-        let beats = store
-            .samples_from(
-                device_id,
-                Metric::HeartRate.kind(),
-                Source::Stored,
-                UnixMillis(from_ms),
-                UnixMillis(to_ms - 1),
-            )?
-            .into_iter()
-            .map(|point| Beat {
-                at: point.at,
-                rate: Bpm(point.value as u16),
-            })
-            .collect();
-        Ok(Waking { busy, beats })
-    }
-
-    fn at_rest(&self, from_ms: i64, to_ms: i64) -> Option<AwakeHeart> {
-        let within: Vec<Beat> = self
-            .beats
-            .iter()
-            .filter(|beat| beat.at.0 >= from_ms && beat.at.0 < to_ms)
-            .copied()
-            .collect();
-        wpp::heart::at_rest(&within, &self.busy).map(|rest| AwakeHeart {
-            median_bpm: rest.median.0,
-            readings: rest.readings,
-        })
-    }
-}
-
-fn awake_heart(
-    store: &Store,
-    device_id: DeviceId,
-    edges: &wpp::units::Edges,
-) -> Result<Vec<Option<AwakeHeart>>, WatchError> {
-    let Some((first, last)) = edges.span() else {
-        return Ok(Vec::new());
-    };
-    let waking = Waking::read(store, device_id, first.0, last.0)?;
-    Ok(edges
-        .as_slice()
-        .windows(2)
-        .map(|edge| waking.at_rest(edge[0].0, edge[1].0))
-        .collect())
-}
-
-fn zone_time(
-    store: &Store,
-    device_id: DeviceId,
-    edges: &wpp::units::Edges,
-    floors_bpm: &[u16],
-) -> Result<Vec<Vec<i64>>, WatchError> {
-    let Some((first, last)) = edges.span() else {
-        return Ok(Vec::new());
-    };
-    let floors: Vec<Bpm> = floors_bpm.iter().map(|floor| Bpm(*floor)).collect();
-    let mut out = vec![vec![0; floors.len()]; edges.windows()];
-    let sessions = store.workouts_between(device_id, first.to_seconds(), last.to_seconds())?;
-    for row in sessions {
-        let (Some(ended_at), started_ms) = (row.ended_at, row.started_at.to_millis().0) else {
-            continue;
-        };
-        // A session is counted whole on the day it began, like every other
-        // figure about it.
-        let Some(window) = edges.window_of(UnixMillis(started_ms)) else {
-            continue;
-        };
-        let beats = beats_between(store, device_id, started_ms, ended_at.to_millis().0)?;
-        for (total, spent) in out[window]
-            .iter_mut()
-            .zip(wpp::heart::zone_time(&beats, &floors))
-        {
-            *total += spent;
-        }
-    }
-    Ok(out)
-}
-
-fn night_trend(
-    store: &Store,
-    device_id: DeviceId,
-    windows: Vec<SleepSpan>,
-) -> Result<Vec<NightTrend>, WatchError> {
-    let mut out = Vec::new();
-    for window in windows {
-        let night = read_night(store, device_id, window.from_ms, window.to_ms)?;
-        let Some(span) = night.asleep else {
-            continue;
-        };
-        let asleep: Vec<&wpp::sleep::Band> = night
-            .stages
-            .iter()
-            .filter(|band| band.level != activity::SleepLevel::Awake)
-            .collect();
-        let beats: Vec<Beat> = beats_between(store, device_id, span.start.0, span.end.0)?
-            .into_iter()
-            .filter(|beat| {
-                asleep
-                    .iter()
-                    .any(|band| beat.at >= band.from && beat.at < band.to)
-            })
-            .collect();
-        out.push(NightTrend {
-            asleep_from_ms: span.start.0,
-            asleep_to_ms: span.end.0,
-            asleep_ms: asleep.iter().map(|band| (band.to - band.from).as_millis()).sum(),
-            score: night.score.map(sleep_score),
-            heart: wpp::heart::asleep(&beats).map(|heart| NightHeart {
-                median_bpm: heart.median.0,
-                resting_bpm: heart.resting.0,
-            }),
-        });
-    }
-    Ok(out)
-}
-
-fn workout_trend(
-    store: &Store,
-    device_id: DeviceId,
-    subcategory: i32,
-    from_ms: i64,
-    to_ms: i64,
-) -> Result<Vec<WorkoutTrend>, WatchError> {
-    let user = store.watch_user(device_id)?;
-    store
-        .workouts_between(
-            device_id,
-            UnixMillis(from_ms).to_seconds(),
-            UnixMillis(to_ms).to_seconds(),
-        )?
-        .into_iter()
-        .filter(|row| row.subcategory == subcategory as i64 && row.ended_at.is_some())
-        .map(|row| {
-            let workout = summarise(store, device_id, user.as_ref(), row)?;
-            let ended_at_ms = workout.ended_at_ms.expect("only finished sessions");
-            let beats = beats_between(store, device_id, workout.started_at_ms, ended_at_ms)?;
-            Ok(WorkoutTrend {
-                workout,
-                heart: wpp::heart::effort(&beats).map(|effort| SessionHeart {
-                    median_bpm: effort.median.0,
-                    p95_bpm: effort.p95.0,
-                    measured_ms: effort.measured_ms,
-                    dropout_ms: effort.dropout_ms,
-                }),
-            })
-        })
-        .collect()
-}
-
-fn beats_between(
-    store: &Store,
-    device_id: DeviceId,
-    from_ms: i64,
-    to_ms: i64,
-) -> Result<Vec<Beat>, WatchError> {
-    Ok(store
-        .samples_between(
-            device_id,
-            SampleKind::HeartRate,
-            UnixMillis(from_ms),
-            UnixMillis(to_ms),
-        )?
-        .into_iter()
-        .map(|point| Beat {
-            at: point.at,
-            rate: Bpm(point.value as u16),
-        })
-        .collect())
-}
-
-fn session_ceiling(
-    store: &Store,
-    device_id: DeviceId,
-    subcategory: SportId,
-    from_ms: i64,
-    to_ms: i64,
-) -> Result<Met, WatchError> {
-    let speed = match sport::limits(subcategory) {
-        None => None,
-        Some(limits) => {
-            let fixes = store.track_points(device_id, UnixMillis(from_ms), UnixMillis(to_ms))?;
-            track::clean(&fixes, limits).average_speed()
-        }
-    };
-    Ok(sport::session_ceiling(subcategory, speed))
-}
-
-fn workout_calories(
-    store: &Store,
-    device_id: DeviceId,
-    user: Option<&wpp::client::UserProfile>,
-    subcategory: SportId,
-    from_ms: i64,
-    to_ms: i64,
-) -> Result<Option<f64>, WatchError> {
-    let Some(wearer) = user.and_then(|user| Wearer::of(user, UnixMillis(from_ms).to_seconds()))
-    else {
-        return Ok(None);
-    };
-    let beats = beats_between(store, device_id, from_ms, to_ms)?;
-
-    let ceiling = session_ceiling(store, device_id, subcategory, from_ms, to_ms)?;
-    Ok(Some(energy::burned(wearer, ceiling, &beats).0))
-}
-
-/// What each session of the span had earned, session by session.
-fn earned_curves(
-    store: &Store,
-    device_id: DeviceId,
-    from_ms: i64,
-    to_ms: i64,
-) -> Result<Vec<Vec<Reading>>, WatchError> {
-    let Some(user) = store.watch_user(device_id)? else {
-        return Ok(Vec::new());
-    };
-    store
-        .workouts_between(
-            device_id,
-            UnixMillis(from_ms).to_seconds(),
-            UnixMillis(to_ms).to_seconds(),
-        )?
-        .into_iter()
-        .map(|row| {
-            let Some(wearer) = Wearer::of(&user, row.started_at) else {
-                return Ok(Vec::new());
-            };
-            let ended_ms = row.ended_at.map_or_else(now_ms, |end| end.0 * 1000);
-            let started_ms = row.started_at.0 * 1000;
-            let subcategory = SportId(row.subcategory as u32);
-            let beats = beats_between(store, device_id, started_ms, ended_ms)?;
-            let ceiling = session_ceiling(store, device_id, subcategory, started_ms, ended_ms)?;
-            Ok(energy::accrued(wearer, ceiling, &beats))
-        })
-        .collect()
-}
-
-fn calorie_reading(at: UnixMillis, stored: i64) -> Reading {
-    Reading {
-        at,
-        total: Kilocalories(Metric::Calories.reading(stored)),
-    }
-}
-
 /// None for edges out of order, which only a broken caller can send.
 fn edges_of(edges_ms: Vec<i64>) -> Result<wpp::units::Edges, WatchError> {
     wpp::units::Edges::new(edges_ms.into_iter().map(UnixMillis).collect()).ok_or_else(|| {
@@ -2597,39 +2197,6 @@ fn edges_of(edges_ms: Vec<i64>) -> Result<wpp::units::Edges, WatchError> {
             reason: "window edges must be in time order".to_string(),
         }
     })
-}
-
-/// Energy is the one series the watch does not measure: its counter is a
-/// resting estimate plus what the pedometer saw, so the sessions it never
-/// stepped through are added back here.
-///
-/// The counter's restart is only visible against the reading before it, and a
-/// window rarely opens on one. The day behind the window is read in to make the
-/// restart show, then dropped again, so which day a session belongs to never
-/// rests on the window the caller happened to ask for.
-fn expenditure(
-    store: &Store,
-    device_id: DeviceId,
-    counter: &[Reading],
-) -> Result<Vec<Reading>, WatchError> {
-    let (Some(first), Some(last)) = (counter.first(), counter.last()) else {
-        return Ok(Vec::new());
-    };
-    let behind: Vec<Reading> = store
-        .samples_between(
-            device_id,
-            SampleKind::Calories,
-            UnixMillis(first.at.0 - DAY_MS),
-            UnixMillis(first.at.0 - 1),
-        )?
-        .into_iter()
-        .map(|point| calorie_reading(point.at, point.value))
-        .collect();
-    let opened_at = behind.first().map_or(first.at, |earliest| earliest.at);
-    let curves = earned_curves(store, device_id, opened_at.0, last.at.0)?;
-    let joined: Vec<Reading> = behind.iter().chain(counter).copied().collect();
-    let mut lifted = energy::with_workouts(&joined, &curves, opened_at);
-    Ok(lifted.split_off(behind.len()))
 }
 
 fn now_ms() -> i64 {
@@ -3011,253 +2578,5 @@ impl PairingService {
         if moved {
             self.transport.changed();
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use wpp::activity::Minute;
-    use wpp::client::{Record, SampleKind, Source, UserProfile};
-
-    const DAY_ONE: i64 = 1_786_662_000_000;
-    const ROLLOVER_MS: i64 = 5 * 60 * 1000;
-
-    fn counter(at_ms: i64, kcal: i64) -> Record {
-        Record::Sample {
-            measured_at: UnixMillis(at_ms),
-            kind: SampleKind::Calories,
-            value: kcal * 100,
-            quality: None,
-            source: Source::Stored,
-            window_secs: None,
-            context: None,
-        }
-    }
-
-    fn beat(at_ms: i64) -> Record {
-        Record::Sample {
-            measured_at: UnixMillis(at_ms),
-            kind: SampleKind::HeartRate,
-            value: 130,
-            quality: Some(4),
-            source: Source::Live,
-            window_secs: None,
-            context: None,
-        }
-    }
-
-    /// A counter reading a quarter of an hour into the day, which is the shape
-    /// that broke this: the restart lands past the edge the caller asks from,
-    /// so the window opens on a reading with no drop in front of it.
-    fn two_days_and_a_session() -> (Store, DeviceId) {
-        let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
-        let mut records = vec![Record::User(UserProfile {
-            id: 1,
-            weight: 73_000,
-            height: 175,
-            gender: 0,
-            birth: 738_892_800,
-            first_name: "d".to_string(),
-        })];
-        for (day, peak) in [(DAY_ONE, 1800), (DAY_ONE + DAY_MS, 1700)] {
-            for hour in 0..24 {
-                let at = day + 15 * 60 * 1000 + hour * 3_600_000;
-                records.push(counter(at, 5 + peak * hour / 24));
-            }
-        }
-        let opened = DAY_ONE + 12 * 3_600_000;
-        records.push(Record::WorkoutStarted {
-            started_at: UnixMillis(opened).to_seconds(),
-            subcategory: 16,
-        });
-        records.push(Record::WorkoutEnded {
-            started_at: UnixMillis(opened).to_seconds(),
-            ended_at: UnixMillis(opened + 45 * 60 * 1000).to_seconds(),
-            paused_secs: 0,
-        });
-        records.extend((0..46).map(|minute| beat(opened + minute * 60 * 1000)));
-        store.store(device, &records).unwrap();
-        (store, device)
-    }
-
-    fn day_total(store: &Store, device: DeviceId, day: i64) -> f64 {
-        let from = day + ROLLOVER_MS;
-        let readings: Vec<Reading> = store
-            .samples_between(device, Metric::Calories.kind(), UnixMillis(from), UnixMillis(from + DAY_MS - 1))
-            .unwrap()
-            .into_iter()
-            .map(|point| calorie_reading(point.at, point.value))
-            .collect();
-        expenditure(store, device, &readings)
-            .unwrap()
-            .iter()
-            .map(|reading| reading.total.0)
-            .fold(0.0, f64::max)
-    }
-
-    #[test]
-    fn the_day_a_session_was_on_is_the_only_day_it_is_added_to() {
-        let (store, device) = two_days_and_a_session();
-        let lifted = day_total(&store, device, DAY_ONE);
-        let after = day_total(&store, device, DAY_ONE + DAY_MS);
-        assert!(lifted > 1805.0, "the session is the day's own: {lifted}");
-        assert!(after < 1706.0, "and is not the next day's: {after}");
-    }
-
-    fn rate(at_ms: i64, bpm: i64, source: Source) -> Record {
-        Record::Sample {
-            measured_at: UnixMillis(at_ms),
-            kind: SampleKind::HeartRate,
-            value: bpm,
-            quality: None,
-            source,
-            window_secs: None,
-            context: None,
-        }
-    }
-
-    fn staged(at_ms: i64, minutes: i64, level: i64) -> Record {
-        Record::Activity(Minute {
-            duration: wpp::units::Duration::from_secs(minutes * 60),
-            sleep_level: Some(level),
-            ..Minute::opened(UnixMillis(at_ms).to_seconds())
-        })
-    }
-
-    #[test]
-    fn a_session_trend_leaves_out_the_stretch_the_sensor_lost_the_wrist() {
-        let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
-        let opened = DAY_ONE + 12 * 3_600_000;
-        let mut records = vec![
-            Record::WorkoutStarted {
-                started_at: UnixMillis(opened).to_seconds(),
-                subcategory: 16,
-            },
-            Record::WorkoutEnded {
-                started_at: UnixMillis(opened).to_seconds(),
-                ended_at: UnixMillis(opened + 30 * 60 * 1000).to_seconds(),
-                paused_secs: 0,
-            },
-            Record::WorkoutStarted {
-                started_at: UnixMillis(opened + 3_600_000).to_seconds(),
-                subcategory: 6,
-            },
-        ];
-        records.extend((0..1800).map(|second| {
-            let bpm = if (600..900).contains(&second) {
-                42
-            } else {
-                125
-            };
-            rate(opened + second * 1000, bpm, Source::Live)
-        }));
-        records.extend((0..60).map(|step| rate(opened + step * 30_000 + 500, 125, Source::Stored)));
-        store.store(device, &records).unwrap();
-
-        let trend = workout_trend(&store, device, 16, DAY_ONE, DAY_ONE + DAY_MS).unwrap();
-        assert_eq!(
-            trend.len(),
-            1,
-            "one finished weights session, the ride is still open"
-        );
-        let heart = trend[0].heart.clone().unwrap();
-        assert_eq!(heart.median_bpm, 125);
-        assert_eq!(heart.p95_bpm, 125);
-        assert!((299_000..=301_000).contains(&heart.dropout_ms), "{heart:?}");
-    }
-
-    #[test]
-    fn a_night_trend_reads_only_the_windows_the_watch_staged() {
-        let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
-        let bed = DAY_ONE + 23 * 3_600_000;
-        let mut records = vec![
-            staged(bed, 60, 1),
-            staged(bed + 60 * 60_000, 20, 0),
-            staged(bed + 80 * 60_000, 120, 2),
-        ];
-        records.extend((0..20).map(|step| {
-            let at = bed + step * 10 * 60_000;
-            let awake = (60..80).contains(&(step * 10));
-            rate(at, if awake { 90 } else { 50 + step }, Source::Stored)
-        }));
-        store.store(device, &records).unwrap();
-
-        let windows = vec![
-            SleepSpan {
-                from_ms: bed - 6 * 3_600_000,
-                to_ms: bed + 12 * 3_600_000,
-            },
-            SleepSpan {
-                from_ms: bed + 18 * 3_600_000,
-                to_ms: bed + 36 * 3_600_000,
-            },
-        ];
-        let nights = night_trend(&store, device, windows).unwrap();
-        assert_eq!(nights.len(), 1);
-        assert_eq!(nights[0].asleep_ms, 180 * 60_000);
-        let heart = nights[0].heart.clone().unwrap();
-        assert!(heart.median_bpm < 90, "awake readings stay out: {heart:?}");
-        assert_eq!(heart.resting_bpm, 50);
-    }
-
-    /// A night reading where the pulse sensor counted most beats twice, as the
-    /// watch kept it: one byte per interval at 100 Hz.
-    const SPLIT_NIGHT_READING: [u8; 57] = [
-        38, 59, 98, 112, 36, 65, 37, 66, 37, 71, 37, 65, 37, 55, 39, 50, 37, 66, 36, 63, 36, 55,
-        34, 48, 37, 73, 37, 75, 36, 60, 35, 48, 37, 55, 37, 63, 37, 65, 36, 55, 35, 57, 36, 66, 38,
-        58, 36, 46, 77, 79, 37, 48, 83, 34, 48, 86, 38,
-    ];
-
-    fn reading_row(at_ms: i64) -> wpp_store::AfibReadingRow {
-        wpp_store::AfibReadingRow {
-            id: 1,
-            measured_at: UnixMillis(at_ms),
-            duration: wpp::units::Duration::from_secs(30),
-            sampling_hz: 100,
-            sample_bytes: 1,
-            samples: SPLIT_NIGHT_READING.to_vec(),
-            attrib: Some(STORED_MEASURE_ATTRIB_CONFIRMED),
-        }
-    }
-
-    #[test]
-    fn a_reading_is_read_against_the_rate_the_watch_logged_for_it() {
-        let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
-        let at = DAY_ONE + 2 * 3_600_000;
-        store
-            .store(device, &[rate(at + 45_000, 61, Source::Stored)])
-            .unwrap();
-        let asleep = [UnixMillis(at - 3_600_000)..UnixMillis(at + 3_600_000)];
-
-        let row = reading_row(at);
-        let reading = afib_reading(&store, device, &row, &row.intervals().unwrap(), &asleep).unwrap();
-        assert!(reading.asleep);
-        assert!(
-            reading.intervals_ms.len() <= SPLIT_NIGHT_READING.len() - 20,
-            "split beats are taken back together"
-        );
-        match reading.analysis {
-            PulseAnalysis::Assessed { rhythm } => {
-                assert_ne!(rhythm.pattern, RhythmPattern::Irregular);
-            }
-            other => panic!("{other:?}"),
-        }
-        assert!((55..=70).contains(&reading.heart_rate.unwrap()));
-    }
-
-    #[test]
-    fn a_reading_with_no_rate_logged_for_it_is_left_unchecked() {
-        let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
-        let row = reading_row(DAY_ONE);
-        let reading = afib_reading(&store, device, &row, &row.intervals().unwrap(), &[]).unwrap();
-        assert_eq!(reading.analysis, PulseAnalysis::NoWatchRate);
-        assert_eq!(reading.intervals_ms.len(), SPLIT_NIGHT_READING.len());
-        assert!(!reading.asleep);
     }
 }
