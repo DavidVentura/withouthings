@@ -290,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn one_byte_over_takes_two_frames() {
+    fn past_the_limit_takes_two_frames() {
         let frame = Frame::new(
             Command::CMD_WORKOUT_SCREEN_SET,
             vec![
@@ -313,5 +313,53 @@ mod tests {
         let frame = sized(MAX_FRAME_BYTES + 1);
         assert_eq!(frame.objects.len(), 1);
         assert_eq!(frame.to_wire().unwrap_err().frame_bytes, MAX_FRAME_BYTES + 1);
+    }
+
+    fn bytes(declared: u16, payload: &[u8]) -> Vec<u8> {
+        let mut out = vec![PROTOCOL_VERSION];
+        out.extend_from_slice(&Command::CMD_BATTERY_STATUS.0.to_be_bytes());
+        out.extend_from_slice(&declared.to_be_bytes());
+        out.extend_from_slice(payload);
+        out
+    }
+
+    #[test]
+    fn an_object_running_past_the_payload_is_a_length_mismatch() {
+        // One object header claiming ten bytes, with one behind it.
+        let payload = [0x00, 0x01, 0x00, 0x0a, 0xff];
+        assert_eq!(
+            Frame::parse(&bytes(5, &payload)),
+            Err(FrameError::PayloadLengthMismatch { declared: 5, consumed: 0 })
+        );
+    }
+
+    #[test]
+    fn bytes_after_the_declared_payload_are_refused_by_a_whole_frame_parse() {
+        let buf = bytes(0, &[1, 2, 3]);
+        assert_eq!(Frame::parse(&buf), Err(FrameError::TrailingData { remaining: 3 }));
+        let (_, rest) = Frame::parse_prefix(&buf).unwrap();
+        assert_eq!(rest, &[1, 2, 3]);
+    }
+
+    #[test]
+    fn an_object_too_short_for_its_type_is_named_malformed_and_its_neighbours_survive() {
+        let good = WppObject::Null(crate::objects::Null {});
+        let battery = crate::objects::BatteryStatus {
+            battery_percent: 1,
+            battery_state: 0,
+            battery_mv: 0,
+            reserved: 0,
+        };
+        let type_id = WppObject::BatteryStatus(battery).type_id();
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&type_id.to_be_bytes());
+        payload.extend_from_slice(&1u16.to_be_bytes());
+        payload.push(7);
+        payload.extend_from_slice(&good.type_id().to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+
+        let frame = Frame::parse(&bytes(payload.len() as u16, &payload)).unwrap();
+        assert_eq!(frame.malformed().map(|(id, _)| id).collect::<Vec<_>>(), vec![type_id]);
+        assert_eq!(frame.objects[1], good);
     }
 }

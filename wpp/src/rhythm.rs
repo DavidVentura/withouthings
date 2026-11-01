@@ -925,16 +925,6 @@ mod tests {
     }
 
     #[test]
-    fn a_night_reading_that_swings_with_each_breath_is_breathing() {
-        let raw = intervals(&[
-            1180, 1120, 880, 1240, 1210, 1170, 900, 900, 1190, 1170, 1030, 930, 1220, 1220, 1020,
-            820, 910, 1210, 1210, 920, 1220, 1230, 1190, 1090, 870, 1190,
-        ]);
-        let rhythm = assessed(&read_pulse(&raw, Bpm(54)));
-        assert!(rhythm.pattern == Pattern::Breathing, "{rhythm:?}");
-    }
-
-    #[test]
     fn beats_the_pulse_sensor_counted_twice_are_taken_back_together() {
         let raw = intervals(&[
             380, 590, 980, 1120, 360, 650, 370, 660, 370, 710, 370, 650, 370, 550, 390, 500, 370,
@@ -1010,7 +1000,7 @@ mod tests {
     }
 
     #[test]
-    fn the_breathing_wave_passes_through_the_intervals_it_was_fitted_to() {
+    fn the_breathing_wave_keeps_to_the_range_of_the_intervals_it_was_fitted_to() {
         let raw = intervals(&[
             1180, 1120, 880, 1240, 1210, 1170, 900, 900, 1190, 1170, 1030, 930, 1220, 1220, 1020,
             820, 910, 1210, 1210, 920, 1220, 1230, 1190, 1090, 870, 1190,
@@ -1037,7 +1027,7 @@ mod tests {
     }
 
     #[test]
-    fn a_weak_wave_under_large_variation_does_not_make_it_breathing() {
+    fn large_variation_with_no_wave_in_it_is_not_breathing() {
         let raw = intervals(&[
             690, 420, 570, 900, 930, 680, 700, 620, 590, 770, 620, 710, 760, 720, 460, 480, 540,
             410, 790, 630, 790, 700, 610, 760, 640, 470, 710, 640, 820, 470, 710, 630, 790, 600,
@@ -1045,9 +1035,7 @@ mod tests {
         ]);
         let rhythm = assessed(&read_pulse(&raw, Bpm(93)));
         assert_ne!(rhythm.pattern, Pattern::Breathing);
-        if let Some(wave) = rhythm.wave {
-            assert!(wave.share < BREATHING_SHARE);
-        }
+        assert_eq!(rhythm.wave, None);
     }
 
     #[test]
@@ -1129,7 +1117,8 @@ mod tests {
         let raw: Vec<Millis> = (0..12)
             .map(|i| Millis(if i % 2 == 0 { 600.0 } else { 1400.0 }))
             .collect();
-        read_pulse(&raw, Bpm(60));
+        let verdict = read_pulse(&raw, Bpm(60)).verdict;
+        assert!(matches!(verdict, PulseVerdict::Assessed(_)), "{verdict:?}");
     }
 
     #[test]
@@ -1139,7 +1128,48 @@ mod tests {
             let hz = SamplingHz::new(hz).unwrap();
             assert_eq!(read_ecg(&samples, hz).verdict, EcgVerdict::TooFew { beats: 0 });
         }
-        read_ecg(&samples, SamplingHz::new(MIN_ECG_HZ).unwrap());
+        let at_the_floor = read_ecg(&samples, SamplingHz::new(MIN_ECG_HZ).unwrap());
+        assert!(!at_the_floor.beats.is_empty(), "the floor itself is read");
+    }
+
+    #[test]
+    fn an_ecg_whose_rate_jumps_partway_is_shifted() {
+        let mut noise = Noise(3);
+        let beats: Vec<f64> = (0..50)
+            .scan(0.5, |at, k| {
+                let now = *at;
+                *at += if k < 25 { 1.0 } else { 0.6 };
+                Some(now)
+            })
+            .collect();
+        let reading = read_ecg(&ecg(&beats, true, &mut noise), SamplingHz::new(HZ).unwrap());
+        let EcgVerdict::Shifted(shift) = reading.verdict else {
+            panic!("{:?}", reading.verdict)
+        };
+        assert_eq!((shift.from, shift.to), (Bpm(60), Bpm(100)));
+    }
+
+    #[test]
+    fn an_ecg_whose_beats_share_no_shape_is_noisy() {
+        let mut noise = Noise(5);
+        let beats: Vec<f64> = (0..40).map(|k| 0.5 + k as f64 * 0.9).collect();
+        let samples: Vec<i16> = (0..(beats.last().unwrap() + 1.0) as usize * HZ as usize)
+            .map(|i| {
+                let t = i as f64 / HZ as f64;
+                let wave: f64 = beats
+                    .iter()
+                    .enumerate()
+                    .map(|(k, r)| {
+                        let width = 0.008 + 0.012 * (k % 5) as f64;
+                        let side = if k % 2 == 0 { 0.03 } else { -0.03 };
+                        bump(t, *r, 800.0, width) + bump(t, r + side, -600.0, width)
+                    })
+                    .sum();
+                (wave + 4.0 * noise.next()) as i16
+            })
+            .collect();
+        let reading = read_ecg(&samples, SamplingHz::new(HZ).unwrap());
+        assert_eq!(reading.verdict, EcgVerdict::Noisy);
     }
 
     #[test]

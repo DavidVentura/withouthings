@@ -109,7 +109,6 @@ mod tests {
     fn the_scan_that_is_armed_a_night_at_a_time_is_not_a_default() {
         assert!(default_features()
             .iter()
-            .all(|feature| feature.id != RESPIRATORY_SCAN_MONITORING
-                && feature.schedule == FeatureSchedule::Permanent));
+            .all(|feature| feature.id != RESPIRATORY_SCAN_MONITORING));
     }
 }

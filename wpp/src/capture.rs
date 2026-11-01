@@ -329,4 +329,91 @@ mod tests {
             }
         );
     }
+
+    fn snoop(records: &[(u32, Vec<u8>)]) -> Vec<u8> {
+        let mut file = b"btsnoop\0".to_vec();
+        file.extend_from_slice(&1u32.to_be_bytes());
+        file.extend_from_slice(&1002u32.to_be_bytes());
+        for (flags, packet) in records {
+            file.extend_from_slice(&(packet.len() as u32).to_be_bytes());
+            file.extend_from_slice(&(packet.len() as u32).to_be_bytes());
+            file.extend_from_slice(&flags.to_be_bytes());
+            file.extend_from_slice(&0u32.to_be_bytes());
+            file.extend_from_slice(&(BTSNOOP_EPOCH_US + 5_000_000).to_be_bytes());
+            file.extend_from_slice(packet);
+        }
+        file
+    }
+
+    fn acl(boundary: u16, body: &[u8]) -> Vec<u8> {
+        let mut packet = vec![H4_ACL];
+        packet.extend_from_slice(&(0x0040u16 | boundary << 12).to_le_bytes());
+        packet.extend_from_slice(&(body.len() as u16).to_le_bytes());
+        packet.extend_from_slice(body);
+        packet
+    }
+
+    fn att(opcode: u8, handle: u16, value: &[u8]) -> Vec<u8> {
+        let mut body = ((3 + value.len()) as u16).to_le_bytes().to_vec();
+        body.extend_from_slice(&L2CAP_CID_ATT.to_le_bytes());
+        body.push(opcode);
+        body.extend_from_slice(&handle.to_le_bytes());
+        body.extend_from_slice(value);
+        body
+    }
+
+    #[test]
+    fn a_notification_split_across_acl_packets_is_put_back_together() {
+        let whole = att(ATT_HANDLE_VALUE_NOTIFICATION, 0x21, &[1, 2, 3, 4, 5, 6]);
+        let (head, tail) = whole.split_at(9);
+        let packets = att_packets(&snoop(&[
+            (1, acl(2, head)),
+            (1, acl(1, tail)),
+        ]))
+        .unwrap();
+        assert_eq!(
+            packets,
+            vec![AttPacket {
+                direction: Direction::Received,
+                att_handle: 0x21,
+                received_at: UnixMillis(5_000),
+                value: vec![1, 2, 3, 4, 5, 6],
+            }]
+        );
+    }
+
+    #[test]
+    fn only_writes_and_values_are_taken_from_the_att_channel() {
+        const ATT_READ_REQUEST: u8 = 0x0a;
+        let mut other_channel = att(ATT_WRITE_COMMAND, 0x21, &[9]);
+        other_channel[2] = 0x05;
+        let packets = att_packets(&snoop(&[
+            (0, acl(2, &att(ATT_READ_REQUEST, 0x21, &[9]))),
+            (0, acl(2, &other_channel)),
+            (0, acl(2, &att(ATT_WRITE_REQUEST, 0x22, &[8]))),
+        ]))
+        .unwrap();
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].direction, Direction::Sent);
+        assert_eq!(packets[0].att_handle, 0x22);
+    }
+
+    #[test]
+    fn a_cut_off_record_says_where_and_a_foreign_file_says_what() {
+        let mut file = snoop(&[(0, acl(2, &att(ATT_WRITE_COMMAND, 0x21, &[9])))]);
+        let header_ends = BTSNOOP_HEADER_LEN + RECORD_HEADER_LEN;
+        file.truncate(header_ends + 1);
+        assert_eq!(att_packets(&file), Err(CaptureError::Truncated { at: header_ends }));
+
+        file.truncate(BTSNOOP_HEADER_LEN + 3);
+        assert_eq!(att_packets(&file), Err(CaptureError::Truncated { at: BTSNOOP_HEADER_LEN }));
+
+        assert_eq!(att_packets(b"not a capture at all"), Err(CaptureError::NotBtsnoop));
+        let mut other = snoop(&[]);
+        other[12..16].copy_from_slice(&1001u32.to_be_bytes());
+        assert_eq!(
+            att_packets(&other),
+            Err(CaptureError::UnsupportedDatalink { found: 1001 })
+        );
+    }
 }

@@ -347,6 +347,7 @@ mod tests {
         let whole = score(&whole).unwrap();
         let broken = score(&broken).unwrap();
         assert!(broken.continuity < whole.continuity, "{broken:?}");
+        assert!(broken.efficiency < whole.efficiency, "{broken:?} vs {whole:?}");
         assert!(broken.total < whole.total, "{broken:?} vs {whole:?}");
     }
 
@@ -423,15 +424,21 @@ mod tests {
     }
 
     #[test]
-    fn an_unstaged_minute_inside_the_night_reads_as_awake_and_outside_it_is_dropped() {
+    fn a_minute_with_no_stage_is_assumed_awake_inside_the_night_and_dropped_outside_it() {
         let drawn = night(&[
             minute(0, 10, None),
             minute(10, 10, Some(LIGHT)),
             minute(20, 10, None),
             minute(30, 10, Some(LIGHT)),
         ]);
-        assert_eq!(drawn.stages.len(), 3);
-        assert_eq!(drawn.stages[1], band(20, 10, SleepLevel::Awake));
+        assert_eq!(
+            drawn.stages,
+            vec![
+                band(10, 10, SleepLevel::Light),
+                band(20, 10, SleepLevel::Awake),
+                band(30, 10, SleepLevel::Light),
+            ]
+        );
     }
 
     #[test]

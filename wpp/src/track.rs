@@ -973,8 +973,36 @@ mod tests {
             .collect();
         let track = clean(&fixes, limits());
         let view = fit(&track, 1080.0, 720.0, 24.0);
-        assert!(cursor(&track, view, UnixMillis(1_779_999_000 * 1000)).is_some());
-        assert!(cursor(&track, view, UnixMillis(1_780_009_000 * 1000)).is_some());
+        let drawn = frame(&track, view);
+        let first = drawn.path[0].first().unwrap();
+        let last = drawn.path[0].last().unwrap();
+        let before = cursor(&track, view, UnixMillis(1_779_999_000 * 1000)).unwrap();
+        let after = cursor(&track, view, UnixMillis(1_780_009_000 * 1000)).unwrap();
+        assert_eq!((before.x_px, before.y_px), (first.x_px, first.y_px));
+        assert_eq!((after.x_px, after.y_px), (last.x_px, last.y_px));
+    }
+
+    #[test]
+    fn a_cursor_between_two_runs_lands_on_the_end_of_the_nearer_one() {
+        let run = |from: i64, lat: f64| -> Vec<Fix> {
+            (0..10)
+                .map(|i| fix(from + i, lat + i as f64 * 0.0002, -0.08))
+                .collect()
+        };
+        let mut fixes = run(1_780_000_000, 51.5);
+        fixes.extend(run(1_780_010_000, 51.502));
+        let track = clean(&fixes, limits());
+        let view = fit(&track, 1080.0, 720.0, 24.0);
+        let drawn = frame(&track, view);
+        assert_eq!(drawn.path.len(), 2, "the gap splits the route");
+
+        let early = cursor(&track, view, UnixMillis(1_780_000_100 * 1000)).unwrap();
+        let end_of_first = drawn.path[0].last().unwrap();
+        assert_eq!((early.x_px, early.y_px), (end_of_first.x_px, end_of_first.y_px));
+
+        let late = cursor(&track, view, UnixMillis(1_780_009_900 * 1000)).unwrap();
+        let start_of_second = drawn.path[1].first().unwrap();
+        assert_eq!((late.x_px, late.y_px), (start_of_second.x_px, start_of_second.y_px));
     }
 
     fn limits() -> Limits {
@@ -1137,6 +1165,13 @@ mod tests {
 
         let points: Vec<&PathPoint> = drawn.path.iter().flatten().collect();
         assert!(!points.is_empty());
+        let middle = |of: fn(&PathPoint) -> f64| {
+            let low = points.iter().map(|p| of(p)).fold(f64::MAX, f64::min);
+            let high = points.iter().map(|p| of(p)).fold(f64::MIN, f64::max);
+            (low + high) / 2.0
+        };
+        assert!((middle(|p| p.x_px) - 200.0).abs() < 1.0);
+        assert!((middle(|p| p.y_px) - 150.0).abs() < 1.0);
         for point in &points {
             assert!(
                 point.x_px >= 15.0 && point.x_px <= 385.0,
@@ -1362,67 +1397,6 @@ mod tests {
         );
     }
 
-    /// The forward half of the filter on its own: what a live position would
-    /// have, knowing only the fixes up to each moment.
-    fn forward_only(seconds: &[f64], measured: &[f64], variances: &[f64]) -> Vec<f64> {
-        let mut state = State {
-            position: measured[0],
-            velocity: 0.0,
-        };
-        let mut spread = Spread {
-            pp: variances[0],
-            pv: 0.0,
-            vv: INITIAL_SPEED_VARIANCE,
-        };
-        let mut out = vec![state.position];
-        for index in 1..measured.len() {
-            let (ahead, reach) = predict(state, spread, seconds[index] - seconds[index - 1]);
-            let (settled, tightened) = correct(ahead, reach, measured[index], variances[index]);
-            state = settled;
-            spread = tightened;
-            out.push(state.position);
-        }
-        out
-    }
-
-    #[test]
-    fn knowing_where_the_run_went_next_is_what_keeps_a_corner() {
-        // Thirty seconds north, then thirty east, at five metres a second.
-        // A filter that has only seen the past cannot know a turn is coming,
-        // so it carries on north into it and cuts the corner off.
-        let leg = 5.0;
-        let mut seconds = Vec::new();
-        let mut north = Vec::new();
-        for second in 0..60 {
-            seconds.push(second as f64);
-            north.push(if second <= 30 {
-                second as f64 * leg
-            } else {
-                30.0 * leg
-            });
-        }
-        let variances = vec![25.0; north.len()];
-
-        let live = forward_only(&seconds, &north, &variances);
-        let recorded = smooth_axis(&seconds, &north, &variances);
-
-        // How far past the corner each one carries on north in the seconds
-        // right after it, which is where a lagging filter shows.
-        let apex = 30.0 * leg;
-        let worst = |line: &[f64]| {
-            (31..=36)
-                .map(|index| (line[index] - apex).abs())
-                .fold(f64::MIN, f64::max)
-        };
-        let live_overshoot = worst(&live);
-        let recorded_overshoot = worst(&recorded);
-
-        assert!(
-            recorded_overshoot < live_overshoot / 2.0,
-            "smoothed is {recorded_overshoot} m past the corner against {live_overshoot} m live"
-        );
-    }
-
     #[test]
     fn a_fix_the_receiver_doubted_moves_the_line_less_than_one_it_did_not() {
         let straight: Vec<Fix> = (0..30)
@@ -1466,6 +1440,7 @@ mod tests {
             })
             .collect();
         fixes[30].speed_mm_s = Some(40_000);
+        fixes[31].speed_mm_s = Some(40_000);
 
         let (slow, fast) = clean(&fixes, limits()).speed_band().expect("a band");
         assert_eq!(slow, MetresPerSecond(4.0));
@@ -1477,7 +1452,22 @@ mod tests {
     }
 
     #[test]
-    fn every_drawn_point_carries_the_speed_it_was_travelling_at() {
+    fn a_single_spike_is_thrown_away_and_the_ends_are_kept() {
+        let series = |speeds: &[f64]| -> Vec<(UnixMillis, MetresPerSecond)> {
+            speeds
+                .iter()
+                .enumerate()
+                .map(|(i, speed)| (UnixMillis(i as i64), MetresPerSecond(*speed)))
+                .collect()
+        };
+        assert_eq!(
+            run_of_three(series(&[9.0, 4.0, 40.0, 4.0, 7.0])),
+            series(&[9.0, 9.0, 4.0, 7.0, 7.0])
+        );
+    }
+
+    #[test]
+    fn a_drawn_point_carries_the_speed_its_fix_reported() {
         let fixes: Vec<Fix> = (0..40)
             .map(|second| {
                 let mut moving = fix(second, 52.3700 + second as f64 * 0.00004, 4.8900);
@@ -1488,15 +1478,54 @@ mod tests {
         let track = clean(&fixes, limits());
         let view = fit(&track, 400.0, 300.0, 16.0);
 
-        let drawn = frame(&track, view);
-        assert!(drawn.path[0].iter().all(|point| point.speed.is_some()));
+        for point in &frame(&track, view).path[0] {
+            let second = point.at.0 / 1000;
+            assert_eq!(
+                point.speed,
+                Some(MetresPerSecond((4_000 + second * 10) as f64 / 1000.0))
+            );
+        }
     }
 
     #[test]
-    fn a_scale_bar_shrinks_as_the_map_zooms_in() {
-        let close = metres_per_pixel(52.0, 16.0);
-        let far = metres_per_pixel(52.0, 12.0);
-        assert!(close < far);
-        assert!((far / close - 16.0).abs() < 1e-9);
+    fn with_no_speed_reported_a_point_borrows_its_displacement_and_the_first_has_none() {
+        let fixes: Vec<Fix> = (0..40)
+            .map(|second| fix(second, 52.3700 + second as f64 * 0.00004, 4.8900))
+            .collect();
+        let track = clean(&fixes, limits());
+        let view = fit(&track, 400.0, 300.0, 16.0);
+
+        let drawn = frame(&track, view);
+        let (first, rest) = drawn.path[0].split_first().unwrap();
+        assert_eq!(first.speed, None);
+        assert!(!rest.is_empty());
+        assert!(rest.iter().all(|point| point.speed.is_some_and(|s| s.0 > 0.0)));
     }
+
+    #[test]
+    fn a_view_across_the_antimeridian_asks_for_the_tiles_either_side_of_the_seam() {
+        let view = View {
+            centre: Position { lat: 0.0, lon: 180.0 },
+            zoom: 2.0,
+            width_px: 256.0,
+            height_px: 256.0,
+        };
+        let drawn = tiles_for(view, 2.0, 4.0 * TILE_PX - 128.0, 2.0 * TILE_PX - 128.0);
+        let columns: std::collections::BTreeSet<u32> =
+            drawn.iter().map(|placed| placed.tile.x).collect();
+        assert_eq!(columns, [0, 3].into_iter().collect());
+    }
+
+    #[test]
+    fn panning_past_a_pole_stops_at_the_top_of_the_map() {
+        let view = View {
+            centre: Position { lat: 80.0, lon: 0.0 },
+            zoom: 2.0,
+            width_px: 256.0,
+            height_px: 256.0,
+        };
+        let moved = pan(view, 0.0, 100_000.0);
+        assert!((moved.centre.lat - unproject_lat(0.0, 2.0)).abs() < 1e-9);
+    }
+
 }

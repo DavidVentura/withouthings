@@ -324,7 +324,6 @@ mod tests {
         );
         let request = GlyphRequest::parse(&frame).unwrap();
         assert_eq!(request.glyphs[0].codepoint, 0x0001_264b);
-        assert_eq!(request.width, DEFAULT_SIZE);
 
         let reply = request.reply(&[Mono::empty()]);
         assert_eq!(
@@ -335,6 +334,18 @@ mod tests {
         );
         assert_eq!(reply.command.channel(), Some(Channel::SlaveRequest));
         assert_eq!(reply.objects.last(), Some(&WppObject::Null(Null {})));
+    }
+
+    #[test]
+    fn a_request_that_names_no_size_is_drawn_at_the_default() {
+        let frame = Frame::new(
+            Command::CMD_GLYPH_GET.with_channel(Channel::SlaveRequest),
+            vec![WppObject::GlyphId(GlyphId {
+                unicode: 0x4100_0000,
+            })],
+        );
+        let request = GlyphRequest::parse(&frame).unwrap();
+        assert_eq!((request.width, request.height), (DEFAULT_SIZE, DEFAULT_SIZE));
     }
 
     #[test]

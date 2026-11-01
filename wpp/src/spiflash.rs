@@ -169,6 +169,17 @@ mod tests {
     }
 
     #[test]
+    fn a_null_before_the_asked_length_shows_as_done_with_less_than_asked() {
+        let mut flash = SpiFlash::new();
+        flash.start(0, 32);
+        flash.on_frame(&reply(vec![chunk(&[1; 16]), WppObject::Null(Null {})]));
+        let progress = flash.progress().unwrap();
+        assert!(progress.done);
+        assert_eq!((progress.received, progress.total), (16, 32));
+        assert_eq!(flash.take().unwrap().len(), 16);
+    }
+
+    #[test]
     fn a_refusal_is_surfaced_and_stops_collecting() {
         let mut flash = SpiFlash::new();
         flash.start(0, 16);

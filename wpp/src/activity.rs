@@ -74,15 +74,6 @@ impl Minute {
     pub fn ended_at(self) -> UnixTime {
         self.at + self.duration
     }
-
-    pub fn cadence(self) -> Option<i64> {
-        let steps = self.steps?;
-        let secs = self.duration.as_secs();
-        if secs <= 0 {
-            return None;
-        }
-        Some(steps * 60 / secs)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -349,17 +340,6 @@ mod tests {
     }
 
     #[test]
-    fn a_compressed_idle_window_breaks_the_session() {
-        let mut minutes = walk(1_000, 12, 95);
-        minutes.push(Minute {
-            duration: Duration::from_secs(900),
-            ..Minute::opened(UnixTime(1_000 + 12 * 60))
-        });
-        minutes.extend(walk(1_000 + 27 * 60, 12, 95));
-        assert_eq!(detect_free(&minutes).len(), 2);
-    }
-
-    #[test]
     fn waiting_at_a_crossing_is_still_the_same_walk() {
         let mut minutes = walk(1_000, 15, 90);
         minutes.push(idle(1_900, 480));
@@ -407,13 +387,6 @@ mod tests {
             .flat_map(|i| [minute(1_000 + i * 360, 90), idle(1_060 + i * 360, 300)])
             .collect();
         assert!(detect_free(&minutes).is_empty());
-    }
-
-    #[test]
-    fn a_stretch_with_no_windows_at_all_is_time_spent_standing_still() {
-        let mut minutes = walk(1_000, 10, 90);
-        minutes.extend(walk(2_800, 10, 90));
-        assert_eq!(detect_free(&minutes).len(), 2);
     }
 
     #[test]

@@ -248,6 +248,23 @@ mod tests {
     }
 
     #[test]
+    fn a_wearer_is_read_from_the_profile_in_their_own_units_at_the_time_asked() {
+        let profile = UserProfile {
+            id: 1,
+            weight: 75_500,
+            height: 178,
+            gender: 1,
+            birth: 0,
+            first_name: String::new(),
+        };
+        let wearer = Wearer::of(&profile, UnixTime((35.0 * 365.2425 * 86_400.0) as i64)).unwrap();
+        assert_eq!(wearer.sex, Sex::Female);
+        assert_eq!(wearer.weight, Kilograms(75.5));
+        assert_eq!(wearer.height, Centimetres(178));
+        assert!((wearer.age.0 - 35.0).abs() < 1e-6);
+    }
+
+    #[test]
     fn sitting_still_earns_nothing() {
         assert_eq!(
             burned(wearer(), LIFTING, &beats(0, 61, 60, 55)),
@@ -263,15 +280,16 @@ mod tests {
     }
 
     #[test]
-    fn a_gap_in_the_trace_is_not_charged_at_the_rate_either_side_of_it() {
+    fn a_gap_is_charged_for_at_most_the_longest_hold() {
         let mut sparse = beats(0, 2, 60, 130);
         sparse.push(Beat {
             at: UnixMillis(3_600_000),
             rate: Bpm(130),
         });
         let held = burned(wearer(), RUNNING, &sparse);
-        let dense = burned(wearer(), RUNNING, &beats(0, 4, 60, 130));
-        assert_eq!(held, dense);
+        let one_minute = burned(wearer(), RUNNING, &beats(0, 2, 60, 130));
+        let hold_minutes = LONGEST_HELD_MS as f64 / 60_000.0;
+        assert!((held.0 - (1.0 + hold_minutes) * one_minute.0).abs() < 1e-9, "{held:?}");
     }
 
     #[test]
@@ -398,8 +416,8 @@ mod speed_tests {
 
     #[test]
     fn walking_and_running_are_not_the_same_cost_at_the_same_speed() {
-        // A brisk walk is about three and a half METs, and a sixteen minute
-        // mile run is about ten.
+        // A brisk walk is about three and a half METs, and a six minute mile
+        // run is about sixteen.
         let walk = on_foot_met(MetresPerSecond(5.0 / 3.6));
         assert!((walk.0 - 3.4).abs() < 0.2, "{walk:?}");
 

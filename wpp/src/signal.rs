@@ -507,7 +507,7 @@ mod tests {
             measure(MeasureType::AFIB_RESULT, 1, 0),
         ]);
         assert_eq!(verdict.rate, Some(Bpm(72)));
-        assert_eq!(verdict.rhythm, Rhythm::of(1));
+        assert_eq!(verdict.rhythm, Some(Rhythm::Afib));
     }
 
     #[test]
@@ -591,7 +591,7 @@ mod tests {
             collector.observe(&WppObject::StoredSignalMeta(meta(type_id, 1)));
             collector.observe(&WppObject::StoredSignalMetaExtend(StoredSignalMetaExtend {
                 duration: 1,
-                total_size: 4,
+                total_size: 8,
                 filter_bank: 0,
             }));
             collector.observe(&WppObject::StoredSignalData(StoredSignalData {
