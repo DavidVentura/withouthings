@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use common::{client, renode_binary, repository, require, scratch, tail, Renode, Rig};
 
-const BOOT_TIMEOUT: Duration = Duration::from_secs(600);
+const BOOT_TIMEOUT: Duration = Duration::from_secs(60);
 const STORE_TIMEOUT: Duration = Duration::from_secs(120);
 /// `[PPG_AFIB] AFIB %d/%d stored (diagnosis = %s | ...)`, once per episode kept.
 const EPISODE_STORED: &str = " stored (diagnosis = ";

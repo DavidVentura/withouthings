@@ -210,6 +210,37 @@ pub fn renode_binary() -> PathBuf {
     }
 }
 
+/// The address an ELF32-LE symbol table gives a name.
+///
+/// The relinked library's statics are laid out by the linker, so where
+/// xTickCount lands moves whenever the kernel or the port changes size. Reading
+/// it out of the ELF is the only form of the address that stays true.
+pub fn symbol_address(elf: &Path, want: &str) -> u64 {
+    let data = fs::read(elf).expect("the relinked ELF is readable");
+    let u32_at = |at: usize| u32::from_le_bytes(data[at..at + 4].try_into().unwrap());
+    let u16_at = |at: usize| u16::from_le_bytes(data[at..at + 2].try_into().unwrap());
+    let headers = u32_at(0x20) as usize;
+    let entry = u16_at(0x2E) as usize;
+    let count = u16_at(0x30) as usize;
+    for index in 0..count {
+        let header = headers + index * entry;
+        if u32_at(header + 4) != 2 {
+            continue; // SHT_SYMTAB
+        }
+        let table = u32_at(header + 0x10) as usize;
+        let size = u32_at(header + 0x14) as usize;
+        let strings = u32_at(headers + u32_at(header + 0x18) as usize * entry + 0x10) as usize;
+        for at in (table..table + size).step_by(16) {
+            let name = strings + u32_at(at) as usize;
+            let end = data[name..].iter().position(|&b| b == 0).unwrap() + name;
+            if &data[name..end] == want.as_bytes() {
+                return u32_at(at + 4) as u64;
+            }
+        }
+    }
+    panic!("{} defines no {want}", elf.display());
+}
+
 /// Link the source kernel against the app blob, for the rigs that run the result.
 pub fn relink() {
     let relink = Command::new(repository().join("renode-sim/abi/relink.sh"))

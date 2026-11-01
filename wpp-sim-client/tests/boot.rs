@@ -8,11 +8,11 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::ops::RangeInclusive;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use common::{holds_whole_prompt, relink, renode_binary, repository, require, scratch, Renode, Rig};
+use common::{holds_whole_prompt, relink, renode_binary, repository, require, scratch, strip_colour, symbol_address, Renode, Rig};
 
-const BOOT_TIMEOUT: Duration = Duration::from_secs(180);
+const BOOT_TIMEOUT: Duration = Duration::from_secs(40);
 const SUPERVISOR_CALL: &str = "SuperVisorCall";
 /// Wide enough for timing to move the counts, narrow enough that a spinning
 /// wait or a boot that takes no interrupts falls outside.
@@ -20,6 +20,12 @@ const BOOT_EXCEPTIONS: RangeInclusive<usize> = 1_000..=8_000;
 const BOOT_SUPERVISOR_CALLS: RangeInclusive<usize> = 20..=500;
 /// Exceptions taken a handful of times can differ by a few between runs.
 const SMALL_COUNT_SLACK: usize = 8;
+const STOCK_IDLE_LOOP: u64 = 0x27da8;
+/// prvIdleTask's first loop instruction, past its prologue.
+const IDLE_LOOP_OFFSET: u64 = 8;
+const UDF: &str = "0xde00";
+const FAULT_BANNER: &str = "Fault handler";
+const FAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const ACKNOWLEDGED: &str = "nvic: Acknowledged IRQ ";
 
 /// How many times each exception was taken, by the NVIC's name for it.
@@ -114,4 +120,48 @@ fn booting_takes_a_bounded_number_of_exceptions() {
     assert_boot_is_in_range("stock", &stock);
     assert_boot_is_in_range("relinked", &relinked);
     assert_same_exceptions(&stock, &relinked);
+}
+
+/// The tasks the fault handler's stack dump names, after the idle task is made
+/// to fault. The walk behind it runs nowhere else.
+fn tasks_in_fault_dump(name: &str, rig: &Rig, idle_loop: u64) -> Vec<String> {
+    let directory = scratch(name);
+    rig.generate(&directory, "rig");
+    fs::write(
+        directory.join("run.resc"),
+        format!(
+            "$image=@{}\ninclude @scripts/machine.resc\nemulation SetAdvanceImmediately true\n\
+             emulation RunFor \"6.0\"\nsysbus WriteWord {idle_loop:#x} {UDF}\nstart\n",
+            rig.image.display()
+        ),
+    )
+    .expect("the run script is writable");
+    let renode = Renode::start(&directory, "include @run.resc");
+    // The planted instruction stays, so the idle task faults again after the reset
+    // the dump ends in; the second banner is what says the first dump is whole.
+    renode.wait_for_count(FAULT_BANNER, 2, FAULT_TIMEOUT).expect("the idle task faults twice");
+    renode
+        .log()
+        .split(FAULT_BANNER)
+        .nth(1)
+        .unwrap()
+        .lines()
+        .filter_map(|line| strip_colour(line).trim().strip_prefix("name = ").map(str::to_string))
+        .collect()
+}
+
+#[test]
+#[ignore = "needs the Renode rig and ~/ref-build; run with --ignored"]
+fn a_fault_dumps_the_same_tasks_on_both_images() {
+    require(&[
+        ("Renode", &renode_binary()),
+        ("the flash dump", &repository().join("renode-sim/external_flash.bin")),
+    ]);
+    relink();
+    let elf = repository().join("renode-sim/out/relink/relinked.elf");
+    let relinked_idle_loop = (symbol_address(&elf, "prvIdleTask") & !1) + IDLE_LOOP_OFFSET;
+    let stock = tasks_in_fault_dump("fault-stock-test", &Rig::stock(), STOCK_IDLE_LOOP);
+    let relinked = tasks_in_fault_dump("fault-relinked-test", &Rig::relinked(), relinked_idle_loop);
+    assert!(stock.iter().any(|task| task == "IDLE"), "the stock dump named no idle task: {stock:?}");
+    assert_eq!(stock, relinked);
 }

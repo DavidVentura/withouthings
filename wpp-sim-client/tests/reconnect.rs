@@ -13,7 +13,7 @@ use std::time::Duration;
 use common::{client, renode_binary, repository, require, scratch, tail, Renode, Rig};
 use wpp::{Command, Frame};
 
-const BOOT_TIMEOUT: Duration = Duration::from_secs(600);
+const BOOT_TIMEOUT: Duration = Duration::from_secs(60);
 const WPP_PIPE: (&str, u16) = ("127.0.0.1", 7788);
 /// Each injected event takes the pipe a few ms, so these are still queued when
 /// the next client arrives.

@@ -16,12 +16,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use common::{client, relink, renode_binary, repository, require, scratch, strip_colour, tail, Renode, Rig, Symbols};
+use common::{client, relink, renode_binary, repository, require, scratch, strip_colour, symbol_address, tail, Renode, Rig, Symbols};
 
-const BOOT_TIMEOUT: Duration = Duration::from_secs(180);
+const BOOT_TIMEOUT: Duration = Duration::from_secs(60);
 /// The bootloader compares and then copies the whole bank over a modelled SPI
 /// bus one byte at a time.
-const UPDATE_BOOT_TIMEOUT: Duration = Duration::from_secs(1500);
+const UPDATE_BOOT_TIMEOUT: Duration = Duration::from_secs(120);
 const TEST_VERSION: u32 = 9999;
 /// Distinct from TEST_VERSION so a relinked run cannot be mistaken for a stock one.
 const RELINKED_VERSION: u32 = 9998;
@@ -32,37 +32,6 @@ fn word(answer: String) -> u64 {
     let text = answer.trim();
     u64::from_str_radix(text.trim_start_matches("0x").trim_start_matches("0X"), 16)
         .unwrap_or_else(|_| panic!("the monitor answered {text:?}, not a word"))
-}
-
-/// The address an ELF32-LE symbol table gives a name.
-///
-/// The relinked library's statics are laid out by the linker, so where
-/// xTickCount lands moves whenever the kernel or the port changes size. Reading
-/// it out of the ELF is the only form of the address that stays true.
-fn symbol_address(elf: &Path, want: &str) -> u64 {
-    let data = std::fs::read(elf).expect("the relinked ELF is readable");
-    let u32_at = |at: usize| u32::from_le_bytes(data[at..at + 4].try_into().unwrap());
-    let u16_at = |at: usize| u16::from_le_bytes(data[at..at + 2].try_into().unwrap());
-    let headers = u32_at(0x20) as usize;
-    let entry = u16_at(0x2E) as usize;
-    let count = u16_at(0x30) as usize;
-    for index in 0..count {
-        let header = headers + index * entry;
-        if u32_at(header + 4) != 2 {
-            continue; // SHT_SYMTAB
-        }
-        let table = u32_at(header + 0x10) as usize;
-        let size = u32_at(header + 0x14) as usize;
-        let strings = u32_at(headers + u32_at(header + 0x18) as usize * entry + 0x10) as usize;
-        for at in (table..table + size).step_by(16) {
-            let name = strings + u32_at(at) as usize;
-            let end = data[name..].iter().position(|&b| b == 0).unwrap() + name;
-            if &data[name..end] == want.as_bytes() {
-                return u32_at(at + 4) as u64;
-            }
-        }
-    }
-    panic!("{} defines no {want}", elf.display());
 }
 
 fn reported_version(output: &str) -> u32 {
