@@ -19,7 +19,7 @@ meta:
   image: appl.bin
   app_base: 0x27000
   app_to_lib: {sites: 647, tail_sites: 96, targets: 62}
-  lib_to_app: {sites: 25, targets: 13}
+  lib_to_app: {sites: 26, targets: 14}
 
 # Config corrections forced by the image's own struct layouts. refbuild.sh's
 # FreeRTOSConfig.h is wrong on three knobs; every queue.c body's match score
@@ -523,6 +523,16 @@ lib_to_app:
       the configASSERT logger; called with a format/file pointer in r0 and the
       __LINE__ value in r1 from queue.c lines 400/523/617 and from tasks.c.
       symbols.txt calls it wlog_fmt_r0d.
+  - addr: 0x371c8
+    sites: 1
+    symbol: "nrf_sdh_is_enabled"
+    confidence: "high"
+    how: >
+      The tickless idle's choice of wait at 0x73f68: it reads the enabled flag
+      at 0x2002507f and the app sets that flag partway through boot, so an idle
+      before then takes the WFE arm, because sd_app_evt_wait would refuse with
+      NRF_ERROR_SOFTDEVICE_NOT_ENABLED without sleeping. The app calls it too,
+      at 0x30a7e, 0x3a172 and 0x3a286.
   - addr: 0x30a64
     sites: 1
     symbol: "withings_pre_sleep"

@@ -42,12 +42,6 @@ void nrf_drv_clock_lfclk_request(void *handler)
     }
 }
 
-/* The image runs with S140 7.3.0 enabled from appl_main_init (0x2e50c). */
-unsigned char nrf_sdh_is_enabled(void)
-{
-    return 1;
-}
-
 void app_error_handler_bare(unsigned int error_code)
 {
     vAssertCalled("app_error", error_code);
