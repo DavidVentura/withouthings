@@ -20,8 +20,10 @@
 # configuration is measured against the relink it is a variation of. The two are
 # now the same run: once the reference config reached the image's own heap size,
 # task-name length and strict aliasing, the plain relink's 60 s log is stock's
-# line for line and its tick is one above stock's, 59536 against 59535, which is
-# where the two tickless-idle implementations round the last suppressed tick.
+# line for line. Its tick can differ, because relink_startup makes the first task
+# start a little later and how many ticks a run has counted at a given moment
+# depends on where its sleeps fall. Delaying stock's own reset moves its tick the
+# same way, so a small tick difference between the two says nothing.
 #
 # `plain-ff` and `ram-moved-ff` are those two links again with RAM brought up
 # holding 0xFF rather than zero, which is what a cold power-on gives the watch:
