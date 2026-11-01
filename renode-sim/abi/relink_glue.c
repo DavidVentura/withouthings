@@ -20,7 +20,7 @@ __attribute__((naked)) void vPortEnableVFP(void)
         "   orr r1, r1, #(0xf << 20)\n"
         "   str r1, [r0]            \n"
         "   bx r14                  \n"
-        "   .align 4                \n"
+        "   .balign 4, 0            \n"
     );
 }
 

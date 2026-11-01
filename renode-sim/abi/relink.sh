@@ -211,3 +211,10 @@ cat "$OUT/relinked.gc" >&2
 "$GCC-objcopy" -O binary --gap-fill 0xff "$OUT/relinked.elf" "$OUT/appl.bin"
 "$GCC-size" -A "$OUT/relinked.elf"
 python3 relink_image.py
+
+# A library that differs from the image's is a behaviour change nothing else
+# would report, so it fails the relink. Only the library can be compared once
+# the app's own text has moved or been edited.
+PARITY_ARGS=""
+if [ -n "${LAYOUT:-}${RAM:-}${GC:-}${PRUNE:-}${DATA:-}$REPLACE_ARGS" ]; then PARITY_ARGS="--placement-moved"; fi
+python3 lib_parity.py --elf "$OUT/relinked.elf" --image ../out/flash-relinked.bin $PARITY_ARGS

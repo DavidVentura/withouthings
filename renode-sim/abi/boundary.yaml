@@ -664,6 +664,20 @@ data_references:
       relocate: false
       note: "app entry, exported"
 
+# --- parity exceptions ------------------------------------------------------
+# What abi/lib_parity.py lets differ from the image, and why it does not change
+# behaviour. An entry that stops differing fails the check.
+parity_exceptions:
+  relink_startup: >
+    Initialises the library's own RAM, which has no counterpart because the
+    image's kernel statics sit inside the runs its Reset_Handler already fills.
+  xPortStartScheduler: >
+    The same registers are written with the same values in the same order; GCC
+    holds SCS and the zero in different registers, with no effect on memory.
+  saadc_event_limits_handle: >
+    The same instructions in a different order, none of which touches memory
+    until the channel's event register is read.
+
 # --- startup ----------------------------------------------------------------
 # Calls diverted at startup so the relinked image can initialise what the blob
 # knows nothing about. Each entry rewrites one `bl` to call `symbol` instead of
