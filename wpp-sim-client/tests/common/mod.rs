@@ -40,6 +40,7 @@ impl MonitorSession {
 pub struct Renode {
     child: Child,
     _stdin: Option<ChildStdin>,
+    monitor: std::sync::Mutex<Option<TcpStream>>,
     pub directory: PathBuf,
 }
 
@@ -66,7 +67,7 @@ impl Renode {
             .spawn()
             .expect("Renode starts");
         let stdin = child.stdin.take();
-        Renode { child, _stdin: stdin, directory: directory.to_path_buf() }
+        Renode { child, _stdin: stdin, monitor: Default::default(), directory: directory.to_path_buf() }
     }
 
     pub fn wait_for(&self, needle: &str, timeout: Duration) -> Result<(), String> {
@@ -126,14 +127,20 @@ impl Renode {
 
     /// One monitor command, one answer. Renode echoes the command before the
     /// result, and the telnet negotiation bytes at the start of the session are
-    /// not text, so both are dropped. The prompt is what says an answer is whole.
+    /// not text, so both are dropped. The prompt is what says an answer is whole,
+    /// and the monitor only offers one at the start of its first session, so the
+    /// one session is kept for the whole run.
     pub fn monitor(&self, command: &str) -> String {
-        let mut socket = TcpStream::connect(("127.0.0.1", MONITOR_PORT))
-            .expect("the Renode monitor accepts a connection");
-        socket.set_read_timeout(Some(MONITOR_TIMEOUT)).unwrap();
-        read_to_prompt(&mut socket, command);
+        let mut session = self.monitor.lock().unwrap();
+        let socket = session.get_or_insert_with(|| {
+            let mut socket = TcpStream::connect(("127.0.0.1", MONITOR_PORT))
+                .expect("the Renode monitor accepts a connection");
+            socket.set_read_timeout(Some(MONITOR_TIMEOUT)).unwrap();
+            read_to_prompt(&mut socket, "the banner");
+            socket
+        });
         socket.write_all(format!("{command}\n").as_bytes()).unwrap();
-        String::from_utf8_lossy(&read_to_prompt(&mut socket, command))
+        String::from_utf8_lossy(&read_to_prompt(socket, command))
             .lines()
             .map(|line| strip_colour(line).trim().to_string())
             .filter(|line| !line.is_empty() && line != command && !line.starts_with(MONITOR_PROMPT))
