@@ -35,7 +35,7 @@ restored after.
 +        {                                                                      \
 +            if( *pulActive != 0UL )                                            \
 +            {                                                                  \
-+                vAssertCalled( "!! ASSERT_NO_PENDING_ISR FAILED (%d,%p,%8.8x)!!\\n", \
++                vAssertCalled( "!! ASSERT_NO_PENDING_ISR FAILED (%d,%p,%8.8x)!!\n", \
 +                               __LINE__, pulActive, *pulActive );              \
 +                for( ;; ) {}                                                   \
 +            }                                                                  \
