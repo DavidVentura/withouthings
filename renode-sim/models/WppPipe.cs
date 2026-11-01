@@ -293,14 +293,11 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             Post(BuildWrite(CccdHandleOffset, new byte[] { 0x01, 0x00 }));
         }
 
-        // Whatever the departed client left unread dies with the link, but the
-        // disconnect itself must arrive: the next client may be connecting already,
+        // Nothing queued may be discarded, on either side of a link: a client's last
+        // write can be the one that matters, such as the restart that ends an update,
         // and a second connect on a link the firmware thinks is up goes unanswered.
         private void Unlink()
         {
-            while(inbound.TryDequeue(out var _))
-            {
-            }
             Post(BuildDisconnected());
         }
 
