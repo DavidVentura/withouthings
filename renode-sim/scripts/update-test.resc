@@ -9,10 +9,9 @@ include @scripts/machine.resc
 # UICR.NRFFW[0] holds the bootloader start address the MBR reads, and boot.resc
 # leaves it erased so the MBR forwards to the SoftDevice. This run arms it only
 # for the reboot that has a bank to apply: the bootloader compares the whole
-# 1.15 MB bank against internal flash one SPI byte at a time, so taking that
-# path on every boot costs minutes per boot, and the sim's own patches make
-# internal flash differ from the bank by construction, so the comparison would
-# never settle.
+# 1.15 MB bank against internal flash on every boot it takes that path, and the
+# sim's own patches make internal flash differ from the bank by construction, so
+# the comparison would never settle.
 
 # CMD_RESTART_TO_UPDATE's handler is the moment the application asks for the
 # bank to be applied: arm the hand-off so the reboot it is about to cause lands
