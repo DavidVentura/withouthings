@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use wpp::activity;
@@ -752,6 +753,24 @@ pub struct WatchService {
     device_id: DeviceId,
     notifications: Mutex<NotificationCenter>,
     live_distance: Mutex<Option<LiveDistance>>,
+    unreadable_rows: Mutex<UnreadableRows>,
+}
+
+// The lists are re-read on every screen, so a bad row is told once rather than
+// on every read of it.
+#[derive(Default)]
+struct UnreadableRows {
+    seen: HashSet<String>,
+    pending: Vec<String>,
+}
+
+impl UnreadableRows {
+    fn note(&mut self, problem: &impl std::fmt::Display) {
+        let line = problem.to_string();
+        if self.seen.insert(line.clone()) {
+            self.pending.push(line);
+        }
+    }
 }
 
 /// What the watch has already been told, so a fix costs a window rather than
@@ -790,6 +809,7 @@ impl WatchService {
             device_id,
             notifications: Mutex::new(NotificationCenter::new()),
             live_distance: Mutex::new(None),
+            unreadable_rows: Mutex::default(),
         })
     }
 
@@ -821,11 +841,9 @@ impl WatchService {
     }
 
     pub fn unhandled_objects(&self) -> Vec<String> {
-        self.inner
-            .lock()
-            .unwrap()
-            .client
-            .take_unhandled()
+        let unhandled = self.inner.lock().unwrap().client.take_unhandled();
+        let unreadable = std::mem::take(&mut self.unreadable_rows.lock().unwrap().pending);
+        unhandled
             .into_iter()
             .map(|(command, type_id, name)| {
                 let command_name = wpp::commands::Command(command)
@@ -833,6 +851,7 @@ impl WatchService {
                     .unwrap_or("unknown command");
                 format!("{command_name} ({command}) carried {name} ({type_id}), unread")
             })
+            .chain(unreadable)
             .collect()
     }
 
@@ -1964,11 +1983,13 @@ impl WatchService {
 
     pub fn ecgs(&self) -> Result<Vec<EcgSummary>, WatchError> {
         let store = self.store.lock().unwrap();
-        Ok(store
-            .ecgs(self.device_id)?
+        let listed = store.ecgs(self.device_id)?;
+        self.note_unreadable(&listed.unreadable);
+        listed
+            .rows
             .into_iter()
             .map(|row| ecg_summary(&store, row))
-            .collect::<Result<_, _>>()?)
+            .collect()
     }
 
     pub fn afib_episodes(&self) -> Result<Vec<AfibEpisode>, WatchError> {
@@ -2013,13 +2034,26 @@ impl WatchService {
             row.duration > wpp::units::Duration::ZERO && row.samples.iter().any(|b| *b != 0)
         };
         let asleep = asleep_spans(&store, self.device_id, from.0, anchored_at.0)?;
-        let readings = counted
+        let (parsed, unreadable): (Vec<_>, Vec<_>) = counted
             .iter()
             .filter(recorded)
-            .map(|row| afib_reading(&store, self.device_id, row, &asleep))
+            .map(|row| row.intervals().map(|raw| (row, raw)))
+            .partition(Result::is_ok);
+        self.note_unreadable(
+            &unreadable
+                .into_iter()
+                .map(Result::unwrap_err)
+                .collect::<Vec<_>>(),
+        );
+        let readings = parsed
+            .into_iter()
+            .map(Result::unwrap)
+            .map(|(row, raw)| afib_reading(&store, self.device_id, row, &raw, &asleep))
             .collect::<Result<Vec<_>, WatchError>>()?;
-        let ecg_after = store
-            .ecgs(self.device_id)?
+        let ecgs = store.ecgs(self.device_id)?;
+        self.note_unreadable(&ecgs.unreadable);
+        let ecg_after = ecgs
+            .rows
             .into_iter()
             .filter(|row| (anchored_at.0..=anchored_at.0 + ECG_AFTER_ALERT_MS).contains(&row.measured_at.0))
             .min_by_key(|row| row.measured_at)
@@ -2107,25 +2141,17 @@ fn afib_reading(
     store: &Store,
     device_id: DeviceId,
     row: &wpp_store::AfibReadingRow,
+    raw: &[wpp::units::Millis],
     asleep: &[std::ops::Range<UnixMillis>],
 ) -> Result<AfibReading, WatchError> {
     use wpp::rhythm::{read_stored_pulse, PulseCheck, PulseVerdict, WATCH_RATE_WITHIN_MS};
-    let corrupt = || WatchError::Storage {
-        reason: format!("reading {} has no sample size or sampling rate", row.id),
-    };
-    let size = std::num::NonZeroUsize::new(row.sample_bytes as usize).ok_or_else(corrupt)?;
-    let hz = wpp::units::SamplingHz::new(row.sampling_hz as u16).ok_or_else(corrupt)?;
-    let raw: Vec<wpp::units::Millis> = wpp::signal::beat_intervals_ms(&row.samples, size, hz)
-    .into_iter()
-    .map(|ms| wpp::units::Millis(ms as f64))
-    .collect();
     let watch = store.nearest_sample(
         device_id,
         SampleKind::HeartRate,
         row.measured_at,
         wpp::units::Duration::from_millis(WATCH_RATE_WITHIN_MS),
     )?;
-    let pulse = read_stored_pulse(&raw, watch.filter(|bpm| *bpm > 0).map(|bpm| Bpm(bpm as u16)));
+    let pulse = read_stored_pulse(raw, watch.filter(|bpm| *bpm > 0).map(|bpm| Bpm(bpm as u16)));
     Ok(AfibReading {
         id: row.id,
         measured_at_ms: row.measured_at.0,
@@ -2618,6 +2644,13 @@ fn now_seconds() -> UnixTime {
 }
 
 impl WatchService {
+    fn note_unreadable(&self, rows: &[impl std::fmt::Display]) {
+        let mut unreadable = self.unreadable_rows.lock().unwrap();
+        for row in rows {
+            unreadable.note(row);
+        }
+    }
+
     fn enabled_features(&self) -> Vec<Feature> {
         self.inner.lock().unwrap().client.features(now_seconds())
     }
@@ -3201,7 +3234,8 @@ mod tests {
             .unwrap();
         let asleep = [UnixMillis(at - 3_600_000)..UnixMillis(at + 3_600_000)];
 
-        let reading = afib_reading(&store, device, &reading_row(at), &asleep).unwrap();
+        let row = reading_row(at);
+        let reading = afib_reading(&store, device, &row, &row.intervals().unwrap(), &asleep).unwrap();
         assert!(reading.asleep);
         assert!(
             reading.intervals_ms.len() <= SPLIT_NIGHT_READING.len() - 20,
@@ -3220,7 +3254,8 @@ mod tests {
     fn a_reading_with_no_rate_logged_for_it_is_left_unchecked() {
         let mut store = Store::open_in_memory().unwrap();
         let device = store.device("a4:7e:fa:44:d6:10").unwrap();
-        let reading = afib_reading(&store, device, &reading_row(DAY_ONE), &[]).unwrap();
+        let row = reading_row(DAY_ONE);
+        let reading = afib_reading(&store, device, &row, &row.intervals().unwrap(), &[]).unwrap();
         assert_eq!(reading.analysis, PulseAnalysis::NoWatchRate);
         assert_eq!(reading.intervals_ms.len(), SPLIT_NIGHT_READING.len());
         assert!(!reading.asleep);

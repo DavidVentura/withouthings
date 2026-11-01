@@ -1,6 +1,7 @@
 mod migrate;
 
 use std::collections::{BTreeSet, HashMap};
+use std::num::NonZeroUsize;
 
 use rusqlite::types::{FromSql, FromSqlResult, ToSqlOutput, ValueRef};
 use rusqlite::{params, Connection, OptionalExtension, ToSql};
@@ -12,7 +13,7 @@ use wpp::client::{
 use wpp::signal::{EcgMeasure, MeasureType, Recording, SampleFormat, Signal, SignalKind};
 use wpp::sleep::StageWindow;
 use wpp::track::Fix;
-use wpp::units::{Duration, Edges, Hundredths, SamplingHz, UnixMillis, UnixTime};
+use wpp::units::{Duration, Edges, Hundredths, Millis, SamplingHz, UnixMillis, UnixTime};
 
 pub use rusqlite::Error;
 
@@ -146,6 +147,26 @@ pub struct EcgSummaryRow {
     pub sample_bytes: i64,
 }
 
+// The sampling rate comes off the wire unchecked, and it divides everything
+// about a recording, so a row carrying a bad one cannot be summarised.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnreadableEcg {
+    pub id: EcgId,
+    pub sampling_hz: i64,
+}
+
+impl std::fmt::Display for UnreadableEcg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ecg {} has sampling rate {}", self.id.0, self.sampling_hz)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EcgListing {
+    pub rows: Vec<EcgSummaryRow>,
+    pub unreadable: Vec<UnreadableEcg>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoredEcg {
     pub measured_at: UnixMillis,
@@ -172,6 +193,43 @@ pub struct AfibReadingRow {
     pub sample_bytes: i64,
     pub samples: Vec<u8>,
     pub attrib: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnreadableReading {
+    pub id: i64,
+    pub sampling_hz: i64,
+    pub sample_bytes: i64,
+}
+
+impl std::fmt::Display for UnreadableReading {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "afib reading {} has sample size {} at sampling rate {}",
+            self.id, self.sample_bytes, self.sampling_hz
+        )
+    }
+}
+
+impl AfibReadingRow {
+    // Only a reading with beats in it needs these: an empty one legitimately
+    // has neither, so the row cannot be refused when it is read.
+    pub fn intervals(&self) -> Result<Vec<Millis>, UnreadableReading> {
+        let size = usize::try_from(self.sample_bytes).ok().and_then(NonZeroUsize::new);
+        let hz = u16::try_from(self.sampling_hz).ok().and_then(SamplingHz::new);
+        let (Some(size), Some(hz)) = (size, hz) else {
+            return Err(UnreadableReading {
+                id: self.id,
+                sampling_hz: self.sampling_hz,
+                sample_bytes: self.sample_bytes,
+            });
+        };
+        Ok(wpp::signal::beat_intervals_ms(&self.samples, size, hz)
+            .into_iter()
+            .map(|ms| Millis(ms as f64))
+            .collect())
+    }
 }
 
 pub struct ActiveWorkout {
@@ -1216,7 +1274,7 @@ impl Store {
     /// Delta-coded recordings stay on file but are not offered: nothing here
     /// decodes them, and read as plain samples they are a wrong waveform. Nor
     /// are signal types that are not ECG leads.
-    pub fn ecgs(&self, device_id: DeviceId) -> Result<Vec<EcgSummaryRow>, Error> {
+    pub fn ecgs(&self, device_id: DeviceId) -> Result<EcgListing, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT id, measured_at, signal_type, sampling_hz, length(samples)
                FROM ecg
@@ -1228,16 +1286,26 @@ impl Store {
             let Some(kind) = SignalKind::from_type_id(signal_type) else {
                 return Ok(None);
             };
-            let hz: u16 = r.get(3)?;
-            Ok(Some(EcgSummaryRow {
-                id: r.get(0)?,
+            let id: EcgId = r.get(0)?;
+            let hz: i64 = r.get(3)?;
+            let Some(sampling_hz) = u16::try_from(hz).ok().and_then(SamplingHz::new) else {
+                return Ok(Some(Err(UnreadableEcg { id, sampling_hz: hz })));
+            };
+            Ok(Some(Ok(EcgSummaryRow {
+                id,
                 measured_at: millis(r, 1)?,
                 kind,
-                sampling_hz: SamplingHz::new(hz).ok_or_else(|| corrupt(3, "sampling rate 0"))?,
+                sampling_hz,
                 sample_bytes: r.get(4)?,
-            }))
+            })))
         })?;
-        rows.filter_map(Result::transpose).collect()
+        let parsed: Vec<Result<EcgSummaryRow, UnreadableEcg>> =
+            rows.filter_map(Result::transpose).collect::<Result<_, Error>>()?;
+        let (rows, unreadable): (Vec<_>, Vec<_>) = parsed.into_iter().partition(Result::is_ok);
+        Ok(EcgListing {
+            rows: rows.into_iter().map(Result::unwrap).collect(),
+            unreadable: unreadable.into_iter().map(Result::unwrap_err).collect(),
+        })
     }
 
     pub fn ecg_measures(&self, ecg_id: EcgId) -> Result<Vec<EcgMeasure>, Error> {
@@ -2385,8 +2453,66 @@ mod tests {
             )
             .unwrap();
 
-        let id = store.ecgs(device).unwrap()[0].id;
+        let id = store.ecgs(device).unwrap().rows[0].id;
         assert!(store.ecg(id).is_err());
+    }
+
+    #[test]
+    fn an_ecg_with_no_sampling_rate_is_reported_and_the_rest_still_listed() {
+        use wpp::objects::{StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend};
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let recording = |at: i64, sampling_freq: u16| Record::Ecg {
+            measured_at: UnixTime(at),
+            signal: Box::new(Signal {
+                meta: StoredSignalMeta {
+                    r#type: 7,
+                    sampling_freq,
+                    format: 0,
+                    size: 2,
+                    resolution: 14,
+                    channel: 1,
+                },
+                extend: StoredSignalMetaExtend::default(),
+                units: None,
+                measure: Some(StoredMeasureMeta::default()),
+                measures: Vec::new(),
+                data: vec![1, 0],
+            }),
+        };
+        store
+            .store(device, &[recording(1000, 300), recording(2000, 0), recording(3000, 500)])
+            .unwrap();
+
+        let listed = store.ecgs(device).unwrap();
+        let readable: Vec<UnixMillis> = listed.rows.iter().map(|row| row.measured_at).collect();
+        assert_eq!(readable, vec![UnixTime(3000).to_millis(), UnixTime(1000).to_millis()]);
+        assert_eq!(listed.unreadable.len(), 1);
+        assert_eq!(listed.unreadable[0].sampling_hz, 0);
+    }
+
+    #[test]
+    fn a_reading_with_no_size_or_rate_says_so_and_one_with_both_is_read() {
+        let row = |sampling_hz: i64, sample_bytes: i64| AfibReadingRow {
+            id: 9,
+            measured_at: UnixMillis(0),
+            duration: Duration::from_secs(30),
+            sampling_hz,
+            sample_bytes,
+            samples: vec![100, 50],
+            attrib: None,
+        };
+        assert_eq!(row(100, 1).intervals().unwrap(), vec![Millis(1000.0), Millis(500.0)]);
+        for (sampling_hz, sample_bytes) in [(0, 1), (100, 0), (65_536, 1)] {
+            assert_eq!(
+                row(sampling_hz, sample_bytes).intervals(),
+                Err(UnreadableReading {
+                    id: 9,
+                    sampling_hz,
+                    sample_bytes
+                })
+            );
+        }
     }
 
     #[test]
@@ -2420,7 +2546,13 @@ mod tests {
             .unwrap();
 
         assert_eq!(store.count("ecg").unwrap(), 1);
-        assert!(store.ecgs(device).unwrap().is_empty());
+        assert_eq!(
+            store.ecgs(device).unwrap(),
+            EcgListing {
+                rows: Vec::new(),
+                unreadable: Vec::new()
+            }
+        );
     }
 
     #[test]

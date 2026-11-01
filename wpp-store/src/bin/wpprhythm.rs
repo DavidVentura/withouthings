@@ -1,10 +1,9 @@
-use std::num::NonZeroUsize;
 use std::process::ExitCode;
 
 use wpp::rhythm::{
     read_ecg, read_pulse, EcgVerdict, IntervalKind, PulseVerdict, Rhythm, WATCH_RATE_WITHIN_MS,
 };
-use wpp::units::{Bpm, Duration, Millis, SamplingHz, UnixMillis};
+use wpp::units::{Bpm, Duration, UnixMillis};
 use wpp::SampleKind;
 use wpp_store::Store;
 
@@ -47,17 +46,10 @@ fn main() -> ExitCode {
         None => Vec::new(),
     };
     for row in readings.iter().filter(|r| r.duration > Duration::ZERO) {
-        let (Some(size), Some(hz)) = (
-            NonZeroUsize::new(row.sample_bytes as usize),
-            SamplingHz::new(row.sampling_hz as u16),
-        ) else {
+        let Ok(raw) = row.intervals() else {
             println!("pulse {:4} corrupt row", row.id);
             continue;
         };
-        let raw: Vec<Millis> = wpp::signal::beat_intervals_ms(&row.samples, size, hz)
-        .into_iter()
-        .map(|ms| Millis(ms as f64))
-        .collect();
         let watch = store
             .nearest_sample(
                 device_id,
@@ -83,7 +75,11 @@ fn main() -> ExitCode {
         println!("pulse {:4} merged {merged:2} {verdict}", row.id);
     }
 
-    for row in store.ecgs(device_id).unwrap() {
+    let ecgs = store.ecgs(device_id).unwrap();
+    for unreadable in &ecgs.unreadable {
+        println!("{unreadable}");
+    }
+    for row in ecgs.rows {
         let id = row.id.0;
         let stored = store.ecg(row.id).unwrap().unwrap();
         let reading = read_ecg(&stored.recording.analysed().samples, stored.recording.rate);

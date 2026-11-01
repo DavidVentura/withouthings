@@ -827,3 +827,81 @@ fn window_edges_out_of_order_are_refused() {
     assert!(service.worn_hours(Vec::new()).unwrap().is_empty());
     cleanup(&path);
 }
+
+#[test]
+fn an_unreadable_ecg_is_left_out_of_the_list_and_told_once() {
+    use wpp::client::Record;
+    use wpp::objects::{StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend};
+    use wpp::units::UnixTime;
+    use wpp::Signal;
+
+    let recording = |at: i64, sampling_freq: u16| Record::Ecg {
+        measured_at: UnixTime(at),
+        signal: Box::new(Signal {
+            meta: StoredSignalMeta {
+                r#type: 7,
+                sampling_freq,
+                format: 0,
+                size: 2,
+                resolution: 14,
+                channel: 1,
+            },
+            extend: StoredSignalMetaExtend::default(),
+            units: None,
+            measure: Some(StoredMeasureMeta::default()),
+            measures: Vec::new(),
+            data: vec![1, 0],
+        }),
+    };
+    let recorder = Arc::new(Recorder::default());
+    let path = db_path();
+    let mut store = wpp_store::Store::open(&path).unwrap();
+    let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+    store
+        .store(device, &[recording(1_000, 300), recording(2_000, 0)])
+        .unwrap();
+    drop(store);
+
+    let service = service_at(&recorder, path.clone());
+    let listed = service.ecgs().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].measured_at_ms, 1_000_000);
+
+    let told = service.unhandled_objects();
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert!(told[0].contains("sampling rate 0"), "{told:?}");
+
+    service.ecgs().unwrap();
+    assert!(service.unhandled_objects().is_empty(), "told only once");
+}
+
+#[test]
+fn an_alert_keeps_the_readings_it_can_read_and_tells_of_the_rest() {
+    let recorder = Arc::new(Recorder::default());
+    let path = db_path();
+    let store = wpp_store::Store::open(&path).unwrap();
+    let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+    store
+        .connection()
+        .execute_batch(&format!(
+            "INSERT INTO afib_episode (id, device_id, measured_at, duration_secs, sampling_hz,
+                                       sample_bytes, resolution_bits, samples, attrib)
+             VALUES (1, {device}, 1000000, 30, 0, 1, 8, X'646464', NULL),
+                    (2, {device}, 2000000, 30, 100, 1, 8, X'646464', NULL),
+                    (3, {device}, 3000000, 30, 100, 1, 8, X'646464', 7);",
+            device = device.0,
+        ))
+        .unwrap();
+    drop(store);
+
+    let service = service_at(&recorder, path.clone());
+    let alert = service.afib_alert(3).unwrap().expect("the reading is on file");
+    assert_eq!(alert.counted, 3, "an unreadable reading still counted to the run");
+    assert_eq!(
+        alert.readings.iter().map(|reading| reading.id).collect::<Vec<_>>(),
+        vec![2, 3]
+    );
+    let told = service.unhandled_objects();
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert!(told[0].contains("afib reading 1"), "{told:?}");
+}
