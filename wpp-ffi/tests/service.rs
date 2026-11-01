@@ -898,3 +898,41 @@ fn an_alert_keeps_the_readings_it_can_read_and_tells_of_the_rest() {
     assert!(told[0].contains("afib reading 1"), "{told:?}");
     cleanup(&path);
 }
+
+#[test]
+fn an_activity_the_table_lacks_is_kept_and_told_once() {
+    use wpp::client::Record;
+    use wpp::units::UnixTime;
+
+    let recorder = Arc::new(Recorder::default());
+    let path = db_path();
+    let mut store = wpp_store::Store::open(&path).unwrap();
+    let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
+    store
+        .store(
+            device,
+            &[
+                Record::WorkoutStarted { started_at: UnixTime(1_784_000_000), subcategory: 999 },
+                Record::WorkoutEnded {
+                    started_at: UnixTime(1_784_000_000),
+                    ended_at: UnixTime(1_784_000_600),
+                    paused_secs: 0,
+                },
+            ],
+        )
+        .unwrap();
+    drop(store);
+    let service = service_at(&recorder, path.clone());
+
+    assert_eq!(service.workouts(10).unwrap().len(), 1);
+    assert_eq!(service.workouts(10).unwrap().len(), 1);
+    let told: Vec<String> = service
+        .unhandled_objects()
+        .into_iter()
+        .filter(|line| line.contains("activity 999"))
+        .collect();
+    assert_eq!(told.len(), 1, "{told:?}");
+    service.workouts(10).unwrap();
+    assert!(service.unhandled_objects().is_empty());
+    cleanup(&path);
+}

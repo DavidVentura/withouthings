@@ -406,6 +406,18 @@ pub enum SampleKind {
 }
 
 impl SampleKind {
+    /// What a stored value is worth in the kind's own unit.
+    pub fn reading(self, stored: i64) -> f64 {
+        let scale = match self {
+            SampleKind::CoreTemperature => 1000.0,
+            SampleKind::Ascent | SampleKind::Distance | SampleKind::Calories => 100.0,
+            SampleKind::TrackedDuration => 3600.0,
+            SampleKind::Spo2 => 10.0,
+            _ => 1.0,
+        };
+        stored as f64 / scale
+    }
+
     pub fn id(self) -> i64 {
         match self {
             SampleKind::HeartRate => 1,
@@ -1449,10 +1461,6 @@ impl Client {
 
     pub fn spi_flash_take(&mut self) -> Option<Vec<u8>> {
         self.link.spi_flash.take()
-    }
-
-    pub fn spi_flash_reset(&mut self) {
-        self.link.spi_flash.reset();
     }
 
     pub fn request_screens(&mut self, now: UnixMillis) -> Vec<Action> {

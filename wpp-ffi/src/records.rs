@@ -19,6 +19,8 @@ pub enum WatchError {
     Storage { reason: String },
     #[error("protocol: {reason}")]
     Protocol { reason: String },
+    #[error("not ready: {reason}")]
+    NotReady { reason: String },
     #[error("refused: {reason}")]
     Refused { reason: String },
 }
@@ -50,7 +52,6 @@ pub enum Metric {
     Ascent,
     Calories,
     Distance,
-    TrackedDuration,
 }
 
 impl Metric {
@@ -67,23 +68,18 @@ impl Metric {
             Metric::Ascent => SampleKind::Ascent,
             Metric::Calories => SampleKind::Calories,
             Metric::Distance => SampleKind::Distance,
-            Metric::TrackedDuration => SampleKind::TrackedDuration,
-        }
-    }
-
-    pub(crate) fn scale(self) -> f64 {
-        match self {
-            Metric::Temperature => 1000.0,
-            Metric::Ascent | Metric::Distance | Metric::Calories => 100.0,
-            Metric::TrackedDuration => 3600.0,
-            Metric::Spo2 => 10.0,
-            _ => 1.0,
         }
     }
 
     pub(crate) fn reading(self, stored: i64) -> f64 {
-        stored as f64 / self.scale()
+        self.kind().reading(stored)
     }
+}
+
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpsStatus {
+    Absent,
+    Present,
 }
 
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,12 +121,6 @@ pub struct Point {
     pub at_ms: i64,
     pub value: f64,
     pub origin: Origin,
-}
-
-#[derive(uniffi::Record, Debug, Clone, PartialEq)]
-pub struct Extent {
-    pub from_ms: i64,
-    pub to_ms: i64,
 }
 
 /// Whether an activity is worth a receiver at all. Nothing is recorded for one

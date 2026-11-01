@@ -12,6 +12,7 @@ import android.os.HandlerThread
 import android.util.Log
 import java.util.concurrent.Executor
 import kotlin.math.roundToInt
+import uniffi.wpp_ffi.GpsStatus
 import uniffi.wpp_ffi.LocationFix
 import uniffi.wpp_ffi.WatchService
 
@@ -79,7 +80,7 @@ class LocationRecorder(context: Context, private val service: () -> WatchService
         }
         runCatching {
             if (present) watch.refreshWorkoutStatus()
-            watch.setGpsStatus(present)
+            watch.setGpsStatus(if (present) GpsStatus.PRESENT else GpsStatus.ABSENT)
         }.onFailure { Log.e(TAG, "could not set the watch's gps status", it) }
     }
 

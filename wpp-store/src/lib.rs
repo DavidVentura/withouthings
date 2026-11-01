@@ -968,21 +968,6 @@ impl Store {
         rows.collect()
     }
 
-    pub fn extent(
-        &self,
-        device_id: DeviceId,
-        kind: SampleKind,
-    ) -> Result<Option<(UnixMillis, UnixMillis)>, Error> {
-        self.conn
-            .query_row(
-                "SELECT min(measured_at), max(measured_at) FROM sample
-                  WHERE device_id = ?1 AND kind = ?2",
-                params![device_id, kind.id()],
-                |r| Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, Option<i64>>(1)?)),
-            )
-            .map(|(lo, hi)| Some((UnixMillis(lo?), UnixMillis(hi?))))
-    }
-
     pub fn workouts(&self, device_id: DeviceId, limit: u32) -> Result<Vec<WorkoutRow>, Error> {
         let mut stmt = self.conn.prepare(
             "SELECT id, started_at, ended_at, subcategory FROM workout

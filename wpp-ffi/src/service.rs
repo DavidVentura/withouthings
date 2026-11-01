@@ -302,7 +302,7 @@ impl WatchService {
                     day_start_ms: point.at.0,
                 }),
             active_workout: report::active_workout(&store, self.device_id, now)?
-                .map(workout_summary),
+                .map(|workout| self.summary(workout)),
             pending_deletes: pending,
             sync: progress,
             measuring,
@@ -405,21 +405,11 @@ impl WatchService {
         }))
     }
 
-    pub fn extent(&self, metric: Metric) -> Result<Option<Extent>, WatchError> {
-        let store = self.store.lock().unwrap();
-        Ok(store
-            .extent(self.device_id, metric.kind())?
-            .map(|(from, to)| Extent {
-                from_ms: from.0,
-                to_ms: to.0,
-            }))
-    }
-
     pub fn workouts(&self, limit: u32) -> Result<Vec<WorkoutSummary>, WatchError> {
         let store = self.store.lock().unwrap();
         Ok(report::workouts(&store, self.device_id, limit, now())?
             .into_iter()
-            .map(workout_summary)
+            .map(|workout| self.summary(workout))
             .collect())
     }
 
@@ -437,7 +427,7 @@ impl WatchService {
             UnixMillis(to_ms),
             now(),
         )?;
-        Ok(found.into_iter().map(workout_summary).collect())
+        Ok(found.into_iter().map(|workout| self.summary(workout)).collect())
     }
 
     /// Hours of each window the watch measured a heart rate in, which is the
@@ -474,8 +464,7 @@ impl WatchService {
         };
         drop(store);
         self.transport.changed();
-        self.note_unknown_sports([trimmed.row.sport()]);
-        Ok(workout_summary(trimmed))
+        Ok(self.summary(trimmed))
     }
 
     pub fn activity_totals(&self, from_ms: i64, to_ms: i64) -> Result<ActivityTotals, WatchError> {
@@ -589,7 +578,7 @@ impl WatchService {
             .lock()
             .unwrap()
             .watch_user(self.device_id)?
-            .ok_or_else(|| WatchError::Protocol {
+            .ok_or_else(|| WatchError::NotReady {
                 reason: "the watch has not reported a profile to edit yet".to_string(),
             })?;
         let actions = self
@@ -674,34 +663,12 @@ impl WatchService {
         self.dispatch(actions)
     }
 
-    pub fn set_gps_status(&self, present: bool) -> Result<(), WatchError> {
-        let status = if present {
-            wpp::client::GpsStatus::Present
-        } else {
-            wpp::client::GpsStatus::Absent
+    pub fn set_gps_status(&self, status: GpsStatus) -> Result<(), WatchError> {
+        let status = match status {
+            GpsStatus::Absent => wpp::client::GpsStatus::Absent,
+            GpsStatus::Present => wpp::client::GpsStatus::Present,
         };
         let actions = self.inner.lock().unwrap().client.gps_status(status);
-        self.dispatch(actions)
-    }
-
-    /// A field left as None is left out of the frame. The watch acknowledges
-    /// nothing here, so a success is only that the frame went out.
-    pub fn push_live_route(
-        &self,
-        speed: Option<i32>,
-        distance: Option<i32>,
-        pace: Option<i32>,
-    ) -> Result<(), WatchError> {
-        let actions = self
-            .inner
-            .lock()
-            .unwrap()
-            .client
-            .workout_live_data(wpp::client::LiveRoute {
-                pace,
-                distance,
-                speed,
-            });
         self.dispatch(actions)
     }
 
@@ -797,10 +764,6 @@ impl WatchService {
         self.inner.lock().unwrap().client.spi_flash_take()
     }
 
-    pub fn spi_flash_reset(&self) {
-        self.inner.lock().unwrap().client.spi_flash_reset();
-    }
-
     pub fn activities(&self) -> Vec<Activity> {
         let current = self
             .inner
@@ -840,7 +803,7 @@ impl WatchService {
     pub fn set_activities(&self, ids: Vec<u32>) -> Result<(), WatchError> {
         let formats = self.inner.lock().unwrap().client.image_formats().to_vec();
         if formats.is_empty() {
-            return Err(WatchError::Protocol {
+            return Err(WatchError::NotReady {
                 reason: "the watch has not said what size glyphs it wants yet".to_string(),
             });
         }
@@ -1132,7 +1095,7 @@ impl WatchService {
         Ok(trend
             .into_iter()
             .map(|entry| WorkoutTrend {
-                workout: workout_summary(entry.workout),
+                workout: self.summary(entry.workout),
                 heart: entry.effort.map(|effort| SessionHeart {
                     median_bpm: effort.median.0,
                     p95_bpm: effort.p95.0,
@@ -1156,9 +1119,6 @@ impl WatchService {
             .collect())
     }
 
-    /// The median waking rate of each window, readings taken asleep, in a
-    /// session or while recovering from one left out. None for a window with
-    /// nothing left.
     /// Milliseconds in each heart rate zone over the sessions that started in
     /// each window, every kind of session together. Only sessions are
     /// counted: outside one the watch reads a rate every ten minutes, too
@@ -1206,6 +1166,9 @@ impl WatchService {
         Ok(store.delete_note(id)?)
     }
 
+    /// The median waking rate of each window, readings taken asleep, in a
+    /// session or while recovering from one left out. None for a window with
+    /// nothing left.
     pub fn awake_heart(&self, edges_ms: Vec<i64>) -> Result<Vec<Option<AwakeHeart>>, WatchError> {
         let edges = edges_of(edges_ms)?;
         let store = self.store.lock().unwrap();
@@ -1382,6 +1345,11 @@ impl WatchService {
             .map(|id| format!("activity {} is not in the activity table", id.0))
             .collect();
         self.note_unreadable(&unknown);
+    }
+
+    fn summary(&self, workout: report::Workout) -> WorkoutSummary {
+        self.note_unknown_sports([workout.row.sport()]);
+        workout_summary(workout)
     }
 
     fn enabled_features(&self) -> Vec<Feature> {

@@ -11,7 +11,7 @@ use wpp::sleep::{self, Night, Score};
 use wpp::sport::{self, SportId};
 use wpp::track;
 use wpp::units::{
-    Bpm, Duration, Edges, Hundredths, Kilocalories, Met, Metres, Millis, UnixMillis, UnixTime,
+    Bpm, Duration, Edges, Kilocalories, Met, Metres, Millis, UnixMillis, UnixTime,
 };
 
 use crate::{
@@ -303,7 +303,7 @@ pub fn earned_curves(
 pub fn calorie_reading(at: UnixMillis, stored: i64) -> Reading {
     Reading {
         at,
-        total: Hundredths::<Kilocalories>::new(stored).value(),
+        total: Kilocalories(SampleKind::Calories.reading(stored)),
     }
 }
 
@@ -983,7 +983,7 @@ mod tests {
     fn minute_with_ascent(at_ms: i64, centimetres: Option<i64>) -> Record {
         Record::Activity(Minute {
             duration: Duration::from_secs(60),
-            ascent: centimetres.map(Hundredths::new),
+            ascent: centimetres.map(wpp::units::Hundredths::new),
             ..Minute::opened(UnixMillis(at_ms).to_seconds())
         })
     }

@@ -69,11 +69,11 @@ impl PairingService {
             .into_iter()
             .map(|w| credentials_of(&w.mac, w.secret))
             .collect::<Result<Vec<_>, _>>()?;
-        let secret = Secret::parse(secret).map_err(|err| WatchError::Protocol {
+        let secret = Secret::parse(secret).map_err(|err| WatchError::Refused {
             reason: err.to_string(),
         })?;
         let pairing =
-            Pairing::new(secret, account_id, known).map_err(|err| WatchError::Protocol {
+            Pairing::new(secret, account_id, known).map_err(|err| WatchError::Refused {
                 reason: format!("{err:?}"),
             })?;
         Ok(PairingService {
