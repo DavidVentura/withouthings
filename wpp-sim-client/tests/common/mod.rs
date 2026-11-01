@@ -140,13 +140,22 @@ impl Renode {
             socket
         });
         socket.write_all(format!("{command}\n").as_bytes()).unwrap();
-        String::from_utf8_lossy(&read_to_prompt(socket, command))
-            .lines()
-            .map(|line| strip_colour(line).trim().to_string())
-            .filter(|line| !line.is_empty() && line != command && !line.starts_with(MONITOR_PROMPT))
-            .collect::<Vec<_>>()
-            .join(" ")
+        answer_after_echo(&String::from_utf8_lossy(&read_to_prompt(socket, command)), command)
     }
+}
+
+/// The monitor sometimes puts a colour code with no escape byte ahead of its
+/// echo, so what comes before the echo is not part of the answer.
+pub fn answer_after_echo(raw: &str, command: &str) -> String {
+    let (_, answer) = raw
+        .split_once(command)
+        .unwrap_or_else(|| panic!("the monitor did not echo {command:?}: {raw:?}"));
+    answer
+        .lines()
+        .map(|line| strip_colour(line).trim().to_string())
+        .filter(|line| !line.is_empty() && !line.starts_with(MONITOR_PROMPT))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn read_to_prompt(socket: &mut TcpStream, command: &str) -> Vec<u8> {
@@ -195,6 +204,19 @@ pub fn renode_binary() -> PathBuf {
         Err(_) => PathBuf::from(std::env::var("HOME").unwrap_or_default())
             .join("renode-portable/renode"),
     }
+}
+
+/// Link the source kernel against the app blob, for the rigs that run the result.
+pub fn relink() {
+    let relink = Command::new(repository().join("renode-sim/abi/relink.sh"))
+        .output()
+        .expect("abi/relink.sh runs");
+    assert!(
+        relink.status.success(),
+        "abi/relink.sh failed:\n{}",
+        String::from_utf8_lossy(&relink.stderr)
+    );
+    print!("{}", String::from_utf8_lossy(&relink.stdout));
 }
 
 pub fn require(prerequisites: &[(&str, &Path)]) {

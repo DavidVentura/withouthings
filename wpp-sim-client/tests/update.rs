@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use common::{client, renode_binary, repository, require, scratch, strip_colour, tail, Renode, Rig, Symbols};
+use common::{client, relink, renode_binary, repository, require, scratch, strip_colour, tail, Renode, Rig, Symbols};
 
 const BOOT_TIMEOUT: Duration = Duration::from_secs(180);
 /// The bootloader compares and then copies the whole bank over a modelled SPI
@@ -266,15 +266,7 @@ fn the_relinked_image_installs_through_the_update_path() {
     let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let started = Instant::now();
     let repository = repository();
-    let relink = Command::new(repository.join("renode-sim/abi/relink.sh"))
-        .output()
-        .expect("abi/relink.sh runs");
-    assert!(
-        relink.status.success(),
-        "abi/relink.sh failed:\n{}",
-        String::from_utf8_lossy(&relink.stderr)
-    );
-    print!("{}", String::from_utf8_lossy(&relink.stdout));
+    relink();
 
     let appl = repository.join("renode-sim/out/appl-relinked.bin");
     let case = Case {
