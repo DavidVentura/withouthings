@@ -1,0 +1,18 @@
+uxCriticalNesting starts at 0xaaaaaaaa rather than 0.
+
+The word at 0x20007208 is in .data with that value, as the kernel's own port has
+it, and xPortStartScheduler zeroes it. Before the scheduler runs, a critical
+section therefore leaves BASEPRI raised when it exits, because the count never
+reaches zero, so no kernel-aware interrupt runs until the first task does.
+
+--- a/CMSIS/nrf52/port_cmsis.c
++++ b/CMSIS/nrf52/port_cmsis.c
+@@ -71,7 +71,7 @@
+ 
+ /* Each task maintains its own interrupt status in the critical nesting
+ variable. */
+-static UBaseType_t uxCriticalNesting = 0;
++static UBaseType_t uxCriticalNesting = 0xaaaaaaaa;
+ 
+ /*
+  * Setup the timer to generate the tick interrupts.  The implementation in this
