@@ -8,18 +8,21 @@ const CATEGORIES: [Category; 2] = [Category(8), Category(9)];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
+    let mac_at = args.iter().position(|a| a == "--mac");
     let positional: Vec<&String> = args
         .iter()
+        .enumerate()
         .skip(1)
-        .filter(|a| !a.starts_with("--"))
+        .filter(|(index, a)| !a.starts_with("--") && mac_at.map(|at| at + 1) != Some(*index))
+        .map(|(_, a)| a)
         .collect();
     let (Some(capture), Some(db_path)) = (positional.first(), positional.get(1)) else {
-        eprintln!("usage: wppingest <btsnoop_hci.log> <out.db> [--mac AA:BB:..]");
+        eprintln!("usage: wppingest <btsnoop_hci.log> <out.db> --mac AA:BB:..");
         return ExitCode::FAILURE;
     };
-    let mac = match args.iter().position(|a| a == "--mac") {
-        Some(i) => args.get(i + 1).cloned().unwrap_or_default(),
-        None => "unknown".to_string(),
+    let Some(mac) = mac_at.and_then(|i| args.get(i + 1)).cloned() else {
+        eprintln!("usage: wppingest <btsnoop_hci.log> <out.db> --mac AA:BB:..");
+        return ExitCode::FAILURE;
     };
 
     let file = match std::fs::read(capture.as_str()) {
@@ -103,7 +106,7 @@ fn main() -> ExitCode {
     println!("would send      : {sends} frames, {deletes} deletes");
     println!();
     for table in ["sample", "workout", "ecg", "sync_state"] {
-        println!("{table:<12} {}", store.count(table).unwrap_or(-1));
+        println!("{table:<12} {}", store.count(table).expect("the table is countable"));
     }
     ExitCode::SUCCESS
 }

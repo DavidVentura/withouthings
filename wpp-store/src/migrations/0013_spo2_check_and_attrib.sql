@@ -1,7 +1,7 @@
 -- Each PPG AFib record is one background reading the classifier called AFib,
 -- not an alert: the watch alerts once a run of them is confirmed, and marks
 -- that record by its StoredMeasureMeta attrib (7, "confirmed"; the header flag
--- the store writer at 0x63394 sets from its confirmed out-parameter). Null on
+-- the store writer sets from its confirmed out-parameter). Null on
 -- rows kept before the attrib was.
 ALTER TABLE afib_episode ADD COLUMN attrib INTEGER;
 ALTER TABLE afib_episode ADD COLUMN unit_offset INTEGER;

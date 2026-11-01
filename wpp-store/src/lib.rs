@@ -28,6 +28,34 @@ const LEVEL_MAX_GAP: Duration = Duration::from_millis(10 * 60 * 1000);
 /// longest seen being most of a night.
 const LONGEST_WINDOW_SECS: i64 = 2 * 24 * 60 * 60;
 
+/// The windows overlapping a span, with ?2 and ?3 the span's ends and ?4
+/// LONGEST_WINDOW_SECS. One text, because a reader disagreeing with another
+/// reports a night as having data and then draws it empty.
+macro_rules! window_overlaps {
+    () => {
+        "started_at <= ?3 AND started_at >= ?2 - ?4 AND started_at + duration_secs >= ?2"
+    };
+}
+
+fn replace_features(tx: &Connection, device_id: DeviceId, features: &[Feature]) -> Result<(), Error> {
+    tx.execute(
+        "DELETE FROM feature WHERE device_id = ?1",
+        params![device_id],
+    )?;
+    for feature in features {
+        let (starts_at, expires_at) = match feature.schedule {
+            FeatureSchedule::Permanent => (0, 0),
+            FeatureSchedule::Window { start, end } => (start.0, end.0),
+        };
+        tx.execute(
+            "INSERT INTO feature (device_id, feature_id, starts_at, expires_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![device_id, feature.id.0, starts_at, expires_at],
+        )?;
+    }
+    Ok(())
+}
+
 pub struct Store {
     conn: Connection,
 }
@@ -385,11 +413,13 @@ impl Store {
         if seeded {
             return self.features(device_id);
         }
-        self.set_features(device_id, defaults)?;
-        self.conn.execute(
+        let tx = self.conn.transaction()?;
+        replace_features(&tx, device_id, defaults)?;
+        tx.execute(
             "UPDATE device SET features_seeded = 1 WHERE id = ?1",
             params![device_id],
         )?;
+        tx.commit()?;
         self.features(device_id)
     }
 
@@ -420,21 +450,7 @@ impl Store {
     /// than merges: the table has to be able to say a feature is off.
     pub fn set_features(&mut self, device_id: DeviceId, features: &[Feature]) -> Result<(), Error> {
         let tx = self.conn.transaction()?;
-        tx.execute(
-            "DELETE FROM feature WHERE device_id = ?1",
-            params![device_id],
-        )?;
-        for feature in features {
-            let (starts_at, expires_at) = match feature.schedule {
-                FeatureSchedule::Permanent => (0, 0),
-                FeatureSchedule::Window { start, end } => (start.0, end.0),
-            };
-            tx.execute(
-                "INSERT INTO feature (device_id, feature_id, starts_at, expires_at)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![device_id, feature.id.0, starts_at, expires_at],
-            )?;
-        }
+        replace_features(&tx, device_id, features)?;
         tx.commit()
     }
 
@@ -723,19 +739,26 @@ impl Store {
             return Ok(Vec::new());
         };
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT measured_at / 3600000 FROM sample
+            "SELECT MIN(measured_at), MAX(measured_at) FROM sample
               WHERE device_id = ?1 AND kind = ?4
                 AND measured_at >= ?2 AND measured_at < ?3
-              ORDER BY 1",
+              GROUP BY measured_at / 3600000",
         )?;
         let rows = stmt.query_map(params![device_id, first.0, last.0, kind.id()], |r| {
-            r.get::<_, i64>(0)
+            Ok((UnixMillis(r.get(0)?), UnixMillis(r.get(1)?)))
         })?;
 
+        // Edges need not fall on the hour, in a half-hour zone none do, so an
+        // hour with samples either side of one counts towards both windows.
         let mut found = vec![0; edges.windows()];
         for row in rows {
-            let hour = UnixMillis(row? * 3_600_000).max(first);
-            if let Some(window) = edges.window_of(hour) {
+            let (earliest, latest) = row?;
+            let opened = edges.window_of(earliest);
+            let closed = edges.window_of(latest);
+            if let Some(window) = opened {
+                found[window] += 1;
+            }
+            if let Some(window) = closed.filter(|window| Some(*window) != opened) {
                 found[window] += 1;
             }
         }
@@ -975,16 +998,14 @@ impl Store {
             .optional()
     }
 
-    /// Must match [`Store::activity_minutes`]'s windowing exactly: disagreeing
-    /// reports a night as having data and then draws it empty, or skips over
-    /// one while it still holds some.
+    /// Windowed like [`Store::activity_minutes`].
     pub fn has_staging(&self, device_id: DeviceId, from: UnixTime, to: UnixTime) -> Result<bool, Error> {
         self.conn.query_row(
-            "SELECT EXISTS (SELECT 1 FROM activity_minute
-                             WHERE device_id = ?1 AND started_at <= ?3
-                               AND started_at >= ?2 - ?4
-                               AND started_at + duration_secs >= ?2
-                               AND sleep_level IS NOT NULL)",
+            concat!(
+                "SELECT EXISTS (SELECT 1 FROM activity_minute WHERE device_id = ?1 AND ",
+                window_overlaps!(),
+                " AND sleep_level IS NOT NULL)"
+            ),
             params![device_id, from.0, to.0, LONGEST_WINDOW_SECS],
             |r| r.get(0),
         )
@@ -1000,13 +1021,11 @@ impl Store {
         to: UnixTime,
     ) -> Result<Vec<StageWindow>, Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT started_at, duration_secs, sleep_level
-               FROM activity_minute
-              WHERE device_id = ?1 AND started_at <= ?3
-                AND started_at >= ?2 - ?4
-                AND started_at + duration_secs >= ?2
-                AND sleep_level IS NOT NULL
-              ORDER BY started_at",
+            concat!(
+                "SELECT started_at, duration_secs, sleep_level FROM activity_minute WHERE device_id = ?1 AND ",
+                window_overlaps!(),
+                " AND sleep_level IS NOT NULL ORDER BY started_at"
+            ),
         )?;
         let rows = stmt.query_map(
             params![device_id, from.0, to.0, LONGEST_WINDOW_SECS],
@@ -1028,14 +1047,13 @@ impl Store {
         to: UnixTime,
     ) -> Result<Vec<Minute>, Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT started_at, duration_secs, steps, distance, ascent, descent,
-                    calories, met, walk_level, run_level, reco_v1, reco_v2,
-                    sleep_level
-               FROM activity_minute
-              WHERE device_id = ?1 AND started_at <= ?3
-                AND started_at >= ?2 - ?4
-                AND started_at + duration_secs >= ?2
-              ORDER BY started_at",
+            concat!(
+                "SELECT started_at, duration_secs, steps, distance, ascent, descent,
+                        calories, met, walk_level, run_level, reco_v1, reco_v2, sleep_level
+                   FROM activity_minute WHERE device_id = ?1 AND ",
+                window_overlaps!(),
+                " ORDER BY started_at"
+            ),
         )?;
         let rows = stmt.query_map(
             params![device_id, from.0, to.0, LONGEST_WINDOW_SECS],
@@ -1778,6 +1796,28 @@ mod tests {
             store.add_note(UnixMillis(3000), "").is_err(),
             "an empty note says nothing"
         );
+    }
+
+    #[test]
+    fn hours_worn_fall_in_the_window_their_samples_do_when_edges_miss_the_hour() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        const HOUR: i64 = 3_600_000;
+        let half_past = HOUR / 2;
+        let records = vec![
+            sample(half_past + 600_000, 60, Source::Stored),
+            sample(2 * HOUR + 60_000, 60, Source::Stored),
+            sample(2 * HOUR + half_past + 60_000, 60, Source::Stored),
+        ];
+        store.store(device, &records).unwrap();
+        let found = store
+            .windowed_hours(
+                device,
+                SampleKind::HeartRate,
+                &edges(&[0, half_past, 2 * HOUR + half_past, 4 * HOUR]),
+            )
+            .unwrap();
+        assert_eq!(found, vec![0, 2, 1]);
     }
 
     #[test]
