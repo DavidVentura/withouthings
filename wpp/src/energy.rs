@@ -1,4 +1,4 @@
-use crate::client::UserProfile;
+use crate::objects::TrackerUser;
 use crate::units::{
     Bpm, Centimetres, Kilocalories, Kilograms, Met, MetresPerSecond, UnixMillis, UnixTime, Years,
 };
@@ -58,7 +58,7 @@ pub struct Beat {
 }
 
 impl Wearer {
-    pub fn of(user: &UserProfile, at: UnixTime) -> Option<Wearer> {
+    pub fn of(user: &TrackerUser, at: UnixTime) -> Option<Wearer> {
         Some(Wearer {
             sex: Sex::from_wire(user.gender)?,
             weight: Kilograms(user.weight as f64 / 1000.0),
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn a_wearer_is_read_from_the_profile_in_their_own_units_at_the_time_asked() {
-        let profile = UserProfile {
+        let profile = TrackerUser {
             id: 1,
             weight: 75_500,
             height: 178,
@@ -394,7 +394,7 @@ mod tests {
 
     #[test]
     fn a_gender_the_watch_never_set_is_not_a_wearer() {
-        let user = UserProfile {
+        let user = TrackerUser {
             id: 1,
             weight: 75_000,
             height: 178,

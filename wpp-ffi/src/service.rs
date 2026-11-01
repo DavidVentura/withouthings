@@ -597,7 +597,7 @@ impl WatchService {
             .lock()
             .unwrap()
             .client
-            .set_user(&wpp::client::UserProfile {
+            .set_user(&wpp::objects::TrackerUser {
                 birth: birth_secs as i32,
                 weight: weight_grams,
                 height: height_cm,

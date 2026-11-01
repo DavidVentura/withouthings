@@ -9,11 +9,12 @@ use rusqlite::{params, Connection, OptionalExtension, ToSql};
 use wpp::activity::Minute;
 use wpp::client::{
     Stream, DeviceIdentity, Feature, FeatureId, FeatureSchedule, Record, SampleKind, Source,
-    UserProfile, BATTERY_STATE_CHARGING,
+    BATTERY_STATE_CHARGING,
 };
 use wpp::signal::{EcgMeasure, MeasureType, Recording, SampleFormat, Signal, SignalKind};
 use wpp::sleep::StageWindow;
 use wpp::client::Mac;
+use wpp::objects::TrackerUser;
 use wpp::sport::SportId;
 use wpp::track::Fix;
 use wpp::units::{Duration, Edges, Hundredths, Millis, SamplingHz, UnixMillis, UnixTime};
@@ -401,14 +402,14 @@ impl Store {
             .optional()
     }
 
-    pub fn watch_user(&self, device_id: DeviceId) -> Result<Option<UserProfile>, Error> {
+    pub fn watch_user(&self, device_id: DeviceId) -> Result<Option<TrackerUser>, Error> {
         self.conn
             .query_row(
                 "SELECT user_id, weight, height, gender, birth, first_name
                    FROM watch_user WHERE device_id = ?1",
                 params![device_id],
                 |r| {
-                    Ok(UserProfile {
+                    Ok(TrackerUser {
                         id: r.get(0)?,
                         weight: r.get(1)?,
                         height: r.get(2)?,

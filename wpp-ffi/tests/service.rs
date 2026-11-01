@@ -670,7 +670,7 @@ fn a_ride_with_a_route_is_not_charged_at_the_rate_the_heart_read() {
         let mut store = Store::open(&path).unwrap();
         let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let mut records = vec![
-            Record::User(wpp::client::UserProfile {
+            Record::User(wpp::objects::TrackerUser {
                 id: 1,
                 weight: 73_000,
                 height: 175,

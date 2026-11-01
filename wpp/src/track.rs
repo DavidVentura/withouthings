@@ -99,12 +99,24 @@ impl Limits {
 /// which is why there is no separate shape for that case.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Segment {
-    pub fixes: Vec<Fix>,
+    fixes: Vec<CleanFix>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Track {
-    pub segments: Vec<Segment>,
+    segments: Vec<Segment>,
+}
+
+/// A fix [`clean`] has judged and smoothed. Only it makes these, so a route read
+/// off a [`Track`] cannot be raw and cannot be cleaned a second time.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CleanFix(Fix);
+
+impl std::ops::Deref for CleanFix {
+    type Target = Fix;
+    fn deref(&self) -> &Fix {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -143,10 +155,8 @@ pub fn clean(fixes: &[Fix], limits: Limits) -> Track {
             continue;
         }
         if elapsed_ms > limits.gap_secs * 1000 {
-            segments.push(Segment {
-                fixes: std::mem::take(&mut current),
-            });
-            current.push(*fix);
+            segments.push(Segment::smoothed(&current));
+            current = vec![*fix];
             continue;
         }
         let metres = previous.position().distance_to(fix.position());
@@ -156,16 +166,9 @@ pub fn clean(fixes: &[Fix], limits: Limits) -> Track {
         current.push(*fix);
     }
     if !current.is_empty() {
-        segments.push(Segment { fixes: current });
+        segments.push(Segment::smoothed(&current));
     }
-    Track {
-        segments: segments
-            .into_iter()
-            .map(|segment| Segment {
-                fixes: smooth(&segment.fixes),
-            })
-            .collect(),
-    }
+    Track { segments }
 }
 
 /// Where a body must have been, given where it was going and how sure the
@@ -177,9 +180,9 @@ pub fn clean(fixes: &[Fix], limits: Limits) -> Track {
 /// The two axes are filtered separately. Nothing in the model couples north to
 /// east, so the four-state filter factors exactly into two of two states, and
 /// every matrix in it is small enough to write out.
-fn smooth(fixes: &[Fix]) -> Vec<Fix> {
+fn smooth(fixes: &[Fix]) -> Vec<CleanFix> {
     if fixes.len() < 3 {
-        return fixes.to_vec();
+        return fixes.iter().copied().map(CleanFix).collect();
     }
     let origin = fixes[0].position();
     let metres_per_degree = EARTH_RADIUS_M * std::f64::consts::PI / 180.0;
@@ -212,10 +215,12 @@ fn smooth(fixes: &[Fix]) -> Vec<Fix> {
     fixes
         .iter()
         .enumerate()
-        .map(|(index, fix)| Fix {
-            lat_e7: ((origin.lat + north[index] / metres_per_degree) * DEGREE_E7).round() as i32,
-            lon_e7: ((origin.lon + east[index] / east_per_degree) * DEGREE_E7).round() as i32,
-            ..*fix
+        .map(|(index, fix)| {
+            CleanFix(Fix {
+                lat_e7: ((origin.lat + north[index] / metres_per_degree) * DEGREE_E7).round() as i32,
+                lon_e7: ((origin.lon + east[index] / east_per_degree) * DEGREE_E7).round() as i32,
+                ..*fix
+            })
         })
         .collect()
 }
@@ -373,6 +378,19 @@ enum SpeedSource {
 }
 
 impl Segment {
+    fn smoothed(run: &[Fix]) -> Segment {
+        assert!(!run.is_empty(), "a segment is a run of at least one fix");
+        Segment { fixes: smooth(run) }
+    }
+
+    fn first(&self) -> &CleanFix {
+        &self.fixes[0]
+    }
+
+    fn last(&self) -> &CleanFix {
+        &self.fixes[self.fixes.len() - 1]
+    }
+
     fn legs(&self) -> impl Iterator<Item = Leg> + '_ {
         self.fixes.windows(2).map(|pair| Leg {
             ended_at: pair[1].at,
@@ -430,10 +448,10 @@ impl Track {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.segments.iter().all(|segment| segment.fixes.is_empty())
+        self.segments.is_empty()
     }
 
-    pub fn fixes(&self) -> impl Iterator<Item = &Fix> {
+    pub fn fixes(&self) -> impl Iterator<Item = &CleanFix> {
         self.segments
             .iter()
             .flat_map(|segment| segment.fixes.iter())
@@ -730,7 +748,6 @@ pub fn frame(track: &Track, view: View) -> Frame {
                 .collect();
             simplify(&points, SIMPLIFY_PX)
         })
-        .filter(|points| !points.is_empty())
         .collect();
 
     Frame {
@@ -752,12 +769,7 @@ pub fn cursor(track: &Track, view: View, at: UnixMillis) -> Option<PathPoint> {
     let segment = track
         .segments
         .iter()
-        .find(
-            |segment| match (segment.fixes.first(), segment.fixes.last()) {
-                (Some(first), Some(last)) => at.0 >= first.at.0 && at.0 <= last.at.0,
-                _ => false,
-            },
-        )
+        .find(|segment| at >= segment.first().at && at <= segment.last().at)
         .or_else(|| {
             // Between segments, or outside the route: the nearest end of the
             // nearest run beats drawing nothing.
@@ -767,12 +779,12 @@ pub fn cursor(track: &Track, view: View, at: UnixMillis) -> Option<PathPoint> {
                     .iter()
                     .map(|fix| (fix.at.0 - at.0).abs())
                     .min()
-                    .unwrap_or(i64::MAX)
+                    .expect("a segment holds at least one fix")
             })
         })?;
 
     let after = segment.fixes.iter().position(|fix| fix.at.0 >= at.0);
-    let last_index = segment.fixes.len().checked_sub(1)?;
+    let last_index = segment.fixes.len() - 1;
     let (before_index, next_index, part) = match after {
         None => (last_index, last_index, 0.0),
         Some(0) => (0, 0, 0.0),

@@ -248,29 +248,6 @@ pub struct WorkoutScreen {
     pub glyphs: Vec<(u8, crate::image::Mono)>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UserProfile {
-    pub id: u32,
-    pub weight: u32,
-    pub height: u32,
-    pub gender: u8,
-    pub birth: i32,
-    pub first_name: String,
-}
-
-impl UserProfile {
-    pub fn of(user: &crate::objects::TrackerUser) -> UserProfile {
-        UserProfile {
-            id: user.id,
-            weight: user.weight,
-            height: user.height,
-            gender: user.gender,
-            birth: user.birth,
-            first_name: user.first_name.clone(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DstChange {
     pub at: UnixTime,
@@ -406,7 +383,7 @@ pub enum Record {
         signal: Box<Signal>,
     },
     Identity(DeviceIdentity),
-    User(UserProfile),
+    User(TrackerUser),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1238,7 +1215,7 @@ impl Client {
                     records.push(Record::Identity(DeviceIdentity::of(reply)));
                 }
                 WppObject::TrackerUser(user) => {
-                    records.push(Record::User(UserProfile::of(user)));
+                    records.push(Record::User(user.clone()));
                 }
                 WppObject::WorkoutScreenList(list) => {
                     self.activities = Some(
@@ -1520,18 +1497,11 @@ impl Client {
         ])
     }
 
-    pub fn set_user(&mut self, profile: &UserProfile, now: UnixMillis) -> Vec<Action> {
+    pub fn set_user(&mut self, profile: &TrackerUser, now: UnixMillis) -> Vec<Action> {
         self.noted(now, vec![
             Action::Send(Frame::new(
                 Command::CMD_TRACKER_USER_SET,
-                vec![WppObject::TrackerUser(TrackerUser {
-                    id: profile.id,
-                    weight: profile.weight,
-                    height: profile.height,
-                    gender: profile.gender,
-                    birth: profile.birth,
-                    first_name: profile.first_name.clone(),
-                })],
+                vec![WppObject::TrackerUser(profile.clone())],
             )),
             Action::Send(Frame::new(Command::CMD_TRACKER_USER_GET, Vec::new())),
         ])

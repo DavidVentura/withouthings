@@ -1,7 +1,8 @@
 use std::ops::Range;
 
 use wpp::activity::{self, Session, SleepLevel};
-use wpp::client::{SampleKind, Source, UserProfile, BATTERY_STATE_CHARGING};
+use wpp::client::{SampleKind, Source, BATTERY_STATE_CHARGING};
+use wpp::objects::TrackerUser;
 use wpp::energy::{self, Beat, Reading, Wearer};
 use wpp::heart::{self, AtRest, Effort};
 use wpp::rhythm::{self, EcgReading, StoredPulse, WATCH_RATE_WITHIN_MS};
@@ -150,7 +151,7 @@ pub fn session_ceiling(
 pub fn workout_calories(
     store: &Store,
     device_id: DeviceId,
-    user: Option<&UserProfile>,
+    user: Option<&TrackerUser>,
     sport: SportId,
     from: UnixMillis,
     to: UnixMillis,
@@ -171,7 +172,7 @@ fn session_end(row: &WorkoutRow, now: UnixMillis) -> UnixMillis {
 fn workout_of(
     store: &Store,
     device_id: DeviceId,
-    user: Option<&UserProfile>,
+    user: Option<&TrackerUser>,
     row: WorkoutRow,
     now: UnixMillis,
 ) -> Result<Workout, Error> {
@@ -722,7 +723,7 @@ pub fn afib_alert(store: &Store, device_id: DeviceId, id: i64) -> Result<Option<
 mod tests {
     use super::*;
     use wpp::activity::Minute;
-    use wpp::client::{Record, UserProfile};
+    use wpp::client::Record;
     use wpp::rhythm::{Pattern, PulseCheck, PulseVerdict};
 
     const DAY_ONE: i64 = 1_786_662_000_000;
@@ -764,7 +765,7 @@ mod tests {
     fn two_days_and_a_session() -> (Store, DeviceId) {
         let mut store = Store::open_in_memory().unwrap();
         let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
-        let mut records = vec![Record::User(UserProfile {
+        let mut records = vec![Record::User(TrackerUser {
             id: 1,
             weight: 73_000,
             height: 175,
@@ -1105,7 +1106,7 @@ mod tests {
         let weights = SportId(16);
         assert_eq!(workout_calories(&store, device, None, weights, from, to).unwrap(), None);
 
-        let wearer = UserProfile {
+        let wearer = TrackerUser {
             id: 1,
             weight: 75_000,
             height: 178,
@@ -1118,7 +1119,7 @@ mod tests {
             .expect("a known wearer");
         assert!(burned.0 > 0.0);
 
-        let sex_unknown = UserProfile { gender: 9, ..wearer };
+        let sex_unknown = TrackerUser { gender: 9, ..wearer };
         assert_eq!(
             workout_calories(&store, device, Some(&sex_unknown), weights, from, to).unwrap(),
             None

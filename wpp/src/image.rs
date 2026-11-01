@@ -9,9 +9,9 @@ const IMAGE_TYPE: u8 = 0;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Mono {
-    pub width: u8,
-    pub height: u8,
-    pub bits: Vec<u8>,
+    width: u8,
+    height: u8,
+    bits: Vec<u8>,
 }
 
 impl Mono {
