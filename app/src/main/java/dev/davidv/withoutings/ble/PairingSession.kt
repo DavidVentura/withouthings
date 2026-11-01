@@ -243,6 +243,8 @@ object PairingSession {
                 is PairingProgress.Readopting -> PairingStage.Readopting
                 is PairingProgress.Paired -> PairingStage.Paired(progress.mac, progress.secret)
                 is PairingProgress.AlreadyAssociated -> PairingStage.AlreadyAssociated
+                is PairingProgress.UnreadableIdentity ->
+                    PairingStage.Failed("The watch named itself in a form that cannot be kept")
             }
             if (settled()) handler.post { stop() }
         }

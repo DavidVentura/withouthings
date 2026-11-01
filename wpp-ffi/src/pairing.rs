@@ -1,7 +1,9 @@
 use std::sync::Mutex;
 
 use wpp::capture::{FrameReassembler, StreamItem};
-use wpp::client::Credentials;
+use wpp::client::Secret;
+
+use crate::service::credentials_of;
 use wpp::pairing::{Pairing, PairingState};
 use wpp::Frame;
 
@@ -21,6 +23,7 @@ pub enum PairingProgress {
     Readopting,
     Paired { mac: String, secret: String },
     AlreadyAssociated,
+    UnreadableIdentity,
 }
 
 impl PairingProgress {
@@ -33,10 +36,11 @@ impl PairingProgress {
             }
             PairingState::Readopting(_) => PairingProgress::Readopting,
             PairingState::Paired(credentials) => PairingProgress::Paired {
-                mac: credentials.mac().to_string(),
-                secret: credentials.secret().to_string(),
+                mac: credentials.mac().as_str().to_string(),
+                secret: credentials.secret().as_str().to_string(),
             },
             PairingState::AlreadyAssociated => PairingProgress::AlreadyAssociated,
+            PairingState::UnreadableIdentity => PairingProgress::UnreadableIdentity,
         }
     }
 }
@@ -63,8 +67,11 @@ impl PairingService {
     ) -> Result<Self, WatchError> {
         let known = known
             .into_iter()
-            .map(|w| Credentials::new(&w.mac, w.secret))
-            .collect();
+            .map(|w| credentials_of(&w.mac, w.secret))
+            .collect::<Result<Vec<_>, _>>()?;
+        let secret = Secret::parse(secret).map_err(|err| WatchError::Protocol {
+            reason: err.to_string(),
+        })?;
         let pairing =
             Pairing::new(secret, account_id, known).map_err(|err| WatchError::Protocol {
                 reason: format!("{err:?}"),

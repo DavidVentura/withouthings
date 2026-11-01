@@ -1,13 +1,9 @@
-use crate::client::{probe_frame, refuses, rejects_probe, Credentials};
+use crate::client::{probe_frame, refuses, rejects_probe, Credentials, Mac, Secret};
 use crate::objects::{AccountKey, AdvKey, Cmderror};
 use crate::{Command, Frame, WppObject};
 
-pub const SECRET_LEN: usize = 32;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PairingError {
-    SecretLength { given: usize },
-    SecretNotAscii,
     AccountIdZero,
 }
 
@@ -15,11 +11,13 @@ pub enum PairingError {
 pub enum PairingState {
     Idle,
     Probing,
-    Associating { mac: String },
-    FinishingSetup { mac: String, keys: AccountKeys },
+    Associating { mac: Mac },
+    FinishingSetup { mac: Mac, keys: AccountKeys },
     Readopting(Credentials),
     Paired(Credentials),
     AlreadyAssociated,
+    /// The watch named itself in a form no credential could be kept under.
+    UnreadableIdentity,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +28,7 @@ pub enum AccountKeys {
 
 #[derive(Debug)]
 pub struct Pairing {
-    secret: String,
+    secret: Secret,
     account_id: u32,
     known: Vec<Credentials>,
     state: PairingState,
@@ -38,18 +36,10 @@ pub struct Pairing {
 
 impl Pairing {
     pub fn new(
-        secret: String,
+        secret: Secret,
         account_id: u32,
         known: Vec<Credentials>,
     ) -> Result<Pairing, PairingError> {
-        if secret.len() != SECRET_LEN {
-            return Err(PairingError::SecretLength {
-                given: secret.len(),
-            });
-        }
-        if !secret.is_ascii() {
-            return Err(PairingError::SecretNotAscii);
-        }
         if account_id == 0 {
             return Err(PairingError::AccountIdZero);
         }
@@ -92,7 +82,7 @@ impl Pairing {
                     return Vec::new();
                 };
                 let identity = challenge.mac.to_ascii_lowercase();
-                let Some(credentials) = self.known.iter().find(|c| c.mac() == identity).cloned()
+                let Some(credentials) = self.known.iter().find(|c| c.mac().as_str() == identity).cloned()
                 else {
                     self.state = PairingState::AlreadyAssociated;
                     return Vec::new();
@@ -112,16 +102,20 @@ impl Pairing {
                 }) else {
                     return Vec::new();
                 };
-                self.state = PairingState::Associating { mac: reply.mac };
+                let Ok(mac) = Mac::parse(&reply.mac) else {
+                    self.state = PairingState::UnreadableIdentity;
+                    return Vec::new();
+                };
+                self.state = PairingState::Associating { mac };
                 vec![Frame::new(
                     Command::CMD_ASSOCIATION_KEYS_SET,
                     vec![
                         WppObject::AccountKey(AccountKey {
                             id: self.account_id,
-                            secret: self.secret.clone(),
+                            secret: self.secret.as_str().to_string(),
                         }),
                         WppObject::AdvKey(AdvKey {
-                            secret: self.secret.clone(),
+                            secret: self.secret.as_str().to_string(),
                         }),
                     ],
                 )]
@@ -151,7 +145,7 @@ impl Pairing {
                 vec![Frame::new(Command::CMD_SETUP_OK, Vec::new())]
             }
             PairingState::FinishingSetup { mac, .. } if opcode == Command::CMD_SETUP_OK => {
-                self.state = PairingState::Paired(Credentials::new(mac, self.secret.clone()));
+                self.state = PairingState::Paired(Credentials::new(mac.clone(), self.secret.clone()));
                 Vec::new()
             }
             // Firmware that predates key association may predate SETUP_OK too.
@@ -160,7 +154,7 @@ impl Pairing {
                 mac,
                 keys: AccountKeys::Unsupported,
             } if refuses(frame, Command::CMD_SETUP_OK, Cmderror::ERR_CMDUNKN) => {
-                self.state = PairingState::Paired(Credentials::new(mac, self.secret.clone()));
+                self.state = PairingState::Paired(Credentials::new(mac.clone(), self.secret.clone()));
                 Vec::new()
             }
             _ => Vec::new(),
@@ -177,15 +171,23 @@ mod tests {
     const SECRET: &str = "gUf8Np69A4GvJxjY1XOcIHKQm2HcPZnO";
     const MAC: &str = "a4:7e:fa:44:d6:10";
 
+    fn mac(text: &str) -> Mac {
+        Mac::parse(text).unwrap()
+    }
+
+    fn secret(text: &str) -> Secret {
+        Secret::parse(text.to_string()).unwrap()
+    }
+
     fn pairing() -> Pairing {
-        Pairing::new(SECRET.to_string(), 19071510, Vec::new()).unwrap()
+        Pairing::new(secret(SECRET), 19071510, Vec::new()).unwrap()
     }
 
     fn knowing_the_watch() -> Pairing {
         Pairing::new(
-            "a different key, of the very same length".to_string()[..SECRET_LEN].to_string(),
+            secret(&"a different key, of the very same length"[..crate::client::SECRET_LEN]),
             19071510,
-            vec![Credentials::new(&MAC.to_ascii_uppercase(), SECRET.to_string())],
+            vec![Credentials::new(mac(&MAC.to_ascii_uppercase()), secret(SECRET))],
         )
         .unwrap()
     }
@@ -221,11 +223,16 @@ mod tests {
     }
 
     #[test]
-    fn a_secret_of_the_wrong_length_is_refused() {
-        assert_eq!(
-            Pairing::new("short".to_string(), 1, Vec::new()).err(),
-            Some(PairingError::SecretLength { given: 5 })
-        );
+    fn a_reply_naming_no_mac_ends_in_an_unreadable_identity() {
+        let mut pairing = pairing();
+        pairing.on_connected();
+        let mut reply = probe_reply();
+        let Some(WppObject::ProbeReply(r)) = reply.objects.first_mut() else {
+            panic!("a probe reply")
+        };
+        r.mac = "not a mac".to_string();
+        assert!(pairing.on_frame(&reply).is_empty());
+        assert_eq!(pairing.state(), &PairingState::UnreadableIdentity);
     }
 
     fn refusal(cmd: Command, err: i32) -> Frame {
@@ -236,7 +243,7 @@ mod tests {
     }
 
     fn paired() -> PairingState {
-        PairingState::Paired(Credentials::new(MAC, SECRET.to_string()))
+        PairingState::Paired(Credentials::new(mac(MAC), secret(SECRET)))
     }
 
     #[test]
@@ -279,7 +286,7 @@ mod tests {
         assert_eq!(
             pairing.state(),
             &PairingState::FinishingSetup {
-                mac: MAC.to_string(),
+                mac: mac(MAC),
                 keys: AccountKeys::Set,
             }
         );
@@ -298,7 +305,7 @@ mod tests {
         assert_eq!(
             pairing.state(),
             &PairingState::Associating {
-                mac: MAC.to_string(),
+                mac: mac(MAC),
             }
         );
     }
@@ -331,7 +338,7 @@ mod tests {
         pairing.on_frame(&Frame::new(Command::CMD_SETUP_OK, Vec::new()));
         assert_eq!(
             pairing.state(),
-            &PairingState::Paired(Credentials::new(MAC, SECRET.to_string()))
+            &PairingState::Paired(Credentials::new(mac(MAC), secret(SECRET)))
         );
     }
 
@@ -362,7 +369,7 @@ mod tests {
         pairing.on_frame(&Frame::new(Command::CMD_PROBE, Vec::new()));
         assert_eq!(
             pairing.state(),
-            &PairingState::Paired(Credentials::new(MAC, SECRET.to_string()))
+            &PairingState::Paired(Credentials::new(mac(MAC), secret(SECRET)))
         );
     }
 

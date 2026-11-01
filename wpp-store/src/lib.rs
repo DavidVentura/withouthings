@@ -13,6 +13,7 @@ use wpp::client::{
 };
 use wpp::signal::{EcgMeasure, MeasureType, Recording, SampleFormat, Signal, SignalKind};
 use wpp::sleep::StageWindow;
+use wpp::client::Mac;
 use wpp::sport::SportId;
 use wpp::track::Fix;
 use wpp::units::{Duration, Edges, Hundredths, Millis, SamplingHz, UnixMillis, UnixTime};
@@ -370,13 +371,13 @@ impl Store {
             .optional()
     }
 
-    pub fn device(&self, mac: &str) -> Result<DeviceId, Error> {
+    pub fn device(&self, mac: &Mac) -> Result<DeviceId, Error> {
         self.conn.execute(
             "INSERT OR IGNORE INTO device (mac) VALUES (?1)",
-            params![mac],
+            params![mac.as_str()],
         )?;
         self.conn
-            .query_row("SELECT id FROM device WHERE mac = ?1", params![mac], |r| {
+            .query_row("SELECT id FROM device WHERE mac = ?1", params![mac.as_str()], |r| {
                 r.get(0)
             })
     }
@@ -1713,7 +1714,7 @@ mod tests {
     #[test]
     fn a_scheduled_feature_keeps_its_window_across_the_round_trip() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let armed = Feature {
             id: FeatureId(9),
             schedule: FeatureSchedule::Window {
@@ -1728,7 +1729,7 @@ mod tests {
     #[test]
     fn the_defaults_are_seeded_once_and_an_emptied_set_stays_empty() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let defaults = vec![permanent(20), permanent(27)];
 
         assert_eq!(store.features_or_seed(device, &defaults).unwrap(), defaults);
@@ -1743,7 +1744,7 @@ mod tests {
     #[test]
     fn an_activity_window_survives_the_round_trip_and_re_storing_it() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let minute = Minute {
             duration: wpp::units::Duration::from_secs(60),
             steps: Some(94),
@@ -1770,7 +1771,7 @@ mod tests {
     #[test]
     fn a_window_straddling_the_start_of_the_span_is_read() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -1788,7 +1789,7 @@ mod tests {
     #[test]
     fn each_window_reports_its_own_peak() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -1830,7 +1831,7 @@ mod tests {
     #[test]
     fn hours_worn_fall_in_the_window_their_samples_do_when_edges_miss_the_hour() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         const HOUR: i64 = 3_600_000;
         let half_past = HOUR / 2;
         let records = vec![
@@ -1852,7 +1853,7 @@ mod tests {
     #[test]
     fn hours_worn_count_once_however_dense_the_readings() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         const HOUR: i64 = 3_600_000;
         let mut records: Vec<Record> = (0..3600)
             .map(|second| sample(HOUR + second * 1000, 120, Source::Live))
@@ -1870,7 +1871,7 @@ mod tests {
     #[test]
     fn re_storing_the_same_window_does_not_duplicate() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let batch = vec![
             sample(1000, 62, Source::Stored),
             sample(1060, 65, Source::Stored),
@@ -1886,7 +1887,7 @@ mod tests {
             StoredMeasureData, StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend,
         };
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let episode = Record::PpgAfib {
             measured_at: UnixTime(1785509120),
             signal: Box::new(Signal {
@@ -1937,7 +1938,7 @@ mod tests {
     fn readings_up_to_one_come_oldest_first_and_stop_at_it() {
         use wpp::objects::{StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend};
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let reading = |at: u32, attrib: u8| Record::PpgAfib {
             measured_at: UnixTime(at as i64),
             signal: Box::new(Signal {
@@ -1999,7 +2000,7 @@ mod tests {
             UnitConversionParameters,
         };
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let check = Record::Spo2Check {
             measured_at: UnixTime(1786729849),
             signal: Box::new(Signal {
@@ -2059,7 +2060,7 @@ mod tests {
     #[test]
     fn live_and_stored_samples_coexist() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -2075,7 +2076,7 @@ mod tests {
     #[test]
     fn a_workout_stop_completes_the_row_its_start_created() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -2109,7 +2110,7 @@ mod tests {
     #[test]
     fn a_dropped_workout_takes_the_row_its_start_created_with_it() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -2133,7 +2134,7 @@ mod tests {
     #[test]
     fn deleting_a_workout_keeps_its_samples_and_drops_its_marks() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -2166,7 +2167,7 @@ mod tests {
     #[test]
     fn deleting_a_workout_takes_the_route_recorded_under_it() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -2200,7 +2201,7 @@ mod tests {
     #[test]
     fn a_fix_survives_the_round_trip_with_every_field_it_arrived_with() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let bare = Fix {
             altitude_cm: None,
             accuracy_cm: None,
@@ -2219,7 +2220,7 @@ mod tests {
     #[test]
     fn a_fix_already_recorded_is_not_recorded_twice() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store.record_fixes(device, &[at(1_000_000)]).unwrap();
         store.record_fixes(device, &[at(1_000_000)]).unwrap();
 
@@ -2229,7 +2230,7 @@ mod tests {
     #[test]
     fn trimming_a_workout_pulls_its_end_back_and_drops_the_sets_after_it() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -2272,7 +2273,7 @@ mod tests {
     #[test]
     fn a_trim_outside_the_recorded_session_leaves_it_alone() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -2312,7 +2313,7 @@ mod tests {
     #[test]
     fn a_running_workout_has_no_end_to_trim() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -2334,7 +2335,7 @@ mod tests {
     #[test]
     fn a_series_reaches_one_point_past_each_end_of_the_window() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -2368,7 +2369,7 @@ mod tests {
     #[test]
     fn charging_periods_come_out_of_the_state_series() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let state = |at: i64, v: i64| Record::Sample {
             measured_at: wpp::units::UnixMillis(at),
             kind: wpp::client::SampleKind::BatteryState,
@@ -2422,7 +2423,7 @@ mod tests {
     #[test]
     fn a_level_that_is_not_moving_is_stored_every_ten_minutes() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let batch: Vec<Record> = (0..90)
             .map(|i| battery(i * 20_000, if i < 60 { 84 } else { 83 }))
             .collect();
@@ -2444,7 +2445,7 @@ mod tests {
     #[test]
     fn a_repeat_arriving_in_a_later_batch_is_still_dropped() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         for i in 0..40 {
             store.store(device, &[battery(i * 20_000, 84)]).unwrap();
         }
@@ -2458,7 +2459,7 @@ mod tests {
     #[test]
     fn instants_and_stored_series_pass_through_untouched() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -2506,7 +2507,7 @@ mod tests {
     #[test]
     fn deleting_a_running_workout_takes_everything_since_it_started() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -2530,7 +2531,7 @@ mod tests {
     fn an_ecg_row_that_cannot_be_a_recording_is_an_error_rather_than_a_clamp() {
         use wpp::objects::{StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend};
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let signal = Signal {
             meta: StoredSignalMeta {
                 r#type: 7,
@@ -2564,7 +2565,7 @@ mod tests {
     fn an_ecg_with_no_sampling_rate_is_reported_and_the_rest_still_listed() {
         use wpp::objects::{StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend};
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let recording = |at: i64, sampling_freq: u16| Record::Ecg {
             measured_at: UnixTime(at),
             signal: Box::new(Signal {
@@ -2622,7 +2623,7 @@ mod tests {
     fn a_delta_coded_ecg_is_kept_but_not_offered() {
         use wpp::objects::{StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend};
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let signal = Signal {
             meta: StoredSignalMeta {
                 r#type: 7,
@@ -2659,7 +2660,7 @@ mod tests {
     fn a_signal_type_that_is_no_ecg_lead_is_kept_and_named() {
         use wpp::objects::{StoredMeasureMeta, StoredSignalMeta, StoredSignalMetaExtend};
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let signal = Signal {
             meta: StoredSignalMeta {
                 r#type: 9_999,
@@ -2692,7 +2693,7 @@ mod tests {
     #[test]
     fn an_end_with_no_start_on_file_makes_no_row_and_is_named() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let unstarted = store
             .store(
                 device,
@@ -2710,7 +2711,7 @@ mod tests {
     #[test]
     fn a_watermark_never_moves_backwards() {
         let store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .set_watermark(device, Stream::Vasistas(8), UnixTime(5000))
             .unwrap();
@@ -2726,7 +2727,7 @@ mod tests {
     #[test]
     fn a_window_too_long_for_reads_to_find_is_kept_and_named() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let duration = Duration::from_secs(LONGEST_WINDOW_SECS + 1);
         let anomalies = store
             .store(
@@ -2744,7 +2745,7 @@ mod tests {
     #[test]
     fn a_window_of_negative_length_is_corrupt() {
         let store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .connection()
             .execute(
@@ -2765,7 +2766,7 @@ mod tests {
     #[test]
     fn a_walk_already_on_file_is_found_under_its_old_key() {
         let store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .connection()
             .execute_batch(&format!(

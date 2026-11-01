@@ -6,7 +6,7 @@ use wpp::activity;
 use wpp::ancs::{self, NotificationCenter, NotificationId};
 use wpp::capture::{FrameReassembler, StreamItem};
 use wpp::client::{
-    Action, Client, Credentials, Event, Feature, FeatureId, FeatureSchedule, SampleKind,
+    Action, Client, Credentials, Event, Feature, FeatureId, FeatureSchedule, Mac, SampleKind, Secret,
 };
 use wpp::image::{GlyphRequest, IconRequest, Mono};
 use wpp::signal::STORED_MEASURE_ATTRIB_CONFIRMED;
@@ -92,11 +92,12 @@ impl WatchService {
         ancs: Box<dyn AncsLink>,
         rasterizer: Box<dyn Rasterizer>,
     ) -> Result<Self, WatchError> {
+        let credentials = credentials_of(&mac, secret)?;
         let mut store = Store::open(&db_path)?;
-        let device_id = store.device(&mac)?;
+        let device_id = store.device(credentials.mac())?;
         let watermarks = store.watermarks(device_id, &STREAMS)?;
         let features = store.features_or_seed(device_id, &default_features())?;
-        let client = Client::new(Credentials::new(&mac, secret), watermarks, features);
+        let client = Client::new(credentials, watermarks, features);
         Ok(WatchService {
             inner: Mutex::new(Inner {
                 client,
@@ -1356,6 +1357,13 @@ fn edges_of(edges_ms: Vec<i64>) -> Result<wpp::units::Edges, WatchError> {
 }
 
 
+
+pub(crate) fn credentials_of(mac: &str, secret: String) -> Result<Credentials, WatchError> {
+    let refused = |reason: String| WatchError::Refused { reason };
+    let mac = Mac::parse(mac).map_err(|err| refused(err.to_string()))?;
+    let secret = Secret::parse(secret).map_err(|err| refused(err.to_string()))?;
+    Ok(Credentials::new(mac, secret))
+}
 
 impl WatchService {
     fn note_unreadable(&self, rows: &[impl std::fmt::Display]) {

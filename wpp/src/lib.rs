@@ -24,7 +24,7 @@ pub mod watch_config;
 pub use activity::{Minute, Session};
 pub use analysis::{detect_r_peaks, RPeaks};
 pub use ancs::{AncsError, ControlPoint, Notification, NotificationCenter, NotificationId};
-pub use client::{Action, Stream, Client, Credentials, Event, Record, SampleKind, Source};
+pub use client::{Action, Client, Credentials, Event, Mac, Record, SampleKind, Secret, Source, Stream};
 pub use codec::{ParseError, Reader, WppObjectCodec, Writer};
 pub use commands::Command;
 pub use energy::{burned, Beat, Sex, Wearer};

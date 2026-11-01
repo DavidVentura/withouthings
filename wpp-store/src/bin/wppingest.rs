@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
 use wpp::capture::{frames, Direction, StreamItem};
-use wpp::client::{Action, Stream, Client, Credentials, Event};
+use wpp::client::{Action, Stream, Client, Credentials, Event, Mac, Secret, SECRET_LEN};
 use wpp_store::Store;
 
 const STREAMS: [Stream; 2] = [Stream::Vasistas(8), Stream::Vasistas(9)];
@@ -47,11 +47,19 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let mac = match Mac::parse(&mac) {
+        Ok(mac) => mac,
+        Err(err) => {
+            eprintln!("{err}");
+            return ExitCode::FAILURE;
+        }
+    };
     let device = store.device(&mac).expect("device row");
     let watermarks = store.watermarks(device, &STREAMS).expect("watermarks");
 
     let mut client = Client::new(
-        Credentials::new(&mac, String::new()),
+        // A replay has no watch to prove anything to, so nothing reads this.
+        Credentials::new(mac, Secret::parse("0".repeat(SECRET_LEN)).expect("the length is the one asked for")),
         watermarks,
         store.features(device).expect("features"),
     );

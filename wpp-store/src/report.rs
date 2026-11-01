@@ -763,7 +763,7 @@ mod tests {
     /// so the window opens on a reading with no drop in front of it.
     fn two_days_and_a_session() -> (Store, DeviceId) {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let mut records = vec![Record::User(UserProfile {
             id: 1,
             weight: 73_000,
@@ -845,7 +845,7 @@ mod tests {
     #[test]
     fn a_session_trend_leaves_out_the_stretch_the_sensor_lost_the_wrist() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let opened = DAY_ONE + 12 * 3_600_000;
         let mut records = vec![
             Record::WorkoutStarted {
@@ -895,7 +895,7 @@ mod tests {
     #[test]
     fn a_night_trend_reads_only_the_windows_the_watch_staged() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let bed = DAY_ONE + 23 * 3_600_000;
         let mut records = vec![
             staged(bed, 30, 1),
@@ -944,7 +944,7 @@ mod tests {
     #[test]
     fn a_reading_is_read_against_the_rate_the_watch_logged_for_it() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let at = DAY_ONE + 2 * 3_600_000;
         store
             .store(device, &[rate(at + 45_000, 61, Source::Stored)])
@@ -971,7 +971,7 @@ mod tests {
     #[test]
     fn a_reading_with_no_rate_logged_for_it_is_left_unchecked() {
         let store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let row = reading_row(DAY_ONE);
         let reading = afib_reading(&store, device, &row, &row.intervals().unwrap(), &[]).unwrap();
         assert_eq!(reading.pulse.check, PulseCheck::NoWatchRate);
@@ -990,7 +990,7 @@ mod tests {
     #[test]
     fn a_minute_with_no_ascent_reported_is_no_point_on_the_climb() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         store
             .store(
                 device,
@@ -1021,7 +1021,7 @@ mod tests {
     #[test]
     fn zone_time_counts_a_session_whole_on_the_day_it_began() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let opened = DAY_ONE + DAY_MS - 5 * 60_000;
         let mut records = finished(opened, 10, 16);
         records.extend((0..=10).map(|minute| rate(opened + minute * 60_000, 130, Source::Stored)));
@@ -1041,7 +1041,7 @@ mod tests {
     #[test]
     fn the_waking_rate_leaves_out_a_session_and_its_recovery() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let opened = DAY_ONE + 12 * 3_600_000;
         let mut records = finished(opened, 30, 16);
         records.extend((0..30).map(|minute| rate(opened + minute * 60_000, 140, Source::Stored)));
@@ -1072,7 +1072,7 @@ mod tests {
     #[test]
     fn a_slow_ride_is_held_to_the_speed_it_actually_went() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let cycling = SportId(6);
         straight_ride(&mut store, device, DAY_ONE, 3.0);
         let from = UnixMillis(DAY_ONE);
@@ -1091,7 +1091,7 @@ mod tests {
     #[test]
     fn a_session_is_only_costed_for_a_wearer_the_watch_has_described() {
         let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let opened = DAY_ONE;
         store
             .store(

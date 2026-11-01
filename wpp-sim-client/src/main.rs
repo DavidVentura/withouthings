@@ -799,7 +799,7 @@ fn authenticate(link: &mut Link, association: dblib::Association) -> Result<Prob
     };
     let credentials = association.credentials();
     let identity = challenge.mac.to_ascii_lowercase();
-    if identity != credentials.mac() {
+    if identity != credentials.mac().as_str() {
         return Err(Failure::NotAuthenticated(format!(
             "the watch's identity {identity} is not the one the dump holds a secret for"
         )));

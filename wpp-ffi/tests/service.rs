@@ -394,7 +394,7 @@ fn reducing_a_series_for_drawing_keeps_peaks_and_troughs() {
     let path = db_path();
 
     let mut store = wpp_store::Store::open(&path).unwrap();
-    let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+    let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
     let records: Vec<Record> = (0..600)
         .map(|i| Record::Sample {
             measured_at: UnixMillis(1_000_000 + i * 1000),
@@ -433,7 +433,7 @@ fn trimming_a_session_moves_its_end_and_forgets_the_sets_after_it() {
     let path = db_path();
 
     let mut store = wpp_store::Store::open(&path).unwrap();
-    let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+    let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
     store
         .store(
             device,
@@ -668,7 +668,7 @@ fn a_ride_with_a_route_is_not_charged_at_the_rate_the_heart_read() {
     {
         // Seeded before the service opens the file, which takes it exclusively.
         let mut store = Store::open(&path).unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
         let mut records = vec![
             Record::User(wpp::client::UserProfile {
                 id: 1,
@@ -847,7 +847,7 @@ fn an_unreadable_ecg_is_left_out_of_the_list_and_told_once() {
     let recorder = Arc::new(Recorder::default());
     let path = db_path();
     let mut store = wpp_store::Store::open(&path).unwrap();
-    let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+    let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
     store
         .store(device, &[recording(1_000, 300), recording(2_000, 0)])
         .unwrap();
@@ -872,7 +872,7 @@ fn an_alert_keeps_the_readings_it_can_read_and_tells_of_the_rest() {
     let recorder = Arc::new(Recorder::default());
     let path = db_path();
     let store = wpp_store::Store::open(&path).unwrap();
-    let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+    let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
     store
         .connection()
         .execute_batch(&format!(

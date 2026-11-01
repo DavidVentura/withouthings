@@ -82,44 +82,104 @@ const MIN_WORKOUT_SECS: i64 = 30;
 const DRAINED_STORES: [SignalStore; 3] =
     [SignalStore::Ecg, SignalStore::Spo2, SignalStore::PpgAfib];
 
-#[derive(Clone, PartialEq, Eq)]
-pub struct Credentials {
-    mac: String,
-    secret: String,
+/// Six colon-separated bytes in lower case. The challenge answer hashes this
+/// text, so the case has to be settled before anything hashes or compares it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mac(String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MalformedMac(pub String);
+
+impl std::fmt::Display for MalformedMac {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} is not a MAC address", self.0)
+    }
 }
 
-impl std::fmt::Debug for Credentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Credentials")
-            .field("mac", &self.mac)
-            .field("secret", &"<redacted>")
-            .finish()
+impl Mac {
+    pub fn parse(text: &str) -> Result<Mac, MalformedMac> {
+        let well_formed = text.len() == 17
+            && text.split(':').all(|part| part.len() == 2 && part.bytes().all(|b| b.is_ascii_hexdigit()));
+        if !well_formed {
+            return Err(MalformedMac(text.to_string()));
+        }
+        Ok(Mac(text.to_ascii_lowercase()))
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+pub const SECRET_LEN: usize = 32;
+
+/// The association secret. It never prints, so a logged credential cannot leak it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Secret(String);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MalformedSecret {
+    Length { given: usize },
+    NotAscii,
+}
+
+impl std::fmt::Display for MalformedSecret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MalformedSecret::Length { given } => {
+                write!(f, "the secret is {given} bytes, not {SECRET_LEN}")
+            }
+            MalformedSecret::NotAscii => write!(f, "the secret is not ASCII"),
+        }
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<redacted>")
+    }
+}
+
+impl Secret {
+    pub fn parse(text: String) -> Result<Secret, MalformedSecret> {
+        if text.len() != SECRET_LEN {
+            return Err(MalformedSecret::Length { given: text.len() });
+        }
+        if !text.is_ascii() {
+            return Err(MalformedSecret::NotAscii);
+        }
+        Ok(Secret(text))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Credentials {
+    mac: Mac,
+    secret: Secret,
 }
 
 impl Credentials {
-    /// The answer hashes the MAC's text, so the case has to be settled before
-    /// anything hashes or compares it.
-    pub fn new(mac: &str, secret: String) -> Credentials {
-        Credentials {
-            mac: mac.to_ascii_lowercase(),
-            secret,
-        }
+    pub fn new(mac: Mac, secret: Secret) -> Credentials {
+        Credentials { mac, secret }
     }
 
-    pub fn mac(&self) -> &str {
+    pub fn mac(&self) -> &Mac {
         &self.mac
     }
 
-    pub fn secret(&self) -> &str {
+    pub fn secret(&self) -> &Secret {
         &self.secret
     }
 
     pub fn answer(&self, challenge: &[u8]) -> Vec<u8> {
-        let mut input = Vec::with_capacity(challenge.len() + self.mac.len() + self.secret.len());
+        let mut input = Vec::with_capacity(challenge.len() + self.mac.0.len() + self.secret.0.len());
         input.extend_from_slice(challenge);
-        input.extend_from_slice(self.mac.as_bytes());
-        input.extend_from_slice(self.secret.as_bytes());
+        input.extend_from_slice(self.mac.0.as_bytes());
+        input.extend_from_slice(self.secret.0.as_bytes());
         sha1(&input).to_vec()
     }
 
@@ -131,7 +191,7 @@ impl Credentials {
                     answer: self.answer(&challenge.challenge),
                 }),
                 WppObject::ProbeChallenge(ProbeChallenge {
-                    mac: self.mac.clone(),
+                    mac: self.mac.0.clone(),
                     challenge: vec![0; 16],
                 }),
             ],
@@ -1950,7 +2010,10 @@ mod tests {
     use crate::objects::Null;
 
     fn credentials() -> Credentials {
-        Credentials::new("a4:7e:fa:44:d6:10", "gUf8Np69A4GvJxjY1XOcIHKQm2HcPZnO".to_string())
+        Credentials::new(
+            Mac::parse("a4:7e:fa:44:d6:10").unwrap(),
+            Secret::parse("gUf8Np69A4GvJxjY1XOcIHKQm2HcPZnO".to_string()).unwrap(),
+        )
     }
 
     #[test]
@@ -4170,6 +4233,28 @@ mod tests {
             ],
         ));
         assert_eq!(client.current(), reached, "midnight must not rewind it");
+    }
+
+    #[test]
+    fn a_mac_settles_its_case_and_refuses_anything_else() {
+        assert_eq!(Mac::parse("A4:7E:FA:44:D6:10").unwrap().as_str(), "a4:7e:fa:44:d6:10");
+        for bad in ["", "a4:7e:fa:44:d6", "a4:7e:fa:44:d6:1g", "a47efa44d610aaaaa"] {
+            assert!(Mac::parse(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_secret_of_the_wrong_length_or_alphabet_is_refused_and_never_prints() {
+        assert_eq!(
+            Secret::parse("short".to_string()),
+            Err(MalformedSecret::Length { given: 5 })
+        );
+        assert_eq!(
+            Secret::parse("é".repeat(16)),
+            Err(MalformedSecret::NotAscii)
+        );
+        let secret = Secret::parse("gUf8Np69A4GvJxjY1XOcIHKQm2HcPZnO".to_string()).unwrap();
+        assert!(!format!("{secret:?}").contains("gUf8"));
     }
 
     #[test]

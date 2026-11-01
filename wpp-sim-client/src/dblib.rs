@@ -15,6 +15,7 @@ pub enum DumpError {
     NoValidRegion,
     Missing(&'static str),
     SecretNotAscii,
+    MalformedMac(wpp::client::MalformedMac),
 }
 
 impl fmt::Display for DumpError {
@@ -23,14 +24,15 @@ impl fmt::Display for DumpError {
             DumpError::NoValidRegion => write!(f, "no dblib region in the dump has a valid checksum"),
             DumpError::Missing(what) => write!(f, "the dump's dblib holds no {what}"),
             DumpError::SecretNotAscii => write!(f, "the association secret is not 32 ASCII bytes"),
+            DumpError::MalformedMac(err) => write!(f, "the dump's dblib holds {err}"),
         }
     }
 }
 
 /// What a caller needs out of a flash dump to answer a probe challenge.
 pub struct Association {
-    pub mac: String,
-    pub secret: String,
+    pub mac: wpp::client::Mac,
+    pub secret: wpp::client::Secret,
 }
 
 impl fmt::Debug for Association {
@@ -38,16 +40,16 @@ impl fmt::Debug for Association {
         write!(
             f,
             "Association {{ mac: {}, secret: {} bytes, fnv1a {:08x} }}",
-            self.mac,
-            self.secret.len(),
-            fnv1a(self.secret.as_bytes())
+            self.mac.as_str(),
+            self.secret.as_str().len(),
+            fnv1a(self.secret.as_str().as_bytes())
         )
     }
 }
 
 impl Association {
     pub fn credentials(&self) -> wpp::client::Credentials {
-        wpp::client::Credentials::new(&self.mac, self.secret.clone())
+        wpp::client::Credentials::new(self.mac.clone(), self.secret.clone())
     }
 }
 
@@ -69,8 +71,10 @@ pub fn association(dump: &[u8]) -> Result<Association, DumpError> {
         return Err(DumpError::SecretNotAscii);
     }
     Ok(Association {
-        mac: String::from_utf8_lossy(trim_nul(&mac.1)).to_ascii_lowercase(),
-        secret: String::from_utf8_lossy(secret).into_owned(),
+        mac: wpp::client::Mac::parse(&String::from_utf8_lossy(trim_nul(&mac.1)))
+            .map_err(DumpError::MalformedMac)?,
+        secret: wpp::client::Secret::parse(String::from_utf8_lossy(secret).into_owned())
+            .map_err(|_| DumpError::SecretNotAscii)?,
     })
 }
 
@@ -170,8 +174,8 @@ mod tests {
             (IE_AUTH_DATA, &[secret.as_slice(), &[0]].concat()),
         ]));
         let association = association(&dump).unwrap();
-        assert_eq!(association.mac, "a4:7e:fa:44:d6:10");
-        assert_eq!(association.secret.as_bytes(), secret);
+        assert_eq!(association.mac.as_str(), "a4:7e:fa:44:d6:10");
+        assert_eq!(association.secret.as_str().as_bytes(), secret);
     }
 
     #[test]
@@ -180,7 +184,7 @@ mod tests {
         let auth = [secret.as_slice(), &[0]].concat();
         let mut dump = region_counted(1, &[(IE_MAC, b"11:22:33:44:55:66\0"), (IE_AUTH_DATA, &auth)]);
         dump.extend(region_counted(2, &[(IE_MAC, b"a4:7e:fa:44:d6:10\0"), (IE_AUTH_DATA, &auth)]));
-        assert_eq!(association(&dump).unwrap().mac, "a4:7e:fa:44:d6:10");
+        assert_eq!(association(&dump).unwrap().mac.as_str(), "a4:7e:fa:44:d6:10");
     }
 
     #[test]
@@ -194,6 +198,6 @@ mod tests {
             (IE_MAC, b"11:22:33:44:55:66\0"),
             (IE_AUTH_DATA, &[secret.as_slice(), &[0]].concat()),
         ]));
-        assert_eq!(association(&broken).unwrap().mac, "11:22:33:44:55:66");
+        assert_eq!(association(&broken).unwrap().mac.as_str(), "11:22:33:44:55:66");
     }
 }
