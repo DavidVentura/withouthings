@@ -81,15 +81,15 @@ fn main() -> ExitCode {
                 } => {
                     batches += 1;
                     records += batch.len();
-                    let unstarted = match store.store(device, &batch) {
-                        Ok(unstarted) => unstarted,
+                    let anomalies = match store.store(device, &batch) {
+                        Ok(anomalies) => anomalies,
                         Err(err) => {
                             eprintln!("store failed: {err}");
                             return ExitCode::FAILURE;
                         }
                     };
-                    for workout in unstarted {
-                        eprintln!("{workout}");
+                    for anomaly in anomalies {
+                        eprintln!("{anomaly}");
                     }
                     queue.extend(client.handle(Event::Stored { token }));
                 }

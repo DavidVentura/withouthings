@@ -15,6 +15,10 @@ const MILLIS_PER_MINUTE: f64 = 60_000.0;
 
 /// A rate stands in for the stretch it was measured over. Past this the watch
 /// stopped reporting rather than the wearer holding one rate for that long.
+///
+/// Energy charges a longer gap for this much, because a body burns through a
+/// dropout, while zone time counts none of it, because nobody measured which
+/// zone that was.
 pub(crate) const LONGEST_HELD_MS: i64 = 120_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

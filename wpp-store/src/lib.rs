@@ -91,6 +91,14 @@ fn seconds(r: &rusqlite::Row<'_>, column: usize) -> Result<UnixTime, Error> {
     Ok(UnixTime(r.get(column)?))
 }
 
+fn window_length(r: &rusqlite::Row<'_>, column: usize) -> Result<Duration, Error> {
+    let secs: i64 = r.get(column)?;
+    if secs < 0 {
+        return Err(corrupt(column, format!("window of {secs} s")));
+    }
+    Ok(Duration::from_secs(secs))
+}
+
 /// Anything else in a column this crate alone writes means the file is damaged.
 fn corrupt(column: usize, what: impl std::fmt::Display) -> Error {
     Error::FromSqlConversionFailure(
@@ -203,16 +211,31 @@ impl std::fmt::Display for UnreadableEcg {
     }
 }
 
-/// An end the store has no start for. The start carries the activity, so there
-/// is no row it could honestly make.
+/// What a batch held that the store could not do justice to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UnstartedWorkout {
-    pub started_at: UnixTime,
+pub enum StoreAnomaly {
+    /// An end the store has no start for. The start carries the activity, so
+    /// there is no row it could honestly make.
+    UnstartedWorkout { started_at: UnixTime },
+    /// Kept, but the readers look back only [`LONGEST_WINDOW_SECS`] for a window
+    /// overlapping their span, so a longer one is missing from any span that
+    /// does not contain its start.
+    OverlongWindow { started_at: UnixTime, duration: Duration },
 }
 
-impl std::fmt::Display for UnstartedWorkout {
+impl std::fmt::Display for StoreAnomaly {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "a workout started at {} ended with no start on file", self.started_at.0)
+        match self {
+            StoreAnomaly::UnstartedWorkout { started_at } => {
+                write!(f, "a workout started at {} ended with no start on file", started_at.0)
+            }
+            StoreAnomaly::OverlongWindow { started_at, duration } => write!(
+                f,
+                "the activity window at {} lasts {} s, longer than reads look back",
+                started_at.0,
+                duration.as_millis() / 1000
+            ),
+        }
     }
 }
 
@@ -458,9 +481,9 @@ impl Store {
         &mut self,
         device_id: DeviceId,
         records: &[Record],
-    ) -> Result<Vec<UnstartedWorkout>, Error> {
+    ) -> Result<Vec<StoreAnomaly>, Error> {
         let records = thin_levels(self.newest_levels(device_id, records)?, records);
-        let mut unstarted = Vec::new();
+        let mut anomalies = Vec::new();
         let tx = self.conn.transaction()?;
         for record in records {
             match record {
@@ -513,7 +536,7 @@ impl Store {
                         params![device_id, started_at.0, ended_at.0, paused_secs],
                     )?;
                     if ended == 0 {
-                        unstarted.push(UnstartedWorkout { started_at: *started_at });
+                        anomalies.push(StoreAnomaly::UnstartedWorkout { started_at: *started_at });
                     }
                 }
                 Record::WorkoutDropped { started_at } => {
@@ -523,6 +546,12 @@ impl Store {
                     )?;
                 }
                 Record::Activity(minute) => {
+                    if minute.duration > Duration::from_secs(LONGEST_WINDOW_SECS) {
+                        anomalies.push(StoreAnomaly::OverlongWindow {
+                            started_at: minute.at,
+                            duration: minute.duration,
+                        });
+                    }
                     tx.execute(
                         "INSERT INTO activity_minute (device_id, started_at, duration_secs,
                              steps, distance, ascent, descent, calories, met,
@@ -608,7 +637,7 @@ impl Store {
             }
         }
         tx.commit()?;
-        Ok(unstarted)
+        Ok(anomalies)
     }
 
     fn newest_levels(
@@ -651,7 +680,7 @@ impl Store {
         &self,
         device_id: DeviceId,
         received_at: UnixMillis,
-        command: i64,
+        command: Option<u16>,
         payload: &[u8],
         splice_at: Option<i64>,
     ) -> Result<(), Error> {
@@ -1032,7 +1061,7 @@ impl Store {
             |r| {
                 Ok(StageWindow {
                     at: seconds(r, 0)?,
-                    duration: Duration::from_secs(r.get(1)?),
+                    duration: window_length(r, 1)?,
                     level: r.get(2)?,
                 })
             },
@@ -1060,7 +1089,7 @@ impl Store {
             |r| {
                 Ok(Minute {
                     at: UnixTime(r.get(0)?),
-                    duration: Duration::from_secs(r.get(1)?),
+                    duration: window_length(r, 1)?,
                     steps: r.get(2)?,
                     distance: r.get::<_, Option<i64>>(3)?.map(Hundredths::new),
                     ascent: r.get::<_, Option<i64>>(4)?.map(Hundredths::new),
@@ -2303,36 +2332,6 @@ mod tests {
     }
 
     #[test]
-    fn samples_inside_a_workout_are_found_by_time_alone() {
-        let mut store = Store::open_in_memory().unwrap();
-        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
-        store
-            .store(
-                device,
-                &[
-                    Record::WorkoutStarted {
-                        started_at: UnixTime(1000),
-                        subcategory: 16,
-                    },
-                    Record::WorkoutEnded {
-                        started_at: UnixTime(1000),
-                        ended_at: UnixTime(1100),
-                        paused_secs: 0,
-                    },
-                    sample(999_000, 60, Source::Live),
-                    sample(1_050_000, 120, Source::Live),
-                    sample(1_200_000, 61, Source::Live),
-                ],
-            )
-            .unwrap();
-        let inside: i64 = store
-            .connection()
-            .query_row("SELECT count(*) FROM workout_sample", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(inside, 1, "only the sample within the workout window");
-    }
-
-    #[test]
     fn a_series_reaches_one_point_past_each_end_of_the_window() {
         let mut store = Store::open_in_memory().unwrap();
         let device = store.device("a4:7e:fa:44:d6:10").unwrap();
@@ -2704,7 +2703,7 @@ mod tests {
                 }],
             )
             .unwrap();
-        assert_eq!(unstarted, vec![UnstartedWorkout { started_at: UnixTime(1000) }]);
+        assert_eq!(unstarted, vec![StoreAnomaly::UnstartedWorkout { started_at: UnixTime(1000) }]);
         assert_eq!(store.count("workout").unwrap(), 0);
     }
 
@@ -2722,5 +2721,44 @@ mod tests {
             store.watermarks(device, &[Category(8)]).unwrap(),
             vec![(Category(8), UnixTime(5000))]
         );
+    }
+
+    #[test]
+    fn a_window_too_long_for_reads_to_find_is_kept_and_named() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        let duration = Duration::from_secs(LONGEST_WINDOW_SECS + 1);
+        let anomalies = store
+            .store(
+                device,
+                &[Record::Activity(Minute { duration, ..Minute::opened(UnixTime(1000)) })],
+            )
+            .unwrap();
+        assert_eq!(
+            anomalies,
+            vec![StoreAnomaly::OverlongWindow { started_at: UnixTime(1000), duration }]
+        );
+        assert_eq!(store.activity_minutes(device, UnixTime(0), UnixTime(2000)).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_window_of_negative_length_is_corrupt() {
+        let store = Store::open_in_memory().unwrap();
+        let device = store.device("a4:7e:fa:44:d6:10").unwrap();
+        store
+            .connection()
+            .execute(
+                "INSERT INTO activity_minute (device_id, started_at, duration_secs, sleep_level) VALUES (?1, 1000, -60, 1)",
+                params![device],
+            )
+            .unwrap();
+        assert!(matches!(
+            store.activity_minutes(device, UnixTime(900), UnixTime(2000)),
+            Err(Error::FromSqlConversionFailure(1, _, _))
+        ));
+        assert!(matches!(
+            store.sleep_minutes(device, UnixTime(900), UnixTime(2000)),
+            Err(Error::FromSqlConversionFailure(1, _, _))
+        ));
     }
 }

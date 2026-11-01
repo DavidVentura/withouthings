@@ -180,11 +180,10 @@ impl WatchService {
         let kept = {
             let store = self.store.lock().unwrap();
             undecoded.iter().try_for_each(|bytes| {
-                let command = Frame::declared_command(bytes).unwrap_or(0);
                 store.store_undecoded(
                     self.device_id,
                     UnixMillis(received_at_ms),
-                    command as i64,
+                    Frame::declared_command(bytes),
                     bytes,
                     Frame::splice_offset(bytes).map(|at| at as i64),
                 )
@@ -474,6 +473,7 @@ impl WatchService {
         };
         drop(store);
         self.transport.changed();
+        self.note_unknown_sports([trimmed.row.sport()]);
         Ok(workout_summary(trimmed))
     }
 
@@ -808,6 +808,7 @@ impl WatchService {
             .client
             .activities()
             .unwrap_or_default();
+        self.note_unknown_sports(current.iter().map(|id| SportId(*id)));
         let mut activities: Vec<Activity> = current
             .iter()
             .map(|id| Activity {
@@ -842,6 +843,7 @@ impl WatchService {
                 reason: "the watch has not said what size glyphs it wants yet".to_string(),
             });
         }
+        self.note_unknown_sports(ids.iter().map(|id| SportId(*id)));
         let screens: Vec<wpp::client::WorkoutScreen> = ids
             .iter()
             .map(|id| {
@@ -1363,6 +1365,17 @@ impl WatchService {
         }
     }
 
+    // An id the table lacks still draws and still counts, on stand-in values
+    // that want replacing with the real ones.
+    fn note_unknown_sports(&self, ids: impl IntoIterator<Item = SportId>) {
+        let unknown: Vec<String> = ids
+            .into_iter()
+            .filter(|id| sport::find(*id).is_none())
+            .map(|id| format!("activity {} is not in the activity table", id.0))
+            .collect();
+        self.note_unreadable(&unknown);
+    }
+
     fn enabled_features(&self) -> Vec<Feature> {
         self.inner.lock().unwrap().client.features(now().to_seconds())
     }
@@ -1398,8 +1411,8 @@ impl WatchService {
                 Action::Store { .. } if unkept => {}
                 Action::Store { token, records } => {
                     let stored = self.store.lock().unwrap().store(self.device_id, &records);
-                    let unstarted = match stored {
-                        Ok(unstarted) => unstarted,
+                    let anomalies = match stored {
+                        Ok(anomalies) => anomalies,
                         Err(error) => {
                             failure.get_or_insert(error.into());
                             unkept = true;
@@ -1408,7 +1421,7 @@ impl WatchService {
                             continue;
                         }
                     };
-                    self.note_unreadable(&unstarted);
+                    self.note_unreadable(&anomalies);
                     changed = true;
                     let released = self
                         .inner

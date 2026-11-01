@@ -12,7 +12,8 @@ pub struct Band {
 
 impl Band {
     fn duration_ms(&self) -> i64 {
-        (self.to - self.from).as_millis().max(0)
+        assert!(self.to >= self.from, "a band ending before it starts: {self:?}");
+        (self.to - self.from).as_millis()
     }
 }
 
@@ -62,14 +63,12 @@ pub fn night(minutes: &[Minute]) -> Night {
 
     let stages = merge_adjacent(minutes.iter().filter_map(|minute| {
         let (from, to) = (minute.at.to_millis(), minute.ended_at().to_millis());
-        let level = match minute.sleep_level {
-            Some(level) => SleepLevel::from_wire(level)?,
-            None => SleepLevel::Awake,
-        };
+        // A minute the watch did not stage says nothing about being awake, so
+        // it is a gap rather than a waking the score would charge for.
+        let level = SleepLevel::from_wire(minute.sleep_level?)?;
         // The night runs from the first minute asleep to the last, so being
         // awake outside that is time in bed and not part of it. The watch
-        // reports those minutes as Awake rather than leaving them out, which
-        // is indistinguishable from the gaps filled in above.
+        // reports those minutes as Awake rather than leaving them out.
         if level == SleepLevel::Awake {
             let night = asleep.as_ref()?;
             if from < night.start || to > night.end {
@@ -424,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn a_minute_with_no_stage_is_assumed_awake_inside_the_night_and_dropped_outside_it() {
+    fn a_minute_with_no_stage_is_a_gap_in_the_night_and_costs_no_waking() {
         let drawn = night(&[
             minute(0, 10, None),
             minute(10, 10, Some(LIGHT)),
@@ -435,7 +434,6 @@ mod tests {
             drawn.stages,
             vec![
                 band(10, 10, SleepLevel::Light),
-                band(20, 10, SleepLevel::Awake),
                 band(30, 10, SleepLevel::Light),
             ]
         );

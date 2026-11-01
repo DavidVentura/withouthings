@@ -1035,8 +1035,11 @@ impl Client {
                 actions.extend(self.on_store_frame(&frame, received_at));
             }
             (State::Finished, Command::CMD_SYNC_REQUEST) => {
+                // Only a request of this type says the dump has something in it.
+                let wants_dump = first!(frame, SyncRequest)
+                    .is_some_and(|request| request.r#type == crate::objects::SyncRequest::TYPE_DEBUG_DUMP);
                 let walk = self.sync_now(received_at);
-                if walk.is_empty() {
+                if walk.is_empty() && wants_dump {
                     actions.extend(self.drain_dump(received_at));
                 } else {
                     actions.extend(walk);
@@ -2754,6 +2757,39 @@ mod tests {
         assert!(
             sent(&actions).contains(&Command::CMD_VASISTAS_GET),
             "the walk starts again"
+        );
+    }
+
+    #[test]
+    fn a_background_sync_request_never_opens_the_dump() {
+        use crate::objects::{Null, SyncRequest};
+        let mut client = authenticated();
+        client.handle(Event::Frame {
+            frame: Frame::new(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]),
+            received_at: UnixMillis(0),
+        });
+        stores_empty(&mut client, 0);
+        let ask = |ms: i64| Event::Frame {
+            frame: Frame::new(
+                Command::CMD_SYNC_REQUEST,
+                vec![WppObject::SyncRequest(SyncRequest {
+                    r#type: SyncRequest::TYPE_BACKGROUND_SYNC,
+                    reserved: 0,
+                })],
+            ),
+            received_at: UnixMillis(ms),
+        };
+        client.handle(ask(1_000));
+        client.handle(Event::Frame {
+            frame: Frame::new(Command::CMD_VASISTAS_GET, vec![WppObject::Null(Null {})]),
+            received_at: UnixMillis(2_000),
+        });
+        stores_empty(&mut client, 2_000);
+
+        assert_eq!(
+            sent(&client.handle(ask(3_000))),
+            vec![Command::CMD_SYNC_REQUEST.with_channel(Channel::SlaveRequest)],
+            "acknowledged, nothing more"
         );
     }
 
