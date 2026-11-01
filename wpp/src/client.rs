@@ -70,6 +70,9 @@ const MIN_REFRESH_INTERVAL_MS: i64 = 300_000;
 const MIN_WALK_INTERVAL_MS: i64 = 900_000;
 const MIN_DUMP_INTERVAL_MS: i64 = 900_000;
 const SILENCE_TIMEOUT_MS: i64 = 90_000;
+/// The watch measures once a second but its readings carry no time and share
+/// radio events, so they arrive in bunches and their arrival is not their time.
+const LIVE_HR_PERIOD: Duration = Duration::from_millis(1_000);
 /// A link can stay up for days, and the watch's own clock drifts in that time.
 const CLOCK_RESEND_INTERVAL_MS: i64 = 6 * 3_600_000;
 const SCREEN_SLOTS: usize = 24;
@@ -529,6 +532,7 @@ struct Link {
     busy_retries: u32,
     last_heard: Option<UnixMillis>,
     last_spoke: Option<UnixMillis>,
+    last_live_hr: Option<UnixMillis>,
     measuring: Option<i16>,
     /// An ECG asked for by name when its measurement stopped. It runs alongside
     /// whatever the state is doing.
@@ -545,6 +549,7 @@ impl Link {
             busy_retries: 0,
             last_heard: None,
             last_spoke: None,
+            last_live_hr: None,
             measuring: None,
             fetching_ecg: false,
             signals: SignalCollector::new(),
@@ -1210,7 +1215,12 @@ impl Client {
                     records.push(Record::live_sample(received_at, SampleKind::BatteryMillivolts, battery.battery_mv as i64));
                 }
                 WppObject::LiveHr(live) if live.hr > 0 => {
-                    records.push(Record::live_sample(received_at, SampleKind::HeartRate, live.hr as i64));
+                    let at = self
+                        .link
+                        .last_live_hr
+                        .map_or(received_at, |last| received_at.max(last + LIVE_HR_PERIOD));
+                    self.link.last_live_hr = Some(at);
+                    records.push(Record::live_sample(at, SampleKind::HeartRate, live.hr as i64));
                 }
                 WppObject::StartTime(start)
                     if frame.command.opcode() == Command::CMD_WORKOUT_START
@@ -4118,6 +4128,38 @@ mod tests {
             ],
         ));
         assert_eq!(client.current(), reached, "midnight must not rewind it");
+    }
+
+    #[test]
+    fn live_rates_arriving_together_are_a_second_apart() {
+        use crate::objects::LiveHr;
+        let mut client = synced();
+        let times: Vec<i64> = [0, 10, 2_040, 2_050, 9_000]
+            .into_iter()
+            .flat_map(|arrival| {
+                let Event::Frame { frame: live, .. } = frame(
+                    Command::CMD_WORKOUT_LIVE_DATA,
+                    vec![WppObject::LiveHr(LiveHr { hr: 60 })],
+                ) else {
+                    panic!("frame() builds a frame event")
+                };
+                client.handle(Event::Frame {
+                    frame: live,
+                    received_at: UnixMillis(1_000_000 + arrival),
+                })
+            })
+            .flat_map(|action| match action {
+                Action::Store { records, .. } => records,
+                _ => Vec::new(),
+            })
+            .filter_map(|record| match record {
+                Record::Sample { measured_at, kind: SampleKind::HeartRate, .. } => {
+                    Some(measured_at.0 - 1_000_000)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(times, [0, 1_000, 2_040, 3_040, 9_000]);
     }
 
     #[test]
