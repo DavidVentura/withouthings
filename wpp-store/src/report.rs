@@ -9,7 +9,9 @@ use wpp::signal::{PpgAfibRule, WatchVerdict, STORED_MEASURE_ATTRIB_CONFIRMED};
 use wpp::sleep::{self, Night, Score};
 use wpp::sport::{self, SportId};
 use wpp::track;
-use wpp::units::{Bpm, Duration, Edges, Hundredths, Kilocalories, Met, Metres, Millis, UnixMillis, UnixTime};
+use wpp::units::{
+    Bpm, Duration, Edges, Hundredths, Kilocalories, Met, Metres, Millis, UnixMillis, UnixTime,
+};
 
 use crate::{
     AfibReadingRow, DeviceId, EcgId, EcgSummaryRow, Error, SeriesPoint, Store, StoredEcg,
@@ -349,7 +351,11 @@ pub fn calorie_series(
         .map(|point| calorie_reading(point.at, point.value))
         .collect();
     let lifted = expenditure(store, device_id, &counter, now)?;
-    assert_eq!(lifted.len(), found.len(), "one lifted reading per stored one");
+    assert_eq!(
+        lifted.len(),
+        found.len(),
+        "one lifted reading per stored one"
+    );
     Ok(lifted
         .into_iter()
         .zip(found)
@@ -492,7 +498,10 @@ pub fn night_trend(
             .collect();
         out.push(NightSummary {
             asleep_for: Duration::from_millis(
-                asleep.iter().map(|band| (band.to - band.from).as_millis()).sum(),
+                asleep
+                    .iter()
+                    .map(|band| (band.to - band.from).as_millis())
+                    .sum(),
             ),
             score: night.score,
             heart: heart::asleep(&beats),
@@ -792,7 +801,12 @@ mod tests {
     fn day_total(store: &Store, device: DeviceId, day: i64) -> f64 {
         let from = day + ROLLOVER_MS;
         let readings: Vec<Reading> = store
-            .samples_between(device, SampleKind::Calories, UnixMillis(from), UnixMillis(from + DAY_MS - 1))
+            .samples_between(
+                device,
+                SampleKind::Calories,
+                UnixMillis(from),
+                UnixMillis(from + DAY_MS - 1),
+            )
             .unwrap()
             .into_iter()
             .map(|point| calorie_reading(point.at, point.value))
@@ -943,7 +957,8 @@ mod tests {
         let asleep = [span(at - 3_600_000, at + 3_600_000)];
 
         let row = reading_row(at);
-        let reading = afib_reading(&store, device, &row, &row.intervals().unwrap(), &asleep).unwrap();
+        let reading =
+            afib_reading(&store, device, &row, &row.intervals().unwrap(), &asleep).unwrap();
         assert!(reading.asleep);
         assert!(
             reading.pulse.intervals.len() <= SPLIT_NIGHT_READING.len() - 20,
