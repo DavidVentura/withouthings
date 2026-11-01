@@ -9,7 +9,7 @@ pub const WATCH_RATE_WITHIN_MS: i64 = 120_000;
 /// be told from chance.
 const MIN_INTERVALS: usize = 12;
 
-/// The pulse sensor sometimes counts a beat twice, a fixed 350-400 ms after
+/// The pulse sensor sometimes counts a beat twice, a fixed delay after
 /// the real one, which splits one interval into a short piece and the rest.
 /// A real early beat this premature is rare enough to read as the split.
 const SPLIT_PIECE_OF_BEAT: f64 = 0.65;

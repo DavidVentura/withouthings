@@ -173,7 +173,10 @@ impl Summary {
     }
 
     fn clean(&self) -> bool {
-        self.malformed.is_empty() && self.reencode_mismatches.is_empty()
+        self.malformed.is_empty()
+            && self.reencode_mismatches.is_empty()
+            && self.unknown_types.is_empty()
+            && self.desyncs == 0
     }
 }
 

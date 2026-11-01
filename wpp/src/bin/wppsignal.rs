@@ -135,12 +135,28 @@ fn report(index: usize, signal: &Signal, recording: &Recording) {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
-    let out_dir = match args.iter().position(|a| a == "--out-dir") {
-        Some(i) => args.get(i + 1).cloned().unwrap_or_else(|| ".".to_string()),
-        None => ".".to_string(),
-    };
-    let Some(path) = args.iter().skip(1).find(|a| !a.starts_with("--")) else {
-        eprintln!("usage: wppsignal <btsnoop_hci.log> [--out-dir DIR]");
+    const USAGE: &str = "usage: wppsignal <btsnoop_hci.log> [--out-dir DIR]";
+    let mut out_dir = ".".to_string();
+    let mut capture = None;
+    let mut arguments = args.iter().skip(1);
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--out-dir" => {
+                let Some(dir) = arguments.next() else {
+                    eprintln!("{USAGE}");
+                    return ExitCode::FAILURE;
+                };
+                out_dir = dir.clone();
+            }
+            flag if flag.starts_with("--") => {
+                eprintln!("unknown argument {flag}\n{USAGE}");
+                return ExitCode::FAILURE;
+            }
+            _ => capture = Some(argument),
+        }
+    }
+    let Some(path) = capture else {
+        eprintln!("{USAGE}");
         return ExitCode::FAILURE;
     };
 

@@ -217,7 +217,7 @@ pub fn fragments(payload: &[u8], max_payload: usize) -> Vec<Vec<u8>> {
     payload.chunks(max_payload).map(<[u8]>::to_vec).collect()
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct NotificationCenter {
     live: Vec<Notification>,
     next_id: u32,

@@ -1452,7 +1452,7 @@ impl WatchService {
         let formats = self.inner.lock().unwrap().client.image_formats().to_vec();
 
         if let Some(request) = glyph {
-            let (width, height) = request.size(&formats);
+            let (width, height) = request.size();
             let bitmaps: Vec<Mono> = request
                 .glyphs
                 .iter()

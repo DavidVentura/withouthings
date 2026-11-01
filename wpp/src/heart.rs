@@ -3,7 +3,7 @@ use std::ops::Range;
 use crate::energy::{Beat, LONGEST_HELD_MS};
 use crate::units::{Bpm, UnixMillis};
 
-/// As slow as the wearer's heart gets asleep. A waking body under it during a
+/// As slow as a heart gets asleep. A waking body under it during a
 /// session is the optical sensor having lost the wrist, not a rest between sets.
 const DROPOUT_CEILING: Bpm = Bpm(60);
 

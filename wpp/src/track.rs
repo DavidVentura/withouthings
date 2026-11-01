@@ -350,28 +350,47 @@ fn invert(spread: Spread) -> Option<Spread> {
     })
 }
 
+/// The step between two neighbouring fixes of a run.
+struct Leg {
+    ended_at: UnixMillis,
+    metres: Metres,
+    elapsed_ms: i64,
+}
+
+impl Leg {
+    fn speed(&self) -> Option<MetresPerSecond> {
+        (self.elapsed_ms > 0).then(|| MetresPerSecond(self.metres.0 / (self.elapsed_ms as f64 / 1000.0)))
+    }
+}
+
+/// Which speed a route is read at. Mixing the two within one route would put a
+/// step in the line wherever the source changed, so it is decided once for the
+/// whole of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpeedSource {
+    Reported,
+    Derived,
+}
+
 impl Segment {
-    /// Displacement from the fix before, for a receiver that reported no speed
-    /// of its own. The first fix of a run has nothing to measure against.
-    fn derived_speed(&self, index: usize) -> Option<MetresPerSecond> {
-        let previous = self.fixes.get(index.checked_sub(1)?)?;
-        let fix = self.fixes.get(index)?;
-        let elapsed = (fix.at.0 - previous.at.0) as f64 / 1000.0;
-        if elapsed <= 0.0 {
-            return None;
+    fn legs(&self) -> impl Iterator<Item = Leg> + '_ {
+        self.fixes.windows(2).map(|pair| Leg {
+            ended_at: pair[1].at,
+            metres: pair[0].position().distance_to(pair[1].position()),
+            elapsed_ms: pair[1].at.0 - pair[0].at.0,
+        })
+    }
+
+    /// The first fix of a run has nothing to measure a derived speed against.
+    fn speed_at(&self, index: usize, source: SpeedSource) -> Option<MetresPerSecond> {
+        match source {
+            SpeedSource::Reported => self.fixes.get(index)?.speed(),
+            SpeedSource::Derived => self.legs().nth(index.checked_sub(1)?)?.speed(),
         }
-        Some(MetresPerSecond(
-            previous.position().distance_to(fix.position()).0 / elapsed,
-        ))
     }
 
     pub fn distance(&self) -> Metres {
-        Metres(
-            self.fixes
-                .windows(2)
-                .map(|pair| pair[0].position().distance_to(pair[1].position()).0)
-                .sum(),
-        )
+        Metres(self.legs().map(|leg| leg.metres.0).sum())
     }
 }
 
@@ -395,17 +414,12 @@ impl Track {
         let mut settled = 0.0;
         let mut tail = 0.0;
         let mut through: Option<UnixMillis> = None;
-        for pair in self
-            .segments
-            .iter()
-            .flat_map(|segment| segment.fixes.windows(2))
-        {
-            let metres = pair[0].position().distance_to(pair[1].position()).0;
-            if pair[1].at.0 <= at.0 {
-                settled += metres;
-                through = Some(pair[1].at);
+        for leg in self.segments.iter().flat_map(Segment::legs) {
+            if leg.ended_at.0 <= at.0 {
+                settled += leg.metres.0;
+                through = Some(leg.ended_at);
             } else {
-                tail += metres;
+                tail += leg.metres.0;
             }
         }
         SplitDistance {
@@ -463,13 +477,9 @@ impl Track {
         let millis: i64 = self
             .segments
             .iter()
-            .flat_map(|segment| segment.fixes.windows(2))
-            .filter(|pair| {
-                let elapsed = (pair[1].at.0 - pair[0].at.0) as f64 / 1000.0;
-                let metres = pair[0].position().distance_to(pair[1].position()).0;
-                metres / elapsed >= MOVING_M_S
-            })
-            .map(|pair| pair[1].at.0 - pair[0].at.0)
+            .flat_map(Segment::legs)
+            .filter(|leg| leg.speed().is_some_and(|speed| speed.0 >= MOVING_M_S))
+            .map(|leg| leg.elapsed_ms)
             .sum();
         millis / 1000
     }
@@ -482,28 +492,31 @@ impl Track {
         Some(MetresPerSecond(self.distance().0 / seconds as f64))
     }
 
+    fn speed_source(&self) -> SpeedSource {
+        if self.fixes().all(|fix| fix.speed().is_some()) {
+            SpeedSource::Reported
+        } else {
+            SpeedSource::Derived
+        }
+    }
+
     /// Doppler speed where the receiver reported it for every fix, and
-    /// displacement over time where it did not. Mixing the two within one
-    /// series would put a step in the line wherever the source changed.
+    /// displacement over time where it did not.
     pub fn speed_series(&self) -> Vec<(UnixMillis, MetresPerSecond)> {
         run_of_three(self.raw_speed_series())
     }
 
     fn raw_speed_series(&self) -> Vec<(UnixMillis, MetresPerSecond)> {
-        if self.fixes().all(|fix| fix.speed().is_some()) {
+        if self.speed_source() == SpeedSource::Reported {
             return self
                 .fixes()
-                .map(|fix| (fix.at, fix.speed().expect("checked just above")))
+                .map(|fix| (fix.at, fix.speed().expect("a reported route has every speed")))
                 .collect();
         }
         self.segments
             .iter()
-            .flat_map(|segment| segment.fixes.windows(2))
-            .map(|pair| {
-                let elapsed = (pair[1].at.0 - pair[0].at.0) as f64 / 1000.0;
-                let metres = pair[0].position().distance_to(pair[1].position()).0;
-                (pair[1].at, MetresPerSecond(metres / elapsed))
-            })
+            .flat_map(Segment::legs)
+            .filter_map(|leg| Some((leg.ended_at, leg.speed()?)))
             .collect()
     }
 
@@ -686,11 +699,16 @@ pub fn zoom_about(view: View, factor: f64, at_x_px: f64, at_y_px: f64) -> View {
     }
 }
 
-pub fn frame(track: &Track, view: View) -> Frame {
+/// Where a view's corner sits in the projection, at the zoom it is drawn at.
+fn view_origin(view: View) -> (f64, f64, f64) {
     let zoom = view.zoom.clamp(MIN_ZOOM, MAX_ZOOM);
     let (centre_x, centre_y) = project(view.centre, zoom);
-    let left = centre_x - view.width_px / 2.0;
-    let top = centre_y - view.height_px / 2.0;
+    (zoom, centre_x - view.width_px / 2.0, centre_y - view.height_px / 2.0)
+}
+
+pub fn frame(track: &Track, view: View) -> Frame {
+    let (zoom, left, top) = view_origin(view);
+    let source = track.speed_source();
 
     let path = track
         .segments
@@ -706,7 +724,7 @@ pub fn frame(track: &Track, view: View) -> Frame {
                         at: fix.at,
                         x_px: x - left,
                         y_px: y - top,
-                        speed: fix.speed().or_else(|| segment.derived_speed(index)),
+                        speed: segment.speed_at(index, source),
                     }
                 })
                 .collect();
@@ -754,15 +772,10 @@ pub fn cursor(track: &Track, view: View, at: UnixMillis) -> Option<PathPoint> {
         })?;
 
     let after = segment.fixes.iter().position(|fix| fix.at.0 >= at.0);
-    let (before, next, part) = match after {
-        None => {
-            let last = segment.fixes.last()?;
-            (last, last, 0.0)
-        }
-        Some(0) => {
-            let first = segment.fixes.first()?;
-            (first, first, 0.0)
-        }
+    let last_index = segment.fixes.len().checked_sub(1)?;
+    let (before_index, next_index, part) = match after {
+        None => (last_index, last_index, 0.0),
+        Some(0) => (0, 0, 0.0),
         Some(index) => {
             let before = &segment.fixes[index - 1];
             let next = &segment.fixes[index];
@@ -772,14 +785,12 @@ pub fn cursor(track: &Track, view: View, at: UnixMillis) -> Option<PathPoint> {
             } else {
                 (at.0 - before.at.0) as f64 / span
             };
-            (before, next, part)
+            (index - 1, index, part)
         }
     };
+    let (before, next) = (&segment.fixes[before_index], &segment.fixes[next_index]);
 
-    let zoom = view.zoom.clamp(MIN_ZOOM, MAX_ZOOM);
-    let (centre_x, centre_y) = project(view.centre, zoom);
-    let left = centre_x - view.width_px / 2.0;
-    let top = centre_y - view.height_px / 2.0;
+    let (zoom, left, top) = view_origin(view);
     let (bx, by) = project(before.position(), zoom);
     let (nx, ny) = project(next.position(), zoom);
 
@@ -787,7 +798,10 @@ pub fn cursor(track: &Track, view: View, at: UnixMillis) -> Option<PathPoint> {
         at,
         x_px: bx + (nx - bx) * part - left,
         y_px: by + (ny - by) * part - top,
-        speed: before.speed(),
+        speed: match track.speed_source() {
+            SpeedSource::Reported => segment.speed_at(before_index, SpeedSource::Reported),
+            SpeedSource::Derived => segment.speed_at(next_index, SpeedSource::Derived),
+        },
     })
 }
 
@@ -1485,6 +1499,34 @@ mod tests {
                 Some(MetresPerSecond((4_000 + second * 10) as f64 / 1000.0))
             );
         }
+    }
+
+    #[test]
+    fn a_route_reporting_speed_only_in_part_is_read_at_displacement_everywhere() {
+        let mut fixes: Vec<Fix> = (0..40)
+            .map(|second| fix(second, 52.3700 + second as f64 * 0.00004, 4.8900))
+            .collect();
+        for reported in &mut fixes[20..] {
+            reported.speed_mm_s = Some(40_000);
+        }
+        let track = clean(&fixes, limits());
+        let view = fit(&track, 400.0, 300.0, 16.0);
+
+        for point in &frame(&track, view).path[0] {
+            assert!(point.speed.is_none_or(|speed| speed.0 < 10.0), "{:?}", point.speed);
+        }
+        let at = cursor(&track, view, UnixMillis(30_500)).unwrap();
+        assert!(at.speed.is_some_and(|speed| speed.0 < 10.0), "{:?}", at.speed);
+    }
+
+    #[test]
+    fn the_cursor_reads_the_speed_the_path_draws() {
+        let fixes: Vec<Fix> = (0..40)
+            .map(|second| fix(second, 52.3700 + second as f64 * 0.00004, 4.8900))
+            .collect();
+        let track = clean(&fixes, limits());
+        let view = fit(&track, 400.0, 300.0, 16.0);
+        assert!(cursor(&track, view, UnixMillis(10_500)).unwrap().speed.is_some());
     }
 
     #[test]

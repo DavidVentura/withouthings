@@ -131,6 +131,23 @@ fn fit(kind: u8, width: u8, height: u8, formats: &[ImageFormat]) -> (u8, u8) {
 
 const UNDECLARED_MAX: u8 = 20;
 
+/// Each chunk has to be valid text by itself, so a split never lands inside a
+/// character.
+fn text_chunks(text: &str, most_bytes: usize) -> Vec<&str> {
+    let mut chunks = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let mut end = most_bytes.min(rest.len());
+        while !rest.is_char_boundary(end) {
+            end -= 1;
+        }
+        let (chunk, after) = rest.split_at(end);
+        chunks.push(chunk);
+        rest = after;
+    }
+    chunks
+}
+
 fn requested(objects: &[WppObject]) -> (u8, u8, u8) {
     objects
         .iter()
@@ -180,7 +197,7 @@ impl GlyphRequest {
         })
     }
 
-    pub fn size(&self, _formats: &[ImageFormat]) -> (u8, u8) {
+    pub fn size(&self) -> (u8, u8) {
         (self.width, self.height)
     }
 
@@ -235,15 +252,9 @@ impl IconRequest {
     }
 
     pub fn reply(&self, icon: &Mono) -> Frame {
-        let mut objects: Vec<WppObject> = self
-            .app_id
-            .as_bytes()
-            .chunks(CHUNK)
-            .map(|c| {
-                WppObject::NotificationAppId(NotificationAppId {
-                    id: String::from_utf8_lossy(c).into_owned(),
-                })
-            })
+        let mut objects: Vec<WppObject> = text_chunks(&self.app_id, CHUNK)
+            .into_iter()
+            .map(|id| WppObject::NotificationAppId(NotificationAppId { id: id.to_string() }))
             .collect();
         objects.push(WppObject::ImageMetadata(icon.metadata()));
         objects.extend(icon.chunks());
@@ -258,6 +269,14 @@ impl IconRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_app_id_splits_between_characters() {
+        let id = "é".repeat(40);
+        let chunks = text_chunks(&id, CHUNK);
+        assert!(chunks.iter().all(|chunk| chunk.len() <= CHUNK));
+        assert_eq!(chunks.concat(), id);
+    }
 
     const WHITE: u32 = 0xffff_ffff;
     const CLEAR: u32 = 0x0000_0000;

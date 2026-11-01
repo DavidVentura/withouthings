@@ -10,7 +10,7 @@ use crate::objects::{
     StartTime, StoredSignalMeta, TimeSet, TrackerUser, TrackerWearPos, VasistasCbt, VasistasType,
     Version, WamScreensList, WamVasistasGet, WorkoutGpsStatus, WorkoutScreenMetadata,
 };
-use crate::signal::{Signal, SignalCollector, SignalStore};
+use crate::signal::{Discarded, Signal, SignalCollector, SignalStore};
 use crate::spiflash::{SpiFlash, SpiFlashProgress};
 use crate::units::{Duration, Hundredths, UnixMillis, UnixTime};
 use crate::{Command, Frame, WppObject};
@@ -1090,13 +1090,32 @@ impl Client {
         }
     }
 
+    /// A signal that did not add up, or bytes no signal could claim, leave the
+    /// record on the watch to be served again, so they are reported.
     fn take_signals(&mut self) -> Vec<Signal> {
-        self.link
+        const COMMAND: u16 = Command::CMD_STORED_MEASURE_SIGNAL_GET.0;
+        for discarded in self.link.signals.take_discarded() {
+            let reason = match discarded {
+                Discarded::NoDescriptor => "stored signal data with no descriptor",
+                Discarded::NoExtent => "stored signal data with no declared size",
+            };
+            if !self.unhandled.contains(&(COMMAND, 0, reason)) {
+                self.unhandled.push((COMMAND, 0, reason));
+            }
+        }
+        let (complete, broken): (Vec<Signal>, Vec<Signal>) = self
+            .link
             .signals
             .take_completed()
             .into_iter()
-            .filter(|s| s.is_complete())
-            .collect()
+            .partition(Signal::is_complete);
+        for signal in broken {
+            let seen = (COMMAND, signal.meta.r#type, "stored signal not the size it declared");
+            if !self.unhandled.contains(&seen) {
+                self.unhandled.push(seen);
+            }
+        }
+        complete
     }
 
     fn collect_passive(
@@ -1838,7 +1857,7 @@ fn stored_signal_request(store: SignalStore) -> Frame {
     )
 }
 
-/// The handler at 0x6e3e8 routes on the store's type and deletes the record
+/// The handler routes on the store's type and deletes the record
 /// its Id names, which is the record's StoredMeasureMeta uid. A record that
 /// came without one cannot be named, so it stays on the watch.
 fn delete_frame(store: SignalStore, signal: &Signal) -> Option<Frame> {

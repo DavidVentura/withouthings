@@ -108,8 +108,7 @@ const RUNS_ABOVE_M_S: f64 = 2.2;
 
 const SECONDS_PER_MINUTE: f64 = 60.0;
 
-/// The Compendium of Physical Activities' bands for bicycling, which is the
-/// same table every calculator on the web is quoting. A ride is read at the
+/// The Compendium of Physical Activities' bands for bicycling. A ride is read at the
 /// speed it averaged, so the stop-start of a commute is already in the figure.
 pub fn cycling_met(speed: MetresPerSecond) -> Met {
     let kmh = speed.0 * 3.6;
@@ -440,7 +439,7 @@ mod speed_tests {
 
         assert!(
             (per_minute * 10.0 - 75.0).abs() < 3.0,
-            "{} kcal over ten minutes, against the 75 every calculator gives",
+            "{} kcal over ten minutes, against the 75 the Compendium gives",
             per_minute * 10.0
         );
     }

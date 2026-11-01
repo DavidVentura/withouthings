@@ -133,12 +133,12 @@ impl WatchVerdict {
 }
 
 /// StoredMeasureMeta.attrib on the reading that confirmed a run: the reply
-/// builder at 0x6370c sets it from the header flag the store writer takes from
+/// builder sets it from the header flag the store writer takes from
 /// its confirmed out-parameter.
 pub const STORED_MEASURE_ATTRIB_CONFIRMED: i64 = 7;
 
 /// Where the watch keeps a signal between syncs. `CMD_STORED_MEASURE_SIGNAL_GET`
-/// (handler 0x6e21c) serves a store only to a request whose StoredSignalMeta
+/// serves a store only to a request whose StoredSignalMeta
 /// names its type, one record per request, and `..._DEL` routes on the same
 /// type; the type of the signal inside a record (an ECG is 7, say) is not it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,11 +160,10 @@ impl SignalStore {
     }
 }
 
-/// How the watch turns PPG AFib readings into an alert: the store writer at
-/// 0x63394 counts each reading the classifier calls AFib and confirms the one
+/// How the watch turns PPG AFib readings into an alert: the store writer
+/// counts each reading the classifier calls AFib and confirms the one
 /// that makes `RUN` within `WINDOW` of the first counted, then counts afresh.
-/// Both come from the constant table at 0xb0e88 that main_task hands to
-/// 0x63098.
+/// Both come from a constant table main_task hands to the writer.
 pub struct PpgAfibRule;
 
 impl PpgAfibRule {
@@ -207,7 +206,7 @@ pub fn beat_intervals_ms(samples: &[u8], size: NonZeroUsize, sampling_hz: Sampli
         .collect()
 }
 
-/// The PPG classifier's verdict, in the order of `afib_class_names` (0xb4824),
+/// The PPG classifier's verdict, in the order of `afib_class_names`,
 /// which the firmware indexes with the verdict plus one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PpgRhythm {
@@ -384,20 +383,30 @@ impl Recording {
     }
 }
 
-#[derive(Default)]
-struct Pending {
-    meta: Option<StoredSignalMeta>,
+/// A transfer the descriptor has opened. The watch repeats the descriptor in
+/// every frame of a transfer, so seeing it again carries on rather than restarts.
+struct Receiving {
+    meta: StoredSignalMeta,
     extend: Option<StoredSignalMetaExtend>,
     units: Option<UnitConversionParameters>,
-    measure: Option<StoredMeasureMeta>,
-    measures: Vec<StoredMeasureData>,
     data: Vec<u8>,
+}
+
+/// Bytes the collector could not make a signal of. The record stays on the
+/// watch, which is why this is worth saying rather than dropping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Discarded {
+    NoDescriptor,
+    NoExtent,
 }
 
 #[derive(Default)]
 pub struct SignalCollector {
-    pending: Pending,
+    receiving: Option<Receiving>,
+    measure: Option<StoredMeasureMeta>,
+    measures: Vec<StoredMeasureData>,
     signals: Vec<Signal>,
+    discarded: Vec<Discarded>,
     live_ecg: Vec<u8>,
 }
 
@@ -409,33 +418,47 @@ impl SignalCollector {
     pub fn observe(&mut self, object: &WppObject) {
         match object {
             WppObject::StoredSignalMeta(meta) => {
-                if self.pending.meta.as_ref() != Some(meta) {
+                if self.receiving.as_ref().is_none_or(|open| open.meta != *meta) {
                     self.close();
-                    self.pending.meta = Some(meta.clone());
-                    self.pending.extend = None;
-                    self.pending.units = None;
+                    self.receiving = Some(Receiving {
+                        meta: meta.clone(),
+                        extend: None,
+                        units: None,
+                        data: Vec::new(),
+                    });
                 }
             }
-            WppObject::StoredSignalMetaExtend(extend) => self.pending.extend = Some(extend.clone()),
-            WppObject::UnitConversionParameters(units) => self.pending.units = Some(units.clone()),
+            WppObject::StoredSignalMetaExtend(extend) => {
+                if let Some(open) = &mut self.receiving {
+                    open.extend = Some(extend.clone());
+                }
+            }
+            WppObject::UnitConversionParameters(units) => {
+                if let Some(open) = &mut self.receiving {
+                    open.units = Some(units.clone());
+                }
+            }
             WppObject::StoredMeasureMeta(measure) => {
-                if self.pending.measure.as_ref() != Some(measure) {
-                    self.pending.measure = Some(measure.clone());
-                    self.pending.measures.clear();
+                if self.measure.as_ref() != Some(measure) {
+                    self.measure = Some(measure.clone());
+                    self.measures.clear();
                 }
             }
             WppObject::StoredMeasureData(data) => {
-                if !self.pending.measures.contains(data) {
-                    self.pending.measures.push(data.clone());
+                if !self.measures.contains(data) {
+                    self.measures.push(data.clone());
                 }
             }
             WppObject::StoredSignalData(chunk) => {
-                self.pending.data.extend_from_slice(&chunk.samples);
-                let done = self
-                    .pending
+                let Some(open) = &mut self.receiving else {
+                    self.discarded.push(Discarded::NoDescriptor);
+                    return;
+                };
+                open.data.extend_from_slice(&chunk.samples);
+                let done = open
                     .extend
                     .as_ref()
-                    .is_some_and(|e| self.pending.data.len() >= e.total_size as usize);
+                    .is_some_and(|extend| open.data.len() >= extend.total_size as usize);
                 if done {
                     self.close();
                 }
@@ -445,29 +468,41 @@ impl SignalCollector {
         }
     }
 
+    /// Only the data is spent: the descriptor keeps naming the transfer, so one
+    /// it repeats after finishing starts no new signal.
     fn close(&mut self) {
-        if let (Some(meta), Some(extend)) = (self.pending.meta.clone(), self.pending.extend.clone())
-        {
-            if !self.pending.data.is_empty() {
-                self.signals.push(Signal {
-                    meta,
-                    extend,
-                    units: self.pending.units.clone(),
-                    measure: self.pending.measure.clone(),
-                    measures: self.pending.measures.clone(),
-                    data: std::mem::take(&mut self.pending.data),
-                });
-            }
+        let Some(open) = &mut self.receiving else {
+            return;
+        };
+        if open.data.is_empty() {
+            return;
         }
-        self.pending.data.clear();
+        let data = std::mem::take(&mut open.data);
+        let Some(extend) = open.extend.clone() else {
+            self.discarded.push(Discarded::NoExtent);
+            return;
+        };
+        self.signals.push(Signal {
+            meta: open.meta.clone(),
+            extend,
+            units: open.units.clone(),
+            measure: self.measure.clone(),
+            measures: self.measures.clone(),
+            data,
+        });
     }
 
     pub fn transfer_progress(&self) -> Option<(usize, usize)> {
-        let declared = self.pending.extend.as_ref()?.total_size as usize;
-        if self.pending.data.is_empty() {
+        let open = self.receiving.as_ref()?;
+        let declared = open.extend.as_ref()?.total_size as usize;
+        if open.data.is_empty() {
             return None;
         }
-        Some((self.pending.data.len(), declared))
+        Some((open.data.len(), declared))
+    }
+
+    pub fn take_discarded(&mut self) -> Vec<Discarded> {
+        std::mem::take(&mut self.discarded)
     }
 
     pub fn take_completed(&mut self) -> Vec<Signal> {
@@ -559,6 +594,23 @@ mod tests {
         assert_eq!(recording.analysed().lead, Some(Lead::DiFiltered));
         assert!(signal.is_complete());
         assert_eq!(recording.samples_per_lead(), 2);
+    }
+
+    #[test]
+    fn data_with_no_descriptor_or_no_size_is_named_rather_than_lost_quietly() {
+        let mut collector = SignalCollector::new();
+        collector.observe(&WppObject::StoredSignalData(StoredSignalData { samples: vec![1, 2] }));
+        collector.observe(&WppObject::StoredSignalMeta(StoredSignalMeta {
+            r#type: 1,
+            ..StoredSignalMeta::default()
+        }));
+        collector.observe(&WppObject::StoredSignalData(StoredSignalData { samples: vec![3, 4] }));
+        collector.observe(&WppObject::StoredSignalMeta(StoredSignalMeta {
+            r#type: 2,
+            ..StoredSignalMeta::default()
+        }));
+        assert_eq!(collector.take_discarded(), vec![Discarded::NoDescriptor, Discarded::NoExtent]);
+        assert!(collector.take_completed().is_empty());
     }
 
     #[test]
