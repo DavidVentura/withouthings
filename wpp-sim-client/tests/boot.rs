@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::ops::RangeInclusive;
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use common::{holds_whole_prompt, relink, renode_binary, repository, require, scratch, strip_colour, symbol_address, Renode, Rig};
 
