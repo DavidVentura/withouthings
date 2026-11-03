@@ -148,6 +148,31 @@ pub fn session_ceiling(
     Ok(sport::session_ceiling(sport, speed))
 }
 
+/// What a session had earned by each moment it has a reading for.
+fn session_energy(
+    store: &Store,
+    device_id: DeviceId,
+    wearer: Wearer,
+    sport: SportId,
+    from: UnixMillis,
+    to: UnixMillis,
+) -> Result<Vec<Reading>, Error> {
+    if !sport::striding(sport) {
+        let beats = beats_between(store, device_id, from, to)?;
+        let ceiling = session_ceiling(store, device_id, sport, from, to)?;
+        return Ok(energy::accrued(wearer, ceiling, &beats));
+    }
+    let minutes = store.activity_minutes(device_id, from.to_seconds(), to.to_seconds())?;
+    let route = match sport::limits(sport) {
+        None => None,
+        Some(limits) => {
+            let route = track::clean(&store.track_points(device_id, from, to)?, limits);
+            (!route.is_empty()).then(|| route.distance())
+        }
+    };
+    Ok(energy::on_foot(wearer, &minutes, from..to, route))
+}
+
 pub fn workout_calories(
     store: &Store,
     device_id: DeviceId,
@@ -159,10 +184,8 @@ pub fn workout_calories(
     let Some(wearer) = user.and_then(|user| Wearer::of(user, from.to_seconds())) else {
         return Ok(None);
     };
-    let beats = beats_between(store, device_id, from, to)?;
-
-    let ceiling = session_ceiling(store, device_id, sport, from, to)?;
-    Ok(Some(energy::burned(wearer, ceiling, &beats)))
+    let earned = session_energy(store, device_id, wearer, sport, from, to)?;
+    Ok(Some(earned.last().map_or(Kilocalories(0.0), |reading| reading.total)))
 }
 
 fn session_end(row: &WorkoutRow, now: UnixMillis) -> UnixMillis {
@@ -293,9 +316,7 @@ pub fn earned_curves(
             };
             let ended = session_end(&row, now);
             let started = row.started_at.to_millis();
-            let beats = beats_between(store, device_id, started, ended)?;
-            let ceiling = session_ceiling(store, device_id, row.sport(), started, ended)?;
-            Ok(energy::accrued(wearer, ceiling, &beats))
+            session_energy(store, device_id, wearer, row.sport(), started, ended)
         })
         .collect()
 }
@@ -1124,6 +1145,44 @@ mod tests {
             workout_calories(&store, device, Some(&sex_unknown), weights, from, to).unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn a_run_is_priced_by_the_ground_it_covered_whatever_the_heart_rate() {
+        let mut store = Store::open_in_memory().unwrap();
+        let device = store.device(&wpp::client::Mac::parse("a4:7e:fa:44:d6:10").unwrap()).unwrap();
+        let opened = DAY_ONE;
+        let mut records: Vec<Record> = (0..20)
+            .map(|minute| {
+                Record::Activity(Minute {
+                    duration: Duration::from_secs(60),
+                    steps: Some(170),
+                    distance: Some(wpp::units::Hundredths::new(200 * 100)),
+                    ..Minute::opened(UnixMillis(opened + minute * 60_000).to_seconds())
+                })
+            })
+            .collect();
+        let calm: Vec<Record> = (0..=20).map(|minute| rate(opened + minute * 60_000, 120, Source::Stored)).collect();
+        records.extend(calm);
+        store.store(device, &records).unwrap();
+        let wearer = TrackerUser {
+            id: 1,
+            weight: 75_000,
+            height: 178,
+            gender: 0,
+            birth: 0,
+            first_name: String::new(),
+        };
+        let (from, to) = (UnixMillis(opened), UnixMillis(opened + 20 * 60_000));
+        let price = |store: &Store| {
+            workout_calories(store, device, Some(&wearer), SportId(2), from, to).unwrap().unwrap().0
+        };
+        let at_120 = price(&store);
+        assert!((at_120 - 75.0 * 4.0).abs() < 10.0, "four kilometres at 75 kg: {at_120}");
+
+        let racing: Vec<Record> = (0..=20).map(|minute| rate(opened + minute * 60_000 + 1, 195, Source::Stored)).collect();
+        store.store(device, &racing).unwrap();
+        assert_eq!(price(&store), at_120);
     }
 
     #[test]

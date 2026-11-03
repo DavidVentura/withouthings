@@ -1,6 +1,10 @@
+use std::ops::Range;
+
+use crate::activity::Minute;
 use crate::objects::TrackerUser;
 use crate::units::{
-    Bpm, Centimetres, Kilocalories, Kilograms, Met, MetresPerSecond, UnixMillis, UnixTime, Years,
+    Bpm, Centimetres, Hundredths, Kilocalories, Kilograms, Met, Metres, MetresPerSecond,
+    UnixMillis, UnixTime, Years,
 };
 
 const KJ_PER_KCAL: f64 = 4.184;
@@ -131,16 +135,71 @@ pub fn cycling_met(speed: MetresPerSecond) -> Met {
     })
 }
 
-/// ACSM's metabolic equations: the oxygen a body costs rises with the speed it
-/// carries itself at, and running costs about twice what walking does.
-pub fn on_foot_met(speed: MetresPerSecond) -> Met {
-    let metres_per_minute = speed.0 * SECONDS_PER_MINUTE;
-    let millilitres = if speed.0 >= RUNS_ABOVE_M_S {
-        0.2 * metres_per_minute + ML_OXYGEN_PER_MET_MINUTE
+/// ACSM's metabolic equations, in millilitres of oxygen per kilogram per
+/// minute: the cost rises with the speed a body carries itself at and the
+/// height it climbs, and running costs about twice what walking does.
+fn on_foot_oxygen(speed: MetresPerSecond, climbing: MetresPerSecond) -> f64 {
+    let (horizontal, vertical) = if speed.0 >= RUNS_ABOVE_M_S {
+        (0.2, 0.9)
     } else {
-        0.1 * metres_per_minute + ML_OXYGEN_PER_MET_MINUTE
+        (0.1, 1.8)
     };
-    Met(millilitres / ML_OXYGEN_PER_MET_MINUTE)
+    (horizontal * speed.0 + vertical * climbing.0) * SECONDS_PER_MINUTE + ML_OXYGEN_PER_MET_MINUTE
+}
+
+pub fn on_foot_met(speed: MetresPerSecond) -> Met {
+    Met(on_foot_oxygen(speed, MetresPerSecond(0.0)) / ML_OXYGEN_PER_MET_MINUTE)
+}
+
+/// What a session on foot earned, from the ground the wearer covered rather
+/// than their heart rate. The rate regression is a population average that
+/// reads well above the work done for anyone whose rate runs high for their
+/// pace, while the oxygen a body costs per metre covered barely varies between
+/// people.
+///
+/// The watch's distance is its pedometer's steps times a stride it guesses, so
+/// a route measured over the same session, when there is one, is what the
+/// minutes are scaled to; each minute's share of the ground still decides
+/// whether it was a walk or a run.
+pub fn on_foot(
+    wearer: Wearer,
+    minutes: &[Minute],
+    session: Range<UnixMillis>,
+    route: Option<Metres>,
+) -> Vec<Reading> {
+    let stepped: f64 = minutes.iter().filter_map(|m| m.distance).sum::<Hundredths<Metres>>().value().0;
+    let scale = match route {
+        Some(route) if stepped > 0.0 => route.0 / stepped,
+        _ => 1.0,
+    };
+    let mut running = 0.0;
+    let mut readings = Vec::with_capacity(minutes.len());
+    for minute in minutes {
+        let (from, to) = (minute.at.to_millis(), minute.ended_at().to_millis());
+        let length = (to - from).as_millis();
+        if length <= 0 {
+            continue;
+        }
+        let inside = (to.min(session.end) - from.max(session.start)).as_millis();
+        if inside <= 0 {
+            continue;
+        }
+        let seconds = length as f64 / 1000.0;
+        let pace = |field: Option<Hundredths<Metres>>, scale: f64| {
+            MetresPerSecond(field.map_or(0.0, |metres| metres.value().0) * scale / seconds)
+        };
+        // The equations' constant term is the resting cost, already in the
+        // watch's own counter.
+        let moving = on_foot_oxygen(pace(minute.distance, scale), pace(minute.ascent, 1.0))
+            - ML_OXYGEN_PER_MET_MINUTE;
+        let earned = moving * wearer.weight.0 * KCAL_PER_ML_OXYGEN;
+        running += earned * inside as f64 / MILLIS_PER_MINUTE;
+        readings.push(Reading {
+            at: to.min(session.end),
+            total: Kilocalories(running),
+        });
+    }
+    readings
 }
 
 /// What the session had earned by each of its readings. The energy lands over
@@ -403,6 +462,69 @@ mod tests {
             first_name: String::new(),
         };
         assert!(Wearer::of(&user, UnixTime(1_785_057_972)).is_none());
+    }
+
+    fn stepped(from_min: i64, metres: i64, climbed: i64) -> Minute {
+        Minute {
+            duration: crate::units::Duration::from_secs(60),
+            distance: Some(Hundredths::new(metres * 100)),
+            ascent: Some(Hundredths::new(climbed * 100)),
+            ..Minute::opened(UnixTime(from_min * 60))
+        }
+    }
+
+    fn whole(minutes: i64) -> Range<UnixMillis> {
+        UnixMillis(0)..UnixMillis(minutes * 60_000)
+    }
+
+    fn last(readings: &[Reading]) -> f64 {
+        readings.last().expect("a reading").total.0
+    }
+
+    #[test]
+    fn a_run_costs_about_a_kilocalorie_per_kilogram_per_kilometre_above_resting() {
+        let five_k: Vec<Minute> = (0..25).map(|m| stepped(m, 200, 0)).collect();
+        let earned = last(&on_foot(wearer(), &five_k, whole(25), None));
+        let per_kg_km = earned / wearer().weight.0 / 5.0;
+        assert!((0.95..1.05).contains(&per_kg_km), "{per_kg_km}");
+    }
+
+    #[test]
+    fn walking_the_same_ground_costs_about_half() {
+        let ran: Vec<Minute> = (0..20).map(|m| stepped(m, 200, 0)).collect();
+        let walked: Vec<Minute> = (0..40).map(|m| stepped(m, 100, 0)).collect();
+        let ran = last(&on_foot(wearer(), &ran, whole(20), None));
+        let walked = last(&on_foot(wearer(), &walked, whole(40), None));
+        assert!(walked < ran * 0.6, "walked {walked} ran {ran}");
+    }
+
+    #[test]
+    fn a_minute_with_no_ground_covered_earns_nothing() {
+        let still = [Minute { duration: crate::units::Duration::from_secs(60), ..Minute::opened(UnixTime(0)) }];
+        assert_eq!(last(&on_foot(wearer(), &still, whole(1), None)), 0.0);
+    }
+
+    #[test]
+    fn climbing_costs_more_than_the_flat() {
+        let flat: Vec<Minute> = (0..10).map(|m| stepped(m, 200, 0)).collect();
+        let hill: Vec<Minute> = (0..10).map(|m| stepped(m, 200, 10)).collect();
+        assert!(last(&on_foot(wearer(), &hill, whole(10), None)) > last(&on_foot(wearer(), &flat, whole(10), None)));
+    }
+
+    #[test]
+    fn a_measured_route_corrects_the_guessed_stride() {
+        let minutes: Vec<Minute> = (0..20).map(|m| stepped(m, 200, 0)).collect();
+        let guessed = last(&on_foot(wearer(), &minutes, whole(20), None));
+        let measured = last(&on_foot(wearer(), &minutes, whole(20), Some(Metres(3000.0))));
+        assert!((measured / guessed - 0.75).abs() < 0.02, "{measured} against {guessed}");
+    }
+
+    #[test]
+    fn a_minute_straddling_the_session_counts_only_its_share() {
+        let minutes = [stepped(0, 200, 0)];
+        let half = UnixMillis(30_000)..UnixMillis(60_000);
+        let full = last(&on_foot(wearer(), &minutes, whole(1), None));
+        assert!((last(&on_foot(wearer(), &minutes, half, None)) - full / 2.0).abs() < 1e-9);
     }
 }
 

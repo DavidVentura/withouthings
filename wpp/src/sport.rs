@@ -10,6 +10,9 @@ pub struct SportId(pub u32);
 /// says whether the steps and the metres climbed under a session describe it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Gait {
+    /// Walking or running, where moving the body over the ground is the whole
+    /// of the work, so the ground covered prices it.
+    Striding,
     OnFoot,
     // Apart from Otherwise because speed prices a ride, where it says nothing
     // about a boat or a board.
@@ -18,6 +21,7 @@ pub enum Gait {
 }
 
 use Gait::OnFoot;
+use Gait::Striding;
 use Gait::Otherwise;
 use Gait::Pedalled;
 
@@ -87,7 +91,7 @@ pub const ACTIVITIES: &[Sport] = &[
     Sport::new(
         1,
         "Walking",
-        OnFoot,
+        Striding,
         Ground(MetresPerSecond(5.0)),
         Met(8.3),
         Face { mode: 2, flag: 0 },
@@ -95,7 +99,7 @@ pub const ACTIVITIES: &[Sport] = &[
     Sport::new(
         2,
         "Running",
-        OnFoot,
+        Striding,
         Ground(MetresPerSecond(8.0)),
         Met(19.0),
         Face { mode: 2, flag: 0 },
@@ -103,7 +107,7 @@ pub const ACTIVITIES: &[Sport] = &[
     Sport::new(
         3,
         "Hiking",
-        OnFoot,
+        Striding,
         Ground(MetresPerSecond(5.0)),
         Met(6.0),
         Face { mode: 2, flag: 0 },
@@ -439,7 +443,7 @@ pub const ACTIVITIES: &[Sport] = &[
     Sport::new(
         306,
         "Indoor walk",
-        OnFoot,
+        Striding,
         InPlace,
         Met(8.3),
         Face { mode: 2, flag: 1 },
@@ -447,7 +451,7 @@ pub const ACTIVITIES: &[Sport] = &[
     Sport::new(
         307,
         "Indoor running",
-        OnFoot,
+        Striding,
         InPlace,
         Met(19.0),
         Face { mode: 1, flag: 0 },
@@ -467,7 +471,7 @@ pub fn name(id: SportId) -> String {
 /// An activity the table has never heard of is not credited with a gait, so
 /// what the pedometer holds over it goes unshown rather than unexplained.
 pub fn on_foot(id: SportId) -> bool {
-    find(id).is_some_and(|sport| sport.gait == OnFoot)
+    find(id).is_some_and(|sport| matches!(sport.gait, OnFoot | Striding))
 }
 
 /// None for an activity that covers no ground, and for one the table has never
@@ -482,6 +486,12 @@ pub fn limits(id: SportId) -> Option<Limits> {
         }),
         InPlace => None,
     }
+}
+
+/// Whether a session is priced by the ground it covered rather than the heart
+/// rate it ran at.
+pub fn striding(id: SportId) -> bool {
+    find(id).is_some_and(|sport| sport.gait == Striding)
 }
 
 pub fn ceiling(id: SportId) -> Met {
@@ -505,7 +515,7 @@ fn measured_ceiling(sport: &Sport, speed: MetresPerSecond) -> Option<Met> {
     }
     match sport.gait {
         Pedalled => Some(energy::cycling_met(speed)),
-        OnFoot => Some(energy::on_foot_met(speed)),
+        OnFoot | Striding => Some(energy::on_foot_met(speed)),
         Otherwise => None,
     }
 }
