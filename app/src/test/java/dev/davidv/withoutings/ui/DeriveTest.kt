@@ -360,3 +360,25 @@ class PaceTest {
         assertEquals("5:03", pacePerKm(1000.0 / 303.0))
     }
 }
+
+class DaysCoveringTest {
+    @Test
+    fun `every day starts at midnight across the clocks going back`() {
+        val zone = java.util.TimeZone.getDefault()
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Europe/Amsterdam"))
+        try {
+            val from = Calendar.getInstance().apply { set(2026, Calendar.OCTOBER, 23, 12, 0) }.timeInMillis
+            val to = Calendar.getInstance().apply { set(2026, Calendar.OCTOBER, 28, 12, 0) }.timeInMillis
+            val days = daysCovering(from..to)
+            assertEquals(listOf(23, 24, 25, 26, 27, 28), days.map { dayOfMonth(it) })
+            assertTrue(days.all { it == dayStart(it) })
+            val dosed = days.flatMap { listOf(atHour(it, DOSED_FROM_HOUR), atHour(it, DOSED_TO_HOUR)) }
+            assertEquals(dosed.sorted(), dosed)
+        } finally {
+            java.util.TimeZone.setDefault(zone)
+        }
+    }
+
+    private fun dayOfMonth(atMs: Long) =
+        Calendar.getInstance().apply { timeInMillis = atMs }.get(Calendar.DAY_OF_MONTH)
+}

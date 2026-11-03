@@ -241,8 +241,15 @@ fun dayStart(atMs: Long): Long = Calendar.getInstance().apply {
     set(Calendar.MILLISECOND, 0)
 }.timeInMillis
 
+// A day the clocks change on is 23 or 25 hours long, so stepping a fixed 24
+// hours from one midnight lands beside the next one rather than on it.
+fun daysAfter(dayMs: Long, days: Int): Long = Calendar.getInstance().apply {
+    timeInMillis = dayMs
+    add(Calendar.DAY_OF_MONTH, days)
+}.timeInMillis
+
 fun daysCovering(range: LongRange): List<Long> =
-    generateSequence(dayStart(range.first)) { it + DAY_MS }
+    generateSequence(dayStart(range.first)) { daysAfter(it, 1) }
         .takeWhile { it <= range.last }
         .toList()
 
@@ -267,8 +274,8 @@ fun dayName(atMs: Long, nowMs: Long): String {
     val day = dayStart(atMs)
     return when {
         day == today -> "Today"
-        day == today - DAY_MS -> "Yesterday"
-        day > today - 7 * DAY_MS -> weekdayFormat.format(Date(atMs))
+        day == daysAfter(today, -1) -> "Yesterday"
+        day > daysAfter(today, -7) -> weekdayFormat.format(Date(atMs))
         else -> dayAndMonth(atMs)
     }
 }

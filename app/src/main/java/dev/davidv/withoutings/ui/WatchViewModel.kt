@@ -355,7 +355,7 @@ class WatchViewModel : ViewModel() {
     private fun loadTrends(span: TrendSpan): Trends? {
         val service = WatchRepository.get() ?: return null
         val now = System.currentTimeMillis()
-        val window = (dayStart(now) - (span.days - 1) * DAY_MS)..now
+        val window = daysAfter(dayStart(now), -(span.days - 1))..now
         val weightsFrom = window.first - TrendCategory.Weights.trendMs
         val nightsBack = span.days - 1 + (TrendCategory.Sleep.trendMs / DAY_MS).toInt()
         return Trends(
@@ -388,7 +388,7 @@ class WatchViewModel : ViewModel() {
         val entries = service.workoutsBetween(range.first, range.last).map(::RecordedEntry) +
             service.detectedActivities(range.first, range.last).map(::DetectedEntry)
         val active = caloriesByDay(entries, nowMs)
-        val edges = days + (days.last() + DAY_MS)
+        val edges = days + daysAfter(days.last(), 1)
         val worn = service.wornHours(edges)
         val awake = service.awakeHeart(edges)
         // Each day's dosed hours and the evening and early morning after them,
@@ -398,7 +398,7 @@ class WatchViewModel : ViewModel() {
             ?.let { service.zoneTime(edges, it.map { floor -> floor.toUShort() }) }
         val halves = service.awakeHeart(
             days.flatMap { listOf(atHour(it, DOSED_FROM_HOUR), atHour(it, DOSED_TO_HOUR)) } +
-                atHour(days.last() + DAY_MS, DOSED_FROM_HOUR),
+                atHour(daysAfter(days.last(), 1), DOSED_FROM_HOUR),
         )
         return days.indices.map { index ->
             val day = days[index]
@@ -524,8 +524,8 @@ class WatchViewModel : ViewModel() {
         }
         val steps = if (rebuildLog) {
             (0..DETECTED_HISTORY_DAYS).associate { back ->
-                val day = dayStart(now - back * DAY_MS)
-                day to service.activityTotals(day, day + DAY_MS - 1000).steps
+                val day = daysAfter(dayStart(now), -back)
+                day to service.activityTotals(day, daysAfter(day, 1) - 1000).steps
             }
         } else {
             previous.dailySteps
@@ -578,7 +578,7 @@ class WatchViewModel : ViewModel() {
         // day, so a day's count runs from its own rollover to the next one.
         val found = service.windowedMax(
             style.metric,
-            counted.map { it + COUNTER_ROLLOVER_MS } + (counted.last() + DAY_MS),
+            counted.map { it + COUNTER_ROLLOVER_MS } + daysAfter(counted.last(), 1),
         )
         return counted.zip(found)
             .mapNotNull { (day, total) -> total?.let { day to it } }
@@ -629,7 +629,7 @@ class WatchViewModel : ViewModel() {
     private fun nightRange(): LongRange = nightRangeFor(_nightsAgo.value)
 
     private fun nightRangeFor(daysAgo: Int): LongRange {
-        val midnight = dayStart(System.currentTimeMillis()) - daysAgo * 86_400_000L
+        val midnight = daysAfter(dayStart(System.currentTimeMillis()), -daysAgo)
         return (midnight - 6 * 3600_000L)..(midnight + 12 * 3600_000L)
     }
 
